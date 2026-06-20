@@ -5,8 +5,8 @@ Rails.application.routes.draw do
 
   # Example pages exercised by system specs.
   get "counter" => "demos#counter"
-  get "chat"    => "demos#chat"
-  get "todos"   => "demos#todos"
+  get "chat" => "demos#chat"
+  get "todos" => "demos#todos"
 
   # The phlex-reactive engine appends POST /reactive/actions itself.
 end

@@ -7,11 +7,12 @@ RSpec.describe Phlex::Reactive::Component do
   let(:state_klass) do
     Class.new do
       include Phlex::Reactive::Component
+
       def self.name = "StateThing"
 
       reactive_state :count
       action :increment
-      action :set, params: { count: :integer }
+      action :set, params: {count: :integer}
 
       def initialize(count: 0) = @count = count
       attr_reader :count
@@ -23,7 +24,7 @@ RSpec.describe Phlex::Reactive::Component do
   describe "action declarations (default-deny)" do
     it "registers declared actions" do
       expect(state_klass.reactive_action?(:increment)).to be(true)
-      expect(state_klass.reactive_action(:set).params).to eq({ count: :integer })
+      expect(state_klass.reactive_action(:set).params).to eq({count: :integer})
     end
 
     it "does not register undeclared methods" do
@@ -38,7 +39,7 @@ RSpec.describe Phlex::Reactive::Component do
       payload = Phlex::Reactive.verify(token)
 
       expect(payload["c"]).to eq("StateThing")
-      expect(payload["s"]).to eq({ "count" => 5 })
+      expect(payload["s"]).to eq({"count" => 5})
 
       rebuilt = state_klass.from_identity(payload)
       expect(rebuilt.count).to eq(5)

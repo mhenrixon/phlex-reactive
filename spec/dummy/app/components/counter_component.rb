@@ -9,7 +9,7 @@ class CounterComponent < ApplicationComponent
   reactive_state :count
   action :increment
   action :decrement
-  action :set, params: { count: :integer }
+  action :set, params: {count: :integer}
 
   def initialize(count: 0)
     @count = count
@@ -23,10 +23,10 @@ class CounterComponent < ApplicationComponent
 
   def view_template
     div(id:, **reactive_attrs) do
-      button(**mix(on(:decrement), data: { testid: "dec" })) { "−" }
-      span(id: "counter-value", data: { testid: "count" }) { @count.to_s }
-      button(**mix(on(:increment), data: { testid: "inc" })) { "+" }
-      button(**mix(on(:set, count: 0), data: { testid: "reset" })) { "reset" }
+      button(**mix(on(:decrement), data: {testid: "dec"})) { "−" }
+      span(id: "counter-value", data: {testid: "count"}) { @count.to_s }
+      button(**mix(on(:increment), data: {testid: "inc"})) { "+" }
+      button(**mix(on(:set, count: 0), data: {testid: "reset"})) { "reset" }
     end
   end
 end

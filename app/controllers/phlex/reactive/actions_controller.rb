@@ -97,7 +97,7 @@ module Phlex
       def coerce(value, type)
         case type
         when :integer then value.to_i
-        when :float   then value.to_f
+        when :float then value.to_f
         when :boolean then ActiveModel::Type::Boolean.new.cast(value)
         else value.to_s
         end
@@ -107,7 +107,7 @@ module Phlex
       # already gates this; defense in depth against constant injection.
       def resolve_component(name)
         klass = name.to_s.safe_constantize
-        unless klass && klass.respond_to?(:reactive_action?) && klass.include?(Phlex::Reactive::Component)
+        unless klass&.respond_to?(:reactive_action?) && klass.include?(Phlex::Reactive::Component)
           raise Phlex::Reactive::InvalidToken
         end
 

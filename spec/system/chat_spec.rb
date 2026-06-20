@@ -16,11 +16,11 @@ RSpec.describe "Chat (reactive action + broadcast)", type: :system do
     find("[data-testid='chat-input']").set("hello reactive world")
     find("[data-testid='chat-send']").click
 
-    # The action response re-renders the composer with a cleared input.
-    expect(page).to have_css("[data-testid='chat-input']")
-    expect(find("[data-testid='chat-input']").value).to eq("")
+    # The action response re-renders the composer with a cleared input. This is
+    # a waiting matcher, so it also serves as our barrier for the round trip.
+    expect(page).to have_field("body", with: "")
 
-    # The message was created server-side …
+    # By now the round trip completed, so the message exists server-side …
     expect(ChatMessage.where(body: "hello reactive world")).to exist
     # … and no full-page reload happened.
     expect(page.evaluate_script("window.__noReload")).to eq("alive")

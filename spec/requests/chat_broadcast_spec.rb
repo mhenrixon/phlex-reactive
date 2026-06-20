@@ -13,11 +13,11 @@ RSpec.describe "Chat broadcast", type: :request do
   def send_message(room:, body:)
     token = Phlex::Reactive.sign(
       "c" => "ChatComposerComponent",
-      "s" => { "room" => room, "author" => "tester" }
+      "s" => {"room" => room, "author" => "tester"}
     )
     post "/reactive/actions",
-      params: { token:, act: "send_message", params: { body: } }.to_json,
-      headers: { "Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html" }
+      params: {token:, act: "send_message", params: {body:}}.to_json,
+      headers: {"Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html"}
   end
 
   it "creates the message and broadcasts it to the room stream" do
@@ -36,7 +36,8 @@ RSpec.describe "Chat broadcast", type: :request do
       send_message(room: "lobby", body: "targeted")
     end
 
-    html = broadcasts.map(&:to_s).join
+    # broadcasts are parsed nodes, not strings; stringify before joining.
+    html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin
     expect(html).to include('action="append"')
     expect(html).to include('target="chat-messages-lobby"')
     expect(html).to include("targeted")

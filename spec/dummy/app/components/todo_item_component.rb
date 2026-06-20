@@ -8,7 +8,7 @@ class TodoItemComponent < ApplicationComponent
 
   reactive_record :todo
   action :toggle
-  action :rename, params: { title: :string }
+  action :rename, params: {title: :string}
 
   def initialize(todo:)
     @todo = todo
@@ -26,8 +26,8 @@ class TodoItemComponent < ApplicationComponent
   end
 
   def view_template
-    li(**mix(reactive_attrs, id:, data: { testid: "todo", done: @todo.done?.to_s })) do
-      button(**mix(on(:toggle), data: { testid: "toggle" })) { @todo.done? ? "✓" : "○" }
+    li(**mix(reactive_attrs, id:, data: {testid: "todo", done: @todo.done?.to_s})) do
+      button(**mix(on(:toggle), data: {testid: "toggle"})) { @todo.done? ? "✓" : "○" }
       input(**mix(on(:rename, event: "change"), name: "title", value: @todo.title))
     end
   end

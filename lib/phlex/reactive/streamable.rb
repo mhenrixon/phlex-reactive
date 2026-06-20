@@ -35,7 +35,7 @@ module Phlex
         end
 
         def component_args(model, options)
-          { model_param_name => model }.merge(options)
+          {model_param_name => model}.merge(options)
         end
 
         # Turbo::Streams::TagBuilder needs a real VIEW CONTEXT (it calls

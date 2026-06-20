@@ -154,12 +154,12 @@ module Phlex
         payload =
           if self.class.reactive_record_key
             record = instance_variable_get(:"@#{self.class.reactive_record_key}")
-            { "c" => self.class.name, "gid" => record.to_gid.to_s }
+            {"c" => self.class.name, "gid" => record.to_gid.to_s}
           else
             state = self.class.reactive_state_keys.to_h do |k|
               [k.to_s, instance_variable_get(:"@#{k}").as_json]
             end
-            { "c" => self.class.name, "s" => state }
+            {"c" => self.class.name, "s" => state}
           end
 
         Phlex::Reactive.sign(payload)

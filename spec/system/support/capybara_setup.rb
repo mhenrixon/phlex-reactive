@@ -7,7 +7,7 @@ when "webrick"
   require "webrick"
   Capybara.server = :webrick
 else
-  Capybara.server = :puma, { Silent: true }
+  Capybara.server = :puma, {Silent: true}
 end
 
 RSpec.configure do |config|
@@ -29,8 +29,8 @@ RSpec.configure do |config|
 
     begin
       path = Rails.root.join("..", "..", "tmp", "capybara")
-      page.save_screenshot(path.join("failure-#{example.full_description.parameterize}.png").to_s)
-    rescue StandardError
+      page.save_screenshot(path.join("failure-#{example.full_description.parameterize}.png").to_s) # rubocop:disable Lint/Debugger
+    rescue
       # ignore screenshot failures
     end
   end

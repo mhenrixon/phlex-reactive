@@ -12,7 +12,7 @@ class ChatMessageComponent < ApplicationComponent
   def self.model_param_name = :chat_message
 
   def view_template
-    div(id:, class: "msg", data: { testid: "message" }) do
+    div(id:, class: "msg", data: {testid: "message"}) do
       span(class: "author") { @message.author }
       span(class: "body") { @message.body }
     end

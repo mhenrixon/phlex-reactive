@@ -1654,3 +1654,719 @@ Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
   [1m[36mTodo Load (0.1ms)[0m  [1m[34mSELECT "todos".* FROM "todos" WHERE "todos"."id" = ? LIMIT ?[0m  [["id", 1], ["LIMIT", 1]]
 Completed 404 Not Found in 1ms (ActiveRecord: 0.0ms (1 query, 0 cached) | GC: 0.0ms)
   [1m[36mTRANSACTION (0.1ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[35m (9.7ms)[0m  [1m[35mDROP TABLE IF EXISTS "counters"[0m
+  [1m[35m (1.0ms)[0m  [1m[35mCREATE TABLE "counters" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "value" integer DEFAULT 0 NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL)[0m
+  [1m[35m (0.0ms)[0m  [1m[35mDROP TABLE IF EXISTS "todos"[0m
+  [1m[35m (0.2ms)[0m  [1m[35mCREATE TABLE "todos" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "title" varchar NOT NULL, "done" boolean DEFAULT FALSE NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL)[0m
+  [1m[35m (0.0ms)[0m  [1m[35mDROP TABLE IF EXISTS "chat_messages"[0m
+  [1m[35m (0.3ms)[0m  [1m[35mCREATE TABLE "chat_messages" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "room" varchar DEFAULT 'lobby' NOT NULL, "author" varchar DEFAULT 'anon' NOT NULL, "body" text NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL)[0m
+  [1m[35m (0.1ms)[0m  [1m[35mCREATE TABLE "schema_migrations" ("version" varchar NOT NULL PRIMARY KEY)[0m
+  [1m[36mActiveRecord::SchemaMigration Load (0.0ms)[0m  [1m[34mSELECT "schema_migrations"."version" FROM "schema_migrations" ORDER BY "schema_migrations"."version" ASC[0m
+  [1m[35m (0.0ms)[0m  [1m[32mINSERT INTO "schema_migrations" (version) VALUES (1)[0m
+  [1m[35m (0.1ms)[0m  [1m[35mCREATE TABLE "ar_internal_metadata" ("key" varchar NOT NULL PRIMARY KEY, "value" varchar, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL)[0m
+  [1m[36mActiveRecord::InternalMetadata Load (0.0ms)[0m  [1m[34mSELECT * FROM "ar_internal_metadata" WHERE "ar_internal_metadata"."key" = ? ORDER BY "ar_internal_metadata"."key" ASC LIMIT 1[0m  [[nil, "environment"]]
+  [1m[36mActiveRecord::InternalMetadata Create (0.2ms)[0m  [1m[32mINSERT INTO "ar_internal_metadata" ("key", "value", "created_at", "updated_at") VALUES ('environment', 'test', '2026-06-20 15:31:04.849910', '2026-06-20 15:31:04.849912') RETURNING "key"[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mChatMessage Create (0.2ms)[0m  [1m[32mINSERT INTO "chat_messages" ("room", "author", "body", "created_at", "updated_at") VALUES (?, ?, ?, ?, ?) RETURNING "id"[0m  [["room", "lobby"], ["author", "seed"], ["body", "earlier message"], ["created_at", "2026-06-20 15:31:05.089603"], ["updated_at", "2026-06-20 15:31:05.089603"]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+Started GET "/chat" for 127.0.0.1 at 2026-06-20 17:31:07 +0200
+Processing by DemosController#chat as HTML
+  [1m[36mChatMessage Load (0.3ms)[0m  [1m[34mSELECT "chat_messages".* FROM "chat_messages" WHERE "chat_messages"."room" = ? ORDER BY "chat_messages"."created_at" DESC, "chat_messages"."id" DESC LIMIT ?[0m  [["room", "lobby"], ["LIMIT", 50]]
+  Rendering ChatRoomComponent
+  Rendered ChatRoomComponent (Duration: 14.7ms | GC: 0.0ms)
+  Rendering layout layouts/application.html.erb
+  Rendering html template within layouts/application
+  Rendered html template within layouts/application (Duration: 4.3ms | GC: 0.0ms)
+  Rendered layout layouts/application.html.erb (Duration: 10.4ms | GC: 0.0ms)
+Completed 200 OK in 141ms (Views: 61.0ms | ActiveRecord: 0.3ms (1 query, 0 cached) | GC: 0.0ms)
+  [1m[36mTRANSACTION (0.4ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.4ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started GET "/chat" for 127.0.0.1 at 2026-06-20 17:31:08 +0200
+Processing by DemosController#chat as HTML
+  [1m[36mChatMessage Load (0.1ms)[0m  [1m[34mSELECT "chat_messages".* FROM "chat_messages" WHERE "chat_messages"."room" = ? ORDER BY "chat_messages"."created_at" DESC, "chat_messages"."id" DESC LIMIT ?[0m  [["room", "lobby"], ["LIMIT", 50]]
+  Rendering ChatRoomComponent
+  Rendered ChatRoomComponent (Duration: 0.2ms | GC: 0.0ms)
+  Rendering layout layouts/application.html.erb
+  Rendering html template within layouts/application
+  Rendered html template within layouts/application (Duration: 0.0ms | GC: 0.0ms)
+  Rendered layout layouts/application.html.erb (Duration: 0.2ms | GC: 0.0ms)
+Completed 200 OK in 3ms (Views: 0.4ms | ActiveRecord: 0.1ms (1 query, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:31:08 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ2hhdENvbXBvc2VyQ29tcG9uZW50IiwicyI6eyJyb29tIjoibG9iYnkiLCJhdXRob3IiOiJhbm9uIn19LCJwdXIiOiJwaGxleC1yZWFjdGl2ZS9pZGVudGl0eSJ9fQ==--96c0726b084748aa9d2ae8cb088859809a74e82a", "act" => "send_message", "params" => {"body" => "hello reactive world"}}
+  [1m[36mTRANSACTION (0.1ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mChatMessage Create (0.8ms)[0m  [1m[32mINSERT INTO "chat_messages" ("room", "author", "body", "created_at", "updated_at") VALUES (?, ?, ?, ?, ?) RETURNING "id"[0m  [["room", "lobby"], ["author", "anon"], ["body", "hello reactive world"], ["created_at", "2026-06-20 15:31:08.510739"], ["updated_at", "2026-06-20 15:31:08.510739"]]
+  Rendering ChatMessageComponent
+  Rendered ChatMessageComponent (Duration: 0.2ms | GC: 0.0ms)
+[ActionCable] Broadcasting to chat:lobby: "<turbo-stream action=\"append\" target=\"chat-messages-lobby\"><template><div id=\"chat_message_1\" class=\"msg\" data-testid=\"message\"><span class=\"author\">anon</span><span class=\"body\">hello reactive world</span></div></template></turbo-stream>"
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  Rendering ChatComposerComponent
+  Rendered ChatComposerComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 45ms (Views: 0.1ms | ActiveRecord: 0.9ms (1 query, 0 cached) | GC: 0.0ms)
+  [1m[36mChatMessage Exists? (0.1ms)[0m  [1m[34mSELECT 1 AS one FROM "chat_messages" WHERE "chat_messages"."body" = ? LIMIT ?[0m  [["body", "hello reactive world"], ["LIMIT", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[35m (4.8ms)[0m  [1m[35mDROP TABLE IF EXISTS "counters"[0m
+  [1m[35m (0.3ms)[0m  [1m[35mCREATE TABLE "counters" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "value" integer DEFAULT 0 NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL)[0m
+  [1m[35m (0.0ms)[0m  [1m[35mDROP TABLE IF EXISTS "todos"[0m
+  [1m[35m (0.0ms)[0m  [1m[35mCREATE TABLE "todos" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "title" varchar NOT NULL, "done" boolean DEFAULT FALSE NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL)[0m
+  [1m[35m (0.0ms)[0m  [1m[35mDROP TABLE IF EXISTS "chat_messages"[0m
+  [1m[35m (0.0ms)[0m  [1m[35mCREATE TABLE "chat_messages" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "room" varchar DEFAULT 'lobby' NOT NULL, "author" varchar DEFAULT 'anon' NOT NULL, "body" text NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL)[0m
+  [1m[35m (0.0ms)[0m  [1m[35mCREATE TABLE "schema_migrations" ("version" varchar NOT NULL PRIMARY KEY)[0m
+  [1m[36mActiveRecord::SchemaMigration Load (0.0ms)[0m  [1m[34mSELECT "schema_migrations"."version" FROM "schema_migrations" ORDER BY "schema_migrations"."version" ASC[0m
+  [1m[35m (0.0ms)[0m  [1m[32mINSERT INTO "schema_migrations" (version) VALUES (1)[0m
+  [1m[35m (0.0ms)[0m  [1m[35mCREATE TABLE "ar_internal_metadata" ("key" varchar NOT NULL PRIMARY KEY, "value" varchar, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL)[0m
+  [1m[36mActiveRecord::InternalMetadata Load (0.0ms)[0m  [1m[34mSELECT * FROM "ar_internal_metadata" WHERE "ar_internal_metadata"."key" = ? ORDER BY "ar_internal_metadata"."key" ASC LIMIT 1[0m  [[nil, "environment"]]
+  [1m[36mActiveRecord::InternalMetadata Create (0.0ms)[0m  [1m[32mINSERT INTO "ar_internal_metadata" ("key", "value", "created_at", "updated_at") VALUES ('environment', 'test', '2026-06-20 15:32:58.979914', '2026-06-20 15:32:58.979916') RETURNING "key"[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:32:59 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJzIjp7ImNvdW50IjoxfSwiYyI6IkNvdW50ZXJDb21wb25lbnQifSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--61edd2520a2d540f5ab75a13eb44fba9b0b04da9", "act" => "destroy_everything", "params" => {}}
+Completed 403 Forbidden in 1ms (ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.2ms)
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:32:59 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJzIjp7ImNvdW50Ijo5fSwiYyI6IkNvdW50ZXJDb21wb25lbnQifSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--105717bf55b99e67171938fce1f89c1b9bf7568d", "act" => "set", "params" => {"count" => "0"}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.9ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 4ms (Views: 0.0ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.2ms)
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:32:59 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJzIjp7ImNvdW50IjoxfSwiYyI6IkNvdW50ZXJDb21wb25lbnQifSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--61edd2520a2d540f5ab75a13eb44fba9b0b04da9", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 1ms (Views: 0.0ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.2ms)
+  [1m[36mTRANSACTION (1.3ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:32:59 +0200
+Processing by Phlex::Reactive::ActionsController#create as HTML
+  Parameters: {"token" => "not.a.real.token", "act" => "increment"}
+Completed 400 Bad Request in 0ms (ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Create (0.1ms)[0m  [1m[32mINSERT INTO "todos" ("title", "done", "created_at", "updated_at") VALUES (?, ?, ?, ?) RETURNING "id"[0m  [["title", "write specs"], ["done", 0], ["created_at", "2026-06-20 15:32:59.207028"], ["updated_at", "2026-06-20 15:32:59.207028"]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:32:59 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJnaWQiOiJnaWQ6Ly9kdW1teS9Ub2RvLzEiLCJjIjoiVG9kb0l0ZW1Db21wb25lbnQifSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--1f08b5294852049cdd10aa2752ffd0bbb0eec9ba", "act" => "toggle", "params" => {}}
+  [1m[36mTodo Load (0.1ms)[0m  [1m[34mSELECT "todos".* FROM "todos" WHERE "todos"."id" = ? LIMIT ?[0m  [["id", 1], ["LIMIT", 1]]
+  [1m[36mTRANSACTION (0.2ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Update (0.2ms)[0m  [1m[33mUPDATE "todos" SET "done" = ?, "updated_at" = ? WHERE "todos"."id" = ?[0m  [["done", 1], ["updated_at", "2026-06-20 15:32:59.214914"], ["id", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  Rendering TodoItemComponent
+  Rendered TodoItemComponent (Duration: 0.7ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 9ms (Views: 0.0ms | ActiveRecord: 0.4ms (2 queries, 0 cached) | GC: 0.2ms)
+  [1m[36mTodo Load (0.1ms)[0m  [1m[34mSELECT "todos".* FROM "todos" WHERE "todos"."id" = ? LIMIT ?[0m  [["id", 1], ["LIMIT", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+  [1m[36mTRANSACTION (0.1ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Create (0.5ms)[0m  [1m[32mINSERT INTO "todos" ("title", "done", "created_at", "updated_at") VALUES (?, ?, ?, ?) RETURNING "id"[0m  [["title", "write specs"], ["done", 0], ["created_at", "2026-06-20 15:32:59.220436"], ["updated_at", "2026-06-20 15:32:59.220436"]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Destroy (0.2ms)[0m  [1m[31mDELETE FROM "todos" WHERE "todos"."id" = ?[0m  [["id", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:32:59 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJnaWQiOiJnaWQ6Ly9kdW1teS9Ub2RvLzEiLCJjIjoiVG9kb0l0ZW1Db21wb25lbnQifSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--1f08b5294852049cdd10aa2752ffd0bbb0eec9ba", "act" => "toggle", "params" => {}}
+  [1m[36mTodo Load (0.0ms)[0m  [1m[34mSELECT "todos".* FROM "todos" WHERE "todos"."id" = ? LIMIT ?[0m  [["id", 1], ["LIMIT", 1]]
+Completed 404 Not Found in 0ms (ActiveRecord: 0.0ms (1 query, 0 cached) | GC: 0.0ms)
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Create (0.1ms)[0m  [1m[32mINSERT INTO "todos" ("title", "done", "created_at", "updated_at") VALUES (?, ?, ?, ?) RETURNING "id"[0m  [["title", "old name"], ["done", 0], ["created_at", "2026-06-20 15:32:59.227576"], ["updated_at", "2026-06-20 15:32:59.227576"]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+Started GET "/todos" for 127.0.0.1 at 2026-06-20 17:33:00 +0200
+Processing by DemosController#todos as HTML
+  Rendering TodoListComponent
+  [1m[36mTodo Load (0.1ms)[0m  [1m[34mSELECT "todos".* FROM "todos" ORDER BY "todos"."created_at" ASC, "todos"."id" ASC[0m
+  Rendered TodoListComponent (Duration: 1.9ms | GC: 0.0ms)
+  Rendering layout layouts/application.html.erb
+  Rendering html template within layouts/application
+  Rendered html template within layouts/application (Duration: 0.0ms | GC: 0.0ms)
+  Rendered layout layouts/application.html.erb (Duration: 2.2ms | GC: 0.0ms)
+Completed 200 OK in 28ms (Views: 24.4ms | ActiveRecord: 0.1ms (1 query, 0 cached) | GC: 0.2ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:00 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiVG9kb0l0ZW1Db21wb25lbnQiLCJnaWQiOiJnaWQ6Ly9kdW1teS9Ub2RvLzEifSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--7117f0a5f2a1530b5f8e33f6b6c3c4926cdeb462", "act" => "rename", "params" => {"title" => "new name"}}
+  [1m[36mTodo Load (0.1ms)[0m  [1m[34mSELECT "todos".* FROM "todos" WHERE "todos"."id" = ? LIMIT ?[0m  [["id", 1], ["LIMIT", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Update (0.2ms)[0m  [1m[33mUPDATE "todos" SET "title" = ?, "updated_at" = ? WHERE "todos"."id" = ?[0m  [["title", "new name"], ["updated_at", "2026-06-20 15:33:00.797726"], ["id", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  Rendering TodoItemComponent
+  Rendered TodoItemComponent (Duration: 1.0ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 6ms (Views: 0.1ms | ActiveRecord: 0.3ms (2 queries, 0 cached) | GC: 0.0ms)
+  [1m[36mTodo Load (0.1ms)[0m  [1m[34mSELECT "todos".* FROM "todos" WHERE "todos"."id" = ? LIMIT ?[0m  [["id", 1], ["LIMIT", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Create (0.2ms)[0m  [1m[32mINSERT INTO "todos" ("title", "done", "created_at", "updated_at") VALUES (?, ?, ?, ?) RETURNING "id"[0m  [["title", "existing task"], ["done", 0], ["created_at", "2026-06-20 15:33:00.858939"], ["updated_at", "2026-06-20 15:33:00.858939"]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+Started GET "/todos" for 127.0.0.1 at 2026-06-20 17:33:00 +0200
+Processing by DemosController#todos as HTML
+  Rendering TodoListComponent
+  [1m[36mTodo Load (0.2ms)[0m  [1m[34mSELECT "todos".* FROM "todos" ORDER BY "todos"."created_at" ASC, "todos"."id" ASC[0m
+  Rendered TodoListComponent (Duration: 6.6ms | GC: 0.0ms)
+  Rendering layout layouts/application.html.erb
+  Rendering html template within layouts/application
+  Rendered html template within layouts/application (Duration: 0.0ms | GC: 0.0ms)
+  Rendered layout layouts/application.html.erb (Duration: 0.2ms | GC: 0.0ms)
+Completed 200 OK in 7ms (Views: 0.3ms | ActiveRecord: 0.2ms (1 query, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:01 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiVG9kb0xpc3RDb21wb25lbnQiLCJzIjp7ImJ1aWxkX3Rva2VuIjoibGlzdCJ9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--7f798717e9fb8580da93649942248c07463a8cb0", "act" => "add", "params" => {"title" => "buy oat milk"}}
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Create (0.2ms)[0m  [1m[32mINSERT INTO "todos" ("title", "done", "created_at", "updated_at") VALUES (?, ?, ?, ?) RETURNING "id"[0m  [["title", "buy oat milk"], ["done", 0], ["created_at", "2026-06-20 15:33:01.020288"], ["updated_at", "2026-06-20 15:33:01.020288"]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  Rendering TodoListComponent
+  [1m[36mTodo Load (0.1ms)[0m  [1m[34mSELECT "todos".* FROM "todos" ORDER BY "todos"."created_at" ASC, "todos"."id" ASC[0m
+  Rendered TodoListComponent (Duration: 0.8ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 4ms (Views: 0.1ms | ActiveRecord: 0.3ms (2 queries, 0 cached) | GC: 0.0ms)
+  [1m[36mTodo Count (0.1ms)[0m  [1m[34mSELECT COUNT(*) FROM "todos"[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:01 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiVG9kb0l0ZW1Db21wb25lbnQiLCJnaWQiOiJnaWQ6Ly9kdW1teS9Ub2RvLzEifSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--7117f0a5f2a1530b5f8e33f6b6c3c4926cdeb462", "act" => "toggle", "params" => {"title" => "existing task"}}
+  [1m[36mTodo Load (0.1ms)[0m  [1m[34mSELECT "todos".* FROM "todos" WHERE "todos"."id" = ? LIMIT ?[0m  [["id", 1], ["LIMIT", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Update (0.1ms)[0m  [1m[33mUPDATE "todos" SET "done" = ?, "updated_at" = ? WHERE "todos"."id" = ?[0m  [["done", 1], ["updated_at", "2026-06-20 15:33:01.127743"], ["id", 1]]
+  [1m[36mTRANSACTION (0.8ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  Rendering TodoItemComponent
+  Rendered TodoItemComponent (Duration: 3.8ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.7ms | GC: 0.0ms)
+Completed 200 OK in 9ms (Views: 0.0ms | ActiveRecord: 1.0ms (2 queries, 0 cached) | GC: 0.0ms)
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mChatMessage Create (3.8ms)[0m  [1m[32mINSERT INTO "chat_messages" ("room", "author", "body", "created_at", "updated_at") VALUES (?, ?, ?, ?, ?) RETURNING "id"[0m  [["room", "lobby"], ["author", "seed"], ["body", "earlier message"], ["created_at", "2026-06-20 15:33:01.176196"], ["updated_at", "2026-06-20 15:33:01.176196"]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+Started GET "/chat" for 127.0.0.1 at 2026-06-20 17:33:01 +0200
+Processing by DemosController#chat as HTML
+  [1m[36mChatMessage Load (0.1ms)[0m  [1m[34mSELECT "chat_messages".* FROM "chat_messages" WHERE "chat_messages"."room" = ? ORDER BY "chat_messages"."created_at" DESC, "chat_messages"."id" DESC LIMIT ?[0m  [["room", "lobby"], ["LIMIT", 50]]
+  Rendering ChatRoomComponent
+  Rendered ChatRoomComponent (Duration: 2.9ms | GC: 0.0ms)
+  Rendering layout layouts/application.html.erb
+  Rendering html template within layouts/application
+  Rendered html template within layouts/application (Duration: 0.0ms | GC: 0.0ms)
+  Rendered layout layouts/application.html.erb (Duration: 1.0ms | GC: 0.0ms)
+Completed 200 OK in 17ms (Views: 1.4ms | ActiveRecord: 0.1ms (1 query, 0 cached) | GC: 0.0ms)
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started GET "/chat" for 127.0.0.1 at 2026-06-20 17:33:01 +0200
+Processing by DemosController#chat as HTML
+  [1m[36mChatMessage Load (0.1ms)[0m  [1m[34mSELECT "chat_messages".* FROM "chat_messages" WHERE "chat_messages"."room" = ? ORDER BY "chat_messages"."created_at" DESC, "chat_messages"."id" DESC LIMIT ?[0m  [["room", "lobby"], ["LIMIT", 50]]
+  Rendering ChatRoomComponent
+  Rendered ChatRoomComponent (Duration: 0.2ms | GC: 0.0ms)
+  Rendering layout layouts/application.html.erb
+  Rendering html template within layouts/application
+  Rendered html template within layouts/application (Duration: 0.0ms | GC: 0.0ms)
+  Rendered layout layouts/application.html.erb (Duration: 0.2ms | GC: 0.0ms)
+Completed 200 OK in 1ms (Views: 0.4ms | ActiveRecord: 0.1ms (1 query, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:01 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ2hhdENvbXBvc2VyQ29tcG9uZW50IiwicyI6eyJyb29tIjoibG9iYnkiLCJhdXRob3IiOiJhbm9uIn19LCJwdXIiOiJwaGxleC1yZWFjdGl2ZS9pZGVudGl0eSJ9fQ==--96c0726b084748aa9d2ae8cb088859809a74e82a", "act" => "send_message", "params" => {"body" => "hello reactive world"}}
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mChatMessage Create (0.2ms)[0m  [1m[32mINSERT INTO "chat_messages" ("room", "author", "body", "created_at", "updated_at") VALUES (?, ?, ?, ?, ?) RETURNING "id"[0m  [["room", "lobby"], ["author", "anon"], ["body", "hello reactive world"], ["created_at", "2026-06-20 15:33:01.436758"], ["updated_at", "2026-06-20 15:33:01.436758"]]
+  Rendering ChatMessageComponent
+  Rendered ChatMessageComponent (Duration: 0.3ms | GC: 0.0ms)
+[ActionCable] Broadcasting to chat:lobby: "<turbo-stream action=\"append\" target=\"chat-messages-lobby\"><template><div id=\"chat_message_1\" class=\"msg\" data-testid=\"message\"><span class=\"author\">anon</span><span class=\"body\">hello reactive world</span></div></template></turbo-stream>"
+  [1m[36mTRANSACTION (0.2ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  Rendering ChatComposerComponent
+  Rendered ChatComposerComponent (Duration: 0.4ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 14ms (Views: 0.1ms | ActiveRecord: 0.5ms (1 query, 0 cached) | GC: 0.0ms)
+  [1m[36mChatMessage Exists? (0.1ms)[0m  [1m[34mSELECT 1 AS one FROM "chat_messages" WHERE "chat_messages"."body" = ? LIMIT ?[0m  [["body", "hello reactive world"], ["LIMIT", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started GET "/counter" for 127.0.0.1 at 2026-06-20 17:33:01 +0200
+Processing by DemosController#counter as HTML
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.2ms | GC: 0.0ms)
+  Rendering layout layouts/application.html.erb
+  Rendering html template within layouts/application
+  Rendered html template within layouts/application (Duration: 0.0ms | GC: 0.0ms)
+  Rendered layout layouts/application.html.erb (Duration: 0.2ms | GC: 0.0ms)
+Completed 200 OK in 1ms (Views: 0.3ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:01 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjB9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--83d154872231af8ca0c7699bebba4624b4d1f8b4", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 2ms (Views: 0.8ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:01 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjF9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--418f4260a79edfab57c5d059130b2a7c24ce315a", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 4ms (Views: 3.6ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.1ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:01 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjJ9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--ef80fddcbb08918c987a100f0556ad452c603050", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 2ms (Views: 0.0ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:01 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjN9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--87fdf36ac0fafeec1e3cfd8e6bf25308e4afe797", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 1ms (Views: 0.0ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:01 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjR9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--83f495e577e4415b438d295f8111c2e14e5cce84", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.1ms | GC: 0.0ms)
+Completed 200 OK in 1ms (Views: 0.0ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started GET "/counter" for 127.0.0.1 at 2026-06-20 17:33:01 +0200
+Processing by DemosController#counter as HTML
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.4ms | GC: 0.0ms)
+  Rendering layout layouts/application.html.erb
+  Rendering html template within layouts/application
+  Rendered html template within layouts/application (Duration: 0.0ms | GC: 0.0ms)
+  Rendered layout layouts/application.html.erb (Duration: 0.2ms | GC: 0.0ms)
+Completed 200 OK in 1ms (Views: 0.6ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:01 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjB9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--83d154872231af8ca0c7699bebba4624b4d1f8b4", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.2ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 1ms (Views: 0.0ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:01 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjF9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--418f4260a79edfab57c5d059130b2a7c24ce315a", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 2ms (Views: 0.0ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:01 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjJ9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--ef80fddcbb08918c987a100f0556ad452c603050", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.3ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 2ms (Views: 0.1ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:01 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjN9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--87fdf36ac0fafeec1e3cfd8e6bf25308e4afe797", "act" => "decrement", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.2ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 1ms (Views: 0.1ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:02 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjJ9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--ef80fddcbb08918c987a100f0556ad452c603050", "act" => "set", "params" => {"count" => 0}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.6ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 2ms (Views: 0.0ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:02 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ2hhdENvbXBvc2VyQ29tcG9uZW50IiwicyI6eyJyb29tIjoibG9iYnkiLCJhdXRob3IiOiJ0ZXN0ZXIifX0sInB1ciI6InBobGV4LXJlYWN0aXZlL2lkZW50aXR5In19--aa3c9a21ea39b5ca2b58b5cd1e00fe2e824d1f1e", "act" => "send_message", "params" => {"body" => "targeted"}}
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mChatMessage Create (0.2ms)[0m  [1m[32mINSERT INTO "chat_messages" ("room", "author", "body", "created_at", "updated_at") VALUES (?, ?, ?, ?, ?) RETURNING "id"[0m  [["room", "lobby"], ["author", "tester"], ["body", "targeted"], ["created_at", "2026-06-20 15:33:02.044409"], ["updated_at", "2026-06-20 15:33:02.044409"]]
+  Rendering ChatMessageComponent
+  Rendered ChatMessageComponent (Duration: 0.1ms | GC: 0.0ms)
+[ActionCable] Broadcasting to chat:lobby: "<turbo-stream action=\"append\" target=\"chat-messages-lobby\"><template><div id=\"chat_message_1\" class=\"msg\" data-testid=\"message\"><span class=\"author\">tester</span><span class=\"body\">targeted</span></div></template></turbo-stream>"
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  Rendering ChatComposerComponent
+  Rendered ChatComposerComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 6ms (Views: 0.0ms | ActiveRecord: 0.2ms (1 query, 0 cached) | GC: 0.0ms)
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:02 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ2hhdENvbXBvc2VyQ29tcG9uZW50IiwicyI6eyJyb29tIjoibG9iYnkiLCJhdXRob3IiOiJ0ZXN0ZXIifX0sInB1ciI6InBobGV4LXJlYWN0aXZlL2lkZW50aXR5In19--aa3c9a21ea39b5ca2b58b5cd1e00fe2e824d1f1e", "act" => "send_message", "params" => {"body" => "   "}}
+  Rendering ChatComposerComponent
+  Rendered ChatComposerComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 1ms (Views: 0.0ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+  [1m[36mChatMessage Count (0.1ms)[0m  [1m[34mSELECT COUNT(*) FROM "chat_messages"[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:02 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ2hhdENvbXBvc2VyQ29tcG9uZW50IiwicyI6eyJyb29tIjoibG9iYnkiLCJhdXRob3IiOiJ0ZXN0ZXIifX0sInB1ciI6InBobGV4LXJlYWN0aXZlL2lkZW50aXR5In19--aa3c9a21ea39b5ca2b58b5cd1e00fe2e824d1f1e", "act" => "send_message", "params" => {"body" => "hello room"}}
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mChatMessage Create (0.2ms)[0m  [1m[32mINSERT INTO "chat_messages" ("room", "author", "body", "created_at", "updated_at") VALUES (?, ?, ?, ?, ?) RETURNING "id"[0m  [["room", "lobby"], ["author", "tester"], ["body", "hello room"], ["created_at", "2026-06-20 15:33:02.097968"], ["updated_at", "2026-06-20 15:33:02.097968"]]
+  Rendering ChatMessageComponent
+  Rendered ChatMessageComponent (Duration: 0.0ms | GC: 0.0ms)
+[ActionCable] Broadcasting to chat:lobby: "<turbo-stream action=\"append\" target=\"chat-messages-lobby\"><template><div id=\"chat_message_1\" class=\"msg\" data-testid=\"message\"><span class=\"author\">tester</span><span class=\"body\">hello room</span></div></template></turbo-stream>"
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  Rendering ChatComposerComponent
+  Rendered ChatComposerComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 3ms (Views: 0.0ms | ActiveRecord: 0.2ms (1 query, 0 cached) | GC: 0.2ms)
+  [1m[36mChatMessage Exists? (0.1ms)[0m  [1m[34mSELECT 1 AS one FROM "chat_messages" WHERE "chat_messages"."room" = ? AND "chat_messages"."body" = ? LIMIT ?[0m  [["room", "lobby"], ["body", "hello room"], ["LIMIT", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[35m (1.0ms)[0m  [1m[35mDROP TABLE IF EXISTS "counters"[0m
+  [1m[35m (0.1ms)[0m  [1m[35mCREATE TABLE "counters" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "value" integer DEFAULT 0 NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL)[0m
+  [1m[35m (0.0ms)[0m  [1m[35mDROP TABLE IF EXISTS "todos"[0m
+  [1m[35m (0.0ms)[0m  [1m[35mCREATE TABLE "todos" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "title" varchar NOT NULL, "done" boolean DEFAULT FALSE NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL)[0m
+  [1m[35m (0.0ms)[0m  [1m[35mDROP TABLE IF EXISTS "chat_messages"[0m
+  [1m[35m (0.0ms)[0m  [1m[35mCREATE TABLE "chat_messages" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "room" varchar DEFAULT 'lobby' NOT NULL, "author" varchar DEFAULT 'anon' NOT NULL, "body" text NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL)[0m
+  [1m[35m (0.0ms)[0m  [1m[35mCREATE TABLE "schema_migrations" ("version" varchar NOT NULL PRIMARY KEY)[0m
+  [1m[36mActiveRecord::SchemaMigration Load (0.0ms)[0m  [1m[34mSELECT "schema_migrations"."version" FROM "schema_migrations" ORDER BY "schema_migrations"."version" ASC[0m
+  [1m[35m (0.0ms)[0m  [1m[32mINSERT INTO "schema_migrations" (version) VALUES (1)[0m
+  [1m[35m (0.0ms)[0m  [1m[35mCREATE TABLE "ar_internal_metadata" ("key" varchar NOT NULL PRIMARY KEY, "value" varchar, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL)[0m
+  [1m[36mActiveRecord::InternalMetadata Load (0.0ms)[0m  [1m[34mSELECT * FROM "ar_internal_metadata" WHERE "ar_internal_metadata"."key" = ? ORDER BY "ar_internal_metadata"."key" ASC LIMIT 1[0m  [[nil, "environment"]]
+  [1m[36mActiveRecord::InternalMetadata Create (0.0ms)[0m  [1m[32mINSERT INTO "ar_internal_metadata" ("key", "value", "created_at", "updated_at") VALUES ('environment', 'test', '2026-06-20 15:33:23.514341', '2026-06-20 15:33:23.514343') RETURNING "key"[0m
+  [1m[36mTRANSACTION (0.1ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:23 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ2hhdENvbXBvc2VyQ29tcG9uZW50IiwicyI6eyJyb29tIjoibG9iYnkiLCJhdXRob3IiOiJ0ZXN0ZXIifX0sInB1ciI6InBobGV4LXJlYWN0aXZlL2lkZW50aXR5In19--aa3c9a21ea39b5ca2b58b5cd1e00fe2e824d1f1e", "act" => "send_message", "params" => {"body" => "   "}}
+  Rendering ChatComposerComponent
+  Rendered ChatComposerComponent (Duration: 0.7ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 8ms (Views: 0.1ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.7ms)
+  [1m[36mChatMessage Count (0.1ms)[0m  [1m[34mSELECT COUNT(*) FROM "chat_messages"[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:23 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ2hhdENvbXBvc2VyQ29tcG9uZW50IiwicyI6eyJyb29tIjoibG9iYnkiLCJhdXRob3IiOiJ0ZXN0ZXIifX0sInB1ciI6InBobGV4LXJlYWN0aXZlL2lkZW50aXR5In19--aa3c9a21ea39b5ca2b58b5cd1e00fe2e824d1f1e", "act" => "send_message", "params" => {"body" => "targeted"}}
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mChatMessage Create (0.1ms)[0m  [1m[32mINSERT INTO "chat_messages" ("room", "author", "body", "created_at", "updated_at") VALUES (?, ?, ?, ?, ?) RETURNING "id"[0m  [["room", "lobby"], ["author", "tester"], ["body", "targeted"], ["created_at", "2026-06-20 15:33:23.705345"], ["updated_at", "2026-06-20 15:33:23.705345"]]
+  Rendering ChatMessageComponent
+  Rendered ChatMessageComponent (Duration: 0.4ms | GC: 0.0ms)
+[ActionCable] Broadcasting to chat:lobby: "<turbo-stream action=\"append\" target=\"chat-messages-lobby\"><template><div id=\"chat_message_1\" class=\"msg\" data-testid=\"message\"><span class=\"author\">tester</span><span class=\"body\">targeted</span></div></template></turbo-stream>"
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  Rendering ChatComposerComponent
+  Rendered ChatComposerComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 22ms (Views: 0.1ms | ActiveRecord: 1.6ms (1 query, 0 cached) | GC: 0.4ms)
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:23 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ2hhdENvbXBvc2VyQ29tcG9uZW50IiwicyI6eyJyb29tIjoibG9iYnkiLCJhdXRob3IiOiJ0ZXN0ZXIifX0sInB1ciI6InBobGV4LXJlYWN0aXZlL2lkZW50aXR5In19--aa3c9a21ea39b5ca2b58b5cd1e00fe2e824d1f1e", "act" => "send_message", "params" => {"body" => "hello room"}}
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mChatMessage Create (0.2ms)[0m  [1m[32mINSERT INTO "chat_messages" ("room", "author", "body", "created_at", "updated_at") VALUES (?, ?, ?, ?, ?) RETURNING "id"[0m  [["room", "lobby"], ["author", "tester"], ["body", "hello room"], ["created_at", "2026-06-20 15:33:23.718410"], ["updated_at", "2026-06-20 15:33:23.718410"]]
+  Rendering ChatMessageComponent
+  Rendered ChatMessageComponent (Duration: 0.1ms | GC: 0.0ms)
+[ActionCable] Broadcasting to chat:lobby: "<turbo-stream action=\"append\" target=\"chat-messages-lobby\"><template><div id=\"chat_message_1\" class=\"msg\" data-testid=\"message\"><span class=\"author\">tester</span><span class=\"body\">hello room</span></div></template></turbo-stream>"
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  Rendering ChatComposerComponent
+  Rendered ChatComposerComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 2ms (Views: 0.0ms | ActiveRecord: 0.2ms (1 query, 0 cached) | GC: 0.0ms)
+  [1m[36mChatMessage Exists? (0.1ms)[0m  [1m[34mSELECT 1 AS one FROM "chat_messages" WHERE "chat_messages"."room" = ? AND "chat_messages"."body" = ? LIMIT ?[0m  [["room", "lobby"], ["body", "hello room"], ["LIMIT", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mChatMessage Create (0.1ms)[0m  [1m[32mINSERT INTO "chat_messages" ("room", "author", "body", "created_at", "updated_at") VALUES (?, ?, ?, ?, ?) RETURNING "id"[0m  [["room", "lobby"], ["author", "seed"], ["body", "earlier message"], ["created_at", "2026-06-20 15:33:23.723354"], ["updated_at", "2026-06-20 15:33:23.723354"]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+Started GET "/chat" for 127.0.0.1 at 2026-06-20 17:33:24 +0200
+Processing by DemosController#chat as HTML
+  [1m[36mChatMessage Load (0.2ms)[0m  [1m[34mSELECT "chat_messages".* FROM "chat_messages" WHERE "chat_messages"."room" = ? ORDER BY "chat_messages"."created_at" DESC, "chat_messages"."id" DESC LIMIT ?[0m  [["room", "lobby"], ["LIMIT", 50]]
+  Rendering ChatRoomComponent
+  Rendered ChatRoomComponent (Duration: 0.6ms | GC: 0.0ms)
+  Rendering layout layouts/application.html.erb
+  Rendering html template within layouts/application
+  Rendered html template within layouts/application (Duration: 0.0ms | GC: 0.0ms)
+  Rendered layout layouts/application.html.erb (Duration: 2.3ms | GC: 0.0ms)
+Completed 200 OK in 29ms (Views: 24.2ms | ActiveRecord: 0.2ms (1 query, 0 cached) | GC: 0.2ms)
+  [1m[36mTRANSACTION (0.2ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started GET "/chat" for 127.0.0.1 at 2026-06-20 17:33:24 +0200
+Processing by DemosController#chat as HTML
+  [1m[36mChatMessage Load (0.1ms)[0m  [1m[34mSELECT "chat_messages".* FROM "chat_messages" WHERE "chat_messages"."room" = ? ORDER BY "chat_messages"."created_at" DESC, "chat_messages"."id" DESC LIMIT ?[0m  [["room", "lobby"], ["LIMIT", 50]]
+  Rendering ChatRoomComponent
+  Rendered ChatRoomComponent (Duration: 0.2ms | GC: 0.0ms)
+  Rendering layout layouts/application.html.erb
+  Rendering html template within layouts/application
+  Rendered html template within layouts/application (Duration: 0.0ms | GC: 0.0ms)
+  Rendered layout layouts/application.html.erb (Duration: 0.2ms | GC: 0.0ms)
+Completed 200 OK in 1ms (Views: 0.3ms | ActiveRecord: 0.1ms (1 query, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:25 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ2hhdENvbXBvc2VyQ29tcG9uZW50IiwicyI6eyJyb29tIjoibG9iYnkiLCJhdXRob3IiOiJhbm9uIn19LCJwdXIiOiJwaGxleC1yZWFjdGl2ZS9pZGVudGl0eSJ9fQ==--96c0726b084748aa9d2ae8cb088859809a74e82a", "act" => "send_message", "params" => {"body" => "hello reactive world"}}
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mChatMessage Create (0.2ms)[0m  [1m[32mINSERT INTO "chat_messages" ("room", "author", "body", "created_at", "updated_at") VALUES (?, ?, ?, ?, ?) RETURNING "id"[0m  [["room", "lobby"], ["author", "anon"], ["body", "hello reactive world"], ["created_at", "2026-06-20 15:33:25.100590"], ["updated_at", "2026-06-20 15:33:25.100590"]]
+  Rendering ChatMessageComponent
+  Rendered ChatMessageComponent (Duration: 0.1ms | GC: 0.0ms)
+[ActionCable] Broadcasting to chat:lobby: "<turbo-stream action=\"append\" target=\"chat-messages-lobby\"><template><div id=\"chat_message_1\" class=\"msg\" data-testid=\"message\"><span class=\"author\">anon</span><span class=\"body\">hello reactive world</span></div></template></turbo-stream>"
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  Rendering ChatComposerComponent
+  Rendered ChatComposerComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 3ms (Views: 0.1ms | ActiveRecord: 0.2ms (1 query, 0 cached) | GC: 0.0ms)
+  [1m[36mChatMessage Exists? (0.1ms)[0m  [1m[34mSELECT 1 AS one FROM "chat_messages" WHERE "chat_messages"."body" = ? LIMIT ?[0m  [["body", "hello reactive world"], ["LIMIT", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:25 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJzIjp7ImNvdW50Ijo5fSwiYyI6IkNvdW50ZXJDb21wb25lbnQifSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--105717bf55b99e67171938fce1f89c1b9bf7568d", "act" => "set", "params" => {"count" => "0"}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.3ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 1ms (Views: 0.0ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:25 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJzIjp7ImNvdW50IjoxfSwiYyI6IkNvdW50ZXJDb21wb25lbnQifSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--61edd2520a2d540f5ab75a13eb44fba9b0b04da9", "act" => "destroy_everything", "params" => {}}
+Completed 403 Forbidden in 0ms (ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:25 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJzIjp7ImNvdW50IjoxfSwiYyI6IkNvdW50ZXJDb21wb25lbnQifSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--61edd2520a2d540f5ab75a13eb44fba9b0b04da9", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 3ms (Views: 0.0ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Create (0.3ms)[0m  [1m[32mINSERT INTO "todos" ("title", "done", "created_at", "updated_at") VALUES (?, ?, ?, ?) RETURNING "id"[0m  [["title", "write specs"], ["done", 0], ["created_at", "2026-06-20 15:33:25.209577"], ["updated_at", "2026-06-20 15:33:25.209577"]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:25 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJnaWQiOiJnaWQ6Ly9kdW1teS9Ub2RvLzEiLCJjIjoiVG9kb0l0ZW1Db21wb25lbnQifSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--1f08b5294852049cdd10aa2752ffd0bbb0eec9ba", "act" => "toggle", "params" => {}}
+  [1m[36mTodo Load (0.1ms)[0m  [1m[34mSELECT "todos".* FROM "todos" WHERE "todos"."id" = ? LIMIT ?[0m  [["id", 1], ["LIMIT", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Update (0.1ms)[0m  [1m[33mUPDATE "todos" SET "done" = ?, "updated_at" = ? WHERE "todos"."id" = ?[0m  [["done", 1], ["updated_at", "2026-06-20 15:33:25.222258"], ["id", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  Rendering TodoItemComponent
+  Rendered TodoItemComponent (Duration: 1.0ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 18ms (Views: 0.0ms | ActiveRecord: 0.2ms (2 queries, 0 cached) | GC: 0.0ms)
+  [1m[36mTodo Load (0.1ms)[0m  [1m[34mSELECT "todos".* FROM "todos" WHERE "todos"."id" = ? LIMIT ?[0m  [["id", 1], ["LIMIT", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Create (0.1ms)[0m  [1m[32mINSERT INTO "todos" ("title", "done", "created_at", "updated_at") VALUES (?, ?, ?, ?) RETURNING "id"[0m  [["title", "write specs"], ["done", 0], ["created_at", "2026-06-20 15:33:25.238217"], ["updated_at", "2026-06-20 15:33:25.238217"]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  [1m[36mTRANSACTION (0.5ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Destroy (2.5ms)[0m  [1m[31mDELETE FROM "todos" WHERE "todos"."id" = ?[0m  [["id", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:25 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJnaWQiOiJnaWQ6Ly9kdW1teS9Ub2RvLzEiLCJjIjoiVG9kb0l0ZW1Db21wb25lbnQifSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--1f08b5294852049cdd10aa2752ffd0bbb0eec9ba", "act" => "toggle", "params" => {}}
+  [1m[36mTodo Load (0.0ms)[0m  [1m[34mSELECT "todos".* FROM "todos" WHERE "todos"."id" = ? LIMIT ?[0m  [["id", 1], ["LIMIT", 1]]
+Completed 404 Not Found in 8ms (ActiveRecord: 0.0ms (1 query, 0 cached) | GC: 0.0ms)
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:25 +0200
+Processing by Phlex::Reactive::ActionsController#create as HTML
+  Parameters: {"token" => "not.a.real.token", "act" => "increment"}
+Completed 400 Bad Request in 0ms (ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Create (0.1ms)[0m  [1m[32mINSERT INTO "todos" ("title", "done", "created_at", "updated_at") VALUES (?, ?, ?, ?) RETURNING "id"[0m  [["title", "old name"], ["done", 0], ["created_at", "2026-06-20 15:33:25.260143"], ["updated_at", "2026-06-20 15:33:25.260143"]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+Started GET "/todos" for 127.0.0.1 at 2026-06-20 17:33:25 +0200
+Processing by DemosController#todos as HTML
+  Rendering TodoListComponent
+  [1m[36mTodo Load (0.1ms)[0m  [1m[34mSELECT "todos".* FROM "todos" ORDER BY "todos"."created_at" ASC, "todos"."id" ASC[0m
+  Rendered TodoListComponent (Duration: 11.1ms | GC: 0.0ms)
+  Rendering layout layouts/application.html.erb
+  Rendering html template within layouts/application
+  Rendered html template within layouts/application (Duration: 0.8ms | GC: 0.0ms)
+  Rendered layout layouts/application.html.erb (Duration: 2.0ms | GC: 0.0ms)
+Completed 200 OK in 15ms (Views: 2.3ms | ActiveRecord: 0.1ms (1 query, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:25 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiVG9kb0l0ZW1Db21wb25lbnQiLCJnaWQiOiJnaWQ6Ly9kdW1teS9Ub2RvLzEifSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--7117f0a5f2a1530b5f8e33f6b6c3c4926cdeb462", "act" => "rename", "params" => {"title" => "new name"}}
+  [1m[36mTodo Load (0.1ms)[0m  [1m[34mSELECT "todos".* FROM "todos" WHERE "todos"."id" = ? LIMIT ?[0m  [["id", 1], ["LIMIT", 1]]
+  [1m[36mTRANSACTION (0.2ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Update (0.3ms)[0m  [1m[33mUPDATE "todos" SET "title" = ?, "updated_at" = ? WHERE "todos"."id" = ?[0m  [["title", "new name"], ["updated_at", "2026-06-20 15:33:25.376307"], ["id", 1]]
+  [1m[36mTRANSACTION (0.2ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  Rendering TodoItemComponent
+  Rendered TodoItemComponent (Duration: 1.0ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 11ms (Views: 4.5ms | ActiveRecord: 0.6ms (2 queries, 0 cached) | GC: 0.0ms)
+  [1m[36mTodo Load (1.3ms)[0m  [1m[34mSELECT "todos".* FROM "todos" WHERE "todos"."id" = ? LIMIT ?[0m  [["id", 1], ["LIMIT", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Create (0.2ms)[0m  [1m[32mINSERT INTO "todos" ("title", "done", "created_at", "updated_at") VALUES (?, ?, ?, ?) RETURNING "id"[0m  [["title", "existing task"], ["done", 0], ["created_at", "2026-06-20 15:33:25.439680"], ["updated_at", "2026-06-20 15:33:25.439680"]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+Started GET "/todos" for 127.0.0.1 at 2026-06-20 17:33:25 +0200
+Processing by DemosController#todos as HTML
+  Rendering TodoListComponent
+  [1m[36mTodo Load (0.1ms)[0m  [1m[34mSELECT "todos".* FROM "todos" ORDER BY "todos"."created_at" ASC, "todos"."id" ASC[0m
+  Rendered TodoListComponent (Duration: 1.0ms | GC: 0.0ms)
+  Rendering layout layouts/application.html.erb
+  Rendering html template within layouts/application
+  Rendered html template within layouts/application (Duration: 0.0ms | GC: 0.0ms)
+  Rendered layout layouts/application.html.erb (Duration: 0.2ms | GC: 0.0ms)
+Completed 200 OK in 2ms (Views: 0.4ms | ActiveRecord: 0.0ms (1 query, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:25 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiVG9kb0xpc3RDb21wb25lbnQiLCJzIjp7ImJ1aWxkX3Rva2VuIjoibGlzdCJ9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--7f798717e9fb8580da93649942248c07463a8cb0", "act" => "add", "params" => {"title" => "buy oat milk"}}
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Create (0.2ms)[0m  [1m[32mINSERT INTO "todos" ("title", "done", "created_at", "updated_at") VALUES (?, ?, ?, ?) RETURNING "id"[0m  [["title", "buy oat milk"], ["done", 0], ["created_at", "2026-06-20 15:33:25.561076"], ["updated_at", "2026-06-20 15:33:25.561076"]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  Rendering TodoListComponent
+  [1m[36mTodo Load (0.0ms)[0m  [1m[34mSELECT "todos".* FROM "todos" ORDER BY "todos"."created_at" ASC, "todos"."id" ASC[0m
+  Rendered TodoListComponent (Duration: 1.4ms | GC: 0.4ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 6ms (Views: 0.2ms | ActiveRecord: 0.3ms (2 queries, 0 cached) | GC: 0.4ms)
+  [1m[36mTodo Count (0.1ms)[0m  [1m[34mSELECT COUNT(*) FROM "todos"[0m
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:25 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiVG9kb0l0ZW1Db21wb25lbnQiLCJnaWQiOiJnaWQ6Ly9kdW1teS9Ub2RvLzEifSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--7117f0a5f2a1530b5f8e33f6b6c3c4926cdeb462", "act" => "toggle", "params" => {"title" => "existing task"}}
+  [1m[36mTodo Load (0.1ms)[0m  [1m[34mSELECT "todos".* FROM "todos" WHERE "todos"."id" = ? LIMIT ?[0m  [["id", 1], ["LIMIT", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mSAVEPOINT active_record_1[0m
+  [1m[36mTodo Update (0.1ms)[0m  [1m[33mUPDATE "todos" SET "done" = ?, "updated_at" = ? WHERE "todos"."id" = ?[0m  [["done", 1], ["updated_at", "2026-06-20 15:33:25.661433"], ["id", 1]]
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[35mRELEASE SAVEPOINT active_record_1[0m
+  Rendering TodoItemComponent
+  Rendered TodoItemComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 5ms (Views: 0.0ms | ActiveRecord: 0.2ms (2 queries, 0 cached) | GC: 0.0ms)
+  [1m[36mTRANSACTION (0.1ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started GET "/counter" for 127.0.0.1 at 2026-06-20 17:33:25 +0200
+Processing by DemosController#counter as HTML
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.2ms | GC: 0.0ms)
+  Rendering layout layouts/application.html.erb
+  Rendering html template within layouts/application
+  Rendered html template within layouts/application (Duration: 0.0ms | GC: 0.0ms)
+  Rendered layout layouts/application.html.erb (Duration: 0.3ms | GC: 0.0ms)
+Completed 200 OK in 1ms (Views: 0.4ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:25 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjB9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--83d154872231af8ca0c7699bebba4624b4d1f8b4", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 1ms (Views: 0.0ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:25 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjF9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--418f4260a79edfab57c5d059130b2a7c24ce315a", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 3ms (Views: 0.2ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.6ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:25 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjJ9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--ef80fddcbb08918c987a100f0556ad452c603050", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.8ms | GC: 0.4ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 3ms (Views: 0.1ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.5ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:26 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjN9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--87fdf36ac0fafeec1e3cfd8e6bf25308e4afe797", "act" => "decrement", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 2ms (Views: 0.1ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.3ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:26 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjJ9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--ef80fddcbb08918c987a100f0556ad452c603050", "act" => "set", "params" => {"count" => 0}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 1ms (Views: 0.0ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
+  [1m[36mTRANSACTION (0.0ms)[0m  [1m[36mBEGIN deferred TRANSACTION[0m
+Started GET "/counter" for 127.0.0.1 at 2026-06-20 17:33:26 +0200
+Processing by DemosController#counter as HTML
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering layout layouts/application.html.erb
+  Rendering html template within layouts/application
+  Rendered html template within layouts/application (Duration: 0.0ms | GC: 0.0ms)
+  Rendered layout layouts/application.html.erb (Duration: 2.3ms | GC: 0.0ms)
+Completed 200 OK in 3ms (Views: 2.6ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:26 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjB9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--83d154872231af8ca0c7699bebba4624b4d1f8b4", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.3ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 2ms (Views: 0.0ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:26 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjF9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--418f4260a79edfab57c5d059130b2a7c24ce315a", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.7ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 2ms (Views: 0.1ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:26 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjJ9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--ef80fddcbb08918c987a100f0556ad452c603050", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 1.4ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 2ms (Views: 0.0ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:26 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjN9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--87fdf36ac0fafeec1e3cfd8e6bf25308e4afe797", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.4ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 1ms (Views: 0.0ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.2ms)
+Started POST "/reactive/actions" for 127.0.0.1 at 2026-06-20 17:33:26 +0200
+Processing by Phlex::Reactive::ActionsController#create as TURBO_STREAM
+  Parameters: {"token" => "eyJfcmFpbHMiOnsiZGF0YSI6eyJjIjoiQ291bnRlckNvbXBvbmVudCIsInMiOnsiY291bnQiOjR9fSwicHVyIjoicGhsZXgtcmVhY3RpdmUvaWRlbnRpdHkifX0=--83f495e577e4415b438d295f8111c2e14e5cce84", "act" => "increment", "params" => {}}
+  Rendering CounterComponent
+  Rendered CounterComponent (Duration: 0.1ms | GC: 0.0ms)
+  Rendering html template
+  Rendered html template (Duration: 0.0ms | GC: 0.0ms)
+Completed 200 OK in 1ms (Views: 0.1ms | ActiveRecord: 0.0ms (0 queries, 0 cached) | GC: 0.0ms)
+  [1m[36mTRANSACTION (0.1ms)[0m  [1m[31mROLLBACK TRANSACTION[0m
