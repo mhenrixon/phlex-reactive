@@ -1,0 +1,147 @@
+# frozen_string_literal: true
+
+module Phlex
+  module Reactive
+    # Streamable gives a self-contained Phlex component the ability to render
+    # ITSELF as a Turbo Stream and to broadcast itself over a stream. Every
+    # streamable component must implement `#id` returning a stable DOM id —
+    # that id is the Turbo Stream target, so you never hand-pick targets.
+    #
+    # Class methods (use in controllers):
+    #   render turbo_stream: Counter.replace(counter)
+    #   render turbo_stream: [Row.append(target: "items", model: @item),
+    #                         Totals.update(@order)]
+    #
+    # Broadcast methods (use in models/jobs/actions):
+    #   Counter.broadcast_replace_to(counter, model: counter)
+    #   Row.broadcast_append_to(@list, target: "items", model: @item)
+    #
+    # Convention: the `id` you set on the root element in `view_template` must
+    # equal what `#id` returns, so replace/broadcast_replace target it.
+    #
+    # NOTE: we intentionally do NOT include Turbo::Streams::ActionHelper — it
+    # pulls in ActionView::Helpers::TagHelper, which overrides Phlex's internal
+    # `tag` method and breaks rendering. We use Turbo::Streams::TagBuilder
+    # directly instead.
+    module Streamable
+      extend ActiveSupport::Concern
+
+      class_methods do
+        # The keyword the positional model maps to in `initialize`. Convention:
+        # demodulized, underscored class name (Invoice -> :invoice,
+        # InvoiceItem -> :invoice_item). Override when it differs.
+        def model_param_name
+          name.demodulize.underscore.to_sym
+        end
+
+        def component_args(model, options)
+          { model_param_name => model }.merge(options)
+        end
+
+        def turbo_stream_builder
+          ::Turbo::Streams::TagBuilder.new(renderer)
+        end
+
+        # Render a component to HTML with a full Rails view context. Routing
+        # through the controller renderer keeps dom_id/url_for/t() working
+        # during a re-render or broadcast.
+        def render_component(component)
+          renderer.render(component, layout: false)
+        end
+
+        def replace(model = nil, **options)
+          component = build(model, options)
+          turbo_stream_builder.replace(component.id, html: render_component(component))
+        end
+
+        def update(model = nil, **options)
+          component = build(model, options)
+          turbo_stream_builder.update(component.id, html: render_component(component))
+        end
+
+        def append(target:, model: nil, **options)
+          component = build(model, options)
+          turbo_stream_builder.append(target, html: render_component(component))
+        end
+
+        def prepend(target:, model: nil, **options)
+          component = build(model, options)
+          turbo_stream_builder.prepend(target, html: render_component(component))
+        end
+
+        def remove(model = nil, **options)
+          component = build(model, options)
+          turbo_stream_builder.remove(component.id)
+        end
+
+        # --- Broadcasts (server -> client over the stream transport) ---
+        # With pgbus installed, Turbo::StreamsChannel broadcasts route over
+        # Postgres SSE instead of Action Cable, transactionally.
+        #
+        # Pass RAW key parts as *streamables (e.g. broadcast_append_to(@list, :items))
+        # or (model, :symbol). Do NOT pass a pre-built stream key string — the
+        # broadcaster builds the key itself, and double-keying can trip the
+        # transport's separator guard.
+
+        def broadcast_replace_to(*streamables, model: nil, **options)
+          component = build(model, options)
+          ::Turbo::StreamsChannel.broadcast_replace_to(
+            *streamables, target: component.id, html: render_component(component)
+          )
+        end
+
+        def broadcast_update_to(*streamables, model: nil, **options)
+          component = build(model, options)
+          ::Turbo::StreamsChannel.broadcast_update_to(
+            *streamables, target: component.id, html: render_component(component)
+          )
+        end
+
+        def broadcast_append_to(*streamables, target:, model: nil, **options)
+          component = build(model, options)
+          ::Turbo::StreamsChannel.broadcast_append_to(
+            *streamables, target:, html: render_component(component)
+          )
+        end
+
+        def broadcast_prepend_to(*streamables, target:, model: nil, **options)
+          component = build(model, options)
+          ::Turbo::StreamsChannel.broadcast_prepend_to(
+            *streamables, target:, html: render_component(component)
+          )
+        end
+
+        def broadcast_remove_to(*streamables, model: nil, **options)
+          component = build(model, options)
+          ::Turbo::StreamsChannel.broadcast_remove_to(*streamables, target: component.id)
+        end
+
+        private
+
+        def build(model, options)
+          new(**(model ? component_args(model, options) : options))
+        end
+
+        def renderer
+          Phlex::Reactive.renderer
+        end
+      end
+
+      # Required: the stable DOM id used as the Turbo Stream target. It MUST
+      # match the id set on the component's root element in `view_template`.
+      def id
+        raise NotImplementedError, "#{self.class} must implement #id for Turbo Stream targeting"
+      end
+
+      # Render THIS already-built instance as a replace stream (used by the
+      # reactive action endpoint after an action mutated state).
+      def to_stream_replace
+        self.class.turbo_stream_builder.replace(id, html: self.class.render_component(self))
+      end
+
+      def to_stream_update
+        self.class.turbo_stream_builder.update(id, html: self.class.render_component(self))
+      end
+    end
+  end
+end
