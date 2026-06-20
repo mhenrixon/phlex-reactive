@@ -1,8 +1,14 @@
 # phlex-reactive
 
+[![CI](https://github.com/mhenrixon/phlex-reactive/actions/workflows/main.yml/badge.svg)](https://github.com/mhenrixon/phlex-reactive/actions/workflows/main.yml)
+[![Gem Version](https://img.shields.io/gem/v/phlex-reactive)](https://rubygems.org/gems/phlex-reactive)
+[![Docs](https://img.shields.io/badge/docs-mhenrixon.github.io-blue)](https://mhenrixon.github.io/phlex-reactive)
+
 **Reactive [Phlex](https://www.phlex.fun) components for Rails — Livewire-style
 actions and live cross-tab updates, without writing Stimulus controllers or
 hand-picking Turbo Stream targets.**
+
+📖 **[Full documentation](https://mhenrixon.github.io/phlex-reactive)**
 
 ```ruby
 class Counter < ApplicationComponent
