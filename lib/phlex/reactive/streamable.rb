@@ -38,8 +38,15 @@ module Phlex
           { model_param_name => model }.merge(options)
         end
 
+        # Turbo::Streams::TagBuilder needs a real VIEW CONTEXT (it calls
+        # `.formats` on it), not a controller class. Build one off-request from
+        # the configured renderer controller. Memoized per class.
         def turbo_stream_builder
-          ::Turbo::Streams::TagBuilder.new(renderer)
+          ::Turbo::Streams::TagBuilder.new(turbo_view_context)
+        end
+
+        def turbo_view_context
+          renderer.new.view_context
         end
 
         # Render a component to HTML with a full Rails view context. Routing
@@ -131,6 +138,15 @@ module Phlex
       # match the id set on the component's root element in `view_template`.
       def id
         raise NotImplementedError, "#{self.class} must implement #id for Turbo Stream targeting"
+      end
+
+      # Render-context-free dom_id, safe to use inside `#id`. The streamable
+      # machinery calls `#id` BEFORE rendering, so Phlex's render-time `dom_id`
+      # helper would raise HelpersCalledBeforeRenderError. This delegates to
+      # ActionView::RecordIdentifier, which works anywhere — so
+      # `def id = dom_id(@todo)` is safe.
+      def dom_id(record, prefix = nil)
+        ::ActionView::RecordIdentifier.dom_id(record, prefix)
       end
 
       # Render THIS already-built instance as a replace stream (used by the

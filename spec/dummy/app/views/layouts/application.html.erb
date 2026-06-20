@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>phlex-reactive dummy</title>
+    <meta name="csrf-token" content="<%= form_authenticity_token %>">
+    <%= csrf_meta_tags %>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "@hotwired/turbo-rails": "/vendor/turbo.js",
+          "@hotwired/stimulus": "/vendor/stimulus.js",
+          "reactive_controller": "/vendor/reactive_controller.js"
+        }
+      }
+    </script>
+
+    <script type="module">
+      import "@hotwired/turbo-rails"
+      import { Application } from "@hotwired/stimulus"
+      import ReactiveController from "reactive_controller"
+
+      const application = Application.start()
+      // Register eagerly so a click right after load is never missed.
+      application.register("reactive", ReactiveController)
+      window.Stimulus = application
+    </script>
+  </head>
+  <body>
+    <%= yield %>
+  </body>
+</html>

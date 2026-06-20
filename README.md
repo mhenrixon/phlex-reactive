@@ -234,6 +234,19 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 Param types: `:string` (default), `:integer`, `:float`, `:boolean`. Anything not
 in the schema is dropped before reaching your method.
 
+**Combining `on(...)` / `reactive_attrs` with your own attributes.** Both return
+a hash that includes a `data:` key. Spreading them *and* passing another `data:`
+(or `class:`, `id:`) would clobber it — use Phlex's `mix` to deep-merge:
+
+```ruby
+# ✅ merges cleanly (data-action survives, your data-testid/class are added)
+button(**mix(on(:increment), class: "btn", data: { testid: "inc" })) { "+" }
+div(**mix(reactive_attrs, id:, class: "card")) { ... }
+
+# ❌ the extra data: overwrites on()'s data:, so the action never binds
+button(**on(:increment), data: { testid: "inc" }) { "+" }
+```
+
 ### Configuration (`config/initializers/phlex_reactive.rb`)
 
 ```ruby
