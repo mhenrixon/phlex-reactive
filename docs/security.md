@@ -1,3 +1,8 @@
+---
+title: Security
+nav_order: 4
+---
+
 # Security & threat model
 
 Every reactive action is a browser-reachable RPC. phlex-reactive makes the safe

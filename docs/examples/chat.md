@@ -1,3 +1,9 @@
+---
+title: Cross-tab chat
+parent: Examples
+nav_order: 2
+---
+
 # Example: cross-tab chat (the showcase)
 
 A live chat where a message typed in one tab appears instantly in every other

@@ -1,3 +1,9 @@
+---
+title: Inline edit
+parent: Examples
+nav_order: 4
+---
+
 # Example: inline edit (show ↔ edit)
 
 The classic "click to edit a field in place" pattern. In plain Hotwire this is a

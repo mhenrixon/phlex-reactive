@@ -1,3 +1,8 @@
+---
+title: Broadcasting
+nav_order: 5
+---
+
 # Broadcasting & live updates
 
 Reactive *actions* update the acting user's screen. **Broadcasts** update

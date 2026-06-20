@@ -1,3 +1,8 @@
+---
+title: Architecture
+nav_order: 3
+---
+
 # Architecture & mental model
 
 phlex-reactive is small. Understanding it fully takes five minutes.

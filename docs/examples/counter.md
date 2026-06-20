@@ -1,3 +1,9 @@
+---
+title: Counter
+parent: Examples
+nav_order: 1
+---
+
 # Example: counter (the smallest reactive component)
 
 A record-less counter — the minimal thing that demonstrates client → server →

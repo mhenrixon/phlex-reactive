@@ -10,3 +10,8 @@
 Gemfile.lock
 node_modules/
 .DS_Store
+
+# docs site build
+docs/_site/
+docs/.jekyll-cache/
+docs/Gemfile.lock

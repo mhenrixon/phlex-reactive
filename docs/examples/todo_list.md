@@ -1,3 +1,9 @@
+---
+title: Live todo list
+parent: Examples
+nav_order: 3
+---
+
 # Example: live todo list
 
 Per-row reactive components with add / toggle / rename / delete, broadcasting on

@@ -1,0 +1,165 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Test before release
+    strategy:
+      fail-fast: true
+      matrix:
+        ruby:
+          - "3.3"
+          - "3.4"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+      - run: bundle exec rspec spec/phlex spec/requests
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      gem_name: ${{ steps.build.outputs.gem_name }}
+      version: ${{ steps.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+
+      - name: Verify tag matches gem version
+        run: |
+          GEM_VERSION=$(ruby -r ./lib/phlex/reactive/version -e "puts Phlex::Reactive::VERSION")
+          TAG_VERSION="${{ github.event.release.tag_name }}"
+          TAG_VERSION="${TAG_VERSION#v}"
+          if [ "$GEM_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match gem version ($GEM_VERSION)"
+            exit 1
+          fi
+
+      - name: Build gem
+        id: build
+        run: |
+          gem build phlex-reactive.gemspec --strict
+          GEM_NAME=$(ls phlex-reactive-*.gem)
+          echo "gem_name=$GEM_NAME" >> "$GITHUB_OUTPUT"
+          TAG_VERSION="${{ github.event.release.tag_name }}"
+          echo "version=${TAG_VERSION#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify gem contents
+        run: |
+          GEM_NAME=$(ls phlex-reactive-*.gem)
+          gem unpack "$GEM_NAME" --target /tmp/gem-verify
+
+          echo "=== File count ==="
+          find /tmp/gem-verify -type f | wc -l
+
+          echo "=== Checking for unwanted files ==="
+          UNWANTED=$(find /tmp/gem-verify \( -name ".git*" -o -name "*.gemspec" \) -print)
+          if [ -n "$UNWANTED" ]; then
+            echo "::error::Unwanted files found in gem:"
+            echo "$UNWANTED"
+            exit 1
+          fi
+
+          UNWANTED_DIRS=$(find /tmp/gem-verify -type d \( -name "spec" -o -name "test" \) -print)
+          if [ -n "$UNWANTED_DIRS" ]; then
+            echo "::error::Unwanted directories found in gem:"
+            echo "$UNWANTED_DIRS"
+            exit 1
+          fi
+
+          echo "No unwanted files found"
+
+      - name: Generate checksums
+        run: |
+          GEM_NAME=$(ls phlex-reactive-*.gem)
+          sha256sum "$GEM_NAME" > "$GEM_NAME.sha256"
+          sha512sum "$GEM_NAME" > "$GEM_NAME.sha512"
+          echo "=== SHA256 ===" && cat "$GEM_NAME.sha256"
+          echo "=== SHA512 ===" && cat "$GEM_NAME.sha512"
+
+      - name: Upload gem artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem
+          path: |
+            phlex-reactive-*.gem
+            phlex-reactive-*.gem.sha256
+            phlex-reactive-*.gem.sha512
+          if-no-files-found: error
+
+  publish-rubygems:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: rubygems
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: gem
+
+      - name: Verify checksums
+        run: |
+          sha256sum -c phlex-reactive-*.gem.sha256
+          sha512sum -c phlex-reactive-*.gem.sha512
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+
+      - name: Configure RubyGems trusted publishing credentials
+        uses: rubygems/configure-rubygems-credentials@v1.0.0
+
+      - name: Push to RubyGems with Sigstore attestation
+        run: |
+          GEM_NAME=$(ls phlex-reactive-*.gem)
+          gem exec sigstore-cli sign "$GEM_NAME" \
+            --bundle "$GEM_NAME.sigstore.json"
+          gem push "$GEM_NAME" --attestation "$GEM_NAME.sigstore.json"
+
+      - name: Upload Sigstore bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: sigstore
+          path: phlex-reactive-*.gem.sigstore.json
+          if-no-files-found: error
+
+  upload-release-assets:
+    needs: [build, publish-rubygems]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: gem
+      - uses: actions/download-artifact@v4
+        with:
+          name: sigstore
+      - name: Upload assets to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          GEM_NAME="${{ needs.build.outputs.gem_name }}"
+          gh release upload "${{ github.event.release.tag_name }}" \
+            "$GEM_NAME" \
+            "$GEM_NAME.sha256" \
+            "$GEM_NAME.sha512" \
+            "$GEM_NAME.sigstore.json" \
+            --repo "${{ github.repository }}"

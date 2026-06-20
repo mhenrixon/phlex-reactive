@@ -1,3 +1,9 @@
+---
+title: Notifications
+parent: Examples
+nav_order: 5
+---
+
 # Example: notifications / live badges (pure broadcast, no client action)
 
 Not every reactive component needs a client action. Sometimes the server just

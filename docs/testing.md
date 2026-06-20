@@ -1,3 +1,8 @@
+---
+title: Testing
+nav_order: 7
+---
+
 # Testing reactive components
 
 Reactive components are plain Ruby objects with a few extra class methods, so

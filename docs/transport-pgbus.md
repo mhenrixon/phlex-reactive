@@ -1,3 +1,8 @@
+---
+title: Transport (pgbus)
+nav_order: 6
+---
+
 # Transport: pgbus vs Action Cable
 
 phlex-reactive's *client → server* half is a plain HTTP POST — nothing special.
@@ -84,3 +89,10 @@ phlex-reactive components.
 | Postgres, want no Redis, want reliability | **pgbus** |
 | Transactional UI correctness (status flows, payments) | **pgbus** (durable) |
 | Reconnect-safe chat / live feeds | **pgbus** (durable) |
+
+## Roadmap
+
+A few pgbus enhancements would make reactive UX even smoother — tracked as
+issues on pgbus (e.g. per-connection actor-echo suppression, render-and-
+broadcast, optimistic-UI revision stamping, connection-driven presence). See
+[mhenrixon/pgbus issues labelled `streaming`](https://github.com/mhenrixon/pgbus/issues?q=is%3Aissue+label%3Astreaming).
