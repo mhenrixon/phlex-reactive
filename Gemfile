@@ -32,21 +32,19 @@ group :development, :test do
   # pgbus is NOT a runtime dependency (it stays out of the gemspec — broadcasts
   # route through Turbo::StreamsChannel, which pgbus patches, so phlex-reactive
   # works on Action Cable OR pgbus). We pull it in here ONLY to develop and test
-  # against the unreleased reactive primitives (pgbus #173:
-  # exclude:/broadcast_render/auto-presence/typed-events/coalescing/msg_id).
-  # Switch to the released gem once those ship.
+  # against pgbus's reactive Streams primitives (exclude:/broadcast_render/
+  # auto-presence/typed-events/coalescing/msg_id), which shipped in pgbus 0.9.2.
   #
-  # Default: git `main` (works in CI / for anyone cloning). For fast local
-  # iteration against your own checkout — and so it doesn't fight whatever
-  # branch you have checked out — set PGBUS_PATH:
+  # For fast local iteration against your own checkout, set PGBUS_PATH:
   #   PGBUS_PATH=~/Code/mhenrixon/pgbus bundle install
+  #
   # pgbus requires Ruby >= 3.3, but phlex-reactive's runtime supports 3.2
   # (it's dev-only here). Skip it on 3.2 so the 3.2 CI matrix job still resolves.
   if Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("3.3")
     if (pgbus_path = ENV["PGBUS_PATH"])
       gem "pgbus", path: pgbus_path, require: false
     else
-      gem "pgbus", github: "mhenrixon/pgbus", branch: "main", require: false
+      gem "pgbus", ">= 0.9.2", require: false
     end
     gem "pg", "~> 1.5", require: false # pgbus needs PostgreSQL
   end
