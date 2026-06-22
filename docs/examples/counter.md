@@ -1,4 +1,5 @@
 ---
+layout: default
 title: Counter
 parent: Examples
 nav_order: 1

@@ -1,4 +1,5 @@
 ---
+layout: default
 title: Notifications
 parent: Examples
 nav_order: 5

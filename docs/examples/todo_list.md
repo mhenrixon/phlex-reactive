@@ -1,4 +1,5 @@
 ---
+layout: default
 title: Live todo list
 parent: Examples
 nav_order: 3

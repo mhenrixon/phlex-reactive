@@ -1,4 +1,5 @@
 ---
+layout: default
 title: Inline edit
 parent: Examples
 nav_order: 4

@@ -1,4 +1,5 @@
 ---
+layout: default
 title: Cross-tab chat
 parent: Examples
 nav_order: 2

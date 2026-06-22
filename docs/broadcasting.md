@@ -1,4 +1,5 @@
 ---
+layout: default
 title: Broadcasting
 nav_order: 5
 ---

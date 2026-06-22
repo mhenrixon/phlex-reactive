@@ -1,4 +1,5 @@
 ---
+layout: default
 title: Transport (pgbus)
 nav_order: 6
 ---
