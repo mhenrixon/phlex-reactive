@@ -40,10 +40,14 @@ group :development, :test do
   # iteration against your own checkout — and so it doesn't fight whatever
   # branch you have checked out — set PGBUS_PATH:
   #   PGBUS_PATH=~/Code/mhenrixon/pgbus bundle install
-  if (pgbus_path = ENV["PGBUS_PATH"])
-    gem "pgbus", path: pgbus_path, require: false
-  else
-    gem "pgbus", github: "mhenrixon/pgbus", branch: "main", require: false
+  # pgbus requires Ruby >= 3.3, but phlex-reactive's runtime supports 3.2
+  # (it's dev-only here). Skip it on 3.2 so the 3.2 CI matrix job still resolves.
+  if Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("3.3")
+    if (pgbus_path = ENV["PGBUS_PATH"])
+      gem "pgbus", path: pgbus_path, require: false
+    else
+      gem "pgbus", github: "mhenrixon/pgbus", branch: "main", require: false
+    end
+    gem "pg", "~> 1.5", require: false # pgbus needs PostgreSQL
   end
-  gem "pg", "~> 1.5", require: false # pgbus needs PostgreSQL
 end
