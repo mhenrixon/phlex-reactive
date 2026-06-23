@@ -15,3 +15,10 @@ node_modules/
 docs/_site/
 docs/.jekyll-cache/
 docs/Gemfile.lock
+
+# dummy app runtime artifacts
+spec/dummy/log/
+spec/dummy/tmp/
+spec/dummy/db/*.sqlite3
+.rspec_status
+
