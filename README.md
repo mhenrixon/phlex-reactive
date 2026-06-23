@@ -81,9 +81,19 @@ gem "phlex-reactive"
 bundle install
 ```
 
-That's it for **importmap** apps — the engine mounts the action endpoint at
-`/reactive/actions` and auto-pins (and preloads) the client runtime. Register
-the controller eagerly so a click immediately after load is never missed:
+Then run the installer — it registers the client controller and writes a config
+initializer:
+
+```bash
+bin/rails generate phlex:reactive:install
+```
+
+That's all for **importmap** apps: the engine mounts the action endpoint at
+`/reactive/actions` and auto-pins (and preloads) the client runtime, and the
+installer adds the eager registration below to your Stimulus entrypoint.
+
+<details>
+<summary>What the installer wires (or do it by hand)</summary>
 
 ```js
 // app/javascript/controllers/index.js
@@ -91,6 +101,21 @@ import { application } from "controllers/application"
 import ReactiveController from "phlex/reactive/reactive_controller"
 application.register("reactive", ReactiveController)
 ```
+
+Register eagerly (not lazily) so a click immediately after load is never missed.
+</details>
+
+### Scaffold a component
+
+```bash
+# state-backed (record-less)
+bin/rails generate phlex:reactive:component Counter increment decrement
+
+# record-backed (signed GlobalID identity)
+bin/rails generate phlex:reactive:component Todos::Item toggle rename --record todo
+```
+
+Generates the component (and an RSpec spec if your app uses RSpec).
 
 <details>
 <summary>esbuild / webpack / bun</summary>

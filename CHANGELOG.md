@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Generators.** `rails g phlex:reactive:install` registers the `reactive`
+  Stimulus controller (eagerly) and writes a config initializer.
+  `rails g phlex:reactive:component Name [actions] [--record name | --state vars]`
+  scaffolds a reactive component (and an RSpec spec when the app uses RSpec),
+  state-backed by default or record-backed with `--record`.
+
 ## [0.2.0]
 
 ### Added
