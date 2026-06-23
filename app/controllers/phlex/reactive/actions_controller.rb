@@ -52,12 +52,19 @@ module Phlex
       # Run the action inside a transaction so transactional broadcasts (pgbus
       # broadcasts_to ... durable:) defer to after_commit and never fire for a
       # rolled-back change. Override to add per-request instrumentation.
+      #
+      # The actor's SSE connection id (sent as X-Pgbus-Connection) is exposed
+      # for the duration of the action via Phlex::Reactive.current_connection_id,
+      # so a broadcast in the action can pass exclude: reactive_connection_id
+      # and skip the actor's own echo.
       def run_action(component, action_def, coerced)
-        transaction_wrapper do
-          if coerced.any?
-            component.public_send(action_def.name, **coerced)
-          else
-            component.public_send(action_def.name)
+        Phlex::Reactive.with_connection_id(request.headers["X-Pgbus-Connection"]) do
+          transaction_wrapper do
+            if coerced.any?
+              component.public_send(action_def.name, **coerced)
+            else
+              component.public_send(action_def.name)
+            end
           end
         end
       end

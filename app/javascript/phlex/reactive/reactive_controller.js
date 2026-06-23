@@ -60,13 +60,20 @@ export default class extends Controller {
     this.element.setAttribute("aria-busy", "true")
 
     try {
+      const headers = {
+        "Content-Type": "application/json",
+        Accept: "text/vnd.turbo-stream.html",
+        "X-CSRF-Token": this.#csrfToken(),
+      }
+      // Send the pgbus SSE connection id (if subscribed) so the server can
+      // exclude this connection from its own broadcast echo — the actor
+      // already gets the action's HTTP response. Harmless without pgbus.
+      const connectionId = this.#connectionId()
+      if (connectionId) headers["X-Pgbus-Connection"] = connectionId
+
       const response = await fetch(this.#actionPath(), {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "text/vnd.turbo-stream.html",
-          "X-CSRF-Token": this.#csrfToken(),
-        },
+        headers,
         body,
         credentials: "same-origin",
       })
@@ -145,5 +152,18 @@ export default class extends Controller {
 
   #csrfToken() {
     return document.querySelector('meta[name="csrf-token"]')?.content ?? ""
+  }
+
+  // The pgbus SSE connection id, if the page is subscribed to a stream. pgbus
+  // reflects it onto the <pgbus-stream-source connection-id="…"> element (and
+  // apps may mirror it to <meta name="pgbus-connection-id">). Returns null
+  // when not present (e.g. no pgbus, or no active subscription) — the header
+  // is then simply omitted.
+  #connectionId() {
+    return (
+      document.querySelector("pgbus-stream-source[connection-id]")?.getAttribute("connection-id") ||
+      document.querySelector('meta[name="pgbus-connection-id"]')?.content ||
+      null
+    )
   }
 }

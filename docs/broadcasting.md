@@ -54,16 +54,40 @@ parts. The simplest rule: **use the same raw `*streamables` on both sides.**
 ## Broadcasting from inside a reactive action
 
 The acting user gets the action's HTTP response (a replace of the component).
-*Everyone else* gets the broadcast. Idiomorph dedupes by DOM id, so the actor
-doesn't double-apply an append they triggered:
+*Everyone else* gets the broadcast. Idiomorph dedupes a `replace` by DOM id, so
+the actor doesn't double-apply — but for `append`/`prepend` (and animations or
+optimistic UI) the echo *would* double-apply. Suppress the actor's own echo with
+`exclude: reactive_connection_id`:
 
 ```ruby
 def add(title:)
   authorize! @list, :update?
   todo = @list.todos.create!(title:)
-  Todos::Item.broadcast_append_to(@list, :todos, target: dom_id(@list, :todos), model: todo)
+  Todos::Item.broadcast_append_to(
+    @list, :todos,
+    target: dom_id(@list, :todos),
+    model: todo,
+    exclude: reactive_connection_id # don't echo to the actor — they got the HTTP response
+  )
 end
 ```
+
+### Actor-echo suppression (`exclude:`)
+
+`reactive_connection_id` is the acting client's SSE connection id during the
+action (nil when the client isn't subscribed to a stream, or outside an action).
+The client sends it as `X-Pgbus-Connection`; the action endpoint exposes it.
+Passing it as `exclude:` tells the transport to skip delivery to that one
+connection — so the actor's truth is the HTTP response and they never get a
+duplicate.
+
+- **With [pgbus](transport-pgbus)**: fully honored — the dispatcher skips the
+  excluded connection (pgbus ≥ the streams-reactive release).
+- **With Action Cable**: `exclude:` is accepted but ignored (Action Cable has no
+  per-connection exclusion); rely on idiomorph dedup for `replace`/`update`.
+
+This is what makes optimistic UI safe: apply the change locally, broadcast with
+`exclude:`, and the actor never gets a conflicting echo of their own action.
 
 ## Transactional broadcasts (with pgbus)
 

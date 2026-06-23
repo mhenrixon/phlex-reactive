@@ -116,6 +116,21 @@ module Phlex
         end
       end
 
+      # The acting client's SSE connection id during the current action (nil
+      # outside an action, or when the client isn't subscribed to a stream).
+      # Pass it as `exclude:` when broadcasting from an action so the actor
+      # doesn't receive the echo of its own change — it already gets the
+      # action's HTTP response:
+      #
+      #   def send_message(body:)
+      #     msg = ChatMessage.create!(room: @room, body:)
+      #     ChatMessage::Item.broadcast_append_to("chat", @room,
+      #       target: "messages", model: msg, exclude: reactive_connection_id)
+      #   end
+      def reactive_connection_id
+        Phlex::Reactive.current_connection_id
+      end
+
       # Root-element attributes: marks the element reactive and carries the
       # signed identity token. Spread onto the root:
       #   div(id:, **reactive_attrs) { ... }
