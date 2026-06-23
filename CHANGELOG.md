@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0]
+
+### Added
+
+- **Actor-echo suppression.** `broadcast_*_to` now accepts `exclude:` (and
+  `visible_to:`), forwarded to the stream transport. Pass
+  `exclude: reactive_connection_id` from an action so the actor doesn't receive
+  the echo of its own broadcast — making `append`/`prepend` and optimistic UI
+  safe. The client sends its SSE connection id as `X-Pgbus-Connection`; the
+  endpoint exposes it via `Phlex::Reactive.current_connection_id` /
+  `reactive_connection_id`. Honored by pgbus; ignored (harmless) on Action Cable.
+  Requires pgbus with `exclude:` Turbo forwarding.
+
+## [0.1.0]
+
 ### Added
 
 - **Generators.** `rails g phlex:reactive:install` registers the `reactive`
