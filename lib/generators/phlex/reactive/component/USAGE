@@ -1,0 +1,14 @@
+Description:
+    Scaffolds a reactive Phlex component (and an RSpec spec) with the given
+    actions. State-backed by default; pass --record for a record-backed
+    component whose identity is a signed GlobalID.
+
+Examples:
+    bin/rails generate phlex:reactive:component Counter increment decrement
+        State-backed component with two actions, signed state (default :value).
+
+    bin/rails generate phlex:reactive:component Counter increment --state count
+        State-backed, signing @count.
+
+    bin/rails generate phlex:reactive:component Todos::Item toggle rename --record todo
+        Record-backed component; identity = todo.to_gid; #id = dom_id(@todo).

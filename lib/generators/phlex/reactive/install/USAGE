@@ -1,0 +1,12 @@
+Description:
+    Sets up phlex-reactive in your app: registers the generic `reactive`
+    Stimulus controller (eagerly) and writes a config initializer.
+
+    The action endpoint (POST /reactive/actions) and the client auto-pin are
+    provided by the engine, so this only wires the host-app bits.
+
+Example:
+    bin/rails generate phlex:reactive:install
+
+    Registers the controller in app/javascript/controllers/index.js and
+    creates config/initializers/phlex_reactive.rb.

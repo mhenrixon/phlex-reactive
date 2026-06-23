@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch",
+      "mcp__github__*",
+      "Bash(bundle exec:*)",
+      "Bash(git *)",
+      "Bash(ruby *)",
+      "Bash(gh *)",
+      "Bash(ls:*)",
+      "Bash(bin/rails *)",
+      "Bash(rake *)"
+    ]
+  }
+}

@@ -8,6 +8,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Generators.** `rails g phlex:reactive:install` registers the `reactive`
+  Stimulus controller (eagerly) and writes a config initializer.
+  `rails g phlex:reactive:component Name [actions] [--record name | --state vars]`
+  scaffolds a reactive component (and an RSpec spec when the app uses RSpec),
+  state-backed by default or record-backed with `--record`.
+
+## [0.2.0]
+
+### Added
+
+- **Actor-echo suppression.** `broadcast_*_to` now accepts `exclude:` (and
+  `visible_to:`), forwarded to the stream transport. Pass
+  `exclude: reactive_connection_id` from an action so the actor doesn't receive
+  the echo of its own broadcast — making `append`/`prepend` and optimistic UI
+  safe. The client sends its SSE connection id as `X-Pgbus-Connection`; the
+  endpoint exposes it via `Phlex::Reactive.current_connection_id` /
+  `reactive_connection_id`. Honored by pgbus; ignored (harmless) on Action Cable.
+  Requires pgbus with `exclude:` Turbo forwarding.
+
+## [0.1.0]
+
+### Added
+
 - `Phlex::Reactive::Streamable` — class methods (`replace`, `update`, `append`,
   `prepend`, `remove`) and broadcast methods (`broadcast_replace_to`, ...) that
   render a Phlex component as an auto-targeted Turbo Stream by its stable `id`.
@@ -23,4 +46,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Rails engine — mounts the action endpoint, registers and auto-pins the client
   runtime for importmap apps.
 
-[Unreleased]: https://github.com/mhenrixon/phlex-reactive/commits/main
+[Unreleased]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/mhenrixon/phlex-reactive/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/mhenrixon/phlex-reactive/releases/tag/v0.1.0

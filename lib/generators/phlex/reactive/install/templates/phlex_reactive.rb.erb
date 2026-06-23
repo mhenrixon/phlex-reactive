@@ -1,0 +1,24 @@
+# frozen_string_literal: true
+
+# phlex-reactive configuration. The engine mounts POST /reactive/actions and
+# auto-pins the client runtime; these options are the ones you typically tune.
+
+# Inherit auth/CSRF/Current on the action endpoint (recommended for real apps).
+# Ensure the endpoint isn't force-redirected to a login page for logged-out
+# users if you have public reactive components.
+# Phlex::Reactive.base_controller_name = "ApplicationController"
+
+# Render components with your app's view context (helpers, Current, etc.).
+# Phlex::Reactive.renderer = ApplicationController
+
+# Render your authorization library's error as 403 from a reactive action.
+# Phlex::Reactive.authorization_errors = [Pundit::NotAuthorizedError]
+# Phlex::Reactive.authorization_errors = [ActionPolicy::Unauthorized]
+
+# Sign identity tokens with a dedicated key instead of secret_key_base.
+# Phlex::Reactive.verifier = ActiveSupport::MessageVerifier.new(ENV["REACTIVE_KEY"])
+
+# Change the action endpoint path (default "/reactive/actions"). If you change
+# it, expose it to the client with:
+#   <meta name="phlex-reactive-action-path" content="<%%= Phlex::Reactive.action_path %>">
+# Phlex::Reactive.action_path = "/_r/actions"

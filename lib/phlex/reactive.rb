@@ -90,6 +90,23 @@ module Phlex
         verifier.generate(payload, purpose: IDENTITY_PURPOSE)
       end
 
+      # The acting client's SSE connection id during an action, or nil. Set by
+      # the ActionsController from the X-Pgbus-Connection header. A component
+      # action passes `exclude: Phlex::Reactive.current_connection_id` (or the
+      # `reactive_connection_id` helper) to suppress the actor's own broadcast
+      # echo.
+      def current_connection_id
+        Thread.current[:phlex_reactive_connection_id]
+      end
+
+      def with_connection_id(connection_id)
+        previous = Thread.current[:phlex_reactive_connection_id]
+        Thread.current[:phlex_reactive_connection_id] = connection_id.presence
+        yield
+      ensure
+        Thread.current[:phlex_reactive_connection_id] = previous
+      end
+
       private
 
       def default_verifier

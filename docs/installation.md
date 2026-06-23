@@ -13,6 +13,7 @@ gem "phlex-reactive"
 
 ```bash
 bundle install
+bin/rails generate phlex:reactive:install
 ```
 
 The Rails engine automatically:
@@ -21,7 +22,31 @@ The Rails engine automatically:
 - adds the gem's `app/javascript` to the asset paths
 - auto-pins (and `preload: true`s) the client controller for importmap apps
 
-You still register the Stimulus controller once (eagerly — see below).
+The **installer** (`phlex:reactive:install`) does the host-app wiring:
+
+- registers the `reactive` Stimulus controller eagerly in your entrypoint
+- writes `config/initializers/phlex_reactive.rb` with the common options
+
+If you'd rather wire it by hand, register the controller once (eagerly — below).
+
+## Generators
+
+```bash
+# Setup (idempotent)
+bin/rails generate phlex:reactive:install
+
+# Scaffold a state-backed component (record-less)
+bin/rails generate phlex:reactive:component Counter increment decrement
+
+# Scaffold a record-backed component (signed GlobalID identity)
+bin/rails generate phlex:reactive:component Todos::Item toggle rename --record todo
+
+# Custom signed state vars
+bin/rails generate phlex:reactive:component Wizard next_step --state step open
+```
+
+The component generator also writes an RSpec spec when your app has a `spec/`
+directory.
 
 ## importmap-rails (default Rails 7+)
 

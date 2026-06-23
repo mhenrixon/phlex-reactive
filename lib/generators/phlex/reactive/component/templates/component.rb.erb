@@ -1,0 +1,64 @@
+# frozen_string_literal: true
+
+class <%= class_name %> < ApplicationComponent
+  include Phlex::Reactive::Streamable
+  include Phlex::Reactive::Component
+
+<% if record_backed? -%>
+  reactive_record :<%= record_name %>
+<% action_names.each do |a| -%>
+  action :<%= a %>
+<% end -%>
+
+  def initialize(<%= record_name %>:)
+    @<%= record_name %> = <%= record_name %>
+  end
+
+  def id = dom_id(@<%= record_name %>)
+<% action_names.each do |a| -%>
+
+  def <%= a %>
+    # authorize! @<%= record_name %>, :update?   # authorize mutating actions
+    # @<%= record_name %>.update!(...)
+  end
+<% end -%>
+
+  def view_template
+    div(id:, **reactive_attrs) do
+<% action_names.each do |a| -%>
+      button(**on(:<%= a %>)) { "<%= a.to_s.humanize %>" }
+<% end -%>
+    end
+  end
+<% else -%>
+  reactive_state <%= state_keys.map { |k| ":#{k}" }.join(", ") %>
+<% action_names.each do |a| -%>
+  action :<%= a %>
+<% end -%>
+
+  def initialize(<%= state_keys.map { |k| "#{k}: nil" }.join(", ") %>)
+<% state_keys.each do |k| -%>
+    @<%= k %> = <%= k %>
+<% end -%>
+  end
+
+  def id = "<%= file_name.dasherize %>"
+<% action_names.each do |a| -%>
+
+  def <%= a %>
+    # mutate @<%= state_keys.first %> here
+  end
+<% end -%>
+
+  def view_template
+    div(id:, **reactive_attrs) do
+<% state_keys.each do |k| -%>
+      span(data: { <%= file_name %>_<%= k %>: true }) { @<%= k %>.to_s }
+<% end -%>
+<% action_names.each do |a| -%>
+      button(**on(:<%= a %>)) { "<%= a.to_s.humanize %>" }
+<% end -%>
+    end
+  end
+<% end -%>
+end

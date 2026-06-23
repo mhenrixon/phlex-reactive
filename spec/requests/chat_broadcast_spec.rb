@@ -10,14 +10,16 @@ require "turbo/broadcastable/test_helper"
 RSpec.describe "Chat broadcast", type: :request do
   include Turbo::Broadcastable::TestHelper
 
-  def send_message(room:, body:)
+  def send_message(room:, body:, connection: nil)
     token = Phlex::Reactive.sign(
       "c" => "ChatComposerComponent",
       "s" => {"room" => room, "author" => "tester"}
     )
+    headers = {"Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html"}
+    headers["X-Pgbus-Connection"] = connection if connection
     post "/reactive/actions",
       params: {token:, act: "send_message", params: {body:}}.to_json,
-      headers: {"Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html"}
+      headers: headers
   end
 
   it "creates the message and broadcasts it to the room stream" do
@@ -48,5 +50,30 @@ RSpec.describe "Chat broadcast", type: :request do
       send_message(room: "lobby", body: "   ")
     end
     expect(ChatMessage.count).to eq(0)
+  end
+
+  describe "actor-echo suppression (exclude:)" do
+    it "passes the X-Pgbus-Connection header through to the broadcast as exclude:" do
+      allow(ChatMessageComponent).to receive(:broadcast_append_to)
+
+      send_message(room: "lobby", body: "hi", connection: "conn-actor-123")
+
+      expect(ChatMessageComponent).to have_received(:broadcast_append_to)
+        .with("chat", "lobby", hash_including(exclude: "conn-actor-123"))
+    end
+
+    it "broadcasts with exclude: nil when no connection header is present" do
+      allow(ChatMessageComponent).to receive(:broadcast_append_to)
+
+      send_message(room: "lobby", body: "hi")
+
+      expect(ChatMessageComponent).to have_received(:broadcast_append_to)
+        .with("chat", "lobby", hash_including(exclude: nil))
+    end
+
+    it "clears the connection id after the action (no leak across requests)" do
+      send_message(room: "lobby", body: "first", connection: "conn-1")
+      expect(Phlex::Reactive.current_connection_id).to be_nil
+    end
   end
 end

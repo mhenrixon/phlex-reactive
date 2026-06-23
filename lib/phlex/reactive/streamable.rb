@@ -90,43 +90,64 @@ module Phlex
         # broadcaster builds the key itself, and double-keying can trip the
         # transport's separator guard.
 
-        def broadcast_replace_to(*streamables, model: nil, **options)
+        # `exclude:` / `visible_to:` are TRANSPORT options forwarded to the
+        # stream (pgbus), not component init args. `exclude:` is the actor's
+        # connection id — pass it to suppress the actor's own echo (the actor
+        # already got the action's HTTP response). With Action Cable these are
+        # ignored; with pgbus they reach the dispatcher. See docs/broadcasting.
+        def broadcast_replace_to(*streamables, model: nil, exclude: nil, visible_to: nil, **options)
           component = build(model, options)
           ::Turbo::StreamsChannel.broadcast_replace_to(
-            *streamables, target: component.id, html: render_component(component)
+            *streamables, target: component.id, html: render_component(component),
+            **broadcast_transport_opts(exclude:, visible_to:)
           )
         end
 
-        def broadcast_update_to(*streamables, model: nil, **options)
+        def broadcast_update_to(*streamables, model: nil, exclude: nil, visible_to: nil, **options)
           component = build(model, options)
           ::Turbo::StreamsChannel.broadcast_update_to(
-            *streamables, target: component.id, html: render_component(component)
+            *streamables, target: component.id, html: render_component(component),
+            **broadcast_transport_opts(exclude:, visible_to:)
           )
         end
 
-        def broadcast_append_to(*streamables, target:, model: nil, **options)
+        def broadcast_append_to(*streamables, target:, model: nil, exclude: nil, visible_to: nil, **options)
           component = build(model, options)
           ::Turbo::StreamsChannel.broadcast_append_to(
-            *streamables, target:, html: render_component(component)
+            *streamables, target:, html: render_component(component),
+            **broadcast_transport_opts(exclude:, visible_to:)
           )
         end
 
-        def broadcast_prepend_to(*streamables, target:, model: nil, **options)
+        def broadcast_prepend_to(*streamables, target:, model: nil, exclude: nil, visible_to: nil, **options)
           component = build(model, options)
           ::Turbo::StreamsChannel.broadcast_prepend_to(
-            *streamables, target:, html: render_component(component)
+            *streamables, target:, html: render_component(component),
+            **broadcast_transport_opts(exclude:, visible_to:)
           )
         end
 
-        def broadcast_remove_to(*streamables, model: nil, **options)
+        def broadcast_remove_to(*streamables, model: nil, exclude: nil, visible_to: nil, **options)
           component = build(model, options)
-          ::Turbo::StreamsChannel.broadcast_remove_to(*streamables, target: component.id)
+          ::Turbo::StreamsChannel.broadcast_remove_to(
+            *streamables, target: component.id,
+            **broadcast_transport_opts(exclude:, visible_to:)
+          )
         end
 
         private
 
         def build(model, options)
           new(**(model ? component_args(model, options) : options))
+        end
+
+        # Only include transport opts that were actually given, so on Action
+        # Cable (which doesn't accept them) the common no-opts call is unchanged.
+        def broadcast_transport_opts(exclude:, visible_to:)
+          opts = {}
+          opts[:exclude] = exclude unless exclude.nil?
+          opts[:visible_to] = visible_to unless visible_to.nil?
+          opts
         end
 
         def renderer

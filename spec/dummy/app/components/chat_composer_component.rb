@@ -25,7 +25,8 @@ class ChatComposerComponent < ApplicationComponent
     ChatMessageComponent.broadcast_append_to(
       *ChatMessage.stream_key(@room),
       target: "chat-messages-#{@room}",
-      model: message
+      model: message,
+      exclude: reactive_connection_id # suppress the actor's own echo
     )
   end
 

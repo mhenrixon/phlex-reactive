@@ -46,8 +46,8 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
-      - name: Unit + request specs
-        run: bundle exec rspec spec/phlex spec/requests
+      - name: Unit + request + generator specs
+        run: bundle exec rspec spec/phlex spec/requests spec/generators
 
   system:
     runs-on: ubuntu-latest
