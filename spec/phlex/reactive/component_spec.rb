@@ -53,6 +53,82 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  describe "record + state identity (issue #6)" do
+    # A record-backed component that ALSO carries transient state (which field,
+    # what mode) — exactly the documented inline_edit pattern. Before the fix,
+    # the state branch was dead whenever a record was present: `attribute`/
+    # `editing` were never signed and never restored, so the mode reset to its
+    # initialize default on every action.
+    let(:record_state_klass) do
+      Class.new do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "InlineThing"
+
+        reactive_record :record
+        reactive_state :attribute, :editing
+
+        def initialize(record:, attribute:, editing: false)
+          @record = record
+          @attribute = attribute.to_sym
+          @editing = editing
+        end
+
+        attr_reader :record, :attribute, :editing
+
+        def id = "inline-#{@record.object_id}"
+      end
+    end
+
+    # A stand-in record that round-trips through GlobalID without a DB.
+    let(:record) { Struct.new(:gid_string).new("gid://app/Article/1") }
+
+    before do
+      allow(record).to receive(:to_gid).and_return(
+        instance_double(GlobalID, to_s: record.gid_string)
+      )
+      allow(GlobalID::Locator).to receive(:locate).with(record.gid_string).and_return(record)
+    end
+
+    it "signs BOTH the record gid and the declared state into one token" do
+      component = record_state_klass.new(record:, attribute: :name, editing: true)
+      payload = Phlex::Reactive.verify(component.send(:reactive_token))
+
+      expect(payload["c"]).to eq("InlineThing")
+      expect(payload["gid"]).to eq(record.gid_string)
+      expect(payload["s"]).to eq({"attribute" => "name", "editing" => true})
+    end
+
+    it "restores the record AND the state on rebuild (round trip)" do
+      token = record_state_klass.new(record:, attribute: :name, editing: true).send(:reactive_token)
+      rebuilt = record_state_klass.from_identity(Phlex::Reactive.verify(token))
+
+      expect(rebuilt.record).to be(record)
+      expect(rebuilt.attribute).to eq(:name) # not nil — survives the round trip
+      expect(rebuilt.editing).to be(true)    # not the initialize default (false)
+    end
+
+    it "preserves a false state value rather than dropping to the default" do
+      token = record_state_klass.new(record:, attribute: :name, editing: false).send(:reactive_token)
+      rebuilt = record_state_klass.from_identity(Phlex::Reactive.verify(token))
+
+      expect(rebuilt.editing).to be(false)
+    end
+
+    it "the state cannot be tampered without breaking the signature" do
+      token = record_state_klass.new(record:, attribute: :name, editing: false).send(:reactive_token)
+      # Re-encode a payload that switches the editable column to "ssn" onto the
+      # ORIGINAL signature — the signed digest no longer matches the data.
+      data, sig = token.split("--", 2)
+      decoded = JSON.parse(Base64.urlsafe_decode64(data))
+      decoded["_rails"]["data"]["s"]["attribute"] = "ssn"
+      forged = "#{Base64.urlsafe_encode64(decoded.to_json, padding: false)}--#{sig}"
+
+      expect(Phlex::Reactive.verify(forged)).to be_nil
+    end
+  end
+
   describe "model_param_name unification (issue #4)" do
     # A record-backed component whose demodulized class name (`bar`) differs
     # from its reactive_record name (`baz`). The action endpoint builds it with
