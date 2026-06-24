@@ -79,6 +79,65 @@ RSpec.describe "Reactive actions", type: :request do
     end
   end
 
+  describe "record + state component (InlineEditComponent, issue #6)" do
+    let!(:todo) { Todo.create!(title: "original", done: false) }
+
+    # Mint a token exactly as the component would after a render: it signs the
+    # record gid AND the declared state (attribute, editing).
+    def state_payload(attribute:, editing:)
+      {"gid" => todo.to_gid.to_s, "s" => {"attribute" => attribute.to_s, "editing" => editing}}
+    end
+
+    it "restores the signed state so the mode survives an action" do
+      # We are in edit mode (editing: true was signed by the prior render). The
+      # endpoint must rebuild WITH editing: true — not the initialize default.
+      post_action(InlineEditComponent,
+        payload: state_payload(attribute: :title, editing: true),
+        act: "cancel")
+
+      expect(response).to have_http_status(:ok)
+      # cancel flips editing -> false, so the response renders display mode.
+      expect(response.body).to include('data-testid="display"')
+    end
+
+    it "save writes the SIGNED attribute, not a nil/blank column" do
+      post_action(InlineEditComponent,
+        payload: state_payload(attribute: :title, editing: true),
+        act: "save",
+        params: {value: "renamed"})
+
+      expect(response).to have_http_status(:ok)
+      expect(todo.reload.title).to eq("renamed") # the correct column, not nil
+      expect(response.body).to include("renamed")
+    end
+
+    it "edit flips into edit mode and re-renders the input" do
+      post_action(InlineEditComponent,
+        payload: state_payload(attribute: :title, editing: false),
+        act: "edit")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('data-testid="field"')
+      expect(response.body).to include('value="original"') # the signed attribute's value
+    end
+
+    it "rejects a token whose signed attribute was tampered" do
+      token = token_for(InlineEditComponent, state_payload(attribute: :title, editing: true))
+      # Re-encode the payload to switch the editable column onto the original
+      # signature — verification must fail (the digest no longer matches).
+      data, sig = token.split("--", 2)
+      decoded = JSON.parse(Base64.urlsafe_decode64(data))
+      decoded["_rails"]["data"]["s"]["attribute"] = "done"
+      forged = "#{Base64.urlsafe_encode64(decoded.to_json, padding: false)}--#{sig}"
+
+      post "/reactive/actions",
+        params: {token: forged, act: "save", params: {value: "x"}}.to_json,
+        headers: {"Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html"}
+
+      expect(response).to have_http_status(:bad_request)
+    end
+  end
+
   describe "tampering" do
     it "rejects a forged token" do
       post "/reactive/actions",

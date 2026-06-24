@@ -8,6 +8,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Record-backed components silently lost `reactive_state` every action.** When
+  a component declared BOTH `reactive_record` and `reactive_state`, the state
+  branch was dead: `reactive_token` signed only the record GID and
+  `from_identity` rebuilt with only the record — so the listed instance vars
+  (e.g. `attribute`, `editing`) reset to their `initialize` defaults on every
+  action. This broke the documented `inline_edit` example (clicking "edit"
+  couldn't stay in edit mode; `save` wrote the wrong/blank column) and quietly
+  voided the docs' promise that `@attribute` is signed/tamper-proof.
+  `reactive_token` now signs the record GID AND the declared state into one
+  `MessageVerifier` payload, and `from_identity` restores both — record + state
+  are composable, and the state stays tamper-proof. Record-only (`{c, gid}`) and
+  state-only (`{c, s}`) token shapes are unchanged; a signed `false` survives the
+  round trip (only a genuinely absent value falls back to the `initialize`
+  default). No API changes. Closes #6.
+
 - **Record-backed component built with a different init keyword by the action
   endpoint vs the broadcast path.** The click path (`Component.from_identity`)
   builds with `reactive_record_key` (the `reactive_record :name`), but the

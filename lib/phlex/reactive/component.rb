@@ -20,8 +20,12 @@ module Phlex
     #     can neither forge the component class nor swap the record. State =
     #     the database.
     #   * State-backed (record-less, e.g. a counter): reactive_state :count
-    #     signs the listed instance variables. Use only when there is genuinely
-    #     no record to re-find.
+    #     signs the listed instance variables. Use when there is genuinely no
+    #     record to re-find.
+    #   * Both (the inline_edit pattern): reactive_record :record plus
+    #     reactive_state :attribute, :editing signs the record's GlobalID AND
+    #     the transient mode in one token, so "which field / what mode" survives
+    #     every action round trip and stays tamper-proof.
     #
     # Actions are DEFAULT-DENY: only methods declared with `action :name` may be
     # invoked. The signature proves the token is ours, NOT that this user may
@@ -102,17 +106,35 @@ module Phlex
 
         # Rebuild a component instance from a verified identity payload. Called
         # by the action endpoint after the token signature is verified.
+        #
+        # A component may carry a record (re-found via GlobalID), signed state
+        # (instance vars listed in reactive_state), or BOTH (the inline_edit
+        # pattern: a record plus "which field / what mode"). We assemble the
+        # init kwargs from whichever identity pieces are declared.
         def from_identity(payload)
+          kwargs = {}
+
           if reactive_record_key
             record = GlobalID::Locator.locate(payload.fetch("gid"))
             raise(ActiveRecord::RecordNotFound, "reactive record missing") unless record
 
-            new(reactive_record_key => record)
-          else
-            state = payload.fetch("s", {})
-            kwargs = reactive_state_keys.to_h { |k| [k, state[k.to_s]] }.compact
-            new(**kwargs)
+            kwargs[reactive_record_key] = record
           end
+
+          if reactive_state_keys.any?
+            state = payload.fetch("s", {})
+            reactive_state_keys.each do |key|
+              # Use key presence, not the value: a signed `nil` (nullable state)
+              # must round-trip distinctly. Only a genuinely absent key falls
+              # back to the component's initialize default; `false` and `nil`
+              # both survive.
+              next unless state.key?(key.to_s)
+
+              kwargs[key] = state[key.to_s]
+            end
+          end
+
+          new(**kwargs)
         end
       end
 
@@ -164,18 +186,25 @@ module Phlex
 
       private
 
-      # Signed { c, gid } (record-backed) or { c, s } (state-backed).
+      # Signed identity payload: the class name plus whichever identity pieces
+      # the component declares — a record GlobalID (`gid`), signed state (`s`),
+      # or both. Keeping them in ONE MessageVerifier payload makes the state
+      # (e.g. which column an inline_edit may write) tamper-proof alongside the
+      # record. Record-only ({c, gid}) and state-only ({c, s}) shapes are
+      # unchanged.
       def reactive_token
-        payload =
-          if self.class.reactive_record_key
-            record = instance_variable_get(:"@#{self.class.reactive_record_key}")
-            {"c" => self.class.name, "gid" => record.to_gid.to_s}
-          else
-            state = self.class.reactive_state_keys.to_h do |k|
-              [k.to_s, instance_variable_get(:"@#{k}").as_json]
-            end
-            {"c" => self.class.name, "s" => state}
+        payload = {"c" => self.class.name}
+
+        if self.class.reactive_record_key
+          record = instance_variable_get(:"@#{self.class.reactive_record_key}")
+          payload["gid"] = record.to_gid.to_s
+        end
+
+        if self.class.reactive_state_keys.any?
+          payload["s"] = self.class.reactive_state_keys.to_h do |k|
+            [k.to_s, instance_variable_get(:"@#{k}").as_json]
           end
+        end
 
         Phlex::Reactive.sign(payload)
       end
