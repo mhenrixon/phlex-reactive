@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1]
+
+### Fixed
+
+- **Zeitwerk eager-load crash in host apps.** A host app with
+  `config.eager_load = true` (the production default) runs
+  `Zeitwerk::Loader.eager_load_all`, which walked this gem's loader and raised
+  `Zeitwerk::NameError` on two files that don't follow Zeitwerk's
+  file→constant rule: `version.rb` (defines `VERSION`, not `Version`) and the
+  Rails generators under `lib/generators` (whose path/constant scheme is
+  intentionally non-Zeitwerk). The loader now requires `version.rb` up front and
+  ignores it, and ignores `lib/generators` (Rails loads generators itself), so
+  the gem eager-loads cleanly. Added a regression spec that calls
+  `eager_load_all`. No API changes.
+
 ## [0.2.0]
 
 ### Added
@@ -49,6 +64,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   scaffolds a reactive component (and an RSpec spec when the app uses RSpec),
   state-backed by default or record-backed with `--record`.
 
-[Unreleased]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/mhenrixon/phlex-reactive/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mhenrixon/phlex-reactive/releases/tag/v0.1.0

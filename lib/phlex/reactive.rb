@@ -3,6 +3,12 @@
 require "zeitwerk"
 require "globalid"
 
+# VERSION is a plain constant, not a Zeitwerk-managed file (it defines VERSION,
+# not Version). Require it up front and ignore the file below so the loader
+# never tries to load it — otherwise eager_load_all (host app with
+# config.eager_load = true) raises Zeitwerk::NameError.
+require_relative "reactive/version"
+
 module Phlex
   # phlex-reactive: reactive Phlex components for Rails.
   #
@@ -125,8 +131,23 @@ end
 
 loader = Zeitwerk::Loader.new
 loader.tag = "phlex-reactive"
-loader.push_dir(File.expand_path("..", __dir__))
-loader.ignore("#{__dir__}/../phlex-reactive.rb")
+# Root is lib/ so files map to the Phlex::Reactive namespace
+# (lib/phlex/reactive/foo.rb -> Phlex::Reactive::Foo).
+lib = File.expand_path("..", __dir__)
+loader.push_dir(lib)
+# The gem-name shim (`require "phlex-reactive"`) is a plain require, not a
+# managed file.
+loader.ignore("#{lib}/phlex-reactive.rb")
+# version.rb defines VERSION (a constant, not a `Version` class) and is required
+# above — Zeitwerk must not try to load it.
+loader.ignore("#{lib}/phlex/reactive/version.rb")
+# Rails generators are discovered and loaded by Rails' own generator system,
+# not the app autoloader. Their path/constant scheme
+# (generators/phlex/reactive/... defining Phlex::Reactive::Generators::...)
+# deliberately doesn't follow Zeitwerk's rules, so the loader must ignore them.
+loader.ignore("#{lib}/generators")
+# The engine is required explicitly below (only when Rails is present) and must
+# not be eager-loaded before that.
 loader.do_not_eager_load("#{__dir__}/reactive/engine.rb")
 loader.setup
 
