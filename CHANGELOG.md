@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Record-backed component built with a different init keyword by the action
+  endpoint vs the broadcast path.** The click path (`Component.from_identity`)
+  builds with `reactive_record_key` (the `reactive_record :name`), but the
+  broadcast path (`Streamable.build` → `model_param_name`) built with the
+  demodulized, underscored class name. They only agreed when the class name
+  happened to equal the record name — otherwise one path worked and the other
+  raised `ArgumentError: missing keyword`. The README's own `Todos::Item`
+  (`reactive_record :todo`, `Item` ≠ `todo`) hit this on broadcast.
+  `model_param_name` now prefers `reactive_record_key` when set, so a single
+  `initialize(<record>:)` satisfies both clicks and broadcasts. `Streamable`-only
+  components (no `reactive_record`) keep the demodulized-class-name default, and
+  an explicit `def self.model_param_name` override still wins. No API changes.
+  Closes #4.
+
 ## [0.2.1]
 
 ### Fixed

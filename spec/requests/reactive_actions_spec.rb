@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "turbo/broadcastable/test_helper"
 
 RSpec.describe "Reactive actions", type: :request do
+  include Turbo::Broadcastable::TestHelper
+
   # Mint a token exactly as a component would, using the app's verifier.
   def token_for(klass, payload)
     Phlex::Reactive.sign(payload.merge("c" => klass.name))
@@ -52,6 +55,27 @@ RSpec.describe "Reactive actions", type: :request do
       todo.destroy!
       post_action(TodoItemComponent, payload: {"gid" => gid}, act: "toggle")
       expect(response).to have_http_status(:not_found)
+    end
+
+    # Regression for issue #4: the action endpoint builds via reactive_record_key
+    # (:todo) while the broadcast path used the demodulized class name
+    # (:todo_item_component) — so the broadcast raised
+    # `ArgumentError: missing keyword: :todo`. The component class name
+    # (TodoItemComponent) differs from its reactive_record name (:todo), and it
+    # carries no model_param_name override, so both paths must now agree.
+    it "broadcasts a replace without raising ArgumentError (issue #4)" do
+      stream = "todos"
+
+      expect {
+        broadcasts = capture_turbo_stream_broadcasts(stream) do
+          TodoItemComponent.broadcast_replace_to(stream, model: todo)
+        end
+
+        html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin
+        expect(html).to include('action="replace"')
+        expect(html).to include(%(target="#{ActionView::RecordIdentifier.dom_id(todo)}"))
+        expect(html).to include("write specs")
+      }.not_to raise_error
     end
   end
 

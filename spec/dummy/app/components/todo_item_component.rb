@@ -15,7 +15,8 @@ class TodoItemComponent < ApplicationComponent
   end
 
   def id = dom_id(@todo) # Streamable#dom_id is render-context-free
-  def self.model_param_name = :todo
+  # No model_param_name override needed: reactive_record :todo makes the
+  # broadcast path build with the same `todo:` keyword the action endpoint uses.
 
   def toggle
     @todo.update!(done: !@todo.done?)
