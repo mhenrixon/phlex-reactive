@@ -27,11 +27,19 @@ module Phlex
       extend ActiveSupport::Concern
 
       class_methods do
-        # The keyword the positional model maps to in `initialize`. Convention:
-        # demodulized, underscored class name (Invoice -> :invoice,
-        # InvoiceItem -> :invoice_item). Override when it differs.
+        # The keyword the positional model maps to in `initialize`. For a
+        # record-backed component (Component#reactive_record), this is the SAME
+        # keyword the action endpoint uses in `from_identity` — so one
+        # `initialize(<record>:)` satisfies BOTH the click path and the
+        # broadcast path. Otherwise it falls back to the demodulized, underscored
+        # class name (Invoice -> :invoice, InvoiceItem -> :invoice_item).
+        # Override when it differs.
         def model_param_name
-          name.demodulize.underscore.to_sym
+          if respond_to?(:reactive_record_key) && reactive_record_key
+            reactive_record_key
+          else
+            name.demodulize.underscore.to_sym
+          end
         end
 
         def component_args(model, options)

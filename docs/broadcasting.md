@@ -51,6 +51,37 @@ parts. The simplest rule: **use the same raw `*streamables` on both sides.**
 | `.broadcast_prepend_to(*streamables, target:, model:)` | Prepend into `target` |
 | `.broadcast_remove_to(*streamables, model:)` | Remove the element with id `component.id` |
 
+### How `model:` maps to the init keyword
+
+The positional `model:` is passed to the component's `initialize` under the
+keyword `model_param_name`. For a **record-backed** component (`reactive_record`),
+that keyword is the record name — the SAME keyword the action endpoint uses to
+rebuild the component on a click. So a single `initialize(<record>:)` satisfies
+both clicks and broadcasts:
+
+```ruby
+class Todos::Item < ApplicationComponent
+  include Phlex::Reactive::Streamable
+  include Phlex::Reactive::Component
+  reactive_record :todo
+  def initialize(todo:) = @todo = todo   # the keyword must match `reactive_record :todo`
+end
+
+Todos::Item.broadcast_replace_to(@list, :todos, model: @todo) # builds new(todo: @todo)
+```
+
+For a **`Streamable`-only** component (broadcast-only, no `reactive_record`),
+`model_param_name` defaults to the demodulized, underscored class name. When the
+init keyword differs from that, override it:
+
+```ruby
+class NotificationsBadge < ApplicationComponent
+  include Phlex::Reactive::Streamable
+  def initialize(user:) = @user = user
+  def self.model_param_name = :user   # class name would be :notifications_badge
+end
+```
+
 ## Broadcasting from inside a reactive action
 
 The acting user gets the action's HTTP response (a replace of the component).
