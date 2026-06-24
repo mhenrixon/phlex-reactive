@@ -8,6 +8,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Reactive save silently dropped rich-text / custom-editor fields.** The
+  client's field auto-collection (`#collectFields`) queried only
+  `input[name], select[name], textarea[name]`, so a named rich-text editor
+  (`lexxy-editor`, `trix-editor`) or any `[contenteditable]` was skipped — a
+  reactive `save` posted an empty value and silently wiped the field, with no
+  error. `#collectFields` now also reads named custom editors and contenteditable
+  elements (by `name` *attribute*, since a plain element has no `name` IDL
+  property), reading the serialized `.value` else the contenteditable text. It
+  only fills a name the standard controls left absent or empty, so a hidden input
+  a rich editor mirrors into (e.g. Trix) still wins when populated. The vendored
+  client copy the system suite runs (`spec/dummy/public/vendor/...`) is now kept
+  byte-identical to source by a guard spec, so the browser tests never validate
+  stale client code again. Closes #8.
+
 - **Record-backed components silently lost `reactive_state` every action.** When
   a component declared BOTH `reactive_record` and `reactive_state`, the state
   branch was dead: `reactive_token` signed only the record GID and

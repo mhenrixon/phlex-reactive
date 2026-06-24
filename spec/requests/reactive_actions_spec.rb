@@ -138,6 +138,22 @@ RSpec.describe "Reactive actions", type: :request do
     end
   end
 
+  describe "blank field reaches the action; the component guards (issue #8)" do
+    # The transport doesn't second-guess values: a genuinely-cleared field is
+    # sent as "" and reaches the action. Protecting the record from a blank
+    # write is the action's job (`if title.present?`), not the transport's. The
+    # issue #8 fix is about COLLECTING the right value from rich-text/custom
+    # editors in the first place — covered by spec/system/rich_editor_spec.rb.
+    let!(:todo) { Todo.create!(title: "keep me", done: false) }
+
+    it "passes an explicitly blank param through to the guarded action" do
+      post_action(TodoItemComponent, payload: {"gid" => todo.to_gid.to_s}, act: "rename", params: {title: ""})
+
+      expect(response).to have_http_status(:ok)
+      expect(todo.reload.title).to eq("keep me") # unchanged: guarded by `if title.present?`
+    end
+  end
+
   describe "tampering" do
     it "rejects a forged token" do
       post "/reactive/actions",

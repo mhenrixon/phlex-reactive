@@ -60,13 +60,20 @@ export default class extends Controller {
     this.element.setAttribute("aria-busy", "true")
 
     try {
+      const headers = {
+        "Content-Type": "application/json",
+        Accept: "text/vnd.turbo-stream.html",
+        "X-CSRF-Token": this.#csrfToken(),
+      }
+      // Send the pgbus SSE connection id (if subscribed) so the server can
+      // exclude this connection from its own broadcast echo — the actor
+      // already gets the action's HTTP response. Harmless without pgbus.
+      const connectionId = this.#connectionId()
+      if (connectionId) headers["X-Pgbus-Connection"] = connectionId
+
       const response = await fetch(this.#actionPath(), {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "text/vnd.turbo-stream.html",
-          "X-CSRF-Token": this.#csrfToken(),
-        },
+        headers,
         body,
         credentials: "same-origin",
       })
@@ -115,6 +122,7 @@ export default class extends Controller {
 
   #collectFields() {
     const fields = {}
+    // Standard form controls.
     this.element.querySelectorAll("input[name], select[name], textarea[name]").forEach((field) => {
       if (field.type === "checkbox") {
         fields[field.name] = field.checked
@@ -124,6 +132,25 @@ export default class extends Controller {
         fields[field.name] = field.value
       }
     })
+    // Named rich-text / custom editors (lexxy-editor, trix-editor) and bare
+    // [contenteditable]. These aren't input/select/textarea, so the query above
+    // skips them — without this, a reactive save posts an empty value and
+    // silently wipes the field (issue #8). Read whatever the element exposes:
+    // a custom editor's serialized `.value`, else its contenteditable text.
+    // Only fill a name the standard controls left absent or empty, so a synced
+    // hidden input (e.g. Trix mirrors into one) still wins when populated.
+    this.element
+      .querySelectorAll("[name]:is(lexxy-editor, trix-editor, [contenteditable=''], [contenteditable=true], [contenteditable=plaintext-only])")
+      .forEach((el) => {
+        // A plain element (e.g. a <div contenteditable>) has no `name` IDL
+        // property — only the attribute — so read getAttribute, not el.name.
+        const name = el.getAttribute("name")
+        if (!name) return
+        const existing = fields[name]
+        if (existing == null || existing === "") {
+          fields[name] = el.value ?? el.textContent ?? el.innerHTML ?? ""
+        }
+      })
     return fields
   }
 
@@ -145,5 +172,18 @@ export default class extends Controller {
 
   #csrfToken() {
     return document.querySelector('meta[name="csrf-token"]')?.content ?? ""
+  }
+
+  // The pgbus SSE connection id, if the page is subscribed to a stream. pgbus
+  // reflects it onto the <pgbus-stream-source connection-id="…"> element (and
+  // apps may mirror it to <meta name="pgbus-connection-id">). Returns null
+  // when not present (e.g. no pgbus, or no active subscription) — the header
+  // is then simply omitted.
+  #connectionId() {
+    return (
+      document.querySelector("pgbus-stream-source[connection-id]")?.getAttribute("connection-id") ||
+      document.querySelector('meta[name="pgbus-connection-id"]')?.content ||
+      null
+    )
   }
 }
