@@ -33,7 +33,9 @@ group :development, :test do
   # route through Turbo::StreamsChannel, which pgbus patches, so phlex-reactive
   # works on Action Cable OR pgbus). We pull it in here ONLY to develop and test
   # against pgbus's reactive Streams primitives (exclude:/broadcast_render/
-  # auto-presence/typed-events/coalescing/msg_id), which shipped in pgbus 0.9.2.
+  # auto-presence/typed-events/coalescing/msg_id) plus the exclude:/visible_to:/
+  # event: forwarding through the Turbo broadcast helpers — both shipped in
+  # pgbus 0.9.4. phlex-reactive 0.2.0's actor-echo suppression needs them.
   #
   # For fast local iteration against your own checkout, set PGBUS_PATH:
   #   PGBUS_PATH=~/Code/mhenrixon/pgbus bundle install
@@ -44,7 +46,7 @@ group :development, :test do
     if (pgbus_path = ENV["PGBUS_PATH"])
       gem "pgbus", path: pgbus_path, require: false
     else
-      gem "pgbus", ">= 0.9.2", require: false
+      gem "pgbus", ">= 0.9.4", require: false
     end
     gem "pg", "~> 1.5", require: false # pgbus needs PostgreSQL
   end
