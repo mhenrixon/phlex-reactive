@@ -211,14 +211,20 @@ class Todos::Item < ApplicationComponent
 end
 ```
 
-### 2. State-backed (record-less widgets)
+### 2. State-backed (signed instance vars)
 
-No database row — e.g. a counter or a wizard step. The listed instance vars are
-signed into the token. Keep state small and JSON-serializable.
+Sign small, JSON-serializable instance vars into the token. Use it **alone** for
+a record-less widget (a counter, a wizard step), or **alongside `reactive_record`**
+to carry transient UI state — which field, what mode — next to the row. Both the
+record's GlobalID and the state are signed into one token and rebuilt on each
+action. Keep state small and JSON-serializable.
 
 ```ruby
 reactive_state :count, :step       # signed; rebuilt on each action
 ```
+
+The [inline edit example](docs/examples/inline_edit.md) combines both: a
+`reactive_record :record` plus `reactive_state :attribute, :editing`.
 
 ---
 
@@ -257,7 +263,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | Macro / helper | Use |
 |---|---|
 | `reactive_record :name` | Record-backed identity (GlobalID). State = the DB. |
-| `reactive_state :a, :b` | State-backed identity (signed instance vars). Record-less only. |
+| `reactive_state :a, :b` | Signed instance-var identity. Standalone, or combined with `reactive_record` to sign transient UI state alongside the row. |
 | `action :name, params: { x: :integer }` | Declare a client-invokable action + its param schema. **Default-deny.** |
 | `reactive_attrs` | Spread onto the root element: marks it reactive + carries the signed token. |
 | `on(:action, event: "click", **params)` | Spread onto a trigger element. Adds `type=button` for clicks. |
@@ -314,8 +320,10 @@ phlex-reactive is built so the easy path is the safe path — but the boundary i
 real, so read this once.
 
 - **State is never trusted from the client.** The DOM holds a `MessageVerifier`-
-  signed identity (`{component, gid}` or `{component, state}`), not raw state. A
-  tampered class, record, or state value fails signature verification → 400.
+  signed identity — `{component, gid}` (record-backed), `{component, state}`
+  (state-backed), or `{component, gid, state}` when a component declares both —
+  not raw state. A tampered class, record, or state value fails signature
+  verification → 400.
 - **Actions are default-deny.** Only methods declared with `action :name` are
   invokable. A public method without `action` is unreachable.
 - **You must authorize.** The signature proves the *token is yours*, not that

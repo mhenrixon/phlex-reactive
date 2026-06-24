@@ -15,13 +15,20 @@ The DOM token is a `MessageVerifier`-signed payload:
 
 - Record-backed: `{ "c" => "Todos::Item", "gid" => "gid://app/Todo/42" }`
 - State-backed: `{ "c" => "Counter", "s" => { "count" => 3 } }`
+- Record + state: `{ "c" => "Fields::InlineEdit", "gid" => "gid://app/User/7", "s" => { "attribute" => "name", "editing" => true } }`
+
+When a component declares both `reactive_record` and `reactive_state`, the
+record's GlobalID and the declared state are signed into **one** payload — so
+the transient mode (e.g. which column an inline edit may write) is tamper-proof
+alongside the record.
 
 **Guarantees** (tampering any of these fails verification → HTTP 400):
 
 - The component class can't be swapped (can't point a `Todo` token at an
   `AdminUser` component).
 - The record's GlobalID can't be swapped or forged.
-- State-backed values can't be edited.
+- State values can't be edited — including state signed alongside a record (the
+  client can't switch an inline edit's `attribute` to a column it shouldn't touch).
 
 **Does NOT guarantee**: that *this user* may act on this record. The signature
 proves the token is one **we** minted, not that the current session is allowed to

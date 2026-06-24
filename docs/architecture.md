@@ -72,9 +72,15 @@ Instead the DOM carries a **signed identity**:
   server re-finds the record from the database. State = the DB. The client can't
   forge the class or swap the record (signature), and can't see or change the
   record's columns (they're never in the token).
-- **State-backed**: `{ c: "Counter", s: { count: 3 } }`. For genuinely
-  record-less widgets. The state is signed, so the client can't tamper with it,
-  but keep it small and non-sensitive.
+- **State-backed**: `{ c: "Counter", s: { count: 3 } }`. For record-less
+  widgets. The state is signed, so the client can't tamper with it, but keep it
+  small and non-sensitive.
+- **Record + state**: `{ c: "Fields::InlineEdit", gid: "gid://app/User/7", s: { attribute: "name", editing: true } }`.
+  When a component declares both `reactive_record` and `reactive_state`, the
+  record's GlobalID **and** the declared state are signed into one token and
+  both are restored on each action — so transient mode (which field, edit/show)
+  is tamper-proof alongside the record. See the
+  [inline edit example](examples/inline_edit.md).
 
 The token is a Rails `MessageVerifier` token bound to the purpose
 `"phlex-reactive/identity"`.
