@@ -116,6 +116,34 @@ RSpec.describe Phlex::Reactive::Component do
       expect(rebuilt.editing).to be(false)
     end
 
+    it "round-trips a signed nil distinctly from an absent key" do
+      # A nullable state key: its initialize default is a non-nil sentinel, so a
+      # signed `nil` must override it (key presence, not value, decides restore).
+      nullable_klass = Class.new do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "NullableThing"
+
+        reactive_record :record
+        reactive_state :filter
+
+        def initialize(record:, filter: :unset)
+          @record = record
+          @filter = filter
+        end
+
+        attr_reader :filter
+
+        def id = "nullable-#{@record.object_id}"
+      end
+
+      token = nullable_klass.new(record:, filter: nil).send(:reactive_token)
+      rebuilt = nullable_klass.from_identity(Phlex::Reactive.verify(token))
+
+      expect(rebuilt.filter).to be_nil # the signed nil wins, not the :unset default
+    end
+
     it "the state cannot be tampered without breaking the signature" do
       token = record_state_klass.new(record:, attribute: :name, editing: false).send(:reactive_token)
       # Re-encode a payload that switches the editable column to "ssn" onto the

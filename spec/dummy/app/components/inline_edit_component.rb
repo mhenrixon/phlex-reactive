@@ -34,7 +34,11 @@ class InlineEditComponent < ApplicationComponent
   def view_template
     span(id:, **reactive_attrs) do
       if @editing
-        input(**mix(on(:save), name: "value", value: current_value, data: {testid: "field"}))
+        # The input only holds the value — the form fields it collects travel
+        # with whichever action fires. `on(:save)` lives on the Save button, not
+        # the input, so focusing the field doesn't dispatch save and collapse
+        # edit mode (matches docs/examples/inline_edit.md).
+        input(name: "value", value: current_value, data: {testid: "field"})
         button(**mix(on(:save), data: {testid: "save"})) { "Save" }
         button(**mix(on(:cancel), data: {testid: "cancel"})) { "Cancel" }
       else

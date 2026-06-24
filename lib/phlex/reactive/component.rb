@@ -124,10 +124,13 @@ module Phlex
           if reactive_state_keys.any?
             state = payload.fetch("s", {})
             reactive_state_keys.each do |key|
-              value = state[key.to_s]
-              # Skip only a genuinely absent value (nil) so the component's own
-              # initialize default applies; a signed `false` must survive.
-              kwargs[key] = value unless value.nil?
+              # Use key presence, not the value: a signed `nil` (nullable state)
+              # must round-trip distinctly. Only a genuinely absent key falls
+              # back to the component's initialize default; `false` and `nil`
+              # both survive.
+              next unless state.key?(key.to_s)
+
+              kwargs[key] = state[key.to_s]
             end
           end
 
