@@ -60,6 +60,30 @@ Accept: text/vnd.turbo-stream.html
 The endpoint verifies the token, rebuilds the component, runs the action, and
 returns `component.to_stream_replace`. Turbo morphs it in.
 
+### What collected fields are
+
+On a button click or form submit, the controller auto-collects named fields
+inside the component so the action receives them without you wiring anything:
+
+- **Standard controls** — `input[name]`, `select[name]`, `textarea[name]`
+  (checkboxes send their `checked` state; radios send the checked value).
+- **Rich-text / custom editors** — named `lexxy-editor`, `trix-editor`, and
+  `[contenteditable]` elements with a `name` attribute (the editable ones:
+  `contenteditable`, `="true"`, or `="plaintext-only"` — an explicit
+  `contenteditable="false"` is skipped). These aren't standard controls, so
+  they're read explicitly (serialized `.value`, else the contenteditable text).
+  Without this a reactive save would post an empty value and silently wipe the
+  field.
+
+Only fields that exist in the DOM are sent; a declared param with no matching
+field is simply absent (the action's keyword default applies). Explicit params
+from `on(:save, extra: ...)` always win over a collected field of the same name.
+
+> A rich editor that mirrors its value into a hidden `input[name]` (e.g. Trix)
+> is already covered by the standard query; the editor read only fills a name
+> the standard controls left absent or empty, so it never clobbers a populated
+> input.
+
 ## Why state isn't in the browser
 
 Livewire ships a *snapshot* of component state to the client and trusts it back

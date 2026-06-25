@@ -77,6 +77,10 @@ render Fields::InlineEdit.new(record: @user, attribute: :email)
   mutates, so it authorizes.
 - **The `span(**on(:edit))`** turns the display text into the click target. Add
   `tabindex` / keyboard handling if you need a11y on non-button triggers.
+- **Rich-text fields work too.** A named `lexxy-editor`, `trix-editor`, or
+  `[contenteditable]` is auto-collected on submit alongside plain inputs — so
+  `save` receives its value, not a blank. See
+  [what gets auto-collected](../architecture.md#what-collected-fields-are).
 
 ## Want it to update other viewers too?
 

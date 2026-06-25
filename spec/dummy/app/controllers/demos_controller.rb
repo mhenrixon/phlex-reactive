@@ -19,6 +19,10 @@ class DemosController < ActionController::Base
     render_component ChatRoomComponent.new(room:, messages: ChatMessage.for_room(room).last(50))
   end
 
+  def rich_editor
+    render_component RichEditorComponent.new(todo: Todo.find(params[:id]))
+  end
+
   private
 
   # Render a Phlex component as the layout's body. `render component, layout:`
