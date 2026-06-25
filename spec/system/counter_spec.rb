@@ -46,6 +46,24 @@ RSpec.describe "Counter (state-backed reactive component)", type: :system do
     expect(page).to have_css("[data-testid='count']", text: "5")
   end
 
+  it "bump_via_update morphs inner HTML in place (update-style Response)" do
+    visit "/counter"
+    expect(page).to have_css("[data-testid='count']", text: "0")
+    page.execute_script("window.__noReload = 'alive'")
+
+    # bump_via_update returns Response.update(self) — an inner-HTML morph (not a
+    # replace). The count still updates in place and the token still refreshes.
+    find("[data-testid='bump-update']").click
+    expect(page).to have_css("[data-testid='count']", text: "1")
+
+    # A second click proves the token refreshed (a stale token would 400 and the
+    # count would stay at 1).
+    find("[data-testid='bump-update']").click
+    expect(page).to have_css("[data-testid='count']", text: "2")
+
+    expect(page.evaluate_script("window.__noReload")).to eq("alive")
+  end
+
   it "Response.redirect drives a Turbo.visit to the new URL" do
     visit "/counter"
     expect(page).to have_css("[data-testid='go-home']")

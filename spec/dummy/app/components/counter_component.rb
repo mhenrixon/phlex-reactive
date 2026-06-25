@@ -48,6 +48,7 @@ class CounterComponent < ApplicationComponent
       button(**mix(on(:decrement), data: {testid: "dec"})) { "−" }
       span(id: "counter-value", data: {testid: "count"}) { @count.to_s }
       button(**mix(on(:increment), data: {testid: "inc"})) { "+" }
+      button(**mix(on(:bump_via_update), data: {testid: "bump-update"})) { "+1 (update)" }
       button(**mix(on(:reset_with_flash), data: {testid: "reset"})) { "reset" }
       button(**mix(on(:go_home), data: {testid: "go-home"})) { "go home" }
     end
