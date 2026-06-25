@@ -284,6 +284,35 @@ div(**mix(reactive_attrs, id:, class: "card")) { ... }
 button(**on(:increment), data: { testid: "inc" }) { "+" }
 ```
 
+### `Phlex::Reactive::Response` — controlling the action's reply
+
+By default an action re-renders its component in place. **Return** a `Response`
+to do more (it governs only the actor's HTTP reply — cross-tab updates still use
+`broadcast_*_to(..., exclude: reactive_connection_id)`). Returning anything else
+keeps the default, so existing actions are unaffected.
+
+```ruby
+def rename(title:)
+  return Response.replace(self).flash(:error, @todo.errors.full_messages.to_sentence) unless @todo.update(title:)
+  Response.replace(self)
+end
+
+def approve   = (@row.approve!; Response.remove(self))          # drop the element
+def publish   = (@article.publish!; Response.redirect(article_url(@article)))  # slug changed → Turbo.visit
+def add(item:) = Response.replace(self).stream(Totals.update(@order))           # multi-stream
+```
+
+| Builder | Reply |
+|---|---|
+| `Response.replace(self)` / `.update(self)` | re-render in place (explicit default) |
+| `.flash(level, content, target: …)` | append a flash; `content` is a string or Phlex component (off-request — no Rails `flash`); target defaults to `Phlex::Reactive.flash_target` (`"flash"`) |
+| `Response.remove(self)` | remove the element (backed by `Streamable#to_stream_remove`) |
+| `Response.redirect(url)` | client-side `Turbo.visit` (pass a `*_url`); rides a `reactive:visit` turbo-stream, not an HTTP 3xx |
+| `Response.with(*streams)` / `#stream(*more)` | multi-stream |
+
+`.flash`/`.stream` are additive on a self-replace, so the component's signed
+token always refreshes.
+
 ### Configuration (`config/initializers/phlex_reactive.rb`)
 
 ```ruby

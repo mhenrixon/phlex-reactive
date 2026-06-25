@@ -187,6 +187,13 @@ module Phlex
       def to_stream_update
         self.class.turbo_stream_builder.update(id, html: self.class.render_component(self))
       end
+
+      # Render THIS instance as a remove stream. The component already knows its
+      # own #id, so no record/class reconstruction is needed (works for record-
+      # and state-backed components alike). Used by Response.remove.
+      def to_stream_remove
+        self.class.turbo_stream_builder.remove(id)
+      end
     end
   end
 end

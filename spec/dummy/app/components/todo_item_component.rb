@@ -9,6 +9,8 @@ class TodoItemComponent < ApplicationComponent
   reactive_record :todo
   action :toggle
   action :rename, params: {title: :string}
+  action :archive
+  action :rename_strict, params: {title: :string}
 
   def initialize(todo:)
     @todo = todo
@@ -24,6 +26,20 @@ class TodoItemComponent < ApplicationComponent
 
   def rename(title:)
     @todo.update!(title:) if title.present?
+  end
+
+  # Response: remove self from the DOM (render_self false — no doomed re-render).
+  def archive
+    Phlex::Reactive::Response.remove(self)
+  end
+
+  # Response: surface a validation error as a flash while still refreshing the
+  # row's token (replace self + flash); on success, plain replace.
+  def rename_strict(title:)
+    return Phlex::Reactive::Response.replace(self).flash(:error, "blank") if title.blank?
+
+    @todo.update!(title:)
+    Phlex::Reactive::Response.replace(self)
   end
 
   def view_template

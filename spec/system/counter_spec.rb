@@ -42,4 +42,16 @@ RSpec.describe "Counter (state-backed reactive component)", type: :system do
 
     expect(page).to have_css("[data-testid='count']", text: "5")
   end
+
+  it "Response.redirect drives a Turbo.visit to the new URL" do
+    visit "/counter"
+    expect(page).to have_css("[data-testid='go-home']")
+
+    find("[data-testid='go-home']").click
+
+    # The reactive:visit custom stream action navigates the browser. Capybara
+    # waits for the new page (the todos demo) to load.
+    expect(page).to have_current_path("/todos")
+    expect(page).to have_css("[data-testid='new-todo']")
+  end
 end

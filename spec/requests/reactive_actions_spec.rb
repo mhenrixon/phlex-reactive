@@ -154,6 +154,67 @@ RSpec.describe "Reactive actions", type: :request do
     end
   end
 
+  # Action response control: an action MAY return a Phlex::Reactive::Response to
+  # govern the actor's HTTP reply (flash / remove / redirect / multi-stream).
+  # Returning anything else keeps the legacy implicit single replace — proven by
+  # the back-compat specs above (increment/toggle never return a Response).
+  describe "Phlex::Reactive::Response control" do
+    let!(:todo) { Todo.create!(title: "moderate me", done: false) }
+
+    it "replace + flash: re-renders self (token refresh) AND appends a flash" do
+      post_action(CounterComponent, payload: {"s" => {"count" => 5}}, act: "reset_with_flash")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('action="replace"')
+      expect(response.body).to include('target="counter"') # self replace -> token refresh
+      expect(response.body).to include('action="append"')
+      expect(response.body).to include('target="flash"')
+      expect(response.body).to include("Reset")
+    end
+
+    it "replace + flash: contains exactly ONE self-target stream (no double-prepend)" do
+      post_action(CounterComponent, payload: {"s" => {"count" => 5}}, act: "reset_with_flash")
+      expect(response.body.scan('target="counter"').size).to eq(1)
+    end
+
+    it "remove: emits a remove stream for the element and NO self replace" do
+      post_action(TodoItemComponent, payload: {"gid" => todo.to_gid.to_s}, act: "archive")
+
+      dom = ActionView::RecordIdentifier.dom_id(todo)
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include(%(action="remove"))
+      expect(response.body).to include(%(target="#{dom}"))
+      expect(response.body).not_to include('action="replace"')
+    end
+
+    it "redirect: 200 turbo-stream carrying reactive:visit (NOT an HTTP 3xx)" do
+      post_action(CounterComponent, payload: {"s" => {"count" => 0}}, act: "go_home")
+
+      expect(response).to have_http_status(:ok)
+      expect(response).not_to be_redirect
+      expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+      expect(response.body).to include('action="reactive:visit"')
+      expect(response.body).to include('data-url="/todos"')
+    end
+
+    it "flash-on-error keeps the row's token (self replace + flash both present)" do
+      post_action(TodoItemComponent, payload: {"gid" => todo.to_gid.to_s}, act: "rename_strict", params: {title: ""})
+
+      dom = ActionView::RecordIdentifier.dom_id(todo)
+      expect(response.body).to include(%(target="#{dom}")) # fresh token
+      expect(response.body).to include('target="flash"')
+      expect(todo.reload.title).to eq("moderate me") # unchanged on the error path
+    end
+
+    it "valid rename_strict updates and single-replaces" do
+      post_action(TodoItemComponent, payload: {"gid" => todo.to_gid.to_s}, act: "rename_strict", params: {title: "renamed"})
+
+      expect(response).to have_http_status(:ok)
+      expect(todo.reload.title).to eq("renamed")
+      expect(response.body).not_to include('target="flash"')
+    end
+  end
+
   describe "tampering" do
     it "rejects a forged token" do
       post "/reactive/actions",

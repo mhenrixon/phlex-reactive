@@ -6,6 +6,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.6]
+
+### Added
+
+- **Action response control via `Phlex::Reactive::Response`.** An action MAY now
+  return a `Response` to govern the actor's HTTP reply, instead of only the
+  implicit single re-render. Returning anything else keeps the legacy default
+  (re-render the component in place), so existing actions are unaffected.
+  - `Response.replace(self)` / `.update(self)` — explicit re-render.
+  - `Response.replace(self).flash(:error, msg_or_component)` — surface a
+    validation error / notice (the `#1` driver). `.flash` is additive on a
+    self-replace, so the component's signed token always refreshes. Flash
+    content is supplied explicitly (the render context is off-request — there is
+    no Rails `flash`); pass a string or a Phlex component. Target container is
+    `Phlex::Reactive.flash_target` (default `flash`).
+  - `Response.remove(self)` — drop the element (e.g. a moderation queue). New
+    instance helper `Streamable#to_stream_remove` backs it.
+  - `Response.redirect(url)` — client-side `Turbo.visit` for when the current
+    URL is dead (e.g. a slug rename). Rides a 200 turbo-stream carrying a
+    `reactive:visit` custom action (registered in the client), **not** an HTTP
+    3xx (which the client bails on). Pass a `*_url`.
+  - `Response.with(*streams)` / `#stream(*more)` — multi-stream (replace self +
+    a sibling component).
+- The endpoint guarantees the component's own replace is present (token refresh)
+  for non-remove/redirect responses, and never double-prepends when the action
+  already included a self-targeted stream.
+
+## [0.2.5]
+
 ### Fixed
 
 - **Form submit navigated instead of running the reactive action.** A component
