@@ -11,6 +11,7 @@ class CounterComponent < ApplicationComponent
   action :decrement
   action :set, params: {count: :integer}
   action :reset_with_flash
+  action :bump_via_update
   action :go_home
 
   def initialize(count: 0)
@@ -29,6 +30,13 @@ class CounterComponent < ApplicationComponent
     Phlex::Reactive::Response.replace(self).flash(:notice, "Reset")
   end
 
+  # Response: morph inner HTML (update, not replace). The rendered template still
+  # carries the root's fresh data-reactive-token-value, so the token refreshes.
+  def bump_via_update
+    @count += 1
+    Phlex::Reactive::Response.update(self)
+  end
+
   # Response: client-side full navigation (no in-place stream). Targets a real
   # dummy route so the browser spec can assert the Turbo.visit landed.
   def go_home
@@ -40,7 +48,7 @@ class CounterComponent < ApplicationComponent
       button(**mix(on(:decrement), data: {testid: "dec"})) { "−" }
       span(id: "counter-value", data: {testid: "count"}) { @count.to_s }
       button(**mix(on(:increment), data: {testid: "inc"})) { "+" }
-      button(**mix(on(:set, count: 0), data: {testid: "reset"})) { "reset" }
+      button(**mix(on(:reset_with_flash), data: {testid: "reset"})) { "reset" }
       button(**mix(on(:go_home), data: {testid: "go-home"})) { "go home" }
     end
   end

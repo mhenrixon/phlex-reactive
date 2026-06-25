@@ -24,8 +24,11 @@ RSpec.describe "Counter (state-backed reactive component)", type: :system do
     find("[data-testid='dec']").click
     expect(page).to have_css("[data-testid='count']", text: "2")
 
+    # reset is a Response.replace(self).flash(...) — count resets in place AND a
+    # flash is appended into #flash, all without a reload.
     find("[data-testid='reset']").click
     expect(page).to have_css("[data-testid='count']", text: "0")
+    expect(page).to have_css("#flash", text: "Reset")
 
     expect(page.evaluate_script("window.__noReload")).to eq("alive")
   end

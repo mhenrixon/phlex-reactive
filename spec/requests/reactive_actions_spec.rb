@@ -177,6 +177,21 @@ RSpec.describe "Reactive actions", type: :request do
       expect(response.body.scan('target="counter"').size).to eq(1)
     end
 
+    # Regression: an update(self) response refreshes the signed token. The
+    # endpoint guard keys off data-reactive-token-value (the invariant the client
+    # reads), NOT "some stream targets self" — so it must NOT prepend a second,
+    # contradictory replace when the update already carries a fresh token.
+    it "update: morphs self with a fresh token and is NOT doubled with a replace" do
+      post_action(CounterComponent, payload: {"s" => {"count" => 1}}, act: "bump_via_update")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('action="update"')
+      expect(response.body).to include('target="counter"')
+      expect(response.body).to include("data-reactive-token-value=") # token refreshed
+      expect(response.body).not_to include('action="replace"')       # no contradictory double-render
+      expect(response.body).to match(/>\s*2\s*</)                     # 1 -> 2
+    end
+
     it "remove: emits a remove stream for the element and NO self replace" do
       post_action(TodoItemComponent, payload: {"gid" => todo.to_gid.to_s}, act: "archive")
 

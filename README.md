@@ -287,12 +287,18 @@ button(**on(:increment), data: { testid: "inc" }) { "+" }
 
 ### `Phlex::Reactive::Response` — controlling the action's reply
 
-By default an action re-renders its component in place. **Return** a `Response`
-to do more (it governs only the actor's HTTP reply — cross-tab updates still use
-`broadcast_*_to(..., exclude: reactive_connection_id)`). Returning anything else
-keeps the default, so existing actions are unaffected.
+By default an action re-renders its component in place. **Return** a
+`Phlex::Reactive::Response` to do more (it governs only the actor's HTTP reply —
+cross-tab updates still use `broadcast_*_to(..., exclude: reactive_connection_id)`).
+Returning anything else keeps the default, so existing actions are unaffected.
+
+The snippets below alias the constant for brevity (`Response.replace(self)` won't
+resolve to `Phlex::Reactive::Response` inside a namespaced component — fully
+qualify it, or add the alias shown):
 
 ```ruby
+Response = Phlex::Reactive::Response # or qualify each call below
+
 def rename(title:)
   return Response.replace(self).flash(:error, @todo.errors.full_messages.to_sentence) unless @todo.update(title:)
   Response.replace(self)

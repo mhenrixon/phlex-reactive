@@ -36,4 +36,19 @@ RSpec.describe "Todos (record-backed reactive components)", type: :system do
     expect(page).to have_field(with: "new name")
     expect(todo.reload.title).to eq("new name")
   end
+
+  it "archive removes the row in place via Response.remove" do
+    todo = Todo.create!(title: "archive me")
+    visit "/todos"
+    expect(page).to have_css("[data-testid='todo']", count: 1)
+
+    within("##{ActionView::RecordIdentifier.dom_id(todo)}") do
+      find("[data-testid='archive']").click
+    end
+
+    # Response.remove streams a <turbo-stream action="remove">, so the row leaves
+    # the DOM with no full-page reload.
+    expect(page).to have_no_css("##{ActionView::RecordIdentifier.dom_id(todo)}")
+    expect(page).to have_css("[data-testid='todo']", count: 0)
+  end
 end

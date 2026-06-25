@@ -78,11 +78,17 @@ module Phlex
         return [redirect_stream(result.redirect_url)] if result.redirect?
 
         streams = result.streams
-        # Guarantee the component's own replace is present (so its signed
-        # data-reactive-token-value refreshes) unless the Response opted out.
-        # Idempotent: only prepend when no self-targeted stream was supplied, so
-        # Response.replace(self).flash(...) isn't doubled.
-        if result.render_self? && streams.none? { |s| s.include?(%(target="#{component.id}")) }
+        # Guarantee the component's signed identity token is refreshed unless the
+        # Response opted out (remove/redirect navigate away — handled above). The
+        # client reads the next token from the response body (#extractToken), so
+        # the real invariant is "a fresh data-reactive-token-value is present",
+        # NOT "some stream targets self". Checking the token directly is correct
+        # for replace AND update of self (both re-render the root via
+        # render_component, carrying the token), and still adds the fallback
+        # replace when a hand-built `with(...)` stream omits it. Idempotent: a
+        # Response.replace(self)/update(self) already carries the token, so we
+        # don't double the self-render.
+        if result.render_self? && streams.none? { |s| s.include?("data-reactive-token-value") }
           streams = [component.to_stream_replace, *streams]
         end
         streams

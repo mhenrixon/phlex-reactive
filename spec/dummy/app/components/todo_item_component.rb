@@ -46,6 +46,11 @@ class TodoItemComponent < ApplicationComponent
     li(**mix(reactive_attrs, id:, data: {testid: "todo", done: @todo.done?.to_s})) do
       button(**mix(on(:toggle), data: {testid: "toggle"})) { @todo.done? ? "✓" : "○" }
       input(**mix(on(:rename, event: "change"), name: "title", value: @todo.title))
+      # archive returns Response.remove(self) — drops this row in place. (The
+      # rename_strict flash-on-blank path would need a second title input that
+      # collides with field collection above, so it's covered by the request
+      # specs rather than wired into this single-input demo row.)
+      button(**mix(on(:archive), data: {testid: "archive"})) { "archive" }
     end
   end
 end
