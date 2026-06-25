@@ -33,6 +33,7 @@ hand-picking Turbo Stream targets.
 4. **Re-render through a real view context** — go through `Phlex::Reactive.renderer` / the controller, never a fabricated context (dom_id/url_for/t()/csrf must work)
 5. **Capability-detect pgbus features at runtime** — probe the actual keyword (`broadcast.parameters` includes `:exclude`), never `defined?(Pgbus)` alone or a version string
 6. **Degrade gracefully** — every pgbus-only feature must no-op or fall back when pgbus is absent
+7. **Control the reply via the return value** — return a `Phlex::Reactive::Response` (`replace`/`update`/`remove`/`redirect`/`with`, chain `.flash(level, content)` / `.stream(...)`) to govern the actor's HTTP reply; returning anything else keeps the implicit single replace. See the README "Controlling the action's reply" section and `lib/phlex/reactive/response.rb`.
 
 ## Commands
 
@@ -60,10 +61,11 @@ bundle exec rake                             # spec + standard
 
 ```
 Layer 4: Client runtime    app/javascript/phlex/reactive/reactive_controller.js (ONE generic Stimulus controller)
-Layer 3: Endpoint          app/controllers/phlex/reactive/actions_controller.rb (verify token → run action → re-render)
+Layer 3: Endpoint          app/controllers/phlex/reactive/actions_controller.rb (verify token → run action → render the returned Response, else re-render)
 Layer 2: Component mixin    lib/phlex/reactive/component.rb (reactive_record/reactive_state, action, reactive_attrs, on)
-Layer 1: Streamable mixin   lib/phlex/reactive/streamable.rb (#id, replace/append/..., broadcast_*_to, to_stream_replace)
-Layer 0: Core + config      lib/phlex/reactive.rb (verifier, renderer, base_controller_name, authorization_errors, action_path)
+Layer 1: Streamable mixin   lib/phlex/reactive/streamable.rb (#id, replace/append/..., broadcast_*_to, to_stream_replace, to_stream_remove)
+Layer 1: Response           lib/phlex/reactive/response.rb (replace/update/remove/redirect/with, flash, stream)
+Layer 0: Core + config      lib/phlex/reactive.rb (verifier, renderer, base_controller_name, authorization_errors, action_path, flash_target)
          Engine             lib/phlex/reactive/engine.rb (mounts the endpoint, pins the client controller)
 ```
 

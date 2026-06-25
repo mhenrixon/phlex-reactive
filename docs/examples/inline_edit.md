@@ -82,6 +82,28 @@ render Fields::InlineEdit.new(record: @user, attribute: :email)
   `save` receives its value, not a blank. See
   [what gets auto-collected](../architecture.md#what-collected-fields-are).
 
+## Surfacing a validation error
+
+`save` above uses `update!`, which raises on invalid input. To show the error
+instead, use non-bang `update` and return a `Response` with a flash:
+
+```ruby
+def save(value:)
+  authorize! @record, :update?
+  if @record.update(@attribute => value)
+    @editing = false
+    Phlex::Reactive::Response.replace(self)
+  else
+    Phlex::Reactive::Response.replace(self).flash(:error, @record.errors.full_messages.to_sentence)
+  end
+end
+```
+
+The flash `content` is supplied explicitly (off-request — no Rails `flash`) and
+appends into `Phlex::Reactive.flash_target` (default `<div id="flash">`); pass a
+Phlex component instead of a string for rich markup. See
+[Response](../README.md#phlexreactiveresponse--controlling-the-actions-reply).
+
 ## Want it to update other viewers too?
 
 Broadcast on save:

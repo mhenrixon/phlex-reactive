@@ -17,6 +17,25 @@ import { Controller } from "@hotwired/stimulus"
 // .broadcast_* methods — so a click and a background broadcast converge on
 // one re-render unit.
 //
+// Custom turbo-stream action: the server tells the actor to full-navigate
+// (e.g. the record's slug changed and the current URL is now dead). It rides a
+// 200 turbo-stream — NOT an HTTP 3xx — so it never trips the response.redirected
+// bail below (which still correctly catches real auth/CSRF redirects). Registered
+// once on the Turbo global (no @hotwired/turbo import — the gem uses window.Turbo
+// everywhere, and a named import is unreliable under importmap/esbuild).
+export function registerReactiveVisit() {
+  const actions = window.Turbo?.StreamActions
+  if (!actions || actions["reactive:visit"]) return
+  actions["reactive:visit"] = function () {
+    const url = this.getAttribute("data-url")
+    if (url) window.Turbo.visit(url, { action: "advance" })
+  }
+}
+if (typeof window !== "undefined") {
+  if (window.Turbo) registerReactiveVisit()
+  else document.addEventListener("turbo:load", registerReactiveVisit, { once: true })
+}
+
 // Register this controller eagerly (not lazily) so a click immediately after
 // page load is never missed. The phlex-reactive engine auto-pins it with
 // preload: true for importmap apps; see the README for esbuild/webpack.

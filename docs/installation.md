@@ -81,6 +81,11 @@ cp "$(bundle show phlex-reactive)/app/javascript/phlex/reactive/reactive_control
 
 …and `import ReactiveController from "./reactive_controller"`.
 
+Importing `reactive_controller.js` also registers the `reactive:visit` Turbo
+`StreamAction` that powers `Response.redirect`. The `import ReactiveController`
+above covers this; if you vendor the file, make sure it's actually imported (not
+tree-shaken away) or redirects won't fire.
+
 ## bun (bun-rails)
 
 Same as esbuild. Point the import at the gem path or vendor the file.
@@ -104,6 +109,7 @@ Phlex::Reactive.renderer             = ApplicationController     # app helpers d
 Phlex::Reactive.authorization_errors = [Pundit::NotAuthorizedError]
 # Phlex::Reactive.action_path = "/_r/actions"                   # custom endpoint
 # Phlex::Reactive.verifier    = ActiveSupport::MessageVerifier.new(ENV["REACTIVE_KEY"])
+# Phlex::Reactive.flash_target = "flash"                         # DOM id Response#flash appends into
 ```
 
 If you change `action_path`, expose it to the client:

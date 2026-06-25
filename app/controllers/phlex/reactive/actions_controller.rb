@@ -36,9 +36,9 @@ module Phlex
         component = component_class.from_identity(payload)
         coerced = coerce_params(action_def.params)
 
-        run_action(component, action_def, coerced)
+        result = run_action(component, action_def, coerced)
 
-        render turbo_stream: component.to_stream_replace
+        render turbo_stream: response_streams(result, component)
       rescue Phlex::Reactive::InvalidToken
         head :bad_request
       rescue ActiveRecord::RecordNotFound
@@ -67,6 +67,39 @@ module Phlex
             end
           end
         end
+      end
+
+      # Turn the action's return value into the turbo-stream(s) to render for
+      # the actor. A Phlex::Reactive::Response is honored explicitly; any other
+      # value (the legacy contract — return value ignored) falls back to the
+      # implicit single replace, so existing actions are unaffected.
+      def response_streams(result, component)
+        return [component.to_stream_replace] unless result.is_a?(Phlex::Reactive::Response)
+        return [redirect_stream(result.redirect_url)] if result.redirect?
+
+        streams = result.streams
+        # Guarantee the component's signed identity token is refreshed unless the
+        # Response opted out (remove/redirect navigate away — handled above). The
+        # client reads the next token from the response body (#extractToken), so
+        # the real invariant is "a fresh data-reactive-token-value is present",
+        # NOT "some stream targets self". Checking the token directly is correct
+        # for replace AND update of self (both re-render the root via
+        # render_component, carrying the token), and still adds the fallback
+        # replace when a hand-built `with(...)` stream omits it. Idempotent: a
+        # Response.replace(self)/update(self) already carries the token, so we
+        # don't double the self-render.
+        if result.render_self? && streams.none? { |s| s.include?("data-reactive-token-value") }
+          streams = [component.to_stream_replace, *streams]
+        end
+        streams
+      end
+
+      # A 200 turbo-stream carrying a namespaced custom action the client turns
+      # into Turbo.visit — NOT an HTTP 3xx, which the client hard-bails on
+      # (response.redirected). The matching client handler is registered in
+      # reactive_controller.js.
+      def redirect_stream(url)
+        %(<turbo-stream action="reactive:visit" data-url="#{ERB::Util.html_escape(url)}"></turbo-stream>)
       end
 
       def transaction_wrapper(&block)

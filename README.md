@@ -149,7 +149,8 @@ for broadcasting.
    │                                          verify signed token (no state trusted)
    │                                          rebuild component (record from DB)
    │                                          run the whitelisted action
-   │                                          re-render → <turbo-stream replace id>
+   │                                          re-render → <turbo-stream replace id>   (default; an action
+   │                                          may return a Response — see "Controlling the action's reply")
    └──────── Turbo morphs it in ◀───────────────────────────────┘
 
    ...and for OTHER tabs/users:
@@ -254,7 +255,7 @@ The cross-tab chat in ~60 lines of Ruby (and zero JS) is the showcase — see
 | `.update` / `.append(target:)` / `.prepend(target:)` / `.remove` | The other Turbo Stream actions |
 | `.broadcast_replace_to(*streamables, model:)` | Broadcast a replace over the stream transport (pgbus SSE / Action Cable) |
 | `.broadcast_append_to(*streamables, target:, model:)` / `_update_` / `_prepend_` / `_remove_` | The broadcast variants |
-| `#to_stream_replace` / `#to_stream_update` | Stream the *already-built* instance (used internally after an action) |
+| `#to_stream_replace` / `#to_stream_update` / `#to_stream_remove` | Stream the *already-built* instance (used internally after an action / by `Response`) |
 
 Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 
@@ -283,6 +284,41 @@ div(**mix(reactive_attrs, id:, class: "card")) { ... }
 # ❌ the extra data: overwrites on()'s data:, so the action never binds
 button(**on(:increment), data: { testid: "inc" }) { "+" }
 ```
+
+### `Phlex::Reactive::Response` — controlling the action's reply
+
+By default an action re-renders its component in place. **Return** a
+`Phlex::Reactive::Response` to do more (it governs only the actor's HTTP reply —
+cross-tab updates still use `broadcast_*_to(..., exclude: reactive_connection_id)`).
+Returning anything else keeps the default, so existing actions are unaffected.
+
+The snippets below alias the constant for brevity (`Response.replace(self)` won't
+resolve to `Phlex::Reactive::Response` inside a namespaced component — fully
+qualify it, or add the alias shown):
+
+```ruby
+Response = Phlex::Reactive::Response # or qualify each call below
+
+def rename(title:)
+  return Response.replace(self).flash(:error, @todo.errors.full_messages.to_sentence) unless @todo.update(title:)
+  Response.replace(self)
+end
+
+def approve   = (@row.approve!; Response.remove(self))          # drop the element
+def publish   = (@article.publish!; Response.redirect(article_url(@article)))  # slug changed → Turbo.visit
+def add(item:) = Response.replace(self).stream(Totals.update(@order))           # multi-stream
+```
+
+| Builder | Reply |
+|---|---|
+| `Response.replace(self)` / `.update(self)` | re-render in place (explicit default) |
+| `.flash(level, content, target: …)` | append a flash; `content` is a string or Phlex component (off-request — no Rails `flash`); target defaults to `Phlex::Reactive.flash_target` (`"flash"`) |
+| `Response.remove(self)` | remove the element (backed by `Streamable#to_stream_remove`) |
+| `Response.redirect(url)` | client-side `Turbo.visit` (pass a `*_url`); rides a `reactive:visit` turbo-stream, not an HTTP 3xx |
+| `Response.with(*streams)` / `#stream(*more)` | multi-stream |
+
+`.flash`/`.stream` are additive on a self-replace, so the component's signed
+token always refreshes.
 
 ### Configuration (`config/initializers/phlex_reactive.rb`)
 

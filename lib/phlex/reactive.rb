@@ -78,6 +78,26 @@ module Phlex
         @renderer ||= defined?(::ActionController::Base) ? ::ActionController::Base : nil
       end
 
+      # DOM id of the host-app container a Response#flash appends into.
+      # Default "flash"; override to match your layout's flash region.
+      def flash_target
+        @flash_target ||= "flash"
+      end
+
+      attr_writer :flash_target
+
+      # Render a Phlex component to HTML with a full (off-request) view context.
+      def render(component)
+        renderer.render(component, layout: false)
+      end
+
+      # A Turbo::Streams::TagBuilder bound to an off-request view context, used
+      # to build standalone streams (e.g. a Response flash append) not tied to a
+      # specific component's id.
+      def flash_builder
+        ::Turbo::Streams::TagBuilder.new(renderer.new.view_context)
+      end
+
       def base_controller_name
         @base_controller_name ||= "ActionController::Base"
       end
