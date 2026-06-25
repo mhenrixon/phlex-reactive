@@ -70,6 +70,8 @@ jobs:
           bun-version-file: ".bun-version"
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
+      - name: JS unit tests (client controller)
+        run: bun test spec/javascript
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         id: playwright-cache

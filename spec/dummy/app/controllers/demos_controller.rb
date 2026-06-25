@@ -23,6 +23,15 @@ class DemosController < ActionController::Base
     render_component RichEditorComponent.new(todo: Todo.find(params[:id]))
   end
 
+  def form_submit
+    render_component FormSubmitComponent.new(todo: Todo.find(params[:id]))
+  end
+
+  # The page a non-intercepted form submit would navigate to (issue #11).
+  def nav_probe
+    render html: "<div data-testid='nav-probe'>NAVIGATED</div>".html_safe, layout: true
+  end
+
   private
 
   # Render a Phlex component as the layout's body. `render component, layout:`

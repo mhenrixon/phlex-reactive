@@ -100,6 +100,23 @@ For cross-tab, open two sessions (two `Capybara::Session`s or two browser
 contexts), act in one, and assert the morph appears in the other. Allow a beat
 for the SSE round trip.
 
+## 5. Client unit tests (bun)
+
+Some client-runtime contracts are timing-sensitive and a full browser can mask
+them — e.g. a `submit` trigger must `preventDefault()` **synchronously** during
+the event, which a system test in a minimal app can't reliably reproduce. Those
+are covered by fast bun unit tests against the controller in isolation:
+
+```bash
+bun test spec/javascript     # or: bun run test
+```
+
+They stub `@hotwired/stimulus` and assert behavior directly (e.g. `dispatch()`
+calls `preventDefault()` before its queued work). CI runs them in the System
+job, which already has bun set up. The system suite drives a **vendored copy** of
+the controller (`spec/dummy/public/vendor/reactive_controller.js`); a guard spec
+keeps it byte-identical to source, so edit the source and re-sync, never the copy.
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
