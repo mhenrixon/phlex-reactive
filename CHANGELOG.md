@@ -22,6 +22,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   byte-identical to source by a guard spec, so the browser tests never validate
   stale client code again. Closes #8.
 
+## [0.2.3] - 2026-06-24
+
+### Fixed
+
 - **Record-backed components silently lost `reactive_state` every action.** When
   a component declared BOTH `reactive_record` and `reactive_state`, the state
   branch was dead: `reactive_token` signed only the record GID and
@@ -37,6 +41,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   round trip (only a genuinely absent value falls back to the `initialize`
   default). No API changes. Closes #6.
 
+### Documentation
+
+- Documented the combined record + state identity (the `{c, gid, s}` token
+  shape): the README, `docs/architecture.md`, and `docs/security.md` no longer
+  frame `reactive_record` and `reactive_state` as mutually exclusive. (#9)
+
+## [0.2.2] - 2026-06-24
+
+### Fixed
+
 - **Record-backed component built with a different init keyword by the action
   endpoint vs the broadcast path.** The click path (`Component.from_identity`)
   builds with `reactive_record_key` (the `reactive_record :name`), but the
@@ -51,7 +65,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   an explicit `def self.model_param_name` override still wins. No API changes.
   Closes #4.
 
-## [0.2.1]
+## [0.2.1] - 2026-06-24
 
 ### Fixed
 
@@ -66,7 +80,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the gem eager-loads cleanly. Added a regression spec that calls
   `eager_load_all`. No API changes.
 
-## [0.2.0]
+## [0.2.0] - 2026-06-24
 
 ### Added
 
@@ -85,7 +99,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   helpers. phlex-reactive still works on Action Cable without pgbus; the
   `exclude:` argument is simply ignored there.
 
-## [0.1.0]
+## [0.1.0] - 2026-06-20
 
 ### Added
 
@@ -109,7 +123,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   scaffolds a reactive component (and an RSpec spec when the app uses RSpec),
   state-backed by default or record-backed with `--record`.
 
-[Unreleased]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.2...HEAD
+[0.2.3]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/mhenrixon/phlex-reactive/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/mhenrixon/phlex-reactive/releases/tag/v0.1.0
