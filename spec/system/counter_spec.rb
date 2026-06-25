@@ -51,10 +51,22 @@ RSpec.describe "Counter (state-backed reactive component)", type: :system do
     expect(page).to have_css("[data-testid='count']", text: "0")
     page.execute_script("window.__noReload = 'alive'")
 
+    # Tag the reactive root and keep a handle to it. An update morphs the root's
+    # children, so this exact node survives; a replace would swap the root out,
+    # disconnecting this reference — that's how we distinguish update from replace.
+    page.execute_script(<<~JS)
+      const root = document.querySelector("[data-reactive-token-value]")
+      root.dataset.marker = "kept"
+      window.__reactiveRoot = root
+    JS
+
     # bump_via_update returns Response.update(self) — an inner-HTML morph (not a
     # replace). The count still updates in place and the token still refreshes.
     find("[data-testid='bump-update']").click
     expect(page).to have_css("[data-testid='count']", text: "1")
+    # The SAME root node is still connected (a replace would have swapped it).
+    expect(page.evaluate_script("window.__reactiveRoot.isConnected")).to be(true)
+    expect(page.evaluate_script("window.__reactiveRoot.dataset.marker")).to eq("kept")
 
     # A second click proves the token refreshed (a stale token would 400 and the
     # count would stay at 1).
