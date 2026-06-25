@@ -34,18 +34,24 @@ export default class extends Controller {
   // a per-controller promise makes each dispatch wait for the previous one, so
   // it always uses the freshest token.
   dispatch(event) {
-    this.queue = (this.queue ?? Promise.resolve()).then(() => this.#perform(event))
-    return this.queue
-  }
-
-  async #perform(event) {
     const { action, params } = event.params
     if (!action) return
 
-    // Stop native behavior (button submit / form navigation): the reactive
-    // round trip replaces it.
+    // Stop native behavior (button submit / FORM NAVIGATION) HERE, synchronously
+    // within the event dispatch. preventDefault() only works while the event is
+    // still being handled — deferring it into the request-queue microtask (below)
+    // is too late: a `submit` trigger would natively POST the form and navigate
+    // before the reactive round trip runs (issue #11). For a `click` trigger
+    // there's no default to miss, so this was previously invisible.
     event.preventDefault()
 
+    // Capture action/params now; the queued work runs in a later microtask, by
+    // which point the event object may have been reset by the browser.
+    this.queue = (this.queue ?? Promise.resolve()).then(() => this.#perform(action, params))
+    return this.queue
+  }
+
+  async #perform(action, params) {
     // Auto-collect named field values inside this component so a button-
     // triggered action still receives sibling inputs (Livewire-style).
     // Explicit params (data-reactive-params-param) win over collected fields.

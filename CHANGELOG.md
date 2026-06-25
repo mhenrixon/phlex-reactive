@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Form submit navigated instead of running the reactive action.** A component
+  wired with `on(:save, event: "submit")` on a real `<form>` let the browser
+  submit natively (full POST to the form's `action`), because
+  `dispatch()` deferred `event.preventDefault()` into the request-queue microtask
+  — too late, since `preventDefault()` only works synchronously within the event
+  dispatch. For `click` triggers there's no default to miss, so it was invisible;
+  for `submit` the form navigated (e.g. `POST /` → routing error). `dispatch()`
+  now calls `preventDefault()` synchronously (and captures the action/params up
+  front, so the deferred work never re-reads a reset event object). Guarded by a
+  bun unit test (`spec/javascript/reactive_controller.test.js`) that asserts the
+  synchronous call and fails on the pre-fix deferred code. Closes #11.
+
+## [0.2.4] - 2026-06-24
+
+### Fixed
+
 - **Reactive save silently dropped rich-text / custom-editor fields.** The
   client's field auto-collection (`#collectFields`) queried only
   `input[name], select[name], textarea[name]`, so a named rich-text editor
@@ -123,7 +139,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   scaffolds a reactive component (and an RSpec spec when the app uses RSpec),
   state-backed by default or record-backed with `--record`.
 
-[Unreleased]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.3...HEAD
+[0.2.4]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.0...v0.2.1
