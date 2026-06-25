@@ -1,16 +1,20 @@
-// Unit test for the `reactive:visit` custom turbo-stream action registered by
-// the reactive controller module. Response.redirect(url) on the server emits a
-// <turbo-stream action="reactive:visit" data-url="…">; the client turns it into
-// Turbo.visit. We assert the handler is registered on window.Turbo.StreamActions
-// and navigates to data-url. (Separate file so the module imports fresh with
-// window.Turbo already present — module-scope registration runs once on import.)
+// Unit test for the `reactive:visit` custom turbo-stream action. Response.redirect(url)
+// on the server emits a <turbo-stream action="reactive:visit" data-url="…">; the client
+// turns it into Turbo.visit.
+//
+// We call the exported registerReactiveVisit() explicitly rather than relying on the
+// module's import-time side effect: bun runs all spec/javascript files in ONE process,
+// so the module may already be imported (and registration already attempted, possibly
+// against a window without Turbo) by the time this file's setup runs. Calling it
+// directly makes the test order-independent.
 //
 // Run with: bun test spec/javascript
-import { test, expect, mock, beforeAll } from "bun:test"
+import { test, expect, mock, beforeEach } from "bun:test"
 
+let registerReactiveVisit
 let visited
 
-beforeAll(async () => {
+beforeEach(async () => {
   mock.module("@hotwired/stimulus", () => ({ Controller: class {} }))
   visited = []
   globalThis.window = {
@@ -19,8 +23,8 @@ beforeAll(async () => {
       visit: (url, opts) => visited.push({ url, opts }),
     },
   }
-  // Importing the module runs registerReactiveVisit() against window.Turbo.
-  await import("../../app/javascript/phlex/reactive/reactive_controller.js")
+  ;({ registerReactiveVisit } = await import("../../app/javascript/phlex/reactive/reactive_controller.js"))
+  registerReactiveVisit()
 })
 
 test("registers a reactive:visit StreamAction on window.Turbo", () => {

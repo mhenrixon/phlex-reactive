@@ -23,7 +23,7 @@ import { Controller } from "@hotwired/stimulus"
 // bail below (which still correctly catches real auth/CSRF redirects). Registered
 // once on the Turbo global (no @hotwired/turbo import — the gem uses window.Turbo
 // everywhere, and a named import is unreliable under importmap/esbuild).
-function registerReactiveVisit() {
+export function registerReactiveVisit() {
   const actions = window.Turbo?.StreamActions
   if (!actions || actions["reactive:visit"]) return
   actions["reactive:visit"] = function () {
