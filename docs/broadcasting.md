@@ -84,8 +84,9 @@ end
 
 ## Broadcasting from inside a reactive action
 
-The acting user gets the action's HTTP response (a replace of the component).
-*Everyone else* gets the broadcast. Idiomorph dedupes a `replace` by DOM id, so
+The acting user gets the action's HTTP response (a replace of the component by
+default, or whatever [`Response`](../README.md#phlexreactiveresponse--controlling-the-actions-reply)
+the action returns). *Everyone else* gets the broadcast. Idiomorph dedupes a `replace` by DOM id, so
 the actor doesn't double-apply — but for `append`/`prepend` (and animations or
 optimistic UI) the echo *would* double-apply. Suppress the actor's own echo with
 `exclude: reactive_connection_id`:
@@ -141,23 +142,24 @@ end
 ## Removing the actor's own element
 
 `destroy`-style actions are the one case where "replace the component by its id"
-doesn't fit (the element should vanish, not be replaced). Options:
-
-1. **Broadcast a remove and make the action response a remove too.** Override the
-   endpoint, or have the action render `to_stream_remove` (add a small helper),
-   so the actor's element is removed and everyone else's via broadcast.
-2. **Replace with an empty/tombstone state** if you want an "undo" affordance.
-
-Most apps add a tiny `to_stream_remove` to `Streamable` for this:
+doesn't fit — the element should vanish, not be replaced. Return
+`Response.remove(self)` from the action: the actor's element is removed via the
+built-in `Streamable#to_stream_remove` (no endpoint override, no helper to add),
+and other tabs get `broadcast_remove_to(..., exclude: reactive_connection_id)`.
 
 ```ruby
-def to_stream_remove
-  self.class.turbo_stream_builder.remove(id)
+def destroy
+  authorize! @todo, :destroy?
+  list = @todo.list
+  @todo.destroy!
+  Todos::Item.broadcast_remove_to(list, :todos, model: @todo, exclude: reactive_connection_id) # other tabs
+  Phlex::Reactive::Response.remove(self)                                                        # this tab
 end
 ```
 
-and return it from a destroy action via a custom endpoint hook. See
-[architecture.md](architecture.md) for the dispatch path.
+For an "undo" affordance, replace with a tombstone state instead of removing. See
+[`Phlex::Reactive::Response`](../README.md#phlexreactiveresponse--controlling-the-actions-reply)
+for the full reply API.
 
 ## Presence (who's here / typing)
 

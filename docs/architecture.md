@@ -26,6 +26,7 @@ A component that implements `#id` can render itself as a Turbo Stream:
 ```
 Counter.replace(c)            → <turbo-stream action="replace" target="<c.id>">…</turbo-stream>
 Counter.broadcast_replace_to(stream, model: c)  → same, pushed over the transport
+c.to_stream_remove            → <turbo-stream action="remove" target="<c.id>">    (backs Response.remove)
 ```
 
 Rendering goes through a real controller renderer (`Phlex::Reactive.renderer`),
@@ -57,8 +58,13 @@ POST /reactive/actions
 Accept: text/vnd.turbo-stream.html
 ```
 
-The endpoint verifies the token, rebuilds the component, runs the action, and
-returns `component.to_stream_replace`. Turbo morphs it in.
+The endpoint verifies the token, rebuilds the component, and runs the action. If
+the action returns a [`Phlex::Reactive::Response`](../README.md#phlexreactiveresponse--controlling-the-actions-reply)
+(a replace/update, a remove, a redirect, or multiple streams — optionally with a
+flash), the endpoint renders that; otherwise it falls back to the implicit single
+`component.to_stream_replace` (the legacy contract). For any non-remove/redirect
+reply the component's own replace is guaranteed present so its token refreshes.
+Turbo morphs it in.
 
 ### What collected fields are
 

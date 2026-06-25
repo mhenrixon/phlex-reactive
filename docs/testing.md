@@ -76,6 +76,32 @@ end
 For authorization, stub the current user / policy and assert `:forbidden` when
 the action's `authorize!` should deny.
 
+When an action returns a [`Response`](../README.md#phlexreactiveresponse--controlling-the-actions-reply),
+assert on the streams it produces:
+
+```ruby
+test "failed update keeps the replace and appends a flash" do
+  # POST a save action with invalid input
+  assert_response :success
+  assert_match %r{<turbo-stream action="replace" target="counter">}, response.body  # token refreshes
+  assert_match %r{<turbo-stream action="append" target="flash">}, response.body     # flash appended
+end
+
+test "remove action emits a remove and no replace" do
+  assert_response :success
+  assert_match %r{<turbo-stream action="remove" target="todo_42">}, response.body
+  refute_match %r{action="replace"}, response.body   # render_self? is false for remove
+end
+
+test "redirect rides a 200 reactive:visit, not a 3xx" do
+  assert_response :success            # NOT :redirect — the client bails on response.redirected
+  assert_match %r{<turbo-stream action="reactive:visit" data-url=".*/articles/}, response.body
+end
+```
+
+A `Response` is also a plain value object — unit-test it with no HTTP:
+`Response.remove(c).render_self?` is `false`; `Response.replace(c).flash(:x, "hi").streams.size` is `2`.
+
 ## 4. System / browser: the full loop & broadcasts
 
 Use a system test (Capybara) or a browser-automation CLI for the end-to-end loop

@@ -149,7 +149,8 @@ for broadcasting.
    │                                          verify signed token (no state trusted)
    │                                          rebuild component (record from DB)
    │                                          run the whitelisted action
-   │                                          re-render → <turbo-stream replace id>
+   │                                          re-render → <turbo-stream replace id>   (default; an action
+   │                                          may return a Response — see "Controlling the action's reply")
    └──────── Turbo morphs it in ◀───────────────────────────────┘
 
    ...and for OTHER tabs/users:
@@ -254,7 +255,7 @@ The cross-tab chat in ~60 lines of Ruby (and zero JS) is the showcase — see
 | `.update` / `.append(target:)` / `.prepend(target:)` / `.remove` | The other Turbo Stream actions |
 | `.broadcast_replace_to(*streamables, model:)` | Broadcast a replace over the stream transport (pgbus SSE / Action Cable) |
 | `.broadcast_append_to(*streamables, target:, model:)` / `_update_` / `_prepend_` / `_remove_` | The broadcast variants |
-| `#to_stream_replace` / `#to_stream_update` | Stream the *already-built* instance (used internally after an action) |
+| `#to_stream_replace` / `#to_stream_update` / `#to_stream_remove` | Stream the *already-built* instance (used internally after an action / by `Response`) |
 
 Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 

@@ -57,8 +57,8 @@ class Todos::Item < ApplicationComponent
     authorize! @todo, :destroy?
     list = @todo.list
     @todo.destroy!
-    # Remove from every other tab; this tab's own response also removes it.
-    Todos::Item.broadcast_remove_to(list, :todos, model: @todo)
+    Todos::Item.broadcast_remove_to(list, :todos, model: @todo) # other tabs
+    Phlex::Reactive::Response.remove(self)                       # this tab's element
   end
 
   def view_template
@@ -78,12 +78,10 @@ class Todos::Item < ApplicationComponent
 end
 ```
 
-Note `destroy` returns a *replace* of a now-deleted row in the action response.
-Render `to_stream_replace` of a tombstone, or override the endpoint to send a
-`remove` — the simplest path is to also handle removal client-side via the
-broadcast and let the action response be a no-op replace of an empty row. For
-clarity most apps make `destroy` an action whose response removes the element;
-see [docs/broadcasting.md](../broadcasting.md#removing-the-actors-own-element).
+`destroy` returns `Response.remove(self)`, so the actor's own row is removed (via
+the built-in `Streamable#to_stream_remove` — no tombstone, no endpoint override)
+and `broadcast_remove_to` removes it in every other tab. See
+[Response](../README.md#phlexreactiveresponse--controlling-the-actions-reply).
 
 ## The list + composer
 

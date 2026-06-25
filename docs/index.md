@@ -48,8 +48,12 @@ route. No hand-picked target.**
 ## Why phlex-reactive
 
 - **Actions are Ruby methods.** Declare `action :increment`; the client calls it.
-- **Re-render is auto-targeted.** A component owns a stable `id`; the response
-  replaces it. You never pick a target.
+- **Re-render is auto-targeted.** A component owns a stable `id`; by default the
+  response replaces it — an action can return a `Response` to morph, remove,
+  redirect, or flash instead. You never pick a target.
+- **Actions control the reply.** Return a `Response` to morph, remove, redirect
+  (`Turbo.visit`), or attach a flash — or emit several streams at once. Returning
+  nothing keeps the auto-replace default.
 - **One unit for clicks AND broadcasts.** The same component re-renders for a
   local action and a server-pushed live update.
 - **State lives in your database**, behind a signed identity — no
