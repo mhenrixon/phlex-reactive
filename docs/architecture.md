@@ -67,11 +67,13 @@ inside the component so the action receives them without you wiring anything:
 
 - **Standard controls** — `input[name]`, `select[name]`, `textarea[name]`
   (checkboxes send their `checked` state; radios send the checked value).
-- **Rich-text / custom editors** — named `lexxy-editor`, `trix-editor`, and any
-  `[contenteditable]` (with a `name` attribute). These aren't standard controls,
-  so they're read explicitly (serialized `.value`, else the contenteditable
-  text). Without this a reactive save would post an empty value and silently
-  wipe the field.
+- **Rich-text / custom editors** — named `lexxy-editor`, `trix-editor`, and
+  `[contenteditable]` elements with a `name` attribute (the editable ones:
+  `contenteditable`, `="true"`, or `="plaintext-only"` — an explicit
+  `contenteditable="false"` is skipped). These aren't standard controls, so
+  they're read explicitly (serialized `.value`, else the contenteditable text).
+  Without this a reactive save would post an empty value and silently wipe the
+  field.
 
 Only fields that exist in the DOM are sent; a declared param with no matching
 field is simply absent (the action's keyword default applies). Explicit params
