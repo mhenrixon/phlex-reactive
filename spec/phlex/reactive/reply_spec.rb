@@ -88,6 +88,17 @@ RSpec.describe Phlex::Reactive::Reply do
       expect(response).to be_a(Phlex::Reactive::Response)
       expect(response.streams).to eq(["<turbo-stream></turbo-stream>"])
     end
+
+    # Issue #30: reply.streams(*) is the bound form of Response.streams(self, *) —
+    # emit exactly these streams, refresh the token via a tiny stream (NOT a full
+    # self replace), so per-field/partial updates don't clobber live inputs.
+    it "streams mirrors Response.streams(self, *streams) — render_self false, component bound" do
+      response = counter.reply.streams(item.to_stream_update)
+      expect(response).to be_a(Phlex::Reactive::Response)
+      expect(response.render_self?).to be(false)
+      expect(response.token_component).to eq(counter)
+      expect(response.streams.first).to include('action="update"')
+    end
   end
 
   describe "chaining works on the returned Response (immutability preserved)" do

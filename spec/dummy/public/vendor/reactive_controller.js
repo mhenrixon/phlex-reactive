@@ -32,9 +32,38 @@ export function registerReactiveVisit() {
     if (url) window.Turbo.visit(url, { action: "advance" })
   }
 }
+
+// Custom turbo-stream action: a TOKEN-ONLY refresh (issue #30). A partial
+// update (Response.streams / reply.streams) re-renders only PART of a component
+// — so there's no full-self replace to carry the next signed token. The server
+// instead emits `<turbo-stream action="reactive:token" target="<id>"
+// data-reactive-token-value="<fresh>">`. #perform's #extractToken already reads
+// the token out of the response body for the NEXT queued request; this handler
+// keeps the DOM in sync too, writing the attribute onto the root element so the
+// `tokenValue` fallback stays fresh. It's a pure attribute set — no node is
+// replaced — so a focused <input> + caret survive (the whole point: update a
+// total cell without tearing down the field the user is typing in).
+export function registerReactiveToken() {
+  const actions = window.Turbo?.StreamActions
+  if (!actions || actions["reactive:token"]) return
+  actions["reactive:token"] = function () {
+    const token = this.getAttribute("data-reactive-token-value")
+    const target = this.getAttribute("target")
+    if (!token || !target) return
+    const el = document.getElementById(target)
+    // Stimulus reads the token via the `token` value -> data-reactive-token-value.
+    if (el) el.setAttribute("data-reactive-token-value", token)
+  }
+}
+
+export function registerReactiveActions() {
+  registerReactiveVisit()
+  registerReactiveToken()
+}
+
 if (typeof window !== "undefined") {
-  if (window.Turbo) registerReactiveVisit()
-  else document.addEventListener("turbo:load", registerReactiveVisit, { once: true })
+  if (window.Turbo) registerReactiveActions()
+  else document.addEventListener("turbo:load", registerReactiveActions, { once: true })
 }
 
 // --- Registration guard (issue #26 part 2) -------------------------------

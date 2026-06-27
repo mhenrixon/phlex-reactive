@@ -37,4 +37,13 @@ ActiveRecord::Schema.define(version: 1) do
     t.string :country
     t.timestamps
   end
+
+  # Issue #30: a spreadsheet-like line-item row (quantity × price = total). A
+  # debounced reactive save updates ONLY the total cell via reply.streams, so the
+  # sibling input the user is typing in is never torn down.
+  create_table :line_items, force: true do |t|
+    t.integer :quantity, null: false, default: 0
+    t.integer :price, null: false, default: 0
+    t.timestamps
+  end
 end

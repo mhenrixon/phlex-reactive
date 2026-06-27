@@ -27,6 +27,8 @@ A component that implements `#id` can render itself as a Turbo Stream:
 Counter.replace(c)            → <turbo-stream action="replace" target="<c.id>">…</turbo-stream>
 Counter.broadcast_replace_to(stream, model: c)  → same, pushed over the transport
 c.to_stream_remove            → <turbo-stream action="remove" target="<c.id>">    (backs reply.remove)
+c.to_stream_token             → <turbo-stream action="reactive:token" target="<c.id>"
+                                  data-reactive-token-value="<fresh>">             (backs reply.streams)
 ```
 
 Rendering goes through a real controller renderer (`Phlex::Reactive.renderer`),
@@ -62,11 +64,21 @@ The endpoint verifies the token, rebuilds the component, and runs the action. If
 the action returns [`reply.<verb>`](../README.md#reply--controlling-the-actions-reply)
 (a replace/update, a remove, a redirect, or multiple streams — optionally with a
 flash), the endpoint renders that; otherwise it falls back to the implicit single
-`component.to_stream_replace` (the legacy contract). For any non-remove/redirect
-reply the component's own replace is guaranteed present so its token refreshes.
-Turbo applies it in: a plain `replace` is an outerHTML swap; `reply.morph`
+`component.to_stream_replace` (the legacy contract). For a self-rendering reply
+(`reply.replace` / `.morph` / `.update` / `.with`) the component's own replace is
+guaranteed present so its token refreshes — the one exception is `reply.streams`
+(below), which opts out of the self-replace and refreshes via `to_stream_token`
+instead. Turbo applies it in: a plain `replace` is an outerHTML swap; `reply.morph`
 (or `reply.update`) morphs the subtree in place, preserving the focused input +
 caret for per-field editing (issue #28).
+
+`reply.streams` (issue #30) is the partial-update path: the action re-renders
+only the targets it names and opts out of the full-self replace. The token can't
+ride a render that isn't happening, so the endpoint appends `to_stream_token`
+instead — a tiny `reactive:token` stream that carries the fresh token and is
+applied by an inert client action (a pure attribute write on the root). The token
+rolls forward; the component's live inputs are never re-rendered, so a field the
+user is typing in survives.
 
 `reply.<verb>` returns a `Phlex::Reactive::Response` — the immutable value object
 the endpoint reads (`response_streams`). It's an internal detail; you build it

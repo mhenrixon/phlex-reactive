@@ -262,6 +262,62 @@ RSpec.describe "Reactive actions", type: :request do
       expect(todo.reload.title).to eq("renamed")
       expect(response.body).not_to include('target="flash"')
     end
+
+    # Issue #30: reply.streams emits exactly the caller's streams and refreshes
+    # the token via a tiny reactive:token stream — NOT a full-self replace — so a
+    # partial/per-field update never tears down the component's live inputs.
+    describe "streams (issue #30 — partial update + token-only refresh)" do
+      it "emits the caller's stream AND a token-only refresh, with NO full-self replace" do
+        post_action(CounterComponent, payload: {"s" => {"count" => 4}}, act: "bump_via_partial")
+
+        expect(response).to have_http_status(:ok)
+        expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+        # The caller's own partial update is present...
+        expect(response.body).to include('target="counter-mirror"')
+        # ...the token is refreshed via the inert custom action...
+        expect(response.body).to include('action="reactive:token"')
+        expect(response.body).to include('target="counter"')
+        expect(response.body).to include("data-reactive-token-value=") # the client extracts this
+        # ...and the component is NOT fully re-rendered (no replace would clobber inputs).
+        expect(response.body).not_to include('action="replace"')
+      end
+
+      it "does not re-render the component body (count is absent — inputs untouched)" do
+        post_action(CounterComponent, payload: {"s" => {"count" => 4}}, act: "bump_via_partial")
+
+        # The token-refresh stream carries no rendered children, so the next
+        # count (5) appears only inside the caller's own mirror update, never as
+        # a re-rendered <span> from a forced self replace.
+        expect(response.body.scan('target="counter"').size).to eq(1) # only the token stream targets self
+      end
+
+      # Regression: the dedupe must be scoped to the ACTOR's target, not a global
+      # substring. A partial reply that includes ANOTHER component's stream (which
+      # legitimately carries its own data-reactive-token-value) must STILL refresh
+      # this component's token — otherwise the actor's next action 400s.
+      it "still refreshes the actor's token when a SIBLING component's stream carries one" do
+        post_action(CounterComponent, payload: {"s" => {"count" => 4}}, act: "bump_with_sibling")
+
+        # Capture the sibling the ACTION created (not a preexisting fixture), so
+        # the sibling-target assertions actually exercise the action's output.
+        sibling = Todo.find_by!(title: "sibling")
+        sibling_dom = ActionView::RecordIdentifier.dom_id(sibling)
+
+        expect(response).to have_http_status(:ok)
+        # The sibling's replace (carrying ITS own token) is present and targets
+        # the sibling — this is the "another component's token" the dedupe must
+        # NOT mistake for the actor's.
+        expect(response.body).to include('action="replace"')
+        expect(response.body).to include(%(target="#{sibling_dom}"))
+        # ...AND the actor's own token-only refresh is still appended, targeting self.
+        expect(response.body).to include('action="reactive:token"')
+        expect(response.body).to include('target="counter"')
+        # The actor's token stream is the ONLY thing targeting the counter (no self replace).
+        expect(response.body.scan('target="counter"').size).to eq(1)
+        # Sanity: the sibling stream targets the sibling, not the counter.
+        expect(sibling_dom).not_to eq("counter")
+      end
+    end
   end
 
   describe "tampering" do

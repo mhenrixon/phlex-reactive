@@ -13,6 +13,7 @@ Rails.application.routes.draw do
   get "nested_params" => "demos#nested_params"
   get "debounce" => "demos#debounce"
   get "morph_grid/:id" => "demos#morph_grid"
+  get "partial_grid/:id" => "demos#partial_grid"
   # Nav probe: where a NON-intercepted form submit would land. Accept POST (and
   # GET) so a native submit produces an observable navigation, not a 404.
   match "nav_probe" => "demos#nav_probe", :via => [:get, :post]

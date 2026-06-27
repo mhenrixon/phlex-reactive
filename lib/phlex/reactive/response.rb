@@ -17,7 +17,7 @@ module Phlex
     #   Response.redirect(article_url(@article))        # slug changed -> Turbo.visit the new URL
     #   Response.replace(self).stream(Totals.update(@order))  # multi-stream
     class Response
-      attr_reader :streams, :redirect_url
+      attr_reader :streams, :redirect_url, :token_component
 
       class << self
         # Re-render the component in place (explicit form of today's default).
@@ -50,6 +50,22 @@ module Phlex
 
         # Escape hatch / multi-stream root: zero or more raw turbo-stream strings.
         def with(*strings) = new(streams: strings.flatten)
+
+        # Partial / per-field update with a TOKEN-ONLY refresh (issue #30). Emits
+        # EXACTLY the given streams — no forced full-self replace — but binds
+        # `component` so the endpoint appends its tiny `to_stream_token` stream.
+        # So the signed token rolls forward (the next action verifies) while the
+        # component's own live inputs are never torn down: ideal for a
+        # spreadsheet-like grid where a debounced save re-streams only a total
+        # cell and the user is still typing in a sibling field.
+        #
+        #   Response.streams(self, Totals.update(@invoice))   # update only the totals
+        #
+        # render_self is false (we do NOT inject the full replace); the token is
+        # refreshed by the bound component's token stream instead.
+        def streams(component, *strings)
+          new(streams: strings.flatten, render_self: false, token_component: component)
+        end
 
         # Build a flash turbo-stream that appends `content` into a host-app
         # container. `content` is a Phlex component instance (rendered through
@@ -85,10 +101,16 @@ module Phlex
       # GUARANTEES the component's own replace is present so its
       # data-reactive-token-value refreshes (the client extracts the next token
       # from the response HTML). remove/redirect set it false (nothing stays).
-      def initialize(streams: [], redirect_url: nil, render_self: true)
+      #
+      # token_component: set by .streams (issue #30) — a partial update that opts
+      # OUT of the full-self replace but still needs the token refreshed. The
+      # endpoint appends this component's tiny to_stream_token instead, so the
+      # token rolls forward without re-rendering (and clobbering) the children.
+      def initialize(streams: [], redirect_url: nil, render_self: true, token_component: nil)
         @streams = streams.freeze
         @redirect_url = redirect_url
         @render_self = render_self
+        @token_component = token_component
         freeze
       end
 
@@ -98,7 +120,8 @@ module Phlex
         self.class.new(
           streams: @streams + more.flatten,
           redirect_url: @redirect_url,
-          render_self: @render_self
+          render_self: @render_self,
+          token_component: @token_component
         )
       end
 
@@ -133,6 +156,11 @@ module Phlex
 
       def redirect? = !@redirect_url.nil?
       def render_self? = @render_self
+
+      # True when a partial update (.streams) opted out of the full-self replace
+      # but still needs the token rolled forward — the endpoint appends the bound
+      # component's tiny token-only stream (issue #30).
+      def refresh_token? = !@token_component.nil?
     end
   end
 end

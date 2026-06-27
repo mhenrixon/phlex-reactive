@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`reply.streams` — partial update with a token-only refresh (issue #30).**
+  `reply.streams(Totals.update(@item))` emits **exactly** the streams you pass —
+  no forced full-self replace — so an action can re-render only part of a
+  component (one total cell, one sub-region) while the rest of the DOM, including
+  a sibling `<input>` the user is mid-typing in, is left untouched. The signed
+  identity token still rolls forward: the endpoint appends a tiny
+  `<turbo-stream action="reactive:token">` (new `Streamable#to_stream_token`) that
+  carries the fresh `data-reactive-token-value` and is applied by an inert client
+  action — a pure attribute write on the root, so the focused field + caret
+  survive. This unblocks spreadsheet-like per-field grid editing that the old
+  "every reply re-renders the whole component" behavior made unusable (you had to
+  reach for `data-turbo-permanent`). `Response.streams(self, *)` is the underlying
+  builder; `reply.streams(*)` is the bound form. Backed by a new `render_self:
+  false` + `token_component` path in the endpoint — the legacy full-self-replace
+  refresh (`reply.replace` / `reply.with`) is unchanged.
+
 - **`reply` — the action-reply builder.** Control an action's reply with
   `reply.replace` / `reply.morph` / `reply.update` / `reply.remove` /
   `reply.redirect(url)` / `reply.with(*)`, chaining `.flash` / `.stream` /
