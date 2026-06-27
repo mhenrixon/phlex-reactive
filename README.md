@@ -294,6 +294,18 @@ end
 Nested coercion recurses per field, drops undeclared nested keys, and accepts an
 array as either a JSON array or a Rails index hash (`{ "0" => …, "1" => … }`).
 
+**Model-scoped form fields just work.** A standard Rails `Form(model: @invoice)`
+names its inputs `invoice[date]`, `invoice[status]`, … and the client posts those
+names verbatim. A nested schema matches them with zero field renaming — the
+endpoint expands bracket notation before coercion, so `invoice[date]` nests under
+`invoice` and `invoice_items_attributes[0][qty]` becomes the index-hash form
+above:
+
+```ruby
+action :save, params: {invoice: {date: :string, status: :string}}
+# client posts { "invoice[date]": "…", "invoice[status]": "…" }  → save(invoice: { date:, status: })
+```
+
 **Nested reactive components compose.** A reactive component rendered inside
 another is its own root — field collection stops at nested
 `data-controller="reactive"` roots, so an outer action collects only *its own*
