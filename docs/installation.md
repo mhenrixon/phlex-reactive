@@ -68,7 +68,7 @@ preloads the asset, so this adds no latency.
 ```js
 // app/javascript/controllers/index.js
 import { application } from "./application"
-import ReactiveController from "phlex-reactive/reactive_controller"
+import ReactiveController from "phlex/reactive/reactive_controller"
 application.register("reactive", ReactiveController)
 ```
 

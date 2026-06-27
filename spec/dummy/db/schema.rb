@@ -21,4 +21,20 @@ ActiveRecord::Schema.define(version: 1) do
     t.text :body, null: false
     t.timestamps
   end
+
+  # Owner + has_one association for the accepts_nested_attributes_for helper
+  # (issue #24): an Account that edits its Address inline via nested_update!.
+  create_table :accounts, force: true do |t|
+    t.string :name, null: false
+    t.timestamps
+  end
+
+  create_table :addresses, force: true do |t|
+    t.references :account, null: false
+    t.string :street
+    t.string :city
+    t.string :postal_code
+    t.string :country
+    t.timestamps
+  end
 end

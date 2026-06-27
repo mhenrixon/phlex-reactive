@@ -49,6 +49,70 @@ RSpec.describe Phlex::Reactive::Response do
     expect(base).to be_frozen
   end
 
+  # Issue #25: re-render self + a companion element/component without dropping to
+  # raw turbo_stream_builder.
+  describe "also_update / also_replace (companion elements)" do
+    it "also_update appends an update stream for an arbitrary target id" do
+      response = described_class.replace(counter).also_update("page_heading", html: "New name")
+
+      expect(response.streams.size).to eq(2)
+      expect(response.render_self?).to be(true)
+      expect(response.streams.last).to include('action="update"')
+      expect(response.streams.last).to include('target="page_heading"')
+      expect(response.streams.last).to include("New name")
+    end
+
+    it "also_update renders a Phlex component (auto-escaped) into the companion stream" do
+      probe = Class.new(Phlex::HTML) do
+        def self.name = "HeadingProbe"
+        def view_template = strong { "Bold heading" }
+      end
+      response = described_class.with.also_update("page_heading", html: probe.new)
+
+      expect(response.streams.first).to include("<strong>Bold heading</strong>")
+    end
+
+    it "also_update HTML-escapes a plain string (a model value is safe)" do
+      # Turbo's TagBuilder escapes a plain String passed to html:, so a model
+      # value can't inject markup. (Pass an html_safe string or a Phlex
+      # component to emit intentional raw HTML.)
+      response = described_class.with.also_update("page_heading", html: "<em>Live</em>")
+
+      expect(response.streams.first).to include("&lt;em&gt;Live&lt;/em&gt;")
+      expect(response.streams.first).not_to include("<em>Live</em>")
+    end
+
+    it "also_update emits an html_safe string as raw markup" do
+      response = described_class.with.also_update("page_heading", html: "<em>Live</em>".html_safe)
+
+      expect(response.streams.first).to include("<em>Live</em>")
+    end
+
+    it "also_replace renders another Streamable component, targeting its own id" do
+      response = described_class.replace(counter).also_replace(item)
+
+      expect(response.streams.size).to eq(2)
+      expect(response.streams.last).to include('action="replace"')
+      expect(response.streams.last).to include(%(target="#{ActionView::RecordIdentifier.dom_id(todo)}"))
+    end
+
+    it "is immutable — also_* return new instances and keep render_self" do
+      base = described_class.replace(counter)
+      extended = base.also_update("h", html: "x")
+      expect(extended).not_to equal(base)
+      expect(base.streams.size).to eq(1) # original unchanged
+      expect(extended.render_self?).to be(true)
+    end
+
+    it "chains alongside flash and stream" do
+      response = described_class.replace(counter)
+        .also_update("heading", html: "n")
+        .flash(:notice, "saved")
+
+      expect(response.streams.size).to eq(3)
+    end
+  end
+
   it "flash accepts a Phlex component, rendered through the configured renderer" do
     klass = Class.new(Phlex::HTML) do
       def self.name = "FlashAlertProbe" # ActionView's render logger needs a name

@@ -247,6 +247,27 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  describe "#reactive_field param binding (issue #23)" do
+    subject(:instance) { state_klass.new }
+
+    it "binds the field name to the action param (drops the magic name: string)" do
+      attrs = instance.send(:reactive_field, :count)
+      expect(attrs[:name]).to eq("count")
+    end
+
+    it "merges extra attributes over the bound name" do
+      attrs = instance.send(:reactive_field, :count, value: 7, data: {testid: "f"})
+      expect(attrs[:name]).to eq("count")
+      expect(attrs[:value]).to eq(7)
+      expect(attrs[:data]).to eq({testid: "f"})
+    end
+
+    it "lets an explicit name: override the param binding (escape hatch)" do
+      attrs = instance.send(:reactive_field, :count, name: "other")
+      expect(attrs[:name]).to eq("other")
+    end
+  end
+
   describe "#on trigger attributes (issue #17 debounce)" do
     subject(:instance) { state_klass.new }
 

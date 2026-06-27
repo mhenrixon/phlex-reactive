@@ -133,7 +133,61 @@ module Phlex
         Thread.current[:phlex_reactive_connection_id] = previous
       end
 
+      # The controller a correctly-mounted action path resolves to. Used by the
+      # route guard below.
+      ACTIONS_CONTROLLER = "phlex/reactive/actions"
+
+      # True when a POST to `path` resolves to the gem's ActionsController. A host
+      # catch-all route (match "*path", ...) appended above the engine's route
+      # SHADOWS it, so every reactive POST 404s and none of the controller runs —
+      # the opaque "is the endpoint even mounted?" failure (issue #26). A false
+      # here is the signal. Returns false (not raise) when nothing matches.
+      def action_route_ok?(path = action_path)
+        return false unless defined?(::Rails) && ::Rails.application
+
+        # At after_initialize (when the boot guard runs) the host's routes may not
+        # be drawn yet, so recognize_path would see an incomplete set and report a
+        # false shadow. Force-load routes first (idempotent — no-op if already
+        # loaded), so the check is correct whether it runs at boot or at runtime.
+        ensure_routes_loaded
+        recognized = ::Rails.application.routes.recognize_path(path, method: :post)
+        recognized[:controller] == ACTIONS_CONTROLLER
+      rescue ActionController::RoutingError, ActiveRecord::RecordNotFound
+        false
+      end
+
+      # Log a clear warning (once, at boot) when the action path doesn't resolve
+      # to the gem controller — pointing at the catch-all shadow rather than
+      # leaving an adopter to guess. Called from the engine's after_initialize.
+      def warn_unless_action_route_mounted!(path: action_path, logger: default_logger)
+        return if action_route_ok?(path)
+        return unless logger
+
+        logger.warn(
+          "[phlex-reactive] POST #{path} does not resolve to #{ACTIONS_CONTROLLER}. " \
+          "A host catch-all route (e.g. match \"*path\", ...) likely shadows it, so reactive " \
+          "actions will 404. Exempt #{path.sub(%r{\A/}, "")} from the catch-all, or set " \
+          "Phlex::Reactive.action_path to an unshadowed path. See the README integration section."
+        )
+      end
+
       private
+
+      # Materialize the route set if it hasn't been drawn yet (the engine appends
+      # POST /reactive/actions when routes are drawn, which may be after the boot
+      # guard's after_initialize). Idempotent; tolerant of older Rails.
+      def ensure_routes_loaded
+        reloader = ::Rails.application.routes_reloader
+        if reloader.respond_to?(:execute_unless_loaded)
+          reloader.execute_unless_loaded
+        elsif ::Rails.application.respond_to?(:reload_routes_unless_loaded)
+          ::Rails.application.reload_routes_unless_loaded
+        end
+      end
+
+      def default_logger
+        ::Rails.logger if defined?(::Rails) && ::Rails.respond_to?(:logger)
+      end
 
       def default_verifier
         unless defined?(::Rails) && ::Rails.application

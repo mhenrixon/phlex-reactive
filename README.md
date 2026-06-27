@@ -124,7 +124,7 @@ Import and register it from your controllers entrypoint:
 
 ```js
 import { application } from "./application"
-import ReactiveController from "phlex-reactive/reactive_controller"
+import ReactiveController from "phlex/reactive/reactive_controller"
 application.register("reactive", ReactiveController)
 ```
 
@@ -136,6 +136,47 @@ gem; point your bundler at the gem path or copy it in. See
 **Requirements:** Rails 7.1+, Phlex 2 (`phlex-rails`), Turbo 8+ (for morphing),
 and a Phlex `ApplicationComponent` base class. pgbus is optional but recommended
 for broadcasting.
+
+### Integration troubleshooting (silent "nothing happens")
+
+Two host-app setups make the first reactive component *silently do nothing* —
+components render, but no action ever fires, with no error pointing at the cause.
+The gem now logs a warning for each, but here are the fixes:
+
+**A catch-all route shadows `POST /reactive/actions`.** The engine appends its
+route *after* everything in your `config/routes.rb`, so a bottom-of-file
+catch-all wins and every reactive POST 404s:
+
+```ruby
+# config/routes.rb — a catch-all like this shadows the engine's appended route
+match "*path", to: "errors#not_found", via: :all
+```
+
+Exempt the reactive path from the catch-all (or set
+`Phlex::Reactive.action_path` to an unshadowed path):
+
+```ruby
+match "*path", to: "errors#not_found", via: :all,
+  constraints: ->(req) { !req.path.start_with?("/reactive/") }
+```
+
+At boot the gem warns (`[phlex-reactive] POST /reactive/actions does not resolve
+to phlex/reactive/actions …`) when the route is shadowed.
+
+**The `reactive` controller isn't registered (`lazyLoadControllersFrom` apps).**
+`lazyLoadControllersFrom("controllers", application)` only registers controllers
+under `app/javascript/controllers/`. The gem's controller lives outside that dir,
+so `data-controller="reactive"` does nothing until you register it explicitly:
+
+```js
+// app/javascript/controllers/index.js (or your Stimulus entrypoint)
+import ReactiveController from "phlex/reactive/reactive_controller"
+application.register("reactive", ReactiveController)
+```
+
+If reactive elements are on the page but the controller never connected, the
+runtime logs a console warning (`[phlex-reactive] found N element(s) with
+data-controller="reactive" but the reactive controller never connected …`).
 
 ---
 
@@ -269,6 +310,9 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_attrs` | Spread onto the root element: marks it reactive + carries the signed token. |
 | `on(:action, event: "click", **params)` | Spread onto a trigger element. Adds `type=button` for clicks. |
 | `on(:action, event: "input", debounce: 300)` | Coalesce rapid events into one round trip after a quiet period (live-as-you-type). |
+| `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
+| `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
+| `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
 
 Param types: `:string` (default), `:integer`, `:float`, `:boolean`. Anything not
 in the schema is dropped before reaching your method.
@@ -337,6 +381,47 @@ div(**mix(reactive_attrs, id:, class: "card")) { ... }
 button(**on(:increment), data: { testid: "inc" }) { "+" }
 ```
 
+**Binding inputs to action params (drop the magic `name:`).** A field's value
+travels with an action only if its `name` equals the param. Hand-writing
+`name: "value"` on every input is easy to forget — the action then silently gets
+nothing. `reactive_input`/`reactive_select` emit the binding for you (the trigger
+stays on the button, so focusing the field doesn't dispatch and collapse edit
+mode):
+
+```ruby
+action :save, params: { value: :string, status: :string }
+
+def view_template
+  span(id:, **reactive_attrs) do
+    reactive_input(:value, value: @record.name)            # <input name="value" …>
+    reactive_select(:status) do                            # <select name="status">…</select>
+      %w[open closed].each { |s| option(value: s, selected: s == @record.status) { s } }
+    end
+    button(**mix(on(:save), data: { testid: "save" })) { "Save" }
+  end
+end
+```
+
+`reactive_field(:value, **attrs)` returns just the attribute hash if you'd rather
+spread it onto a control yourself. An explicit `name:` still wins (escape hatch).
+
+**Editing an associated record (`accepts_nested_attributes_for`).** `nested_update!`
+maps a declared nested param straight onto `<assoc>_attributes` and carries the
+existing record's id, so `update_only:` matches it in place instead of building a
+second `has_one` (the boilerplate that's easy to get subtly wrong):
+
+```ruby
+# Account has_one :address; accepts_nested_attributes_for :address, update_only: true
+action :save, params: { address: { street: :string, city: :string } }
+
+def save(address:)
+  nested_update!(:address, address)   # update!(address_attributes: address.merge(id: @account.address&.id))
+end
+```
+
+`nested_attributes(:address, address)` returns the id-merged hash without
+updating, if you need to combine it with other attributes.
+
 ### `Phlex::Reactive::Response` — controlling the action's reply
 
 By default an action re-renders its component in place. **Return** a
@@ -359,18 +444,29 @@ end
 def approve   = (@row.approve!; Response.remove(self))          # drop the element
 def publish   = (@article.publish!; Response.redirect(article_url(@article)))  # slug changed → Turbo.visit
 def add(item:) = Response.replace(self).stream(Totals.update(@order))           # multi-stream
+
+# Re-render a COMPANION element (a heading mirroring the edited name) alongside self:
+def rename(value:) = (@account.update!(name: value); Response.replace(self).also_update("page_heading", html: @account.name))
 ```
 
 | Builder | Reply |
 |---|---|
 | `Response.replace(self)` / `.update(self)` | re-render in place (explicit default) |
-| `.flash(level, content, target: …)` | append a flash; `content` is a string or Phlex component (off-request — no Rails `flash`); target defaults to `Phlex::Reactive.flash_target` (`"flash"`) |
+| `.also_update(target, html:)` | also re-render a companion element by DOM id; `html` is a plain string (escaped) or a Phlex component |
+| `.also_replace(component)` | also re-render another Streamable component, targeting its own `#id` |
+| `.flash(level, content, target: …)` | append a flash; `content` is a plain string (escaped) or a Phlex component (off-request — no Rails `flash`); target defaults to `Phlex::Reactive.flash_target` (`"flash"`) |
 | `Response.remove(self)` | remove the element (backed by `Streamable#to_stream_remove`) |
 | `Response.redirect(url)` | client-side `Turbo.visit` (pass a `*_url`); rides a `reactive:visit` turbo-stream, not an HTTP 3xx |
 | `Response.with(*streams)` / `#stream(*more)` | multi-stream |
 
-`.flash`/`.stream` are additive on a self-replace, so the component's signed
-token always refreshes.
+`.flash`/`.stream`/`.also_*` are additive on a self-replace, so the component's
+signed token always refreshes.
+
+> **`html:`/`content` escaping.** A plain string is **HTML-escaped** by Turbo, so
+> `html: @account.name` is safe even for user-supplied values. To emit intentional
+> markup, pass a **Phlex component** (`html: Heading.new(name: @record.name)`) —
+> rendered and auto-escaped through the renderer — or an `html_safe` string for
+> raw HTML you control.
 
 ### Configuration (`config/initializers/phlex_reactive.rb`)
 
