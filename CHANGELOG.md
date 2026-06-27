@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Nested & array param types (issue #16).** Action param schemas can now
+  declare arrays and nested hashes, not just scalars: wrap a type in an array
+  (`bank_account_ids: [:integer]`) for an array param, or wrap a hash schema in
+  an array (`invoice_items_attributes: [{ id: :integer, quantity: :float,
+  _destroy: :boolean }]`) for Rails-style nested attributes. Coercion recurses
+  per field, drops undeclared nested keys (no mass assignment), and accepts an
+  array as either a JSON array or a Rails index hash (`{ "0" => …, "1" => … }`).
+  A reactive form can now mirror a normal nested-attributes update in one action
+  instead of being forced into a per-row component architecture.
+
 ## [0.2.6]
 
 ### Added
