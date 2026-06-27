@@ -131,6 +131,12 @@ module Phlex
         coerce_hash(params.fetch(:params, {}), schema)
       end
 
+      # Sentinel: a declared key whose value can't be coerced to its type is
+      # DROPPED (not assigned), so the method's keyword default applies — exactly
+      # as if the client had omitted the key. Distinct from a coerced nil/[].
+      DROP = Object.new
+      private_constant :DROP
+
       # Coerce a value against a declared type. A type is one of:
       #   * a scalar symbol            (:string/:integer/:float/:boolean)
       #   * a Hash schema              ({ id: :integer, ... })   — nested object
@@ -147,18 +153,29 @@ module Phlex
         end
       end
 
+      # A real array (or Rails index hash) coerces element-wise. A malformed
+      # present-but-non-array value returns DROP rather than [] — coercing a stray
+      # scalar to an empty array would let a bad payload read as an explicit
+      # "clear everything" on update!(declared_array:).
       def coerce_array(value, element_type)
-        array_values(value).map { |element| coerce(element, element_type) }
+        values = array_values(value)
+        return DROP if values.nil?
+
+        values.map { |element| coerce(element, element_type) }
       end
 
       # Keep declared keys only (drop undeclared — no mass assignment), recursing
       # for nested hash/array element types. Symbolizes keys to splat as kwargs.
+      # A key whose value coerces to DROP is skipped (keyword default applies).
       def coerce_hash(value, schema)
         hash = to_param_hash(value)
         schema.each_with_object({}) do |(key, type), out|
           next unless hash.key?(key.to_s)
 
-          out[key.to_sym] = coerce(hash[key.to_s], type)
+          coerced = coerce(hash[key.to_s], type)
+          next if coerced.equal?(DROP)
+
+          out[key.to_sym] = coerced
         end
       end
 
@@ -173,14 +190,13 @@ module Phlex
 
       # Normalize an array param: a real array passes through; a Rails index hash
       # ({ "0" => ..., "1" => ... }) becomes its values in index order. Anything
-      # else (a stray scalar) yields an empty array rather than raising.
+      # else (a stray scalar, nil) is malformed → nil, so the caller drops the
+      # param rather than fabricating an empty array.
       def array_values(value)
         return value.to_a if value.is_a?(Array)
 
         if value.respond_to?(:to_unsafe_h) || value.is_a?(Hash)
           to_param_hash(value).sort_by { |k, _| k.to_i }.map(&:last)
-        else
-          []
         end
       end
 

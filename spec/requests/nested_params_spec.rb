@@ -95,6 +95,26 @@ RSpec.describe "Nested/array param coercion (issue #16)", type: :request do
     expect(received(response)["bank_account_ids"]).to eq([])
   end
 
+  it "drops a malformed (non-array) array param instead of coercing it to []" do
+    # A scalar sent for an array param must NOT become [] — otherwise an action
+    # doing update!(bank_account_ids:) would read it as an explicit "clear all".
+    # Drop it so the method's keyword default (nil) applies, distinct from a real
+    # empty array.
+    post_action(NestedParamsComponent, payload:, act: "save",
+      params: {bank_account_ids: "5"})
+
+    expect(response).to have_http_status(:ok)
+    expect(received(response)["bank_account_ids"]).to be_nil
+  end
+
+  it "drops a malformed (non-array) array-of-hash param" do
+    post_action(NestedParamsComponent, payload:, act: "save",
+      params: {invoice_items_attributes: "not-an-array"})
+
+    expect(response).to have_http_status(:ok)
+    expect(received(response)["invoice_items_attributes"]).to be_nil
+  end
+
   it "still coerces flat scalars alongside nested params" do
     post_action(NestedParamsComponent, payload:, act: "save",
       params: {date: "2026-06-27", bank_account_ids: ["7"]})

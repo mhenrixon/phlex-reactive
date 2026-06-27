@@ -15,6 +15,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   _destroy: :boolean }]`) for Rails-style nested attributes. Coercion recurses
   per field, drops undeclared nested keys (no mass assignment), and accepts an
   array as either a JSON array or a Rails index hash (`{ "0" => …, "1" => … }`).
+  A malformed (present-but-non-array) value for an array param is dropped — not
+  coerced to `[]` — so a bad payload can't read as an explicit "clear all" on an
+  `update!(declared_array:)`; a real empty array still passes through as `[]`.
   A reactive form can now mirror a normal nested-attributes update in one action
   instead of being forced into a per-row component architecture.
 
