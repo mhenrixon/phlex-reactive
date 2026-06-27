@@ -104,8 +104,8 @@ class InvoiceEditor < ApplicationComponent
   # ... reactive_record :invoice; action :save, params: { notes: :string }
   def view_template
     div(id:, **reactive_attrs) do
-      input(name: "notes", value: @invoice.notes)         # collected by `save`
-      @invoice.items.each { render LineItem.new(item: it) } # each row is its own root
+      input(name: "notes", value: @invoice.notes)              # collected by `save`
+      @invoice.items.each { |item| render LineItem.new(item:) } # each row is its own root
       button(**on(:save)) { "Save" }
     end
   end
