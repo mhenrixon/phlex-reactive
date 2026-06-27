@@ -40,6 +40,15 @@ module Phlex
           )
         end
       end
+
+      # Boot-time guard (issue #26): warn if the action path doesn't resolve to
+      # the gem controller. Runs after_initialize so the host's full route set
+      # (including a bottom-of-file catch-all that would shadow our appended
+      # route) is drawn. Turns the opaque "every reactive POST 404s" failure into
+      # a one-line log pointing at the cause. No-op when the route is fine.
+      config.after_initialize do
+        Phlex::Reactive.warn_unless_action_route_mounted!
+      end
     end
   end
 end

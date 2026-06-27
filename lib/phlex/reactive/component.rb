@@ -206,7 +206,71 @@ module Phlex
         attrs
       end
 
+      # Bind a form control's `name` to an action param so its value travels with
+      # the action — instead of hand-writing the magic `name: "value"` on every
+      # input and silently getting no params when you forget it (issue #23).
+      # Returns a Phlex attributes hash to spread onto any control:
+      #   input(**reactive_field(:value, value: @record.name))
+      #   select(**reactive_field(:status)) { ... }
+      # Extra attrs merge over the binding; an explicit name: still wins (escape
+      # hatch). The trigger (on(:save)) stays on the button, not the field — so
+      # focusing the input doesn't dispatch and collapse edit mode.
+      def reactive_field(param, **attrs)
+        {name: param.to_s, **attrs}
+      end
+
+      # Render an <input> already bound to an action param (issue #23). Sugar for
+      # input(**reactive_field(param, **attrs)); the value/type/etc. pass through.
+      #   reactive_input(:value, value: @record.name, type: "text")
+      def reactive_input(param, **attrs)
+        input(**reactive_field(param, **attrs))
+      end
+
+      # Render a <select> bound to an action param (issue #23). The options block
+      # is the element's content, so the awkward FormBuilder positional split
+      # (where name: lands after the options/html-options args) goes away:
+      #   reactive_select(:status) { @statuses.each { |s| option(value: s, selected: s == @record.status) { s } } }
+      def reactive_select(param, **attrs, &block)
+        select(**reactive_field(param, **attrs), &block)
+      end
+
+      # Map a declared nested param onto Rails' <assoc>_attributes, carrying the
+      # existing associated record's id so accepts_nested_attributes_for matches
+      # it IN PLACE instead of building a second one (issue #24). Returns the
+      # update hash; pass it to update!:
+      #   def save(address:) = nested_update!(:address, address)
+      # The id is only added when the association already exists, so the first
+      # save (no associated record yet) creates one cleanly. The given attrs are
+      # not mutated.
+      def nested_attributes(association, attrs)
+        merged = attrs.dup
+        existing = reactive_record_for_nested.public_send(association)
+        merged[:id] = existing.id if existing
+
+        {"#{association}_attributes": merged}
+      end
+
+      # Map a nested param onto <assoc>_attributes (with id preservation) AND
+      # apply it to the component's record in one call (issue #24). Extra keyword
+      # attributes update alongside the association.
+      #   def save(address:, name:) = nested_update!(:address, address, name:)
+      def nested_update!(association, attrs, **extra)
+        reactive_record_for_nested.update!(**nested_attributes(association, attrs), **extra)
+      end
+
       private
+
+      # The component's record, for the nested-attributes helpers. Requires a
+      # declared reactive_record (the nested helper only makes sense for a
+      # record-backed component).
+      def reactive_record_for_nested
+        key = self.class.reactive_record_key
+        unless key
+          raise Error, "#{self.class} must declare `reactive_record` to use nested_update!/nested_attributes"
+        end
+
+        instance_variable_get(:"@#{key}")
+      end
 
       # Signed identity payload: the class name plus whichever identity pieces
       # the component declares — a record GlobalID (`gid`), signed state (`s`),

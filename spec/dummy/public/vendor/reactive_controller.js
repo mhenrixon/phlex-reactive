@@ -36,6 +36,49 @@ if (typeof window !== "undefined") {
   else document.addEventListener("turbo:load", registerReactiveVisit, { once: true })
 }
 
+// --- Registration guard (issue #26 part 2) -------------------------------
+// In a `lazyLoadControllersFrom("controllers", application)` app, only
+// controllers under app/javascript/controllers/ are registered. This module
+// lives outside that dir, so importing it isn't enough — `data-controller=
+// "reactive"` does NOTHING until the host runs application.register("reactive",
+// ...). The failure is silent: components render, but no action ever fires.
+//
+// We can't warn from connect() in that case (connect never runs). Instead, once
+// the page is ready, if reactive elements exist but no controller has connected,
+// the controller wasn't registered — so we warn, pointing at the fix.
+let reactiveConnected = false
+
+export function checkReactiveRegistration() {
+  if (reactiveConnected) return
+  if (typeof document === "undefined") return
+  const els = document.querySelectorAll('[data-controller~="reactive"]')
+  if (!els || els.length === 0) return
+  console.warn(
+    "[phlex-reactive] found " + els.length + ' element(s) with data-controller="reactive" ' +
+      "but the reactive controller never connected. It is loaded but not registered — " +
+      'add `application.register("reactive", ReactiveController)` (importmap) or import it ' +
+      "into app/javascript/controllers/ for lazyLoadControllersFrom apps. See the README."
+  )
+}
+
+// Test seams (no-ops in production usage).
+export function __resetReactiveRegistrationForTest() {
+  reactiveConnected = false
+}
+export function __markReactiveConnectedForTest() {
+  reactiveConnected = true
+}
+
+if (typeof window !== "undefined" && typeof document !== "undefined") {
+  // Defer past initial controller connection (a microtask/tick after ready).
+  const scheduleCheck = () => setTimeout(checkReactiveRegistration, 0)
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", scheduleCheck, { once: true })
+  } else {
+    scheduleCheck()
+  }
+}
+
 // Register this controller eagerly (not lazily) so a click immediately after
 // page load is never missed. The phlex-reactive engine auto-pins it with
 // preload: true for importmap apps; see the README for esbuild/webpack.
@@ -46,6 +89,12 @@ export default class extends Controller {
 
   #tokenCache // freshest token, threaded synchronously across queued requests
   #debounceTimers = new Map() // trigger element -> { timer, flush } pending dispatch
+
+  // Mark that a reactive controller actually connected, so the registration
+  // guard above knows the controller was registered (issue #26 part 2).
+  connect() {
+    reactiveConnected = true
+  }
 
   // Tear down any pending debounce timers when the controller leaves the DOM
   // (Turbo morph/navigation removes the element). Otherwise a timer that hasn't

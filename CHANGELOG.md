@@ -8,6 +8,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Input/select param-binding helpers (issue #23).** `reactive_input(:value,
+  …)` and `reactive_select(:status, …) { … }` render a form control already bound
+  to an action param — no hand-written `name: "value"` magic string to forget
+  (which silently leaves the action with no params). `reactive_field(:param,
+  **attrs)` returns just the attribute hash to spread onto any control; an
+  explicit `name:` still wins as an escape hatch. The trigger stays on the
+  button, so focusing the field doesn't dispatch and collapse edit mode.
+- **`accepts_nested_attributes_for` helper (issue #24).** `nested_update!(:address,
+  address)` maps a declared nested param straight onto `<assoc>_attributes` and
+  carries the existing associated record's id, so `update_only:` matches it in
+  place instead of building a second `has_one` — replacing the per-editor
+  `*_attributes` + id-preservation boilerplate that was easy to get subtly wrong.
+  `nested_attributes(:address, address)` returns the id-merged hash without
+  updating, for combining with other attributes.
+- **`Response#also_update` / `#also_replace` (issue #25).** Re-render a companion
+  element alongside self without dropping to raw `turbo_stream_builder`:
+  `Response.replace(self).also_update("page_heading", html: @record.name)` adds an
+  update stream for an arbitrary DOM id (`html` is a string or a Phlex component,
+  rendered through the configured renderer), and `.also_replace(other_component)`
+  re-renders another Streamable component targeting its own `#id`. Both are
+  immutable and additive, so the self-replace still refreshes the signed token.
+- **Boot-time integration guards (issue #26).** Two silent first-run failures now
+  surface a clear warning. A host catch-all route (`match "*path", …`) that
+  shadows the engine's appended `POST /reactive/actions` (every reactive POST
+  404s) is detected at boot via a route-recognition check
+  (`Phlex::Reactive.action_route_ok?`), logging how to exempt the path. And when
+  `data-controller="reactive"` elements are on the page but no controller
+  connected — the `lazyLoadControllersFrom` case where the gem's controller was
+  never registered — the client runtime logs a console warning naming the fix.
+  The README gains an "Integration troubleshooting" section covering both.
 - **Nested & array param types (issue #16).** Action param schemas can now
   declare arrays and nested hashes, not just scalars: wrap a type in an array
   (`bank_account_ids: [:integer]`) for an array param, or wrap a hash schema in
