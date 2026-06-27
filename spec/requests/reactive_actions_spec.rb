@@ -290,6 +290,29 @@ RSpec.describe "Reactive actions", type: :request do
         # a re-rendered <span> from a forced self replace.
         expect(response.body.scan('target="counter"').size).to eq(1) # only the token stream targets self
       end
+
+      # Regression: the dedupe must be scoped to the ACTOR's target, not a global
+      # substring. A partial reply that includes ANOTHER component's stream (which
+      # legitimately carries its own data-reactive-token-value) must STILL refresh
+      # this component's token — otherwise the actor's next action 400s.
+      it "still refreshes the actor's token when a SIBLING component's stream carries one" do
+        todo = Todo.create!(title: "moderate me", done: false)
+        sibling_dom = ActionView::RecordIdentifier.dom_id(Todo.last) # the sibling created in the action
+
+        post_action(CounterComponent, payload: {"s" => {"count" => 4}}, act: "bump_with_sibling")
+
+        expect(response).to have_http_status(:ok)
+        # The sibling's replace (carrying ITS token) is present...
+        expect(response.body).to include('action="replace"')
+        # ...AND the actor's own token-only refresh is still appended, targeting self.
+        expect(response.body).to include('action="reactive:token"')
+        expect(response.body).to include('target="counter"')
+        # The actor's token stream is the ONLY thing targeting the counter (no self replace).
+        expect(response.body.scan('target="counter"').size).to eq(1)
+        # Sanity: the sibling stream targets the sibling, not the counter.
+        expect(sibling_dom).not_to eq("counter")
+        expect(todo).to be_persisted # keep the fixture referenced
+      end
     end
   end
 

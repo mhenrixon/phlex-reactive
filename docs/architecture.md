@@ -64,9 +64,11 @@ The endpoint verifies the token, rebuilds the component, and runs the action. If
 the action returns [`reply.<verb>`](../README.md#reply--controlling-the-actions-reply)
 (a replace/update, a remove, a redirect, or multiple streams — optionally with a
 flash), the endpoint renders that; otherwise it falls back to the implicit single
-`component.to_stream_replace` (the legacy contract). For any non-remove/redirect
-reply the component's own replace is guaranteed present so its token refreshes.
-Turbo applies it in: a plain `replace` is an outerHTML swap; `reply.morph`
+`component.to_stream_replace` (the legacy contract). For a self-rendering reply
+(`reply.replace` / `.morph` / `.update` / `.with`) the component's own replace is
+guaranteed present so its token refreshes — the one exception is `reply.streams`
+(below), which opts out of the self-replace and refreshes via `to_stream_token`
+instead. Turbo applies it in: a plain `replace` is an outerHTML swap; `reply.morph`
 (or `reply.update`) morphs the subtree in place, preserving the focused input +
 caret for per-field editing (issue #28).
 

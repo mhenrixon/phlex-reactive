@@ -82,9 +82,12 @@ module Phlex
         # Partial update (Response.streams / reply.streams, issue #30): the action
         # re-rendered only PART of the component and opted out of the full-self
         # replace. Append a tiny token-only stream so the signed token still rolls
-        # forward WITHOUT re-rendering (and clobbering) the live inputs. Skip it if
-        # the caller already supplied a token-bearing stream (idempotent).
-        if result.refresh_token? && streams.none? { |s| s.include?("data-reactive-token-value") }
+        # forward WITHOUT re-rendering (and clobbering) the live inputs. Skip it
+        # only if the caller already supplied THIS component's token (idempotent) —
+        # the dedupe is scoped to the actor's own target, NOT a global substring,
+        # so a partial reply that legitimately includes another reactive
+        # component's stream (which carries its OWN token) still refreshes ours.
+        if result.refresh_token? && !carries_token_for?(streams, result.token_component)
           return [*streams, result.token_component.to_stream_token]
         end
 
@@ -102,6 +105,17 @@ module Phlex
           streams = [component.to_stream_replace, *streams]
         end
         streams
+      end
+
+      # True when one of `streams` already carries a fresh token TARGETING this
+      # component — i.e. the caller hand-built the actor's own token-bearing
+      # stream, so appending to_stream_token would double it. Scoped to the
+      # component's target id (not a global substring) so a sibling component's
+      # stream, which carries its OWN token for a DIFFERENT target, doesn't fool
+      # us into skipping this component's refresh.
+      def carries_token_for?(streams, component)
+        target = %(target="#{ERB::Util.html_escape(component.id)}")
+        streams.any? { |s| s.include?("data-reactive-token-value") && s.include?(target) }
       end
 
       # A 200 turbo-stream carrying a namespaced custom action the client turns

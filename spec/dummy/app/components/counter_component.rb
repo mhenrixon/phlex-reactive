@@ -15,6 +15,7 @@ class CounterComponent < ApplicationComponent
   action :bump_via_morph
   action :go_home
   action :bump_via_partial
+  action :bump_with_sibling
 
   def initialize(count: 0)
     @count = count
@@ -63,6 +64,15 @@ class CounterComponent < ApplicationComponent
   def bump_via_partial
     @count += 1
     reply.streams(%(<turbo-stream action="update" target="counter-mirror"><template>#{@count}</template></turbo-stream>))
+  end
+
+  # Reply: a partial update whose streams include ANOTHER reactive component's
+  # replace — which legitimately carries its OWN data-reactive-token-value. The
+  # endpoint must STILL refresh THIS component's token (the dedupe is scoped to
+  # the actor's target id, not a global substring). REQUEST-spec fixture.
+  def bump_with_sibling
+    @count += 1
+    reply.streams(TodoItemComponent.replace(Todo.create!(title: "sibling", done: false)))
   end
 
   def view_template
