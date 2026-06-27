@@ -39,6 +39,10 @@ class DemosController < ActionController::Base
     render_component DebounceComponent.new
   end
 
+  def morph_grid
+    render_component MorphGridComponent.new(account: Account.find(params[:id]))
+  end
+
   # The page a non-intercepted form submit would navigate to (issue #11).
   def nav_probe
     render html: "<div data-testid='nav-probe'>NAVIGATED</div>".html_safe, layout: true

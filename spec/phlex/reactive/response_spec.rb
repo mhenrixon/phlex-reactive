@@ -113,6 +113,51 @@ RSpec.describe Phlex::Reactive::Response do
     end
   end
 
+  # Issue #28: morph re-renders self in place via Idiomorph (method="morph"),
+  # preserving the focused input + caret. Response.morph(self) is the explicit
+  # builder; Response.replace(self, morph: true) is the opt-in flag; also_replace
+  # gains a morph: flag for companion components.
+  describe "morph (issue #28)" do
+    it "morph renders a self-targeted morphing replace and keeps render_self" do
+      response = described_class.morph(counter)
+      expect(response.render_self?).to be(true)
+      expect(response.redirect?).to be(false)
+      expect(response.streams.size).to eq(1)
+      expect(response.streams.first).to include('action="replace"')
+      expect(response.streams.first).to include('method="morph"')
+      expect(response.streams.first).to include('target="counter"')
+    end
+
+    it "replace(morph: true) emits the morph attribute" do
+      response = described_class.replace(counter, morph: true)
+      expect(response.streams.first).to include('method="morph"')
+    end
+
+    it "replace defaults to a plain swap (no morph attr) — back-compat" do
+      response = described_class.replace(counter)
+      expect(response.streams.first).not_to include("method=")
+    end
+
+    it "morph composes with flash (token still refreshes via the morph)" do
+      response = described_class.morph(counter).flash(:notice, "saved")
+      expect(response.streams.size).to eq(2)
+      expect(response.streams.first).to include('method="morph"')
+      expect(response.streams.last).to include('action="append"')
+    end
+
+    it "also_replace(component, morph: true) morphs the companion component" do
+      response = described_class.morph(counter).also_replace(item, morph: true)
+      expect(response.streams.size).to eq(2)
+      expect(response.streams.last).to include('method="morph"')
+      expect(response.streams.last).to include(%(target="#{ActionView::RecordIdentifier.dom_id(todo)}"))
+    end
+
+    it "also_replace defaults to a plain replace (no morph attr)" do
+      response = described_class.replace(counter).also_replace(item)
+      expect(response.streams.last).not_to include("method=")
+    end
+  end
+
   it "flash accepts a Phlex component, rendered through the configured renderer" do
     klass = Class.new(Phlex::HTML) do
       def self.name = "FlashAlertProbe" # ActionView's render logger needs a name

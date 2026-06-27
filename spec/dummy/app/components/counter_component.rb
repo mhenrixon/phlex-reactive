@@ -12,6 +12,7 @@ class CounterComponent < ApplicationComponent
   action :set, params: {count: :integer}
   action :reset_with_flash
   action :bump_via_update
+  action :bump_via_morph
   action :go_home
 
   def initialize(count: 0)
@@ -35,6 +36,15 @@ class CounterComponent < ApplicationComponent
   def bump_via_update
     @count += 1
     Phlex::Reactive::Response.update(self)
+  end
+
+  # Response: morph the whole element in place (issue #28). Emits
+  # action="replace" method="morph", so Idiomorph preserves a focused input +
+  # caret. The morphed root carries the fresh token, so it must NOT be doubled
+  # with a contradictory plain replace.
+  def bump_via_morph
+    @count += 1
+    Phlex::Reactive::Response.morph(self)
   end
 
   # Response: client-side full navigation (no in-place stream). Targets a real

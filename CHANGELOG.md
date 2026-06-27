@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Morph response — focus-preserving re-render (issue #28).**
+  `Response.morph(self)` (and the opt-in `Response.replace(self, morph: true)`)
+  re-renders a component in place via Turbo 8's bundled Idiomorph
+  (`<turbo-stream action="replace" method="morph">`) instead of an outerHTML
+  swap. The focused `<input>` and its caret survive the save, making per-field
+  reactive editing — a "spreadsheet" grid where a debounced save fires while the
+  user is still typing/tabbing — actually viable. Backed by the new
+  `Streamable#to_stream_morph` primitive and a `morph:` flag on the
+  `.replace` / `.broadcast_replace_to` class builders and `Response#also_replace`
+  (live cross-tab updates can morph too). The default everywhere stays the plain
+  replace (no `method="morph"` attribute), so existing components are unchanged.
+  No new dependency — Idiomorph ships with `turbo-rails >= 2.0`.
 - **Input/select param-binding helpers (issue #23).** `reactive_input(:value,
   …)` and `reactive_select(:status, …) { … }` render a form control already bound
   to an action param — no hand-written `name: "value"` magic string to forget
