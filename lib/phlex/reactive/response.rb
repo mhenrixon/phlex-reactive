@@ -21,7 +21,19 @@ module Phlex
 
       class << self
         # Re-render the component in place (explicit form of today's default).
-        def replace(component) = new(streams: [component.to_stream_replace])
+        # `morph: true` morphs the subtree (preserves the focused input + caret)
+        # instead of an outerHTML swap — see .morph (issue #28).
+        def replace(component, morph: false)
+          new(streams: [morph ? component.to_stream_morph : component.to_stream_replace])
+        end
+
+        # Re-render the component in place via Idiomorph (issue #28). Emits
+        # `<turbo-stream action="replace" method="morph">`, so Turbo 8 morphs the
+        # subtree — the focused <input> + caret survive the save. Use this for
+        # per-field reactive editing (a "spreadsheet" grid where a debounced save
+        # fires while the user is still typing/tabbing). The morphed root still
+        # carries the fresh signed token, so the next action verifies.
+        def morph(component) = new(streams: [component.to_stream_morph])
 
         # Morph only inner HTML (preserves the root element + its token attr).
         def update(component) = new(streams: [component.to_stream_update])
@@ -113,8 +125,10 @@ module Phlex
       # Like #also_update, but renders ANOTHER Streamable component and replaces
       # it by its own #id — for a companion that is itself a component.
       #   Response.replace(self).also_replace(SummaryCard.new(order: @order))
-      def also_replace(component)
-        stream(component.to_stream_replace)
+      # `morph: true` morphs the companion in place (issue #28) — use it when the
+      # companion also holds focusable inputs that must survive the re-render.
+      def also_replace(component, morph: false)
+        stream(morph ? component.to_stream_morph : component.to_stream_replace)
       end
 
       def redirect? = !@redirect_url.nil?

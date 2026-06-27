@@ -77,6 +77,25 @@ RSpec.describe "Reactive actions", type: :request do
         expect(html).to include("write specs")
       }.not_to raise_error
     end
+
+    # Issue #28: a live cross-tab replace can morph in place so a peer tab keeps
+    # its focus/caret on the morphed row. Default broadcasts stay a plain swap.
+    it "broadcasts a morphing replace when morph: true (issue #28)" do
+      broadcasts = capture_turbo_stream_broadcasts("todos") do
+        TodoItemComponent.broadcast_replace_to("todos", model: todo, morph: true)
+      end
+      html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin
+      expect(html).to include('action="replace"')
+      expect(html).to include('method="morph"')
+    end
+
+    it "broadcasts a plain replace (no morph attr) by default" do
+      broadcasts = capture_turbo_stream_broadcasts("todos") do
+        TodoItemComponent.broadcast_replace_to("todos", model: todo)
+      end
+      html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin
+      expect(html).not_to include("method=")
+    end
   end
 
   describe "record + state component (InlineEditComponent, issue #6)" do
@@ -190,6 +209,21 @@ RSpec.describe "Reactive actions", type: :request do
       expect(response.body).to include("data-reactive-token-value=") # token refreshed
       expect(response.body).not_to include('action="replace"')       # no contradictory double-render
       expect(response.body).to match(/>\s*2\s*</)                     # 1 -> 2
+    end
+
+    # Issue #28: Response.morph(self) re-renders the element via Idiomorph
+    # (action="replace" method="morph"). The morphed root carries a fresh token,
+    # so the endpoint must NOT prepend a second, contradictory plain replace.
+    it "morph: re-renders self with method=\"morph\" + a fresh token, not doubled" do
+      post_action(CounterComponent, payload: {"s" => {"count" => 1}}, act: "bump_via_morph")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('action="replace"')
+      expect(response.body).to include('method="morph"')
+      expect(response.body).to include('target="counter"')
+      expect(response.body).to include("data-reactive-token-value=")    # token refreshed
+      expect(response.body.scan('target="counter"').size).to eq(1)      # not doubled
+      expect(response.body).to match(/>\s*2\s*</)                       # 1 -> 2
     end
 
     it "remove: emits a remove stream for the element and NO self replace" do

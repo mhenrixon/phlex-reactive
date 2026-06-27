@@ -64,7 +64,9 @@ the action returns a [`Phlex::Reactive::Response`](../README.md#phlexreactiveres
 flash), the endpoint renders that; otherwise it falls back to the implicit single
 `component.to_stream_replace` (the legacy contract). For any non-remove/redirect
 reply the component's own replace is guaranteed present so its token refreshes.
-Turbo morphs it in.
+Turbo applies it in: a plain `replace` is an outerHTML swap; `Response.morph(self)`
+(or `update`) morphs the subtree in place, preserving the focused input + caret
+for per-field editing (issue #28).
 
 ### What collected fields are
 

@@ -292,11 +292,11 @@ The cross-tab chat in ~60 lines of Ruby (and zero JS) is the showcase — see
 | Method | Use |
 |---|---|
 | `#id` (you implement) | Stable DOM id == Turbo Stream target. Must match the root element's `id`. |
-| `.replace(model = nil, **opts)` | `<turbo-stream action=replace target=id>` of a freshly built component |
+| `.replace(model = nil, morph: false, **opts)` | `<turbo-stream action=replace target=id>` of a freshly built component; `morph: true` adds `method="morph"` |
 | `.update` / `.append(target:)` / `.prepend(target:)` / `.remove` | The other Turbo Stream actions |
-| `.broadcast_replace_to(*streamables, model:)` | Broadcast a replace over the stream transport (pgbus SSE / Action Cable) |
+| `.broadcast_replace_to(*streamables, model:, morph: false)` | Broadcast a replace over the stream transport (pgbus SSE / Action Cable); `morph: true` morphs in place |
 | `.broadcast_append_to(*streamables, target:, model:)` / `_update_` / `_prepend_` / `_remove_` | The broadcast variants |
-| `#to_stream_replace` / `#to_stream_update` / `#to_stream_remove` | Stream the *already-built* instance (used internally after an action / by `Response`) |
+| `#to_stream_replace` / `#to_stream_morph` / `#to_stream_update` / `#to_stream_remove` | Stream the *already-built* instance (used internally after an action / by `Response`); `#to_stream_morph` morphs in place |
 
 Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 
@@ -445,15 +445,21 @@ def approve   = (@row.approve!; Response.remove(self))          # drop the eleme
 def publish   = (@article.publish!; Response.redirect(article_url(@article)))  # slug changed → Turbo.visit
 def add(item:) = Response.replace(self).stream(Totals.update(@order))           # multi-stream
 
+# Per-field reactive editing (a "spreadsheet" grid): a debounced save fires
+# while the user is still typing/tabbing. Morph in place so the focused <input>
+# and its in-progress value survive the re-render (issue #28):
+def update(name:) = (@row.update!(name:); Response.morph(self))
+
 # Re-render a COMPANION element (a heading mirroring the edited name) alongside self:
 def rename(value:) = (@account.update!(name: value); Response.replace(self).also_update("page_heading", html: @account.name))
 ```
 
 | Builder | Reply |
 |---|---|
-| `Response.replace(self)` / `.update(self)` | re-render in place (explicit default) |
+| `Response.replace(self)` / `.update(self)` | re-render in place (explicit default; `replace` is an outerHTML swap, `update` morphs inner HTML) |
+| `Response.morph(self)` / `Response.replace(self, morph: true)` | re-render in place via Idiomorph (`method="morph"`) — preserves the focused `<input>` + caret; for per-field reactive editing (issue #28) |
 | `.also_update(target, html:)` | also re-render a companion element by DOM id; `html` is a plain string (escaped) or a Phlex component |
-| `.also_replace(component)` | also re-render another Streamable component, targeting its own `#id` |
+| `.also_replace(component, morph: false)` | also re-render another Streamable component, targeting its own `#id`; `morph: true` morphs it in place |
 | `.flash(level, content, target: …)` | append a flash; `content` is a plain string (escaped) or a Phlex component (off-request — no Rails `flash`); target defaults to `Phlex::Reactive.flash_target` (`"flash"`) |
 | `Response.remove(self)` | remove the element (backed by `Streamable#to_stream_remove`) |
 | `Response.redirect(url)` | client-side `Turbo.visit` (pass a `*_url`); rides a `reactive:visit` turbo-stream, not an HTTP 3xx |

@@ -64,9 +64,13 @@ module Phlex
           renderer.render(component, layout: false)
         end
 
-        def replace(model = nil, **options)
+        # `morph: true` emits `<turbo-stream action="replace" method="morph">` so
+        # Turbo 8's bundled Idiomorph morphs the subtree in place — preserving a
+        # focused <input> + caret — instead of an outerHTML swap (issue #28).
+        # Default (morph: false) is the unchanged plain replace.
+        def replace(model = nil, morph: false, **options)
           component = build(model, options)
-          turbo_stream_builder.replace(component.id, html: render_component(component))
+          turbo_stream_builder.replace(component.id, html: render_component(component), **morph_method(morph))
         end
 
         def update(model = nil, **options)
@@ -103,11 +107,15 @@ module Phlex
         # connection id — pass it to suppress the actor's own echo (the actor
         # already got the action's HTTP response). With Action Cable these are
         # ignored; with pgbus they reach the dispatcher. See docs/broadcasting.
-        def broadcast_replace_to(*streamables, model: nil, exclude: nil, visible_to: nil, **options)
+        # `morph: true` makes the live cross-tab update morph in place (issue #28),
+        # so a peer tab keeps its focus/caret on the morphed row. The broadcast
+        # path takes EXTRA <turbo-stream> attributes via `attributes:` (not the
+        # TagBuilder's `method:` kwarg), so the morph flag rides there.
+        def broadcast_replace_to(*streamables, model: nil, exclude: nil, visible_to: nil, morph: false, **options)
           component = build(model, options)
           ::Turbo::StreamsChannel.broadcast_replace_to(
             *streamables, target: component.id, html: render_component(component),
-            **broadcast_transport_opts(exclude:, visible_to:)
+            **morph_attributes(morph), **broadcast_transport_opts(exclude:, visible_to:)
           )
         end
 
@@ -149,6 +157,20 @@ module Phlex
           new(**(model ? component_args(model, options) : options))
         end
 
+        # The TagBuilder (the .replace class builder + to_stream_morph) takes
+        # `method: :morph` to emit the `method="morph"` attribute. Pass it ONLY
+        # when morphing, so the default call produces today's plain replace.
+        def morph_method(morph)
+          morph ? {method: :morph} : {}
+        end
+
+        # The BROADCAST path renders extra <turbo-stream> attributes through
+        # `attributes:` (it has no `method:` kwarg — that would fall into the
+        # render args and be dropped). Same wire result: method="morph".
+        def morph_attributes(morph)
+          morph ? {attributes: {method: "morph"}} : {}
+        end
+
         # Only include transport opts that were actually given, so on Action
         # Cable (which doesn't accept them) the common no-opts call is unchanged.
         def broadcast_transport_opts(exclude:, visible_to:)
@@ -182,6 +204,16 @@ module Phlex
       # reactive action endpoint after an action mutated state).
       def to_stream_replace
         self.class.turbo_stream_builder.replace(id, html: self.class.render_component(self))
+      end
+
+      # Render THIS instance as a MORPHING replace (issue #28):
+      # `<turbo-stream action="replace" method="morph">`. Turbo 8's bundled
+      # Idiomorph morphs the subtree in place — preserving the focused <input> +
+      # caret across the re-render — while still carrying the root's fresh
+      # data-reactive-token-value (so the signed token refreshes). Used by
+      # Response.morph / Response.replace(self, morph: true).
+      def to_stream_morph
+        self.class.turbo_stream_builder.replace(id, html: self.class.render_component(self), method: :morph)
       end
 
       def to_stream_update

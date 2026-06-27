@@ -4,7 +4,8 @@ import { Controller } from "@hotwired/stimulus"
 // replaces the per-feature Stimulus controllers you'd otherwise hand-write
 // for interactive components. A component declares its actions in Ruby (via
 // Phlex::Reactive::Component); this controller binds DOM events to a single
-// HTTP round trip and lets Turbo morph the re-rendered component back in.
+// HTTP round trip and lets Turbo apply the re-rendered component back in
+// (replace by default; method="morph" — Response.morph — preserves focus).
 //
 // Wire format (client -> server), POST <action path>, turbo-stream Accept:
 //   { token: "<signed identity>", act: "<action>", params: {...} }
@@ -222,8 +223,10 @@ export default class extends Controller {
       // Capture the new token from the response synchronously, so the next
       // queued request uses it without waiting for the async DOM morph.
       this.#currentToken = this.#extractToken(html) ?? this.#currentToken
-      // Turbo applies the <turbo-stream> ops (replace/morph by id), preserving
-      // focus/scroll/listeners on unchanged nodes.
+      // Turbo applies the <turbo-stream> ops by id. A plain replace is an
+      // outerHTML swap (focus on the replaced subtree is lost); a method="morph"
+      // replace (Response.morph) or an update morphs in place, preserving the
+      // focused input + caret on unchanged nodes — see issue #28.
       window.Turbo.renderStreamMessage(html)
     } catch (error) {
       console.error("[phlex-reactive] action error", error)

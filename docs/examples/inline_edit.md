@@ -104,6 +104,36 @@ appends into `Phlex::Reactive.flash_target` (default `<div id="flash">`); pass a
 Phlex component instead of a string for rich markup. See
 [Response](../README.md#phlexreactiveresponse--controlling-the-actions-reply).
 
+## Live-as-you-type (a spreadsheet-like grid)
+
+For per-field editing where a **debounced save fires while the user is still
+typing or tabbing**, a plain `Response.replace(self)` is wrong: it's an
+outerHTML swap that destroys the `<input>` you're typing in — focus and the
+in-progress value vanish. Return `Response.morph(self)` instead. It emits
+`<turbo-stream action="replace" method="morph">`, so Turbo 8's bundled Idiomorph
+morphs the subtree in place — the focused field and its caret survive the save.
+
+```ruby
+action :update, params: { name: :string }
+
+def update(name:)
+  authorize! @record, :update?
+  @record.update!(name:) if name.present?
+  Phlex::Reactive::Response.morph(self)   # morph in place — keep focus + caret
+end
+
+def view_template
+  div(id:, **reactive_attrs) do
+    # The field both holds the value AND triggers the debounced save.
+    input(**mix(on(:update, event: "input", debounce: 300),
+      name: "name", value: @record.name))
+  end
+end
+```
+
+`Response.replace(self, morph: true)` is the same thing via the opt-in flag; the
+morphed root still carries a fresh signed token, so the next edit verifies.
+
 ## Want it to update other viewers too?
 
 Broadcast on save:
