@@ -86,6 +86,15 @@ RSpec.describe "Flat bracketed param coercion (issue #21)", type: :request do
     expect(received(response)["invoice"]).to eq("date" => "2026-01-02", "status" => "open")
   end
 
+  it "merges a bracket key and a pre-nested object regardless of key order" do
+    # A bracket key processed BEFORE a sibling pre-nested object must not be
+    # clobbered by it (order-dependence): both fields survive the merge.
+    post_action(NestedParamsComponent, payload:, act: "save_invoice",
+      params: {"invoice[date]" => "2026-01-02", "invoice" => {"status" => "open"}})
+
+    expect(received(response)["invoice"]).to eq("date" => "2026-01-02", "status" => "open")
+  end
+
   it "preserves a non-string value (checkbox boolean) through expansion" do
     post_action(NestedParamsComponent, payload:, act: "save_invoice",
       params: {"invoice[date]" => "2026-01-02", "invoice[active]" => true})

@@ -230,12 +230,7 @@ module Phlex
       # round-trip through parse_nested_query, which only handles strings.
       def expand_bracket_keys(flat)
         flat.each_with_object({}) do |(key, value), out|
-          path = bracket_path(key)
-          if path.length == 1
-            out[path.first] = value
-          else
-            deep_assign(out, path, value)
-          end
+          deep_assign(out, bracket_path(key), value)
         end
       end
 
@@ -248,16 +243,27 @@ module Phlex
         [head, *rest.scan(/[^\[\]]+/)]
       end
 
-      # Walk/create nested hashes along `path` and assign `value` at the leaf.
-      # If a node is already present but not a Hash (a bracket key colliding with
-      # a flat key of the same name), the later bracket assignment wins.
+      # Walk/create nested hashes along `path`, then merge `value` at the leaf so
+      # a bracket key and a sibling pre-nested object coalesce regardless of which
+      # arrives first ({ "invoice[date]" => …, invoice: { status: … } } keeps
+      # both). #merge_value deep-merges hash/hash collisions and otherwise lets
+      # the later value win (a bracket key colliding with a flat scalar).
       def deep_assign(hash, path, value)
         *parents, leaf = path
         node = parents.reduce(hash) do |acc, segment|
           acc[segment] = {} unless acc[segment].is_a?(Hash)
           acc[segment]
         end
-        node[leaf] = value
+        node[leaf] = merge_value(node[leaf], value)
+      end
+
+      # Combine an existing leaf value with a new one. Two hashes deep-merge (so
+      # bracket-expanded fields and a pre-nested object for the same key both
+      # survive); any other collision takes the new value.
+      def merge_value(existing, value)
+        return value unless existing.is_a?(Hash) && value.is_a?(Hash)
+
+        existing.merge(value.stringify_keys) { |_k, old, new| merge_value(old, new) }
       end
 
       # Only components that opt into Reactive may be resolved. The signature
