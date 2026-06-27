@@ -20,6 +20,9 @@ class AddressEditorComponent < ApplicationComponent
 
   def id = dom_id(@account, "address_editor")
 
+  # Real apps authorize the record here (e.g. `authorize! @account, :update?` —
+  # see docs/security.md); the dummy app has no authz layer, like every other
+  # fixture, so the contract is demonstrated in the docs, not baked in here.
   def save(address:)
     nested_update!(:address, address)
   end

@@ -124,7 +124,7 @@ Import and register it from your controllers entrypoint:
 
 ```js
 import { application } from "./application"
-import ReactiveController from "phlex-reactive/reactive_controller"
+import ReactiveController from "phlex/reactive/reactive_controller"
 application.register("reactive", ReactiveController)
 ```
 
@@ -452,15 +452,21 @@ def rename(value:) = (@account.update!(name: value); Response.replace(self).also
 | Builder | Reply |
 |---|---|
 | `Response.replace(self)` / `.update(self)` | re-render in place (explicit default) |
-| `.also_update(target, html:)` | also re-render a companion element by DOM id; `html` is a string or Phlex component |
+| `.also_update(target, html:)` | also re-render a companion element by DOM id; `html` is a plain string (escaped) or a Phlex component |
 | `.also_replace(component)` | also re-render another Streamable component, targeting its own `#id` |
-| `.flash(level, content, target: …)` | append a flash; `content` is a string or Phlex component (off-request — no Rails `flash`); target defaults to `Phlex::Reactive.flash_target` (`"flash"`) |
+| `.flash(level, content, target: …)` | append a flash; `content` is a plain string (escaped) or a Phlex component (off-request — no Rails `flash`); target defaults to `Phlex::Reactive.flash_target` (`"flash"`) |
 | `Response.remove(self)` | remove the element (backed by `Streamable#to_stream_remove`) |
 | `Response.redirect(url)` | client-side `Turbo.visit` (pass a `*_url`); rides a `reactive:visit` turbo-stream, not an HTTP 3xx |
 | `Response.with(*streams)` / `#stream(*more)` | multi-stream |
 
 `.flash`/`.stream`/`.also_*` are additive on a self-replace, so the component's
 signed token always refreshes.
+
+> **`html:`/`content` escaping.** A plain string is **HTML-escaped** by Turbo, so
+> `html: @account.name` is safe even for user-supplied values. To emit intentional
+> markup, pass a **Phlex component** (`html: Heading.new(name: @record.name)`) —
+> rendered and auto-escaped through the renderer — or an `html_safe` string for
+> raw HTML you control.
 
 ### Configuration (`config/initializers/phlex_reactive.rb`)
 

@@ -62,7 +62,7 @@ RSpec.describe Phlex::Reactive::Response do
       expect(response.streams.last).to include("New name")
     end
 
-    it "also_update HTML-escapes a plain string but renders a Phlex component" do
+    it "also_update renders a Phlex component (auto-escaped) into the companion stream" do
       probe = Class.new(Phlex::HTML) do
         def self.name = "HeadingProbe"
         def view_template = strong { "Bold heading" }
@@ -70,6 +70,22 @@ RSpec.describe Phlex::Reactive::Response do
       response = described_class.with.also_update("page_heading", html: probe.new)
 
       expect(response.streams.first).to include("<strong>Bold heading</strong>")
+    end
+
+    it "also_update HTML-escapes a plain string (a model value is safe)" do
+      # Turbo's TagBuilder escapes a plain String passed to html:, so a model
+      # value can't inject markup. (Pass an html_safe string or a Phlex
+      # component to emit intentional raw HTML.)
+      response = described_class.with.also_update("page_heading", html: "<em>Live</em>")
+
+      expect(response.streams.first).to include("&lt;em&gt;Live&lt;/em&gt;")
+      expect(response.streams.first).not_to include("<em>Live</em>")
+    end
+
+    it "also_update emits an html_safe string as raw markup" do
+      response = described_class.with.also_update("page_heading", html: "<em>Live</em>".html_safe)
+
+      expect(response.streams.first).to include("<em>Live</em>")
     end
 
     it "also_replace renders another Streamable component, targeting its own id" do

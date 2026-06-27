@@ -21,9 +21,10 @@ class ReactiveInputComponent < ApplicationComponent
 
   def id = dom_id(@record, "reactive_input")
 
+  # `status` is rendered only to exercise reactive_select's name binding (the
+  # dummy Todo has no status column); the edited attribute is what we persist.
   def save(value: nil, status: nil)
     @record.update!(@attribute => value) if value
-    @record.update!(@attribute => status) if status
   end
 
   def view_template

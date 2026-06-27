@@ -55,8 +55,15 @@ module Phlex
           Phlex::Reactive.flash_builder.update(target, html: render_html(content))
         end
 
-        # A Phlex component renders through the configured renderer (so
-        # t()/url_for/CSRF work off-request); anything else is used as-is.
+        # Resolve `content` to the HTML for a turbo-stream's `html:`. Two forms,
+        # both SAFE against injection by default:
+        #   * a Phlex component instance — rendered through the configured
+        #     renderer, which auto-escapes interpolated values.
+        #   * any other value — coerced with to_s and handed to Turbo's
+        #     TagBuilder, which HTML-ESCAPES a plain String. So a model value
+        #     (`html: @record.name`) cannot inject markup. To emit intentional
+        #     raw HTML, pass an `html_safe` String (Turbo leaves those verbatim)
+        #     or a Phlex component. Same contract as the pre-existing flash_stream.
         def render_html(content)
           content.is_a?(::Phlex::SGML) ? Phlex::Reactive.render(content) : content.to_s
         end
@@ -91,11 +98,14 @@ module Phlex
 
       # Also re-render a COMPANION element alongside self — a page heading, a
       # summary card, a badge that recomputes from the saved value (issue #25).
-      # `target` is the sibling element's DOM id; `html` is a Phlex component
-      # instance (rendered through the configured renderer so t()/url_for work)
-      # or a ready HTML string. Returns a NEW Response (immutable). The common
-      # "re-render self + N siblings" case no longer needs raw turbo_stream_builder.
-      #   Response.replace(self).also_update("page_heading", html: @record.name)
+      # `target` is the sibling element's DOM id. `html` is either:
+      #   * a plain String — HTML-ESCAPED by Turbo, so a model value is safe:
+      #       Response.replace(self).also_update("page_heading", html: @record.name)
+      #   * a Phlex component — rendered + auto-escaped through the renderer (use
+      #     this when the companion has its own markup), or an `html_safe` String
+      #     for intentional raw HTML.
+      # Returns a NEW Response (immutable). The common "re-render self + N
+      # siblings" case no longer needs raw turbo_stream_builder.
       def also_update(target, html:)
         stream(self.class.update_stream(target, html))
       end
