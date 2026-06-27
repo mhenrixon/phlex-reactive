@@ -25,32 +25,32 @@ class CounterComponent < ApplicationComponent
   def decrement = @count -= 1
   def set(count:) = @count = count
 
-  # Response: replace self (token refresh) + append a flash.
+  # Reply: replace self (token refresh) + append a flash.
   def reset_with_flash
     @count = 0
-    Phlex::Reactive::Response.replace(self).flash(:notice, "Reset")
+    reply.replace.flash(:notice, "Reset")
   end
 
-  # Response: morph inner HTML (update, not replace). The rendered template still
+  # Reply: morph inner HTML (update, not replace). The rendered template still
   # carries the root's fresh data-reactive-token-value, so the token refreshes.
   def bump_via_update
     @count += 1
-    Phlex::Reactive::Response.update(self)
+    reply.update
   end
 
-  # Response: morph the whole element in place (issue #28). Emits
+  # Reply: morph the whole element in place (issue #28). Emits
   # action="replace" method="morph", so Idiomorph preserves a focused input +
   # caret. The morphed root carries the fresh token, so it must NOT be doubled
   # with a contradictory plain replace.
   def bump_via_morph
     @count += 1
-    Phlex::Reactive::Response.morph(self)
+    reply.morph
   end
 
-  # Response: client-side full navigation (no in-place stream). Targets a real
+  # Reply: client-side full navigation (no in-place stream). Targets a real
   # dummy route so the browser spec can assert the Turbo.visit landed.
   def go_home
-    Phlex::Reactive::Response.redirect("/todos")
+    reply.redirect("/todos")
   end
 
   def view_template

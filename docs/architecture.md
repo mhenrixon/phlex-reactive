@@ -26,7 +26,7 @@ A component that implements `#id` can render itself as a Turbo Stream:
 ```
 Counter.replace(c)            → <turbo-stream action="replace" target="<c.id>">…</turbo-stream>
 Counter.broadcast_replace_to(stream, model: c)  → same, pushed over the transport
-c.to_stream_remove            → <turbo-stream action="remove" target="<c.id>">    (backs Response.remove)
+c.to_stream_remove            → <turbo-stream action="remove" target="<c.id>">    (backs reply.remove)
 ```
 
 Rendering goes through a real controller renderer (`Phlex::Reactive.renderer`),
@@ -59,14 +59,18 @@ Accept: text/vnd.turbo-stream.html
 ```
 
 The endpoint verifies the token, rebuilds the component, and runs the action. If
-the action returns a [`Phlex::Reactive::Response`](../README.md#phlexreactiveresponse--controlling-the-actions-reply)
+the action returns [`reply.<verb>`](../README.md#reply--controlling-the-actions-reply)
 (a replace/update, a remove, a redirect, or multiple streams — optionally with a
 flash), the endpoint renders that; otherwise it falls back to the implicit single
 `component.to_stream_replace` (the legacy contract). For any non-remove/redirect
 reply the component's own replace is guaranteed present so its token refreshes.
-Turbo applies it in: a plain `replace` is an outerHTML swap; `Response.morph(self)`
-(or `update`) morphs the subtree in place, preserving the focused input + caret
-for per-field editing (issue #28).
+Turbo applies it in: a plain `replace` is an outerHTML swap; `reply.morph`
+(or `reply.update`) morphs the subtree in place, preserving the focused input +
+caret for per-field editing (issue #28).
+
+`reply.<verb>` returns a `Phlex::Reactive::Response` — the immutable value object
+the endpoint reads (`response_streams`). It's an internal detail; you build it
+through `reply`.
 
 ### What collected fields are
 

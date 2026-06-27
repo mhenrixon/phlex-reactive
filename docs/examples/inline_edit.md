@@ -85,16 +85,16 @@ render Fields::InlineEdit.new(record: @user, attribute: :email)
 ## Surfacing a validation error
 
 `save` above uses `update!`, which raises on invalid input. To show the error
-instead, use non-bang `update` and return a `Response` with a flash:
+instead, use non-bang `update` and return `reply` with a flash:
 
 ```ruby
 def save(value:)
   authorize! @record, :update?
   if @record.update(@attribute => value)
     @editing = false
-    Phlex::Reactive::Response.replace(self)
+    reply.replace
   else
-    Phlex::Reactive::Response.replace(self).flash(:error, @record.errors.full_messages.to_sentence)
+    reply.replace.flash(:error, @record.errors.full_messages.to_sentence)
   end
 end
 ```
@@ -102,14 +102,14 @@ end
 The flash `content` is supplied explicitly (off-request — no Rails `flash`) and
 appends into `Phlex::Reactive.flash_target` (default `<div id="flash">`); pass a
 Phlex component instead of a string for rich markup. See
-[Response](../README.md#phlexreactiveresponse--controlling-the-actions-reply).
+[Controlling the action's reply](../README.md#reply--controlling-the-actions-reply).
 
 ## Live-as-you-type (a spreadsheet-like grid)
 
 For per-field editing where a **debounced save fires while the user is still
-typing or tabbing**, a plain `Response.replace(self)` is wrong: it's an
-outerHTML swap that destroys the `<input>` you're typing in — focus and the
-in-progress value vanish. Return `Response.morph(self)` instead. It emits
+typing or tabbing**, a plain `reply.replace` is wrong: it's an outerHTML swap
+that destroys the `<input>` you're typing in — focus and the in-progress value
+vanish. Return `reply.morph` instead. It emits
 `<turbo-stream action="replace" method="morph">`, so Turbo 8's bundled Idiomorph
 morphs the subtree in place — the focused field and its caret survive the save.
 
@@ -119,7 +119,8 @@ action :update, params: { name: :string }
 def update(name:)
   authorize! @record, :update?
   @record.update!(name:) if name.present?
-  Phlex::Reactive::Response.morph(self)   # morph in place — keep focus + caret
+  reply.morph   # morph in place — keep focus + caret. The action is named
+                # `update`, but `reply.morph` is unambiguous (the verb is on reply).
 end
 
 def view_template
@@ -131,8 +132,8 @@ def view_template
 end
 ```
 
-`Response.replace(self, morph: true)` is the same thing via the opt-in flag; the
-morphed root still carries a fresh signed token, so the next edit verifies.
+`reply.replace(morph: true)` is the same thing via the opt-in flag; the morphed
+root still carries a fresh signed token, so the next edit verifies.
 
 ## Want it to update other viewers too?
 

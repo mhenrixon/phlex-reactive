@@ -76,7 +76,7 @@ end
 For authorization, stub the current user / policy and assert `:forbidden` when
 the action's `authorize!` should deny.
 
-When an action returns a [`Response`](../README.md#phlexreactiveresponse--controlling-the-actions-reply),
+When an action returns a [`reply.<verb>`](../README.md#reply--controlling-the-actions-reply),
 assert on the streams it produces:
 
 ```ruby
@@ -99,8 +99,8 @@ test "redirect rides a 200 reactive:visit, not a 3xx" do
 end
 ```
 
-A `Response` is also a plain value object — unit-test it with no HTTP:
-`Response.remove(c).render_self?` is `false`; `Response.replace(c).flash(:x, "hi").streams.size` is `2`.
+`reply.<verb>` is a plain value object — unit-test it with no HTTP:
+`c.reply.remove.render_self?` is `false`; `c.reply.replace.flash(:x, "hi").streams.size` is `2`.
 
 ## 4. System / browser: the full loop & broadcasts
 

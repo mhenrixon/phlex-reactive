@@ -28,6 +28,11 @@ class TodoItemComponent < ApplicationComponent
     @todo.update!(title:) if title.present?
   end
 
+  # This component deliberately keeps the fully-qualified
+  # Phlex::Reactive::Response.* form (the others use the preferred reply.*) so the
+  # back-compat path stays covered by the live request/system suites: reply.* is
+  # sugar over Response.*, and Response.* must keep working verbatim.
+
   # Response: remove self from the DOM (render_self false — no doomed re-render).
   def archive
     Phlex::Reactive::Response.remove(self)

@@ -8,15 +8,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`reply` — the action-reply builder.** Control an action's reply with
+  `reply.replace` / `reply.morph` / `reply.update` / `reply.remove` /
+  `reply.redirect(url)` / `reply.with(*)`, chaining `.flash` / `.stream` /
+  `.also_update` / `.also_replace` as before. `reply` is a subject-bound facade on
+  the component, so the two warts of the old form disappear: no `self` to thread
+  (`reply.morph`, not `Response.morph(self)`) and no constant to qualify — a
+  namespaced component no longer needs a per-file `Response = …` alias, because
+  `reply` is a method resolved on the component, not a lexical constant. It
+  returns the same immutable value object the endpoint reads, so the return-value
+  contract, immutability, and chaining are unchanged. `Phlex::Reactive::Response`
+  remains fully functional but is now an internal detail — `reply` is the
+  documented surface.
+
 - **Morph response — focus-preserving re-render (issue #28).**
-  `Response.morph(self)` (and the opt-in `Response.replace(self, morph: true)`)
+  `reply.morph` (and the opt-in `reply.replace(morph: true)`)
   re-renders a component in place via Turbo 8's bundled Idiomorph
   (`<turbo-stream action="replace" method="morph">`) instead of an outerHTML
   swap. The focused `<input>` and its caret survive the save, making per-field
   reactive editing — a "spreadsheet" grid where a debounced save fires while the
   user is still typing/tabbing — actually viable. Backed by the new
   `Streamable#to_stream_morph` primitive and a `morph:` flag on the
-  `.replace` / `.broadcast_replace_to` class builders and `Response#also_replace`
+  `.replace` / `.broadcast_replace_to` class builders and `#also_replace`
   (live cross-tab updates can morph too). The default everywhere stays the plain
   replace (no `method="morph"` attribute), so existing components are unchanged.
   No new dependency — Idiomorph ships with `turbo-rails >= 2.0`.
