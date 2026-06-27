@@ -27,6 +27,10 @@ class DemosController < ActionController::Base
     render_component FormSubmitComponent.new(todo: Todo.find(params[:id]))
   end
 
+  def nested_editor
+    render_component NestedEditorComponent.new
+  end
+
   def nested_params
     render_component NestedParamsComponent.new
   end

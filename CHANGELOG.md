@@ -21,6 +21,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A reactive form can now mirror a normal nested-attributes update in one action
   instead of being forced into a per-row component architecture.
 
+### Fixed
+
+- **Nested reactive roots no longer leak fields (issue #15).** When a reactive
+  component is rendered inside another (both are `data-controller="reactive"`
+  roots), an action on the outer root previously swept *every* descendant named
+  input — including the nested roots' inputs — into its own params. Field
+  collection now stops at nested reactive roots: an action collects only the
+  inputs whose nearest `[data-controller~="reactive"]` ancestor is its own root.
+  Outer flat fields and per-row reactive editing compose cleanly, with no
+  name-disjointness workarounds.
+
 ## [0.2.6]
 
 ### Added
