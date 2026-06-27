@@ -63,6 +63,13 @@ module Phlex
       def with(*strings)
         Response.with(*strings)
       end
+
+      # Self-targeting again: emit exactly these streams with a TOKEN-ONLY refresh
+      # (issue #30) — partial/per-field update, NO full-self replace, so the
+      # component's live inputs survive. The bound component supplies the token.
+      def streams(*strings)
+        Response.streams(@component, *strings)
+      end
     end
   end
 end

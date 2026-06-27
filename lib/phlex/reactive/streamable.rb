@@ -220,6 +220,24 @@ module Phlex
         self.class.turbo_stream_builder.update(id, html: self.class.render_component(self))
       end
 
+      # Render a TOKEN-ONLY refresh stream (issue #30): a tiny
+      # `<turbo-stream action="reactive:token">` carrying the component's fresh
+      # signed token, with NO rendered body. It lets an action update only PART
+      # of a component (its own hand-built streams) while still rolling the
+      # signed identity token forward — the client reads the next token from this
+      # attribute (#extractToken) and an inert client action writes it onto the
+      # root (a pure attribute set, so a focused <input> + caret survive). Unlike
+      # to_stream_replace, it does NOT re-render the children, so a live input
+      # the user is typing into is never torn down. Used by Response.streams.
+      #
+      # The component carries its token via Component#reactive_token; a Streamable
+      # that isn't a Component (no token) simply has nothing to refresh — guarded
+      # by respond_to? so the primitive stays usable on a bare Streamable.
+      def to_stream_token
+        token = respond_to?(:reactive_token) ? reactive_token : nil
+        %(<turbo-stream action="reactive:token" target="#{ERB::Util.html_escape(id)}" data-reactive-token-value="#{ERB::Util.html_escape(token)}"></turbo-stream>)
+      end
+
       # Render THIS instance as a remove stream. The component already knows its
       # own #id, so no record/class reconstruction is needed (works for record-
       # and state-backed components alike). Used by Response.remove.

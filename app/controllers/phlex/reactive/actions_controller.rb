@@ -78,6 +78,16 @@ module Phlex
         return [redirect_stream(result.redirect_url)] if result.redirect?
 
         streams = result.streams
+
+        # Partial update (Response.streams / reply.streams, issue #30): the action
+        # re-rendered only PART of the component and opted out of the full-self
+        # replace. Append a tiny token-only stream so the signed token still rolls
+        # forward WITHOUT re-rendering (and clobbering) the live inputs. Skip it if
+        # the caller already supplied a token-bearing stream (idempotent).
+        if result.refresh_token? && streams.none? { |s| s.include?("data-reactive-token-value") }
+          return [*streams, result.token_component.to_stream_token]
+        end
+
         # Guarantee the component's signed identity token is refreshed unless the
         # Response opted out (remove/redirect navigate away — handled above). The
         # client reads the next token from the response body (#extractToken), so

@@ -453,6 +453,12 @@ def update(name:) = (@row.update!(name:); reply.morph)
 
 # Re-render a COMPANION element (a heading mirroring the edited name) alongside self:
 def rename(value:) = (@account.update!(name: value); reply.replace.also_update("page_heading", html: @account.name))
+
+# Update ONLY part of the component (issue #30): re-stream just the total cell,
+# NOT the whole row. reply.streams emits exactly your streams plus a tiny
+# token-only refresh — no full-self replace — so a sibling <input> the user is
+# mid-typing in is never torn down. The signed token still rolls forward.
+def update(quantity:, price:) = (@item.update!(quantity:, price:); reply.streams(Totals.update(@item)))
 ```
 
 | Builder | Reply |
@@ -464,10 +470,15 @@ def rename(value:) = (@account.update!(name: value); reply.replace.also_update("
 | `.flash(level, content, target: …)` | append a flash; `content` is a plain string (escaped) or a Phlex component (off-request — no Rails `flash`); target defaults to `Phlex::Reactive.flash_target` (`"flash"`) |
 | `reply.remove` | remove the element (backed by `Streamable#to_stream_remove`) |
 | `reply.redirect(url)` | client-side `Turbo.visit` (pass a `*_url`); rides a `reactive:visit` turbo-stream, not an HTTP 3xx |
-| `reply.with(*streams)` / `#stream(*more)` | multi-stream |
+| `reply.streams(*streams)` | **partial update** — emit exactly these streams (no full-self replace) + a tiny token-only refresh, so live inputs survive; for per-field grid editing (issue #30) |
+| `reply.with(*streams)` / `#stream(*more)` | multi-stream (self re-render still injected for the token) |
 
 `.flash`/`.stream`/`.also_*` are additive on a self-replace, so the component's
-signed token always refreshes.
+signed token always refreshes. **`reply.streams`** is the exception that proves
+the rule: it deliberately skips the full-self replace (so your hand-built streams
+update only the targets you name) and refreshes the token via a tiny inert
+`reactive:token` stream instead — the token rolls forward without re-rendering
+(and clobbering) the component's live inputs.
 
 > **Under the hood.** `reply.<verb>` returns a `Phlex::Reactive::Response` — the
 > immutable value object the endpoint reads. You can build one directly

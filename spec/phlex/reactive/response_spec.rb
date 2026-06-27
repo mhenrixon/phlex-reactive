@@ -166,4 +166,42 @@ RSpec.describe Phlex::Reactive::Response do
     response = described_class.with.flash(:error, klass.new)
     expect(response.streams.first).to include("rendered flash")
   end
+
+  # Issue #30: Response.streams(component, *strings) emits EXACTLY the caller's
+  # streams plus a token-only refresh — render_self is false (no full-self
+  # replace), so partial/per-field updates don't clobber live inputs, yet the
+  # signed token still rolls forward via the tiny reactive:token stream the
+  # endpoint appends from the bound component.
+  describe "streams (issue #30 — partial update, token-only refresh)" do
+    it "opts out of render_self (no forced full-self replace)" do
+      response = described_class.streams(counter, "<turbo-stream></turbo-stream>")
+      expect(response.render_self?).to be(false)
+    end
+
+    it "carries exactly the caller's streams (does not prepend a self replace)" do
+      response = described_class.streams(counter, item.to_stream_update)
+      expect(response.streams.size).to eq(1)
+      expect(response.streams.first).to include('action="update"')
+      expect(response.streams.first).to include(%(target="#{ActionView::RecordIdentifier.dom_id(todo)}"))
+    end
+
+    it "remembers the bound component so the endpoint can refresh its token" do
+      response = described_class.streams(counter, "<turbo-stream></turbo-stream>")
+      expect(response.token_component).to eq(counter)
+    end
+
+    it "is NOT redirect and is immutable" do
+      response = described_class.streams(counter)
+      expect(response.redirect?).to be(false)
+      expect(response).to be_frozen
+    end
+
+    it "chains flash/stream while staying render_self false and keeping the component" do
+      response = described_class.streams(counter, item.to_stream_update).flash(:notice, "saved")
+      expect(response.streams.size).to eq(2)
+      expect(response.streams.last).to include('action="append"')
+      expect(response.render_self?).to be(false)
+      expect(response.token_component).to eq(counter)
+    end
+  end
 end

@@ -14,6 +14,7 @@ class CounterComponent < ApplicationComponent
   action :bump_via_update
   action :bump_via_morph
   action :go_home
+  action :bump_via_partial
 
   def initialize(count: 0)
     @count = count
@@ -51,6 +52,17 @@ class CounterComponent < ApplicationComponent
   # dummy route so the browser spec can assert the Turbo.visit landed.
   def go_home
     reply.redirect("/todos")
+  end
+
+  # Reply: update ONLY a companion target (issue #30). reply.streams emits
+  # exactly the given streams and refreshes the token via a tiny reactive:token
+  # stream — NO full-self replace — so a live input the user is typing into is
+  # never torn down. This action is a REQUEST-spec fixture (it inspects the
+  # response body, not the DOM); the end-to-end browser example is
+  # PartialGridComponent.
+  def bump_via_partial
+    @count += 1
+    reply.streams(%(<turbo-stream action="update" target="counter-mirror"><template>#{@count}</template></turbo-stream>))
   end
 
   def view_template
