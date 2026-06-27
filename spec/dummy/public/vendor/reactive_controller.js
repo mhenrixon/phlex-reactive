@@ -47,6 +47,14 @@ export default class extends Controller {
   #tokenCache // freshest token, threaded synchronously across queued requests
   #debounceTimers = new Map() // trigger element -> { timer, flush } pending dispatch
 
+  // Tear down any pending debounce timers when the controller leaves the DOM
+  // (Turbo morph/navigation removes the element). Otherwise a timer that hasn't
+  // fired yet would later call #enqueue on a disconnected controller — a round
+  // trip against a detached element / stale token (issue #17 follow-up).
+  disconnect() {
+    this.#clearAllDebounces()
+  }
+
   // Serialize requests per component. Each round trip rewrites the signed
   // token in the DOM (state lives in the token, not the client). If events
   // fire faster than round trips complete, concurrent requests would all read
@@ -104,6 +112,13 @@ export default class extends Controller {
     clearTimeout(pending.timer)
     target?.removeEventListener?.("blur", pending.flush)
     this.#debounceTimers.delete(target)
+  }
+
+  // Clear every pending debounce timer (used on disconnect). Reuses
+  // #clearDebounce so all timer/listener teardown stays in one place. Snapshot
+  // the keys first — #clearDebounce mutates the map as it goes.
+  #clearAllDebounces() {
+    for (const target of [...this.#debounceTimers.keys()]) this.#clearDebounce(target)
   }
 
   async #perform(action, params) {

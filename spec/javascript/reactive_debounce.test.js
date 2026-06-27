@@ -103,6 +103,25 @@ test("blur flushes a pending debounced dispatch immediately", async () => {
   expect(calls()).toBe(1) // flushed, not lost
 })
 
+test("disconnect() cancels a pending debounced dispatch (no fetch after teardown)", async () => {
+  const { controller, calls } = buildController()
+  const target = makeTarget()
+
+  controller.dispatch({
+    target,
+    params: { action: "update", params: "{}", debounce: 50 },
+    preventDefault: () => {},
+  })
+  expect(calls()).toBe(0)
+
+  // The element leaves the DOM (Turbo morph/navigation) before the window
+  // elapses. A pending timer must not later POST against a detached controller.
+  controller.disconnect()
+
+  await wait(80) // past the debounce window
+  expect(calls()).toBe(0) // timer was cleared on disconnect — nothing fired
+})
+
 test("no debounce → dispatch fires immediately (unchanged behavior)", async () => {
   const { controller, calls } = buildController()
 
@@ -115,15 +134,20 @@ test("no debounce → dispatch fires immediately (unchanged behavior)", async ()
   expect(calls()).toBe(1)
 })
 
-test("a debounced dispatch still preventDefaults synchronously (submit safety)", () => {
+test("a debounced dispatch still preventDefaults synchronously (submit safety)", async () => {
   const { controller } = buildController()
   const order = []
+  const target = makeTarget()
   controller.dispatch({
-    target: makeTarget(),
+    target,
     params: { action: "save", params: "{}", debounce: 300 },
     preventDefault: () => order.push("preventDefault"),
   })
   // preventDefault must fire NOW (during the event), not after the debounce
   // timer — otherwise a debounced submit trigger would navigate (issue #11).
   expect(order).toEqual(["preventDefault"])
+  // Tear down the pending 300ms timer so the delayed fetch can't fire after the
+  // test exits (flush via blur, then drain the queue) — keeps the suite stable.
+  target.fire("blur")
+  await controller.queue
 })
