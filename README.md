@@ -273,6 +273,34 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 Param types: `:string` (default), `:integer`, `:float`, `:boolean`. Anything not
 in the schema is dropped before reaching your method.
 
+**Array & nested params.** Wrap a type in an array for an array param, or a hash
+schema in an array for Rails-style nested attributes — so one reactive action can
+mirror a normal nested-attributes update instead of forcing a per-row component:
+
+```ruby
+action :save, params: {
+  date: :string,
+  bank_account_ids: [:integer],                         # array of scalar
+  invoice_items_attributes: [                            # array of hash
+    { id: :integer, quantity: :float, price: :float, _destroy: :boolean }
+  ]
+}
+
+def save(date:, bank_account_ids:, invoice_items_attributes:)
+  @invoice.update!(date:, bank_account_ids:, invoice_items_attributes:)
+end
+```
+
+Nested coercion recurses per field, drops undeclared nested keys, and accepts an
+array as either a JSON array or a Rails index hash (`{ "0" => …, "1" => … }`).
+
+**Nested reactive components compose.** A reactive component rendered inside
+another is its own root — field collection stops at nested
+`data-controller="reactive"` roots, so an outer action collects only *its own*
+named inputs, never a nested component's. An invoice editor's `save` sees its
+flat fields; each line-item row's `quantity`/`price` belong to that row's own
+action. No name-disjointness workarounds required.
+
 **Debounced triggers (live-as-you-type).** Pass `debounce:` (milliseconds) to
 coalesce rapid events — typically keystrokes on an `"input"` trigger — into a
 single action round trip fired after the quiet period, instead of one POST per

@@ -123,24 +123,90 @@ module Phlex
 
       # Coerce client params against the action's declared schema. Anything not
       # in the schema is dropped — no raw mass assignment reaches the component.
+      # The top-level params arrive as an ActionController::Parameters; coerce
+      # them against the action's hash schema (same recursion as nested hashes).
       def coerce_params(schema)
         return {} if schema.blank?
 
-        raw = params.fetch(:params, {})
-        schema.each_with_object({}) do |(key, type), out|
-          next unless raw.key?(key.to_s)
+        coerce_hash(params.fetch(:params, {}), schema)
+      end
 
-          out[key.to_sym] = coerce(raw[key.to_s], type)
+      # Sentinel: a declared key whose value can't be coerced to its type is
+      # DROPPED (not assigned), so the method's keyword default applies — exactly
+      # as if the client had omitted the key. Distinct from a coerced nil/[].
+      DROP = Object.new
+      private_constant :DROP
+
+      # Coerce a value against a declared type. A type is one of:
+      #   * a scalar symbol            (:string/:integer/:float/:boolean)
+      #   * a Hash schema              ({ id: :integer, ... })   — nested object
+      #   * a one-element Array        ([:integer] / [{ ... }])  — array of that
+      # Arrays accept both a real JSON array and a Rails-style index hash
+      # ({ "0" => ..., "1" => ... }), so a fields_for collection works either way.
+      def coerce(value, type)
+        if type.is_a?(Array)
+          coerce_array(value, type.first)
+        elsif type.is_a?(Hash)
+          coerce_hash(value, type)
+        else
+          coerce_scalar(value, type)
         end
       end
 
-      def coerce(value, type)
+      # A real array (or Rails index hash) coerces element-wise. A malformed
+      # present-but-non-array value returns DROP rather than [] — coercing a stray
+      # scalar to an empty array would let a bad payload read as an explicit
+      # "clear everything" on update!(declared_array:).
+      def coerce_array(value, element_type)
+        values = array_values(value)
+        return DROP if values.nil?
+
+        values.map { |element| coerce(element, element_type) }
+      end
+
+      # Keep declared keys only (drop undeclared — no mass assignment), recursing
+      # for nested hash/array element types. Symbolizes keys to splat as kwargs.
+      # A key whose value coerces to DROP is skipped (keyword default applies).
+      def coerce_hash(value, schema)
+        hash = to_param_hash(value)
+        schema.each_with_object({}) do |(key, type), out|
+          next unless hash.key?(key.to_s)
+
+          coerced = coerce(hash[key.to_s], type)
+          next if coerced.equal?(DROP)
+
+          out[key.to_sym] = coerced
+        end
+      end
+
+      def coerce_scalar(value, type)
         case type
         when :integer then value.to_i
         when :float then value.to_f
         when :boolean then ActiveModel::Type::Boolean.new.cast(value)
         else value.to_s
         end
+      end
+
+      # Normalize an array param: a real array passes through; a Rails index hash
+      # ({ "0" => ..., "1" => ... }) becomes its values in index order. Anything
+      # else (a stray scalar, nil) is malformed → nil, so the caller drops the
+      # param rather than fabricating an empty array.
+      def array_values(value)
+        return value.to_a if value.is_a?(Array)
+
+        if value.respond_to?(:to_unsafe_h) || value.is_a?(Hash)
+          to_param_hash(value).sort_by { |k, _| k.to_i }.map(&:last)
+        end
+      end
+
+      # Unwrap ActionController::Parameters (or a plain Hash) to a string-keyed
+      # Hash so coercion can index it uniformly.
+      def to_param_hash(value)
+        return value.to_unsafe_h.stringify_keys if value.respond_to?(:to_unsafe_h)
+        return value.stringify_keys if value.is_a?(Hash)
+
+        {}
       end
 
       # Only components that opt into Reactive may be resolved. The signature

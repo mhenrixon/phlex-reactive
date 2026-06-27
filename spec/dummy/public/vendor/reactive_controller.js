@@ -181,10 +181,21 @@ export default class extends Controller {
     return match?.[1]
   }
 
+  // True when `el` is collected by THIS reactive root and not by a nested one.
+  // A reactive component can be rendered inside another (both are
+  // data-controller="reactive" roots). querySelectorAll() descends into nested
+  // roots, so without this guard an outer action would sweep the inner roots'
+  // inputs into its own params (issue #15). An element belongs to this root iff
+  // its nearest [data-controller~="reactive"] ancestor is this.element.
+  #ownsField(el) {
+    return el.closest('[data-controller~="reactive"]') === this.element
+  }
+
   #collectFields() {
     const fields = {}
-    // Standard form controls.
+    // Standard form controls owned by THIS root (not a nested reactive root).
     this.element.querySelectorAll("input[name], select[name], textarea[name]").forEach((field) => {
+      if (!this.#ownsField(field)) return
       if (field.type === "checkbox") {
         fields[field.name] = field.checked
       } else if (field.type === "radio") {
@@ -203,6 +214,7 @@ export default class extends Controller {
     this.element
       .querySelectorAll("[name]:is(lexxy-editor, trix-editor, [contenteditable=''], [contenteditable=true], [contenteditable=plaintext-only])")
       .forEach((el) => {
+        if (!this.#ownsField(el)) return // skip editors owned by a nested reactive root (issue #15)
         // A plain element (e.g. a <div contenteditable>) has no `name` IDL
         // property — only the attribute — so read getAttribute, not el.name.
         const name = el.getAttribute("name")

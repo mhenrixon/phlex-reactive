@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Nested & array param types (issue #16).** Action param schemas can now
+  declare arrays and nested hashes, not just scalars: wrap a type in an array
+  (`bank_account_ids: [:integer]`) for an array param, or wrap a hash schema in
+  an array (`invoice_items_attributes: [{ id: :integer, quantity: :float,
+  _destroy: :boolean }]`) for Rails-style nested attributes. Coercion recurses
+  per field, drops undeclared nested keys (no mass assignment), and accepts an
+  array as either a JSON array or a Rails index hash (`{ "0" => …, "1" => … }`).
+  A malformed (present-but-non-array) value for an array param is dropped — not
+  coerced to `[]` — so a bad payload can't read as an explicit "clear all" on an
+  `update!(declared_array:)`; a real empty array still passes through as `[]`.
+  A reactive form can now mirror a normal nested-attributes update in one action
+  instead of being forced into a per-row component architecture.
 - **Debounce option on `on(...)` (issue #17).** A trigger can declare
   `on(:update, event: "input", debounce: 300)` (milliseconds) to coalesce rapid
   events — typically keystrokes — into a SINGLE action round trip fired after the
@@ -16,6 +28,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   synchronously (a debounced `submit` won't navigate), and the debounced round
   trip still goes through the per-component queue so token threading holds.
   Omitting `debounce:` keeps the immediate-dispatch default.
+
+### Fixed
+
+- **Nested reactive roots no longer leak fields (issue #15).** When a reactive
+  component is rendered inside another (both are `data-controller="reactive"`
+  roots), an action on the outer root previously swept *every* descendant named
+  input — including the nested roots' inputs — into its own params. Field
+  collection now stops at nested reactive roots: an action collects only the
+  inputs whose nearest `[data-controller~="reactive"]` ancestor is its own root.
+  Outer flat fields and per-row reactive editing compose cleanly, with no
+  name-disjointness workarounds.
 
 ## [0.2.6]
 
