@@ -296,14 +296,19 @@ RSpec.describe "Reactive actions", type: :request do
       # legitimately carries its own data-reactive-token-value) must STILL refresh
       # this component's token — otherwise the actor's next action 400s.
       it "still refreshes the actor's token when a SIBLING component's stream carries one" do
-        todo = Todo.create!(title: "moderate me", done: false)
-        sibling_dom = ActionView::RecordIdentifier.dom_id(Todo.last) # the sibling created in the action
-
         post_action(CounterComponent, payload: {"s" => {"count" => 4}}, act: "bump_with_sibling")
 
+        # Capture the sibling the ACTION created (not a preexisting fixture), so
+        # the sibling-target assertions actually exercise the action's output.
+        sibling = Todo.find_by!(title: "sibling")
+        sibling_dom = ActionView::RecordIdentifier.dom_id(sibling)
+
         expect(response).to have_http_status(:ok)
-        # The sibling's replace (carrying ITS token) is present...
+        # The sibling's replace (carrying ITS own token) is present and targets
+        # the sibling — this is the "another component's token" the dedupe must
+        # NOT mistake for the actor's.
         expect(response.body).to include('action="replace"')
+        expect(response.body).to include(%(target="#{sibling_dom}"))
         # ...AND the actor's own token-only refresh is still appended, targeting self.
         expect(response.body).to include('action="reactive:token"')
         expect(response.body).to include('target="counter"')
@@ -311,7 +316,6 @@ RSpec.describe "Reactive actions", type: :request do
         expect(response.body.scan('target="counter"').size).to eq(1)
         # Sanity: the sibling stream targets the sibling, not the counter.
         expect(sibling_dom).not_to eq("counter")
-        expect(todo).to be_persisted # keep the fixture referenced
       end
     end
   end
