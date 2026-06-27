@@ -87,7 +87,21 @@ module Phlex
         # Declare a client-invokable action with an optional param schema.
         #   action :increment
         #   action :rename, params: { title: :string }
-        # Param types: :string (default), :integer, :float, :boolean.
+        #
+        # Param types are coerced server-side; anything not in the schema is
+        # dropped before reaching your method (no mass assignment):
+        #   * Scalars — :string (default), :integer, :float, :boolean
+        #   * Array of scalar — wrap the type in an array: [:integer]
+        #   * Array of hash (Rails nested attributes) — wrap a hash schema:
+        #       action :save, params: {
+        #         date: :string,
+        #         bank_account_ids: [:integer],
+        #         invoice_items_attributes: [
+        #           { id: :integer, quantity: :float, price: :float, _destroy: :boolean }
+        #         ]
+        #       }
+        # Array params accept BOTH a JSON array and a Rails-style index hash
+        # ({ "0" => ..., "1" => ... }), so a fields_for collection works either way.
         def action(name, params: {})
           reactive_actions[name.to_sym] = Action.new(name: name.to_sym, params: params)
         end
