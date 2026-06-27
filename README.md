@@ -473,7 +473,7 @@ signed token always refreshes.
 > immutable value object the endpoint reads. You can build one directly
 > (`Phlex::Reactive::Response.replace(self)`) and it still works, but `reply` is
 > the preferred surface; treat `Response` as an internal detail.
-
+> **`html:`/`content` escaping.** A plain string is **HTML-escaped** by Turbo, so
 > **`html:`/`content` escaping.** A plain string is **HTML-escaped** by Turbo, so
 > `html: @account.name` is safe even for user-supplied values. To emit intentional
 > markup, pass a **Phlex component** (`html: Heading.new(name: @record.name)`) —
