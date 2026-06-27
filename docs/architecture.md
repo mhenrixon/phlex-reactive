@@ -173,6 +173,24 @@ requests in flight at once would both read the *old* token and clobber each othe
 
 Result: click `+` five times fast → `5`, never `1` or `2`.
 
+### Debounced triggers
+
+A trigger may opt into a quiet-period debounce with
+`on(:update, event: "input", debounce: 300)`. The controller reads the debounce
+(a Stimulus `data-reactive-debounce-param`) in `dispatch` and, instead of
+enqueuing the round trip immediately, resets a **per-trigger-element** timer;
+only after `debounce` ms of quiet does it enqueue onto the same per-component
+queue (so token threading still holds). A `blur` on the element flushes a pending
+dispatch immediately, so tabbing away never drops the last edit. `preventDefault`
+still fires synchronously, so a debounced `submit` trigger won't navigate
+(issue #11). On `disconnect` (the element leaves the DOM via a Turbo morph or
+navigation) every pending debounce timer is cleared, so a deferred round trip
+never fires against a detached controller. Without `debounce:`, dispatch is
+immediate — unchanged behavior.
+
+Result: type `c-a-t-s` fast into a debounced input → ONE search round trip, not
+four.
+
 ## What runs where
 
 | Concern | Where |

@@ -246,4 +246,25 @@ RSpec.describe Phlex::Reactive::Component do
       expect(state_klass.reactive_action?(:decrement)).to be(false)
     end
   end
+
+  describe "#on trigger attributes (issue #17 debounce)" do
+    subject(:instance) { state_klass.new }
+
+    it "wires the action + event without a debounce by default" do
+      attrs = instance.send(:on, :increment, event: "input")
+      expect(attrs[:data][:action]).to eq("input->reactive#dispatch")
+      expect(attrs[:data][:reactive_action_param]).to eq("increment")
+      expect(attrs[:data]).not_to have_key(:reactive_debounce_param)
+    end
+
+    it "emits the debounce as a Stimulus param when given" do
+      attrs = instance.send(:on, :set, event: "input", debounce: 300)
+      expect(attrs[:data][:reactive_debounce_param]).to eq(300)
+    end
+
+    it "keeps debounce out of the explicit params payload" do
+      attrs = instance.send(:on, :set, event: "input", debounce: 300, count: 5)
+      expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({"count" => 5})
+    end
+  end
 end
