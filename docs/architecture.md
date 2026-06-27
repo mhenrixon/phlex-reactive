@@ -90,6 +90,38 @@ from `on(:save, extra: ...)` always win over a collected field of the same name.
 > the standard controls left absent or empty, so it never clobbers a populated
 > input.
 
+#### Nested reactive roots collect independently
+
+A reactive component can be rendered **inside** another — each `**reactive_attrs`
+root is its own `data-controller="reactive"` element. Field collection stops at
+nested roots: an action collects only the named inputs whose nearest
+`[data-controller~="reactive"]` ancestor is *its own* root. A descendant
+reactive component's inputs belong to that component, not the outer one.
+
+```ruby
+# Outer editor (its own root) containing N reactive line-item rows (each a root).
+class InvoiceEditor < ApplicationComponent
+  # ... reactive_record :invoice; action :save, params: { notes: :string }
+  def view_template
+    div(id:, **reactive_attrs) do
+      input(name: "notes", value: @invoice.notes)         # collected by `save`
+      @invoice.items.each { render LineItem.new(item: it) } # each row is its own root
+      button(**on(:save)) { "Save" }
+    end
+  end
+end
+```
+
+A `save` on the editor receives `{ notes: }` only — never the rows' bare
+`quantity`/`price` inputs. A `quantity` change inside a row dispatches on *that
+row's* controller and updates only that row. So outer flat fields and per-row
+reactive editing compose without name-collision workarounds (issue #15).
+
+> Remember `mix` when a nested root needs its own `id`/`data`:
+> `div(**mix(reactive_attrs, id:, data: { testid: "row" }))`. A bare
+> `div(id:, **reactive_attrs, data: {...})` lets the extra `data:` clobber
+> `reactive_attrs`' `data-controller`, so the element never becomes a root.
+
 ## Why state isn't in the browser
 
 Livewire ships a *snapshot* of component state to the client and trusts it back

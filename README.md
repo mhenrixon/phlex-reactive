@@ -272,6 +272,13 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 Param types: `:string` (default), `:integer`, `:float`, `:boolean`. Anything not
 in the schema is dropped before reaching your method.
 
+**Nested reactive components compose.** A reactive component rendered inside
+another is its own root — field collection stops at nested
+`data-controller="reactive"` roots, so an outer action collects only *its own*
+named inputs, never a nested component's. An invoice editor's `save` sees its
+flat fields; each line-item row's `quantity`/`price` belong to that row's own
+action. No name-disjointness workarounds required.
+
 **Combining `on(...)` / `reactive_attrs` with your own attributes.** Both return
 a hash that includes a `data:` key. Spreading them *and* passing another `data:`
 (or `class:`, `id:`) would clobber it — use Phlex's `mix` to deep-merge:
