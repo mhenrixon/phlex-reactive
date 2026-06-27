@@ -58,7 +58,7 @@ class Todos::Item < ApplicationComponent
     list = @todo.list
     @todo.destroy!
     Todos::Item.broadcast_remove_to(list, :todos, model: @todo) # other tabs
-    Phlex::Reactive::Response.remove(self)                       # this tab's element
+    reply.remove                                                 # this tab's element
   end
 
   def view_template
@@ -78,10 +78,10 @@ class Todos::Item < ApplicationComponent
 end
 ```
 
-`destroy` returns `Response.remove(self)`, so the actor's own row is removed (via
-the built-in `Streamable#to_stream_remove` — no tombstone, no endpoint override)
-and `broadcast_remove_to` removes it in every other tab. See
-[Response](../README.md#phlexreactiveresponse--controlling-the-actions-reply).
+`destroy` returns `reply.remove`, so the actor's own row is removed (via the
+built-in `Streamable#to_stream_remove` — no tombstone, no endpoint override) and
+`broadcast_remove_to` removes it in every other tab. See
+[Controlling the action's reply](../README.md#reply--controlling-the-actions-reply).
 
 ## The list + composer
 

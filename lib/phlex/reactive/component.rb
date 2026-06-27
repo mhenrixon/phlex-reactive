@@ -169,6 +169,22 @@ module Phlex
         Phlex::Reactive.current_connection_id
       end
 
+      # Subject-bound reply builder — the preferred way to control an action's
+      # reply. `reply.replace.flash(:error, msg)` reads cleaner than
+      # `Phlex::Reactive::Response.replace(self).flash(:error, msg)`: the
+      # component is the implicit subject (no `self` to thread) and there's no
+      # constant to qualify (reply is a method, so a namespaced component needs
+      # no `Response = …` alias). It returns the same immutable Response the
+      # endpoint reads, so chaining and the legacy return-value contract are
+      # unchanged. See Phlex::Reactive::Reply.
+      #
+      #   def archive       = reply.remove
+      #   def go_home       = reply.redirect("/todos")
+      #   def update(name:) = (@account.update!(name:); reply.morph)
+      def reply
+        Phlex::Reactive::Reply.new(self)
+      end
+
       # Root-element attributes: marks the element reactive and carries the
       # signed identity token. Spread onto the root:
       #   div(id:, **reactive_attrs) { ... }

@@ -191,8 +191,8 @@ data-controller="reactive" but the reactive controller never connected …`).
    │                                          rebuild component (record from DB)
    │                                          run the whitelisted action
    │                                          re-render → <turbo-stream replace id>   (default; an action
-   │                                          may return a Response — see "Controlling the action's reply")
-   └──────── Turbo morphs it in ◀───────────────────────────────┘
+   │                                          may return reply.<verb> — see "Controlling the action's reply")
+   └──────── Turbo applies it in ◀──────────────────────────────┘
 
    ...and for OTHER tabs/users:
    model change → Component.broadcast_replace_to(stream) → pgbus SSE → same morph
@@ -296,7 +296,7 @@ The cross-tab chat in ~60 lines of Ruby (and zero JS) is the showcase — see
 | `.update` / `.append(target:)` / `.prepend(target:)` / `.remove` | The other Turbo Stream actions |
 | `.broadcast_replace_to(*streamables, model:, morph: false)` | Broadcast a replace over the stream transport (pgbus SSE / Action Cable); `morph: true` morphs in place |
 | `.broadcast_append_to(*streamables, target:, model:)` / `_update_` / `_prepend_` / `_remove_` | The broadcast variants |
-| `#to_stream_replace` / `#to_stream_morph` / `#to_stream_update` / `#to_stream_remove` | Stream the *already-built* instance (used internally after an action / by `Response`); `#to_stream_morph` morphs in place |
+| `#to_stream_replace` / `#to_stream_morph` / `#to_stream_update` / `#to_stream_remove` | Stream the *already-built* instance (used internally after an action / by `reply`); `#to_stream_morph` morphs in place |
 
 Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 
@@ -313,6 +313,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
+| `reply.replace` / `.morph` / `.update` / `.remove` / `.redirect(url)` / `.with(*)` | Return from an action to control the reply (flash, remove, redirect, multi-stream). See [Controlling the action's reply](#reply--controlling-the-actions-reply). |
 
 Param types: `:string` (default), `:integer`, `:float`, `:boolean`. Anything not
 in the schema is dropped before reaching your method.
@@ -422,52 +423,57 @@ end
 `nested_attributes(:address, address)` returns the id-merged hash without
 updating, if you need to combine it with other attributes.
 
-### `Phlex::Reactive::Response` — controlling the action's reply
+### `reply` — controlling the action's reply
 
-By default an action re-renders its component in place. **Return** a
-`Phlex::Reactive::Response` to do more (it governs only the actor's HTTP reply —
-cross-tab updates still use `broadcast_*_to(..., exclude: reactive_connection_id)`).
-Returning anything else keeps the default, so existing actions are unaffected.
+By default an action re-renders its component in place. To do more, **return**
+`reply.<verb>` — a subject-bound builder available in every component. It governs
+only the actor's HTTP reply (cross-tab updates still use
+`broadcast_*_to(..., exclude: reactive_connection_id)`). Returning anything else
+keeps the default, so existing actions are unaffected.
 
-The snippets below alias the constant for brevity (`Response.replace(self)` won't
-resolve to `Phlex::Reactive::Response` inside a namespaced component — fully
-qualify it, or add the alias shown):
+`reply` reads cleanly: the component is the implicit subject (no `self` to
+thread) and there's no constant to qualify (it's a method, so a namespaced
+component needs no alias):
 
 ```ruby
-Response = Phlex::Reactive::Response # or qualify each call below
-
 def rename(title:)
-  return Response.replace(self).flash(:error, @todo.errors.full_messages.to_sentence) unless @todo.update(title:)
-  Response.replace(self)
+  return reply.replace.flash(:error, @todo.errors.full_messages.to_sentence) unless @todo.update(title:)
+  reply.replace
 end
 
-def approve   = (@row.approve!; Response.remove(self))          # drop the element
-def publish   = (@article.publish!; Response.redirect(article_url(@article)))  # slug changed → Turbo.visit
-def add(item:) = Response.replace(self).stream(Totals.update(@order))           # multi-stream
+def approve   = (@row.approve!; reply.remove)          # drop the element
+def publish   = (@article.publish!; reply.redirect(article_url(@article)))  # slug changed → Turbo.visit
+def add(item:) = reply.replace.stream(Totals.update(@order))               # multi-stream
 
 # Per-field reactive editing (a "spreadsheet" grid): a debounced save fires
 # while the user is still typing/tabbing. Morph in place so the focused <input>
-# and its in-progress value survive the re-render (issue #28):
-def update(name:) = (@row.update!(name:); Response.morph(self))
+# and its in-progress value survive the re-render (issue #28). Note the action is
+# named `update`, yet `reply.morph` is unambiguous — the verb is on `reply`:
+def update(name:) = (@row.update!(name:); reply.morph)
 
 # Re-render a COMPANION element (a heading mirroring the edited name) alongside self:
-def rename(value:) = (@account.update!(name: value); Response.replace(self).also_update("page_heading", html: @account.name))
+def rename(value:) = (@account.update!(name: value); reply.replace.also_update("page_heading", html: @account.name))
 ```
 
 | Builder | Reply |
 |---|---|
-| `Response.replace(self)` / `.update(self)` | re-render in place (explicit default; `replace` is an outerHTML swap, `update` morphs inner HTML) |
-| `Response.morph(self)` / `Response.replace(self, morph: true)` | re-render in place via Idiomorph (`method="morph"`) — preserves the focused `<input>` + caret; for per-field reactive editing (issue #28) |
+| `reply.replace` / `reply.update` | re-render in place (default; `replace` is an outerHTML swap, `update` morphs inner HTML) |
+| `reply.morph` / `reply.replace(morph: true)` | re-render in place via Idiomorph (`method="morph"`) — preserves the focused `<input>` + caret; for per-field reactive editing (issue #28) |
 | `.also_update(target, html:)` | also re-render a companion element by DOM id; `html` is a plain string (escaped) or a Phlex component |
 | `.also_replace(component, morph: false)` | also re-render another Streamable component, targeting its own `#id`; `morph: true` morphs it in place |
 | `.flash(level, content, target: …)` | append a flash; `content` is a plain string (escaped) or a Phlex component (off-request — no Rails `flash`); target defaults to `Phlex::Reactive.flash_target` (`"flash"`) |
-| `Response.remove(self)` | remove the element (backed by `Streamable#to_stream_remove`) |
-| `Response.redirect(url)` | client-side `Turbo.visit` (pass a `*_url`); rides a `reactive:visit` turbo-stream, not an HTTP 3xx |
-| `Response.with(*streams)` / `#stream(*more)` | multi-stream |
+| `reply.remove` | remove the element (backed by `Streamable#to_stream_remove`) |
+| `reply.redirect(url)` | client-side `Turbo.visit` (pass a `*_url`); rides a `reactive:visit` turbo-stream, not an HTTP 3xx |
+| `reply.with(*streams)` / `#stream(*more)` | multi-stream |
 
 `.flash`/`.stream`/`.also_*` are additive on a self-replace, so the component's
 signed token always refreshes.
 
+> **Under the hood.** `reply.<verb>` returns a `Phlex::Reactive::Response` — the
+> immutable value object the endpoint reads. You can build one directly
+> (`Phlex::Reactive::Response.replace(self)`) and it still works, but `reply` is
+> the preferred surface; treat `Response` as an internal detail.
+> **`html:`/`content` escaping.** A plain string is **HTML-escaped** by Turbo, so
 > **`html:`/`content` escaping.** A plain string is **HTML-escaped** by Turbo, so
 > `html: @account.name` is safe even for user-supplied values. To emit intentional
 > markup, pass a **Phlex component** (`html: Heading.new(name: @record.name)`) —

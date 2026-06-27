@@ -21,10 +21,12 @@ class MorphGridComponent < ApplicationComponent
 
   # Persist the edit and morph in place. The saved value reads back from the DB
   # on the morphed render, so a Playwright test can prove the typed value
-  # actually persisted (the issue's failing assertion).
+  # actually persisted (the issue's failing assertion). NB: the action is named
+  # `update`, yet `reply.morph` is unambiguous — the verb lives on the reply
+  # facade, not the component, so there's no collision with this action name.
   def update(name:)
     @account.update!(name:) if name.present?
-    Phlex::Reactive::Response.morph(self)
+    reply.morph
   end
 
   def view_template
