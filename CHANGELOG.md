@@ -31,6 +31,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Model-scoped form fields feed a nested param (issue #21).** A Rails
+  `Form(model: @invoice)` posts flat bracketed keys (`invoice[date]`,
+  `invoice[status]`) because the client keeps each input's `name` verbatim. The
+  server did exact-key matching, so a nested schema (`params: { invoice: { date:
+  :string } }`) looked for the literal key `"invoice"`, never found it, and
+  dropped the whole param. Param normalization now expands bracket notation
+  before coercion — `invoice[date]` nests under `invoice`, and
+  `items_attributes[0][qty]` becomes the Rails index-hash form the array coercer
+  already understands. A nested schema matches a normal Rails form with zero
+  field renaming, which is what makes the issue #16 nested-param types useful for
+  real forms. Pre-nested objects, plain scalars, and non-string values (a
+  checkbox boolean) pass through unchanged.
 - **Nested reactive roots no longer leak fields (issue #15).** When a reactive
   component is rendered inside another (both are `data-controller="reactive"`
   roots), an action on the outer root previously swept *every* descendant named

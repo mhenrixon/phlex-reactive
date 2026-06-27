@@ -17,6 +17,13 @@ class NestedParamsComponent < ApplicationComponent
     invoice_items_attributes: [{id: :integer, quantity: :float, price: :float, _destroy: :boolean}]
   }
 
+  # Issue #21: a model-scoped nested hash, matching what a Rails Form(model:)
+  # posts as flat bracketed keys (invoice[date], invoice[status], …).
+  action :save_invoice, params: {
+    date: :string,
+    invoice: {date: :string, status: :string, total: :float, active: :boolean}
+  }
+
   def initialize(received: nil)
     @received = received
   end
@@ -29,6 +36,10 @@ class NestedParamsComponent < ApplicationComponent
       bank_account_ids:,
       invoice_items_attributes:
     }
+  end
+
+  def save_invoice(date: nil, invoice: nil)
+    @received = {date:, invoice:}.compact
   end
 
   def view_template
