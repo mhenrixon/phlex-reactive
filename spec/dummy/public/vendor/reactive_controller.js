@@ -45,6 +45,7 @@ export default class extends Controller {
   }
 
   #tokenCache // freshest token, threaded synchronously across queued requests
+  #debounceTimers = new Map() // trigger element -> { timer, flush } pending dispatch
 
   // Serialize requests per component. Each round trip rewrites the signed
   // token in the DOM (state lives in the token, not the client). If events
@@ -53,7 +54,7 @@ export default class extends Controller {
   // a per-controller promise makes each dispatch wait for the previous one, so
   // it always uses the freshest token.
   dispatch(event) {
-    const { action, params } = event.params
+    const { action, params, debounce } = event.params
     if (!action) return
 
     // Stop native behavior (button submit / FORM NAVIGATION) HERE, synchronously
@@ -61,13 +62,48 @@ export default class extends Controller {
     // still being handled — deferring it into the request-queue microtask (below)
     // is too late: a `submit` trigger would natively POST the form and navigate
     // before the reactive round trip runs (issue #11). For a `click` trigger
-    // there's no default to miss, so this was previously invisible.
+    // there's no default to miss, so this was previously invisible. This holds
+    // for debounced triggers too — the round trip is deferred, but the native
+    // default must still be prevented now.
     event.preventDefault()
+
+    // Debounced trigger (e.g. on(:update, event: "input", debounce: 300)):
+    // coalesce rapid events into ONE round trip after a quiet period, instead of
+    // one POST per keystroke (issue #17). A blur flushes a pending dispatch.
+    const ms = Number(debounce) || 0
+    if (ms > 0) return this.#debounceDispatch(event.target, ms, action, params)
 
     // Capture action/params now; the queued work runs in a later microtask, by
     // which point the event object may have been reset by the browser.
+    return this.#enqueue(action, params)
+  }
+
+  #enqueue(action, params) {
     this.queue = (this.queue ?? Promise.resolve()).then(() => this.#perform(action, params))
     return this.queue
+  }
+
+  // Reset a per-element timer; only enqueue the round trip after `ms` of quiet.
+  // Also flush immediately on blur so leaving the field never drops the last
+  // edit (a long debounce shouldn't swallow a value the user tabbed away from).
+  #debounceDispatch(target, ms, action, params) {
+    this.#clearDebounce(target)
+
+    const flush = () => {
+      this.#clearDebounce(target)
+      this.#enqueue(action, params)
+    }
+    const timer = setTimeout(flush, ms)
+    target?.addEventListener?.("blur", flush, { once: true })
+    this.#debounceTimers.set(target, { timer, flush })
+  }
+
+  #clearDebounce(target) {
+    const pending = this.#debounceTimers.get(target)
+    if (!pending) return
+    clearTimeout(pending.timer)
+    target?.removeEventListener?.("blur", pending.flush)
+    this.#debounceTimers.delete(target)
   }
 
   async #perform(action, params) {

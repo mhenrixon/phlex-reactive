@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Debounce option on `on(...)` (issue #17).** A trigger can declare
+  `on(:update, event: "input", debounce: 300)` (milliseconds) to coalesce rapid
+  events — typically keystrokes — into a SINGLE action round trip fired after the
+  quiet period, instead of one POST per keystroke. A `blur` flushes a pending
+  dispatch so the last edit is never dropped, `preventDefault` still fires
+  synchronously (a debounced `submit` won't navigate), and the debounced round
+  trip still goes through the per-component queue so token threading holds.
+  Omitting `debounce:` keeps the immediate-dispatch default.
+
 ## [0.2.6]
 
 ### Added

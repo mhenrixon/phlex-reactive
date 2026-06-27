@@ -268,9 +268,21 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `action :name, params: { x: :integer }` | Declare a client-invokable action + its param schema. **Default-deny.** |
 | `reactive_attrs` | Spread onto the root element: marks it reactive + carries the signed token. |
 | `on(:action, event: "click", **params)` | Spread onto a trigger element. Adds `type=button` for clicks. |
+| `on(:action, event: "input", debounce: 300)` | Coalesce rapid events into one round trip after a quiet period (live-as-you-type). |
 
 Param types: `:string` (default), `:integer`, `:float`, `:boolean`. Anything not
 in the schema is dropped before reaching your method.
+
+**Debounced triggers (live-as-you-type).** Pass `debounce:` (milliseconds) to
+coalesce rapid events — typically keystrokes on an `"input"` trigger — into a
+single action round trip fired after the quiet period, instead of one POST per
+keystroke. A blur flushes a pending dispatch so the last edit is never dropped.
+Omit `debounce:` for the immediate-dispatch default.
+
+```ruby
+# Recompute a total live as the user types, without hammering the endpoint.
+input(**mix(on(:update, event: "input", debounce: 300), name: "quantity", value: @item.quantity))
+```
 
 **Combining `on(...)` / `reactive_attrs` with your own attributes.** Both return
 a hash that includes a `data:` key. Spreading them *and* passing another `data:`

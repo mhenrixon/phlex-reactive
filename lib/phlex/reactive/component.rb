@@ -168,11 +168,18 @@ module Phlex
       # Attributes for an element that triggers an action.
       #   button(**on(:toggle)) { "○" }
       #   form(**on(:save, event: "submit")) { ... }
+      #   input(**on(:update, event: "input", debounce: 300))  # live-as-you-type
       #
       # Extra keyword args become explicit params merged over collected form
       # fields. For click triggers we force type="button" so a bare button
       # inside a <form> can't submit it and cause a full-page navigation.
-      def on(action_name, event: "click", **params)
+      #
+      # `debounce:` (milliseconds) coalesces rapid events (e.g. keystrokes on an
+      # "input" trigger) into ONE round trip fired after the quiet period — so
+      # live-update-as-you-type doesn't POST per keystroke. A blur flushes a
+      # pending dispatch so the last edit is never dropped. Omit it for the
+      # immediate-dispatch default.
+      def on(action_name, event: "click", debounce: nil, **params)
         attrs = {
           data: {
             action: "#{event}->reactive#dispatch",
@@ -180,6 +187,7 @@ module Phlex
             reactive_params_param: params.to_json
           }
         }
+        attrs[:data][:reactive_debounce_param] = debounce if debounce
         attrs[:type] = "button" if event == "click"
         attrs
       end
