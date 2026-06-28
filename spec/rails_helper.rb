@@ -15,6 +15,10 @@ RSpec.configure do |config|
   config.infer_spec_type_from_file_location!
   config.use_transactional_fixtures = true
 
+  # fixture_file_upload (multipart upload specs, issue #34) resolves files here.
+  config.file_fixture_path = File.expand_path("fixtures/files", __dir__)
+  config.include ActionDispatch::TestProcess::FixtureFile
+
   # In the dummy app the verifier comes from secret_key_base; align the test
   # verifier so tokens minted in specs verify against the running app.
   config.before(:suite) do

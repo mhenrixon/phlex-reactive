@@ -74,6 +74,16 @@ Anything not in the schema is dropped before reaching your method, so a maliciou
 `{ admin: true, title: "x" }` body can't mass-assign. Never do
 `@record.update!(params)` — take explicit, declared params.
 
+**File params (`:file` / `[:file]`).** A reactive action can accept an uploaded
+file (the client switches to multipart `FormData` when a file input is present).
+The multipart request runs through the *same* gates as a JSON one — the signed
+identity is still verified, the action is still default-deny, and the file is
+still schema-coerced: a `:file` param accepts only an actual uploaded file and is
+**dropped** for any non-file value (a forged string can't fabricate a file). Apply
+your own attachment rules in the action (content-type/size allow-lists,
+`authorize!` before attaching) exactly as you would in a plain controller — the
+schema proves the value is a file, not that this user may upload it.
+
 ### 4. Don't put secrets in state-backed tokens
 
 State-backed tokens are *signed* (tamper-proof) but **not encrypted** — the

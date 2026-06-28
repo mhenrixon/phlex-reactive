@@ -317,8 +317,38 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reply.replace` / `.morph` / `.update` / `.remove` / `.redirect(url)` / `.with(*)` | Return from an action to control the reply (flash, remove, redirect, multi-stream). See [Controlling the action's reply](#reply--controlling-the-actions-reply). |
 | `reply.append(name, model)` / `.prepend(...)` / `.remove(name, model)` | Add/remove a row in a declared `reactive_collection` (row + count + empty-state in one reply). |
 
-Param types: `:string` (default), `:integer`, `:float`, `:boolean`. Anything not
-in the schema is dropped before reaching your method.
+Param types: `:string` (default), `:integer`, `:float`, `:boolean`, `:file`.
+Anything not in the schema is dropped before reaching your method.
+
+**File uploads (`:file`).** Declare `:file` (or `[:file]` for multiple) to accept
+an uploaded file in a reactive action — attach a document/receipt/image to the
+record without dropping out to a bespoke controller. When the reactive root holds
+a populated `<input type="file">`, the client sends the action as multipart
+`FormData` (instead of JSON) — `token` + `act` + scalar params as fields, the
+file(s) appended; the endpoint coerces `:file` to the
+`ActionDispatch::Http::UploadedFile`, passed through untouched. A non-file value
+sent to a `:file` param is dropped (the keyword default applies — never a
+fabricated file). Token threading and the re-render/morph are identical; only the
+request encoding changes when a file is present.
+
+```ruby
+reactive_record :document
+action :upload, params: { file: :file, caption: :string } # single (has_one_attached)
+action :upload_pages, params: { pages: [:file] }           # multiple (has_many_attached)
+
+def upload(file: nil, caption: nil)
+  @document.file.attach(file) if file
+  @document.update!(title: caption) if caption.present?
+end
+
+def view_template
+  form(**on(:upload, event: "submit")) do
+    input(type: "file", name: "file")
+    input(name: "caption")
+    button(type: "submit") { "Upload" }
+  end
+end
+```
 
 **Array & nested params.** Wrap a type in an array for an array param, or a hash
 schema in an array for Rails-style nested attributes — so one reactive action can

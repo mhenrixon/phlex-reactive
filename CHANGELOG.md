@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **File / multipart params in a reactive action (#34).** An action can now accept
+  an uploaded file: declare `params: { file: :file }` (or `[:file]` for multiple).
+  When the reactive root holds a populated `<input type="file">`, the client sends
+  the action as multipart `FormData` instead of JSON — `token` + `act` + scalar
+  params as fields, the file(s) appended — and the endpoint coerces `:file` to the
+  `ActionDispatch::Http::UploadedFile`, passed through untouched. A non-file value
+  sent to a `:file` param is dropped (the keyword default applies), consistent with
+  the #16 coercion rules. Token threading and the re-render/morph are identical;
+  only the request encoding changes when a file is present — so attaching a
+  document/receipt/image stays a reactive action instead of dropping out to a
+  bespoke controller + upload Stimulus controller. Covered end-to-end: server
+  coercion (request specs), the FormData wire shape (bun unit tests), and a real
+  browser upload under Puma + Falcon (system spec).
+
 ### Fixed
 
 - **`to_stream_token` emitted an EMPTY token, making non-self-rendering replies

@@ -5,6 +5,7 @@ require_relative "boot"
 require "rails"
 require "active_record/railtie"
 require "active_job/railtie"
+require "active_storage/engine"
 require "action_controller/railtie"
 require "action_view/railtie"
 require "action_cable/engine"
@@ -23,6 +24,13 @@ module Dummy
     config.eager_load = false
     config.hosts.clear
     config.active_job.queue_adapter = :test
+
+    # ActiveStorage: a local disk service rooted in tmp/ so the upload-action
+    # fixture (issue #34 — file/multipart params) can persist an attachment.
+    config.active_storage.service = :test_disk
+    config.active_storage.service_configurations = {
+      "test_disk" => {"service" => "Disk", "root" => root.join("tmp/storage").to_s}
+    }
 
     # The dummy app's components/views live under app/.
     config.autoload_paths << root.join("app/components").to_s

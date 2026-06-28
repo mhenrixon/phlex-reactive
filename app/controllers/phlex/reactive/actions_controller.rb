@@ -163,6 +163,7 @@ module Phlex
 
       # Coerce a value against a declared type. A type is one of:
       #   * a scalar symbol            (:string/:integer/:float/:boolean)
+      #   * :file                      — a multipart upload (issue #34)
       #   * a Hash schema              ({ id: :integer, ... })   — nested object
       #   * a one-element Array        ([:integer] / [{ ... }])  — array of that
       # Arrays accept both a real JSON array and a Rails-style index hash
@@ -172,9 +173,27 @@ module Phlex
           coerce_array(value, type.first)
         elsif type.is_a?(Hash)
           coerce_hash(value, type)
+        elsif type == :file
+          coerce_file(value)
         else
           coerce_scalar(value, type)
         end
+      end
+
+      # An uploaded file (issue #34) passes through UNTOUCHED — never .to_s'd,
+      # which would corrupt it into a string the action can't attach. Anything
+      # that isn't an uploaded file (a forged/malformed scalar, an empty input)
+      # returns DROP, so the method's keyword default applies — consistent with
+      # the #16 rule that a value that can't be coerced to its type is dropped,
+      # not fabricated. Duck-types on UploadedFile's interface (original_filename
+      # + a readable IO) rather than naming a class, so a Rack::Test upload, an
+      # ActionDispatch upload, and a Falcon multipart body all qualify.
+      def coerce_file(value)
+        uploaded_file?(value) ? value : DROP
+      end
+
+      def uploaded_file?(value)
+        value.respond_to?(:original_filename) && value.respond_to?(:read)
       end
 
       # A real array (or Rails index hash) coerces element-wise. A malformed
