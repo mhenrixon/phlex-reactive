@@ -12,6 +12,18 @@ group :development do
   gem "standard", "~> 1.3", require: false
 end
 
+# Performance measurement. The micro-benches (benchmark/micro/*) isolate the hot
+# methods (render, reactive_token, param coercion) with benchmark-ips for
+# throughput and memory_profiler for allocations. The request-cycle bench
+# (benchmark/request/*) drives the dummy app through derailed_benchmarks for
+# end-to-end latency + memory. See docs/performance.md and `rake -T bench`.
+group :development, :test do
+  gem "benchmark-ips", "~> 2.13", require: false
+  gem "memory_profiler", "~> 1.0", require: false
+  gem "derailed_benchmarks", "~> 2.1", require: false
+  gem "stackprof", "~> 0.2", require: false # derailed_benchmarks profiling backend
+end
+
 group :test do
   gem "rspec", "~> 3.0"
   gem "rspec-rails", "~> 7.0"
