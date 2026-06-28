@@ -20,7 +20,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.4"
+          ruby-version: "4.0"
           bundler-cache: true
       - name: Standard
         run: bundle exec standardrb
@@ -37,6 +37,7 @@ jobs:
           - "3.2"
           - "3.3"
           - "3.4"
+          - "4.0"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -94,7 +95,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.4"
+          ruby-version: "4.0"
           bundler-cache: true
       - uses: oven-sh/setup-bun@v2
         with:
