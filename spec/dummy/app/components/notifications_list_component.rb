@@ -20,8 +20,8 @@ class NotificationsListComponent < ApplicationComponent
     empty: NotificationsEmptyComponent,
     size: -> { Todo.count }
 
-  action :add, params: {title: :string}
-  action :dismiss, params: {id: :integer}
+  action :add, params: { title: :string }
+  action :dismiss, params: { id: :integer }
 
   def id = "notifications-list"
 
@@ -41,19 +41,19 @@ class NotificationsListComponent < ApplicationComponent
 
   def view_template
     div(id:, **reactive_attrs) do
-      span(id: "notifications-count", data: {testid: "count"}) { Todo.count.to_s }
+      span(id: "notifications-count", data: { testid: "count" }) { Todo.count.to_s }
 
       ul(id: "notifications") do
         if Todo.exists?
-          Todo.order(:created_at, :id).each { |todo| render NotificationRowComponent.new(todo:) }
+          Todo.order(:created_at, :id).each { render NotificationRowComponent.new(todo: it) }
         else
           render NotificationsEmptyComponent.new
         end
       end
 
       div do
-        input(name: "title", placeholder: "New notification…", autocomplete: "off", data: {testid: "new-notification"})
-        button(**mix(on(:add), data: {testid: "add"})) { "Add" }
+        input(name: "title", placeholder: "New notification…", autocomplete: "off", data: { testid: "new-notification" })
+        button(**mix(on(:add), data: { testid: "add" })) { "Add" }
       end
     end
   end

@@ -7,21 +7,12 @@ gemspec
 gem "rake", "~> 13.0"
 
 group :development do
-  gem "rubocop", "~> 1.21", require: false
+  gem "rubocop", "~> 1.80", require: false
+  gem "rubocop-capybara", "~> 2.21", require: false
+  gem "rubocop-performance", "~> 1.26", require: false
+  gem "rubocop-rake", "~> 0.7", require: false
   gem "rubocop-rspec", "~> 3.0", require: false
-  gem "standard", "~> 1.3", require: false
-end
-
-# Performance measurement. The micro-benches (benchmark/micro/*) isolate the hot
-# methods (render, reactive_token, param coercion) with benchmark-ips for
-# throughput and memory_profiler for allocations. The request-cycle bench
-# (benchmark/request/*) drives the dummy app through derailed_benchmarks for
-# end-to-end latency + memory. See docs/performance.md and `rake -T bench`.
-group :development, :test do
-  gem "benchmark-ips", "~> 2.13", require: false
-  gem "memory_profiler", "~> 1.0", require: false
-  gem "derailed_benchmarks", "~> 2.1", require: false
-  gem "stackprof", "~> 0.2", require: false # derailed_benchmarks profiling backend
+  gem "rubocop-thread_safety", "~> 0.7", require: false
 end
 
 group :test do
@@ -38,6 +29,16 @@ group :test do
 end
 
 group :development, :test do
+  # Performance measurement. The micro-benches (benchmark/micro/*) isolate the hot
+  # methods (render, reactive_token, param coercion) with benchmark-ips for
+  # throughput and memory_profiler for allocations. The request-cycle bench
+  # (benchmark/request/*) drives the dummy app through derailed_benchmarks for
+  # end-to-end latency + memory. See docs/performance.md and `rake -T bench`.
+  gem "benchmark-ips", "~> 2.13", require: false
+  gem "derailed_benchmarks", "~> 2.1", require: false
+  gem "memory_profiler", "~> 1.0", require: false
+  gem "stackprof", "~> 0.2", require: false # derailed_benchmarks profiling backend
+
   gem "actioncable", ">= 7.1", "< 9.0"
   gem "activejob", ">= 7.1", "< 9.0"
   gem "activerecord", ">= 7.1", "< 9.0"
@@ -58,14 +59,11 @@ group :development, :test do
   # For fast local iteration against your own checkout, set PGBUS_PATH:
   #   PGBUS_PATH=~/Code/mhenrixon/pgbus bundle install
   #
-  # pgbus requires Ruby >= 3.3, but phlex-reactive's runtime supports 3.2
-  # (it's dev-only here). Skip it on 3.2 so the 3.2 CI matrix job still resolves.
-  if Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("3.3")
-    if (pgbus_path = ENV["PGBUS_PATH"])
-      gem "pgbus", path: pgbus_path, require: false
-    else
-      gem "pgbus", ">= 0.9.4", require: false
-    end
-    gem "pg", "~> 1.5", require: false # pgbus needs PostgreSQL
+  # pgbus requires Ruby >= 3.3 — satisfied by phlex-reactive's 3.4 floor.
+  if (pgbus_path = ENV.fetch("PGBUS_PATH", nil))
+    gem "pgbus", path: pgbus_path, require: false
+  else
+    gem "pgbus", ">= 0.9.4", require: false
   end
+  gem "pg", "~> 1.5", require: false # pgbus needs PostgreSQL
 end

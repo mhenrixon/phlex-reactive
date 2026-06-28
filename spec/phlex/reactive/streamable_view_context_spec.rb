@@ -43,7 +43,10 @@ RSpec.describe "Streamable view-context memoization (performance)" do
 
   describe ".turbo_stream_builder" do
     it "reuses the builder (and therefore its view context) across calls" do
-      expect(CounterComponent.turbo_stream_builder).to be(CounterComponent.turbo_stream_builder)
+      # Both sides are the SAME call on purpose: the test proves the memo returns
+      # the identical object across calls, so identical expressions are the point.
+      first = CounterComponent.turbo_stream_builder
+      expect(CounterComponent.turbo_stream_builder).to be(first)
     end
   end
 
@@ -56,7 +59,7 @@ RSpec.describe "Streamable view-context memoization (performance)" do
     it "gives each thread its own view context" do
       contexts = Queue.new
       [Thread.new { contexts << CounterComponent.turbo_view_context },
-        Thread.new { contexts << CounterComponent.turbo_view_context }].each(&:join)
+       Thread.new { contexts << CounterComponent.turbo_view_context }].each(&:join)
       a = contexts.pop
       b = contexts.pop
       expect(a).not_to be(b) # distinct instances per thread
@@ -66,11 +69,11 @@ RSpec.describe "Streamable view-context memoization (performance)" do
       renders_per_thread = 20
       thread_count = 8
       results = Queue.new
-      threads = thread_count.times.map do |i|
+      threads = Array.new(thread_count) do
         Thread.new do
           renders_per_thread.times do
-            html = CounterComponent.render_component(CounterComponent.new(count: i))
-            results << (html.include?(">#{i}<") && html.scan('id="counter"').size == 1)
+            html = CounterComponent.render_component(CounterComponent.new(count: it))
+            results << (html.include?(">#{it}<") && html.scan('id="counter"').size == 1)
           end
         end
       end
@@ -94,7 +97,7 @@ RSpec.describe "Streamable view-context memoization (performance)" do
       fresh = CounterComponent.new(count: 1).to_stream_replace
 
       # Strip the signed token (it re-randomizes per call) before comparing.
-      strip = ->(s) { s.gsub(/data-reactive-token-value="[^"]*"/, "TOKEN") }
+      strip = -> { it.gsub(/data-reactive-token-value="[^"]*"/, "TOKEN") }
       expect(strip.call(memoized)).to eq(strip.call(fresh))
     end
   end

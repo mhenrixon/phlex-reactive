@@ -11,14 +11,14 @@ GlobalID.app = "phlex-reactive-test"
 
 Phlex::Reactive.verifier = ActiveSupport::MessageVerifier.new("phlex-reactive-test-secret")
 
-RSpec.configure do |config|
-  config.example_status_persistence_file_path = ".rspec_status"
-  config.disable_monkey_patching!
+RSpec.configure do
+  it.example_status_persistence_file_path = ".rspec_status"
+  it.disable_monkey_patching!
 
-  config.expect_with :rspec do |c|
-    c.syntax = :expect
+  it.expect_with :rspec do
+    it.syntax = :expect
   end
 
-  config.order = :random
-  Kernel.srand config.seed
+  it.order = :random
+  Kernel.srand it.seed
 end

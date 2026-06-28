@@ -33,7 +33,8 @@ RSpec.describe Phlex::Reactive::Reply do
         action :noop
         def initialize(n: 0) = @n = n
         def id = "widget"
-        def noop = reply.replace # bare `reply`, no constant
+        # bare `reply`, no constant
+        def noop = reply.replace
         def view_template = div(id:, **reactive_attrs) { @n.to_s }
       end
 

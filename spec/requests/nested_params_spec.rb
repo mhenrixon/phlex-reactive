@@ -9,15 +9,15 @@ RSpec.describe "Nested/array param coercion (issue #16)", type: :request do
   # Pull the reflected coerced params back out of the rendered <pre>. Phlex
   # auto-escapes the JSON text, so unescape before parsing.
   def received(response)
-    json = response.body[/data-testid="received">(.*?)<\/pre>/m, 1]
+    json = response.body[%r{data-testid="received">(.*?)</pre>}m, 1]
     JSON.parse(CGI.unescapeHTML(json))
   end
 
-  let(:payload) { {"s" => {"received" => nil}} }
+  let(:payload) { { "s" => { "received" => nil } } }
 
   it "coerces an array-of-scalar param ([:integer])" do
     post_action(NestedParamsComponent, payload:, act: "save",
-      params: {bank_account_ids: ["1", "2", "3"]})
+      params: { bank_account_ids: %w[1 2 3] })
 
     expect(response).to have_http_status(:ok)
     expect(received(response)["bank_account_ids"]).to eq([1, 2, 3])
@@ -27,16 +27,16 @@ RSpec.describe "Nested/array param coercion (issue #16)", type: :request do
     post_action(NestedParamsComponent, payload:, act: "save",
       params: {
         invoice_items_attributes: [
-          {id: "10", quantity: "2.5", price: "9.99", _destroy: "false"},
-          {id: "11", quantity: "1", price: "100", _destroy: "true"}
+          { id: "10", quantity: "2.5", price: "9.99", _destroy: "false" },
+          { id: "11", quantity: "1", price: "100", _destroy: "true" }
         ]
       })
 
     expect(response).to have_http_status(:ok)
     items = received(response)["invoice_items_attributes"]
     expect(items).to eq([
-      {"id" => 10, "quantity" => 2.5, "price" => 9.99, "_destroy" => false},
-      {"id" => 11, "quantity" => 1.0, "price" => 100.0, "_destroy" => true}
+      { "id" => 10, "quantity" => 2.5, "price" => 9.99, "_destroy" => false },
+      { "id" => 11, "quantity" => 1.0, "price" => 100.0, "_destroy" => true }
     ])
   end
 
@@ -44,7 +44,7 @@ RSpec.describe "Nested/array param coercion (issue #16)", type: :request do
     post_action(NestedParamsComponent, payload:, act: "save",
       params: {
         invoice_items_attributes: [
-          {id: "10", quantity: "2", price: "5", _destroy: "false", admin: "true", secret: "x"}
+          { id: "10", quantity: "2", price: "5", _destroy: "false", admin: "true", secret: "x" }
         ]
       })
 
@@ -58,18 +58,18 @@ RSpec.describe "Nested/array param coercion (issue #16)", type: :request do
     post_action(NestedParamsComponent, payload:, act: "save",
       params: {
         invoice_items_attributes: {
-          "0" => {id: "10", quantity: "2", price: "5", _destroy: "false"},
-          "1" => {id: "11", quantity: "3", price: "6", _destroy: "false"}
+          "0" => { id: "10", quantity: "2", price: "5", _destroy: "false" },
+          "1" => { id: "11", quantity: "3", price: "6", _destroy: "false" }
         }
       })
 
     items = received(response)["invoice_items_attributes"]
-    expect(items.map { |i| i["id"] }).to eq([10, 11])
-    expect(items.map { |i| i["quantity"] }).to eq([2.0, 3.0])
+    expect(items.map {  it["id"] }).to eq([10, 11])
+    expect(items.map {  it["quantity"] }).to eq([2.0, 3.0])
   end
 
   it "leaves a declared array param absent when the client omits it" do
-    post_action(NestedParamsComponent, payload:, act: "save", params: {date: "2026-06-27"})
+    post_action(NestedParamsComponent, payload:, act: "save", params: { date: "2026-06-27" })
 
     parsed = received(response)
     expect(parsed["date"]).to eq("2026-06-27")
@@ -80,7 +80,7 @@ RSpec.describe "Nested/array param coercion (issue #16)", type: :request do
 
   it "coerces an empty array to an empty array (not dropped)" do
     post_action(NestedParamsComponent, payload:, act: "save",
-      params: {bank_account_ids: []})
+      params: { bank_account_ids: [] })
 
     expect(received(response)["bank_account_ids"]).to eq([])
   end
@@ -91,7 +91,7 @@ RSpec.describe "Nested/array param coercion (issue #16)", type: :request do
     # Drop it so the method's keyword default (nil) applies, distinct from a real
     # empty array.
     post_action(NestedParamsComponent, payload:, act: "save",
-      params: {bank_account_ids: "5"})
+      params: { bank_account_ids: "5" })
 
     expect(response).to have_http_status(:ok)
     expect(received(response)["bank_account_ids"]).to be_nil
@@ -99,7 +99,7 @@ RSpec.describe "Nested/array param coercion (issue #16)", type: :request do
 
   it "drops a malformed (non-array) array-of-hash param" do
     post_action(NestedParamsComponent, payload:, act: "save",
-      params: {invoice_items_attributes: "not-an-array"})
+      params: { invoice_items_attributes: "not-an-array" })
 
     expect(response).to have_http_status(:ok)
     expect(received(response)["invoice_items_attributes"]).to be_nil
@@ -107,7 +107,7 @@ RSpec.describe "Nested/array param coercion (issue #16)", type: :request do
 
   it "still coerces flat scalars alongside nested params" do
     post_action(NestedParamsComponent, payload:, act: "save",
-      params: {date: "2026-06-27", bank_account_ids: ["7"]})
+      params: { date: "2026-06-27", bank_account_ids: ["7"] })
 
     parsed = received(response)
     expect(parsed["date"]).to eq("2026-06-27")

@@ -9,7 +9,7 @@ class RichEditorComponent < ApplicationComponent
   include Phlex::Reactive::Component
 
   reactive_record :todo
-  action :save, params: {title: :string}
+  action :save, params: { title: :string }
 
   def initialize(todo:)
     @todo = todo
@@ -29,11 +29,11 @@ class RichEditorComponent < ApplicationComponent
         div(
           contenteditable: "true",
           name: "title",
-          data: {testid: "editor"}
+          data: { testid: "editor" }
         ) { @todo.title }
-        button(type: "submit", data: {testid: "save"}) { "Save" }
+        button(type: "submit", data: { testid: "save" }) { "Save" }
       end
-      span(data: {testid: "current"}) { @todo.title }
+      span(data: { testid: "current" }) { @todo.title }
     end
   end
 end

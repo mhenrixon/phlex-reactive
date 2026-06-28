@@ -48,7 +48,7 @@ module Phlex
         # controller is never served from a stale memo. No-op outside Rails.
         def reset_all_view_contexts!
           @registry_mutex.synchronize do
-            @registry.keys.each(&:reset_turbo_view_context!)
+            @registry.each_key(&:reset_turbo_view_context!)
           end
         end
 
@@ -78,7 +78,7 @@ module Phlex
         end
 
         def component_args(model, options)
-          {model_param_name => model}.merge(options)
+          { model_param_name => model }.merge(options)
         end
 
         # Turbo::Streams::TagBuilder needs a real VIEW CONTEXT (it calls
@@ -230,14 +230,14 @@ module Phlex
         # `method: :morph` to emit the `method="morph"` attribute. Pass it ONLY
         # when morphing, so the default call produces today's plain replace.
         def morph_method(morph)
-          morph ? {method: :morph} : {}
+          morph ? { method: :morph } : {}
         end
 
         # The BROADCAST path renders extra <turbo-stream> attributes through
         # `attributes:` (it has no `method:` kwarg — that would fall into the
         # render args and be dropped). Same wire result: method="morph".
         def morph_attributes(morph)
-          morph ? {attributes: {method: "morph"}} : {}
+          morph ? { attributes: { method: "morph" } } : {}
         end
 
         # Only include transport opts that were actually given, so on Action

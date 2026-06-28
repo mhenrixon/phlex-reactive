@@ -1,0 +1,262 @@
+plugins:
+  - rubocop-capybara
+  - rubocop-performance
+  - rubocop-rake
+  - rubocop-rspec
+  - rubocop-thread_safety
+
+AllCops:
+  TargetRubyVersion: 3.4
+  DisabledByDefault: false
+  DisplayCopNames: true
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - "**/node_modules/**/*"
+    - "**/tmp/**/*"
+    - "**/vendor/**/*"
+    # The published Jekyll docs site has its own Gemfile and is not gem code.
+    - "docs/**/*"
+    - "spec/dummy/db/schema.rb"
+    - "spec/dummy/bin/**/*"
+    - "bin/**/*"
+
+#===============
+#=== LAYOUT ===
+#===============
+
+Layout/ArgumentAlignment:
+  EnforcedStyle: with_fixed_indentation
+
+Layout/FirstArrayElementIndentation:
+  EnforcedStyle: consistent
+
+Layout/FirstHashElementIndentation:
+  EnforcedStyle: consistent
+
+Layout/MultilineMethodCallIndentation:
+  EnforcedStyle: indented
+
+Layout/LineLength:
+  Max: 125
+  AllowHeredoc: true
+  AllowURI: true
+  AllowedPatterns:
+    - '\A\s*#'
+  Exclude:
+    # Phlex components read top-to-bottom as markup; long attribute lines
+    # (data:/class:/on(...)) are clearer on one line than wrapped.
+    - spec/dummy/app/components/**/*.rb
+    # The gemspec summary/description are fixed declarative strings — wrapping
+    # them would only hurt readability.
+    - "*.gemspec"
+
+#===============
+#=== LINT ===
+#===============
+
+Lint/MissingSuper:
+  Exclude:
+    # Phlex components override #initialize without calling super (Phlex's base
+    # #initialize is a no-op); the dummy components and inline spec components
+    # follow that idiom.
+    - spec/**/*.rb
+
+Lint/UnusedMethodArgument:
+  Exclude:
+    # Dummy components declare action params (matching the param schema /
+    # name-binding under test) that an individual action may not persist.
+    - spec/dummy/app/components/**/*.rb
+
+#====================
+#=== THREAD SAFETY ===
+#====================
+
+# rubocop-thread_safety stays ON as a tripwire for genuinely unsafe shared
+# mutable state on the request/broadcast path. These two cops are scoped OFF
+# only where the flagged class-level @ivars / module attrs are deliberate,
+# audited patterns (verified against the documented invariants):
+#   * lib/phlex/reactive.rb — module-level CONFIG (renderer/verifier/
+#     base_controller_name/action_path/flash_target/authorization_errors), set
+#     once at boot in an initializer and read-only thereafter. The lazy `||=`
+#     defaults are idempotent (a first-call race assigns an equivalent constant
+#     value); action_path + base_controller are warmed at boot/class-load.
+#   * lib/phlex/reactive/component.rb — class-definition-time DSL registries
+#     (@reactive_actions/@reactive_state_keys/@reactive_collections/
+#     @reactive_record_key), written by the action/reactive_* macros in a class
+#     body and inherited from the superclass — the standard Ruby class-macro
+#     pattern, not request-path state.
+#   * lib/phlex/reactive/streamable.rb — the per-thread view-context cache's
+#     integer generation counter; the actual context is thread-keyed, and the
+#     bump is a benign `@n = n + 1` invalidation (reset on Rails reload).
+# Anywhere else (e.g. the controller request path) these cops still fire.
+ThreadSafety/ClassInstanceVariable:
+  Exclude:
+    - lib/phlex/reactive.rb
+    - lib/phlex/reactive/component.rb
+    - lib/phlex/reactive/streamable.rb
+
+ThreadSafety/ClassAndModuleAttributes:
+  Exclude:
+    - lib/phlex/reactive.rb
+
+ThreadSafety/NewThread:
+  Exclude:
+    # The view-context thread-safety spec MUST spawn real threads to prove
+    # concurrent renders don't interleave buffers.
+    - spec/**/*.rb
+
+#===============
+#=== METRICS ===
+#===============
+
+Metrics:
+  Enabled: false
+
+#===============
+#===  NAMING ===
+#===============
+
+Naming/BlockForwarding:
+  Enabled: false
+
+Naming/FileName:
+  Exclude:
+    # Conventional gem entrypoint: `require "phlex-reactive"` loads this file,
+    # so it must be named with the hyphenated gem name, not snake_case.
+    - lib/phlex-reactive.rb
+
+Naming/MethodParameterName:
+  AllowedNames:
+    - id
+    - c
+    - n
+    - s
+    - p
+    - to
+
+Naming/VariableNumber:
+  Exclude:
+    - spec/**/*.rb
+
+#=============
+#=== RSpec ===
+#=============
+
+RSpec/ExampleLength:
+  Enabled: false
+
+RSpec/MultipleExpectations:
+  Enabled: false
+
+RSpec/MultipleMemoizedHelpers:
+  Enabled: false
+
+RSpec/NestedGroups:
+  Max: 5
+
+RSpec/ContextWording:
+  Prefixes:
+    - and
+    - as
+    - for
+    - if
+    - in
+    - "on"
+    - or
+    - unless
+    - when
+    - with
+    - without
+
+RSpec/SpecFilePathFormat:
+  Enabled: false
+
+RSpec/VerifiedDoubles:
+  Enabled: false
+
+RSpec/MessageSpies:
+  Enabled: false
+
+RSpec/InstanceVariable:
+  Exclude:
+    - spec/system/**/*
+
+RSpec/DescribeClass:
+  Exclude:
+    - spec/requests/**/*
+    - spec/system/**/*
+    # Behavior specs whose subject is a cross-cutting concern (eager loading,
+    # vendored-client drift, morph/token/view-context behavior), not a single
+    # class — a string subject reads clearer than a forced constant.
+    - spec/phlex/eager_load_spec.rb
+    - spec/phlex/vendored_controller_sync_spec.rb
+    - spec/phlex/reactive/streamable_morph_spec.rb
+    - spec/phlex/reactive/streamable_token_spec.rb
+    - spec/phlex/reactive/streamable_view_context_spec.rb
+
+# The `describe Klass, "label"` form uses the second arg as a context label
+# (e.g. `describe Component, "reactive_collection"`), not a method name.
+RSpec/DescribeMethod:
+  Enabled: false
+
+# Group-level local variables (file paths, computed fixtures) referenced inside
+# examples are a deliberate, readable setup here — not leaked mutable state.
+RSpec/LeakyLocalVariable:
+  Enabled: false
+
+#=============
+#=== RAKE ===
+#=============
+
+# The release task defines small formatting helpers (info/success/skip/header)
+# and the bench tasks define inline helpers — intentional, task-local sugar.
+Rake/MethodDefinitionInTask:
+  Enabled: false
+
+#=============
+#=== STYLE ===
+#=============
+
+# Modern Ruby idioms — the whole point of moving off Standard: teach and enforce
+# the newer ways of writing Ruby.
+
+# Ruby 3.4 implicit single block parameter: enforce `map { it.foo }` over
+# `map { |x| x.foo }`. Safe here because the gem floor is Ruby 3.4. `always`
+# (not `allow_single_line`, which permits but never enforces) is what actually
+# converts the call sites. The gemspec and Rakefile are excluded: their
+# `do |spec| … end` / `do |t| … end` config-builder blocks read better named,
+# and they contain NESTED blocks where blanket `it` would collapse two distinct
+# parameters into one (a silent correctness bug in the cop's autocorrect).
+Style/ItBlockParameter:
+  EnforcedStyle: always
+  Exclude:
+    - "*.gemspec"
+    - Rakefile
+
+Style/Documentation:
+  Enabled: false
+
+# Benchmark scripts print fixed-width report columns with positional `%s`/`%d`
+# tokens — annotated tokens would only add noise to throwaway output strings.
+Style/FormatStringToken:
+  Exclude:
+    - benchmark/**/*.rb
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+
+Style/StringLiteralsInInterpolation:
+  EnforcedStyle: double_quotes
+
+Style/FrozenStringLiteralComment:
+  EnforcedStyle: always
+
+Style/TrailingCommaInArguments:
+  EnforcedStyleForMultiline: no_comma
+
+Style/TrailingCommaInArrayLiteral:
+  EnforcedStyleForMultiline: no_comma
+
+Style/TrailingCommaInHashLiteral:
+  EnforcedStyleForMultiline: no_comma

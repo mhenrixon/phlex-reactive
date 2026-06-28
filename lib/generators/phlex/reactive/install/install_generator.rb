@@ -29,8 +29,8 @@ module Phlex
           index = stimulus_index_path
 
           unless index
-            say_status :skip, "no Stimulus controllers entrypoint found — register manually:\n" \
-                              "    #{IMPORT_LINE}\n    #{REGISTER_LINE}", :yellow
+            say_status :skip, "no Stimulus controllers entrypoint found — register manually:\n    " \
+                              "#{IMPORT_LINE}\n    #{REGISTER_LINE}", :yellow
             return
           end
 
@@ -44,9 +44,9 @@ module Phlex
           end
 
           # Fallback: if the standard import line wasn't found, append both lines.
-          unless File.read(index).include?(REGISTER_LINE)
-            append_to_file index, "\n#{IMPORT_LINE}\n#{REGISTER_LINE}\n"
-          end
+          return if File.read(index).include?(REGISTER_LINE)
+
+          append_to_file index, "\n#{IMPORT_LINE}\n#{REGISTER_LINE}\n"
         end
 
         def show_post_install
@@ -69,7 +69,7 @@ module Phlex
           %w[
             app/javascript/controllers/index.js
             app/javascript/controllers/application.js
-          ].map { |p| File.join(destination_root, p) }.find { |p| File.exist?(p) }
+          ].map { File.join(destination_root, it) }.find { File.exist?(it) }
         end
 
         def relative(path)

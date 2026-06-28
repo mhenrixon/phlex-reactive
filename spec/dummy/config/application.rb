@@ -29,7 +29,7 @@ module Dummy
     # fixture (issue #34 — file/multipart params) can persist an attachment.
     config.active_storage.service = :test_disk
     config.active_storage.service_configurations = {
-      "test_disk" => {"service" => "Disk", "root" => root.join("tmp/storage").to_s}
+      "test_disk" => { "service" => "Disk", "root" => root.join("tmp/storage").to_s }
     }
 
     # The dummy app's components/views live under app/.

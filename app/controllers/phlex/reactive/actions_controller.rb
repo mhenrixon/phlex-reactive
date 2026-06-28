@@ -101,7 +101,7 @@ module Phlex
         # replace when a hand-built `with(...)` stream omits it. Idempotent: a
         # Response.replace(self)/update(self) already carries the token, so we
         # don't double the self-render.
-        if result.render_self? && streams.none? { |s| s.include?("data-reactive-token-value") }
+        if result.render_self? && streams.none? { it.include?("data-reactive-token-value") }
           streams = [component.to_stream_replace, *streams]
         end
         streams
@@ -115,7 +115,7 @@ module Phlex
       # us into skipping this component's refresh.
       def carries_token_for?(streams, component)
         target = %(target="#{ERB::Util.html_escape(component.id)}")
-        streams.any? { |s| s.include?("data-reactive-token-value") && s.include?(target) }
+        streams.any? {  it.include?("data-reactive-token-value") && it.include?(target) }
       end
 
       # A 200 turbo-stream carrying a namespaced custom action the client turns
@@ -126,9 +126,9 @@ module Phlex
         %(<turbo-stream action="reactive:visit" data-url="#{ERB::Util.html_escape(url)}"></turbo-stream>)
       end
 
-      def transaction_wrapper(&block)
+      def transaction_wrapper(&)
         if defined?(::ActiveRecord::Base)
-          ::ActiveRecord::Base.transaction(&block)
+          ::ActiveRecord::Base.transaction(&)
         else
           yield
         end
@@ -169,11 +169,12 @@ module Phlex
       # Arrays accept both a real JSON array and a Rails-style index hash
       # ({ "0" => ..., "1" => ... }), so a fields_for collection works either way.
       def coerce(value, type)
-        if type.is_a?(Array)
+        case type
+        when Array
           coerce_array(value, type.first)
-        elsif type.is_a?(Hash)
+        when Hash
           coerce_hash(value, type)
-        elsif type == :file
+        when :file
           coerce_file(value)
         else
           coerce_scalar(value, type)
@@ -213,8 +214,8 @@ module Phlex
         return DROP if values.nil?
         return [] if values.empty?
 
-        coerced = values.map { |element| coerce(element, element_type) }
-        coerced.reject! { |element| element.equal?(DROP) }
+        coerced = values.map { coerce(it, element_type) }
+        coerced.reject! { it.equal?(DROP) }
         coerced.empty? ? DROP : coerced
       end
 
@@ -249,9 +250,9 @@ module Phlex
       def array_values(value)
         return value.to_a if value.is_a?(Array)
 
-        if value.respond_to?(:to_unsafe_h) || value.is_a?(Hash)
-          to_param_hash(value).sort_by { |k, _| k.to_i }.map(&:last)
-        end
+        return unless value.respond_to?(:to_unsafe_h) || value.is_a?(Hash)
+
+        to_param_hash(value).sort_by { |k, _| k.to_i }.map(&:last)
       end
 
       # Unwrap ActionController::Parameters (or a plain Hash) to a string-keyed
@@ -330,7 +331,7 @@ module Phlex
       # already gates this; defense in depth against constant injection.
       def resolve_component(name)
         klass = name.to_s.safe_constantize
-        unless klass&.respond_to?(:reactive_action?) && klass.include?(Phlex::Reactive::Component)
+        unless klass.respond_to?(:reactive_action?) && klass.include?(Phlex::Reactive::Component)
           raise Phlex::Reactive::InvalidToken
         end
 

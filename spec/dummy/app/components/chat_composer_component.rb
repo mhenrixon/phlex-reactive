@@ -8,7 +8,7 @@ class ChatComposerComponent < ApplicationComponent
   include Phlex::Reactive::Component
 
   reactive_state :room, :author
-  action :send_message, params: {body: :string}
+  action :send_message, params: { body: :string }
 
   def initialize(room: "lobby", author: nil)
     @room = room
@@ -32,8 +32,8 @@ class ChatComposerComponent < ApplicationComponent
 
   def view_template
     div(**mix(reactive_attrs, id:, class: "composer")) do
-      input(type: "text", name: "body", placeholder: "Message as #{@author}…", autocomplete: "off", data: {testid: "chat-input"})
-      button(**mix(on(:send_message), data: {testid: "chat-send"})) { "Send" }
+      input(type: "text", name: "body", placeholder: "Message as #{@author}…", autocomplete: "off", data: { testid: "chat-input" })
+      button(**mix(on(:send_message), data: { testid: "chat-send" })) { "Send" }
     end
   end
 end

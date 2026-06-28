@@ -115,7 +115,7 @@ Once green, refactor while keeping tests passing.
 ### 4.4: Validate
 
 ```bash
-bundle exec standardrb
+bundle exec rubocop
 ```
 
 ### 4.5: Repeat
@@ -174,7 +174,7 @@ The best fix is usually NOT where the error surfaced:
 **ALL of these must pass before committing:**
 
 ```bash
-bundle exec standardrb
+bundle exec rubocop
 bundle exec rspec spec/phlex spec/requests
 # client-touching changes: also run the browser suite
 bundle exec rspec spec/system    # Puma (default); CAPYBARA_SERVER=falcon for the async server
@@ -207,7 +207,7 @@ feat(scope): brief description
 - spec 2: validates the pgbus-absent fallback
 
 ## Verification
-- [x] bundle exec standardrb passes
+- [x] bundle exec rubocop passes
 - [x] bundle exec rspec passes
 EOF
 )"
@@ -231,7 +231,7 @@ backslash in a GitHub comment, do not type one in the heredoc.
 
 - [ ] All acceptance criteria met
 - [ ] Tests written BEFORE implementation
-- [ ] `bundle exec standardrb` passes
+- [ ] `bundle exec rubocop` passes
 - [ ] `bundle exec rspec` passes (browser suite too, if the client changed)
 - [ ] Backwards compatible — existing components unchanged
 - [ ] pgbus optionality preserved (works with pgbus AND on Action Cable)

@@ -10,9 +10,9 @@ RSpec.describe "Reactive collection endpoint (issue #35)", type: :request do
 
   describe "add (reply.append)" do
     it "creates the record and appends the row into the container" do
-      expect {
-        post_action(klass, act: "add", params: {title: "ping"})
-      }.to change(Todo, :count).by(1)
+      expect do
+        post_action(klass, act: "add", params: { title: "ping" })
+      end.to change(Todo, :count).by(1)
 
       expect(response).to have_http_status(:ok)
       todo = Todo.order(:id).last
@@ -25,7 +25,7 @@ RSpec.describe "Reactive collection endpoint (issue #35)", type: :request do
 
     it "updates the count companion with the new size" do
       Todo.create!(title: "existing")
-      post_action(klass, act: "add", params: {title: "second"})
+      post_action(klass, act: "add", params: { title: "second" })
 
       expect(response.body).to include('target="notifications-count"')
       # 1 existing + 1 added = 2
@@ -34,7 +34,7 @@ RSpec.describe "Reactive collection endpoint (issue #35)", type: :request do
 
     it "removes the empty-state when the first row crosses 0->1" do
       expect(Todo.count).to eq(0)
-      post_action(klass, act: "add", params: {title: "first"})
+      post_action(klass, act: "add", params: { title: "first" })
 
       expect(response.body).to include('action="remove"')
       expect(response.body).to include('target="notifications-empty"')
@@ -42,14 +42,14 @@ RSpec.describe "Reactive collection endpoint (issue #35)", type: :request do
 
     it "leaves the empty-state alone when the list was already populated" do
       Todo.create!(title: "existing")
-      post_action(klass, act: "add", params: {title: "another"})
+      post_action(klass, act: "add", params: { title: "another" })
 
       expect(response.body).not_to include('target="notifications-empty"')
     end
 
     it "does not re-render the whole container body (render_self false — only the delta)" do
       Todo.create!(title: "existing")
-      post_action(klass, act: "add", params: {title: "new"})
+      post_action(klass, act: "add", params: { title: "new" })
 
       # The container's body is never re-rendered — no replace/update of its root.
       # (The container IS targeted by the inert reactive:token refresh, which only
@@ -64,9 +64,9 @@ RSpec.describe "Reactive collection endpoint (issue #35)", type: :request do
 
     it "destroys the record and removes the row by its dom id" do
       dom_id = ActionView::RecordIdentifier.dom_id(todo)
-      expect {
-        post_action(klass, act: "dismiss", params: {id: todo.id})
-      }.to change(Todo, :count).by(-1)
+      expect do
+        post_action(klass, act: "dismiss", params: { id: todo.id })
+      end.to change(Todo, :count).by(-1)
 
       expect(response.body).to include('action="remove"')
       expect(response.body).to include(%(target="#{dom_id}"))
@@ -74,14 +74,14 @@ RSpec.describe "Reactive collection endpoint (issue #35)", type: :request do
 
     it "updates the count companion" do
       Todo.create!(title: "other")
-      post_action(klass, act: "dismiss", params: {id: todo.id})
+      post_action(klass, act: "dismiss", params: { id: todo.id })
 
       # 2 existing - 1 dismissed = 1
       expect(response.body).to match(/target="notifications-count".*>\s*1\s*</m)
     end
 
     it "restores the empty-state when the last row is dismissed (->0)" do
-      post_action(klass, act: "dismiss", params: {id: todo.id})
+      post_action(klass, act: "dismiss", params: { id: todo.id })
 
       expect(Todo.count).to eq(0)
       expect(response.body).to include("No notifications")
@@ -90,7 +90,7 @@ RSpec.describe "Reactive collection endpoint (issue #35)", type: :request do
 
     it "leaves the empty-state out while rows remain" do
       Todo.create!(title: "survivor")
-      post_action(klass, act: "dismiss", params: {id: todo.id})
+      post_action(klass, act: "dismiss", params: { id: todo.id })
 
       expect(response.body).not_to include("No notifications")
     end
@@ -115,7 +115,7 @@ RSpec.describe "Reactive collection endpoint (issue #35)", type: :request do
     let(:container_id) { "notifications-list" }
 
     it "append emits a reactive:token stream targeting the container" do
-      post_action(klass, act: "add", params: {title: "ping"})
+      post_action(klass, act: "add", params: { title: "ping" })
 
       expect(response.body).to include('action="reactive:token"')
       expect(response.body).to include(%(target="#{container_id}"))
@@ -123,7 +123,7 @@ RSpec.describe "Reactive collection endpoint (issue #35)", type: :request do
 
     it "remove emits a reactive:token stream targeting the container" do
       todo = Todo.create!(title: "bye")
-      post_action(klass, act: "dismiss", params: {id: todo.id})
+      post_action(klass, act: "dismiss", params: { id: todo.id })
 
       expect(response.body).to include('action="reactive:token"')
       expect(response.body).to include(%(target="#{container_id}"))
@@ -132,14 +132,14 @@ RSpec.describe "Reactive collection endpoint (issue #35)", type: :request do
     # The load-bearing assertion: dispatch a SECOND add using the token the FIRST
     # response rolled forward, and it must succeed. A stale-token helper 400s here.
     it "supports repeated adds — the second uses the token the first refreshed" do
-      post_action(klass, act: "add", params: {title: "first"})
+      post_action(klass, act: "add", params: { title: "first" })
       expect(response).to have_http_status(:ok)
       next_token = token_from(response.body, container_id)
       expect(next_token).to be_present
 
       post "/reactive/actions",
-        params: {token: next_token, act: "add", params: {title: "second"}}.to_json,
-        headers: {"Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html"}
+        params: { token: next_token, act: "add", params: { title: "second" } }.to_json,
+        headers: { "Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html" }
 
       expect(response).to have_http_status(:ok)
       expect(Todo.count).to eq(2)
@@ -147,13 +147,13 @@ RSpec.describe "Reactive collection endpoint (issue #35)", type: :request do
     end
 
     it "supports an add then a remove using the chained refreshed tokens" do
-      post_action(klass, act: "add", params: {title: "row"})
+      post_action(klass, act: "add", params: { title: "row" })
       todo = Todo.order(:id).last
       token_after_add = token_from(response.body, container_id)
 
       post "/reactive/actions",
-        params: {token: token_after_add, act: "dismiss", params: {id: todo.id}}.to_json,
-        headers: {"Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html"}
+        params: { token: token_after_add, act: "dismiss", params: { id: todo.id } }.to_json,
+        headers: { "Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html" }
 
       expect(response).to have_http_status(:ok)
       expect(Todo.count).to eq(0)

@@ -106,9 +106,7 @@ module Phlex
           append_count_stream(streams, definition, component)
 
           size = definition.size_for(component)
-          if definition.empty && size == 1
-            streams << definition.empty.new.to_stream_remove
-          end
+          streams << definition.empty.new.to_stream_remove if definition.empty && size == 1
           streams
         end
 

@@ -7,7 +7,7 @@ class TodoListComponent < ApplicationComponent
   include Phlex::Reactive::Component
 
   reactive_state :build_token # unused placeholder so the list has stable state
-  action :add, params: {title: :string}
+  action :add, params: { title: :string }
 
   def initialize(build_token: "list")
     @build_token = build_token
@@ -25,12 +25,12 @@ class TodoListComponent < ApplicationComponent
   def view_template
     div(id:, **reactive_attrs) do
       ul(id: "todos") do
-        Todo.order(:created_at, :id).each { |todo| render TodoItemComponent.new(todo:) }
+        Todo.order(:created_at, :id).each { render TodoItemComponent.new(todo: it) }
       end
 
       div do
-        input(name: "title", placeholder: "New todo…", autocomplete: "off", data: {testid: "new-todo"})
-        button(**mix(on(:add), data: {testid: "add"})) { "Add" }
+        input(name: "title", placeholder: "New todo…", autocomplete: "off", data: { testid: "new-todo" })
+        button(**mix(on(:add), data: { testid: "add" })) { "Add" }
       end
     end
   end

@@ -108,7 +108,7 @@ reactive_record :account
 ## Tools
 
 ```bash
-bundle exec standardrb
+bundle exec rubocop
 bundle audit check --update      # dependency CVEs (if bundler-audit is present)
 grep -rn "update!(params\|\.permit!\|MessageVerifier\|authorize" lib app
 ```

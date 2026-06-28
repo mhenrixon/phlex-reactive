@@ -11,16 +11,16 @@ require "rails_helper"
 # nested schema matches a normal Rails form with zero field renaming.
 RSpec.describe "Flat bracketed param coercion (issue #21)", type: :request do
   def received(response)
-    json = response.body[/data-testid="received">(.*?)<\/pre>/m, 1]
+    json = response.body[%r{data-testid="received">(.*?)</pre>}m, 1]
     JSON.parse(CGI.unescapeHTML(json))
   end
 
-  let(:payload) { {"s" => {"received" => nil}} }
+  let(:payload) { { "s" => { "received" => nil } } }
 
   it "expands a model-scoped bracket key into the nested schema (the cosmos case)" do
     # Exactly what a Rails Form(model: @invoice) posts via #collectFields.
     post_action(NestedParamsComponent, payload:, act: "save_invoice",
-      params: {"invoice[date]" => "2026-01-02", "invoice[status]" => "open"})
+      params: { "invoice[date]" => "2026-01-02", "invoice[status]" => "open" })
 
     expect(response).to have_http_status(:ok)
     expect(received(response)["invoice"]).to eq("date" => "2026-01-02", "status" => "open")
@@ -28,7 +28,7 @@ RSpec.describe "Flat bracketed param coercion (issue #21)", type: :request do
 
   it "coerces nested types after bracket expansion (integer/float stay typed)" do
     post_action(NestedParamsComponent, payload:, act: "save_invoice",
-      params: {"invoice[date]" => "2026-01-02", "invoice[total]" => "9.99"})
+      params: { "invoice[date]" => "2026-01-02", "invoice[total]" => "9.99" })
 
     invoice = received(response)["invoice"]
     expect(invoice["total"]).to eq(9.99)
@@ -36,7 +36,7 @@ RSpec.describe "Flat bracketed param coercion (issue #21)", type: :request do
 
   it "drops undeclared bracketed keys (no mass assignment)" do
     post_action(NestedParamsComponent, payload:, act: "save_invoice",
-      params: {"invoice[date]" => "2026-01-02", "invoice[admin]" => "true"})
+      params: { "invoice[date]" => "2026-01-02", "invoice[admin]" => "true" })
 
     expect(received(response)["invoice"].keys).to contain_exactly("date")
   end
@@ -55,14 +55,14 @@ RSpec.describe "Flat bracketed param coercion (issue #21)", type: :request do
       })
 
     items = received(response)["invoice_items_attributes"]
-    expect(items.map { |i| i["id"] }).to eq([10, 11])
-    expect(items.map { |i| i["quantity"] }).to eq([2.0, 3.0])
-    expect(items.map { |i| i["_destroy"] }).to eq([false, true])
+    expect(items.map {  it["id"] }).to eq([10, 11])
+    expect(items.map {  it["quantity"] }).to eq([2.0, 3.0])
+    expect(items.map {  it["_destroy"] }).to eq([false, true])
   end
 
   it "mixes a flat scalar with bracketed keys in one payload" do
     post_action(NestedParamsComponent, payload:, act: "save_invoice",
-      params: {"date" => "2026-06-27", "invoice[date]" => "2026-01-02"})
+      params: { "date" => "2026-06-27", "invoice[date]" => "2026-01-02" })
 
     parsed = received(response)
     expect(parsed["date"]).to eq("2026-06-27")
@@ -71,7 +71,7 @@ RSpec.describe "Flat bracketed param coercion (issue #21)", type: :request do
 
   it "still accepts a PRE-NESTED object (backwards compatible with #16)" do
     post_action(NestedParamsComponent, payload:, act: "save_invoice",
-      params: {invoice: {date: "2026-01-02", status: "open"}})
+      params: { invoice: { date: "2026-01-02", status: "open" } })
 
     expect(received(response)["invoice"]).to eq("date" => "2026-01-02", "status" => "open")
   end
@@ -80,14 +80,14 @@ RSpec.describe "Flat bracketed param coercion (issue #21)", type: :request do
     # A bracket key processed BEFORE a sibling pre-nested object must not be
     # clobbered by it (order-dependence): both fields survive the merge.
     post_action(NestedParamsComponent, payload:, act: "save_invoice",
-      params: {"invoice[date]" => "2026-01-02", "invoice" => {"status" => "open"}})
+      params: { "invoice[date]" => "2026-01-02", "invoice" => { "status" => "open" } })
 
     expect(received(response)["invoice"]).to eq("date" => "2026-01-02", "status" => "open")
   end
 
   it "preserves a non-string value (checkbox boolean) through expansion" do
     post_action(NestedParamsComponent, payload:, act: "save_invoice",
-      params: {"invoice[date]" => "2026-01-02", "invoice[active]" => true})
+      params: { "invoice[date]" => "2026-01-02", "invoice[active]" => true })
 
     expect(received(response)["invoice"]["active"]).to be(true)
   end

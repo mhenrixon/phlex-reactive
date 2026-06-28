@@ -11,7 +11,7 @@ class MorphGridComponent < ApplicationComponent
 
   reactive_record :account
 
-  action :update, params: {name: :string}
+  action :update, params: { name: :string }
 
   def initialize(account:)
     @account = account
@@ -34,8 +34,8 @@ class MorphGridComponent < ApplicationComponent
       # The field both holds the value AND triggers the debounced update — the
       # canonical per-field reactive editing pattern from the issue.
       input(**mix(on(:update, event: "input", debounce: 150),
-        name: "name", value: @account.name, data: {testid: "name"}))
-      span(data: {testid: "saved"}) { @account.name }
+        name: "name", value: @account.name, data: { testid: "name" }))
+      span(data: { testid: "saved" }) { @account.name }
     end
   end
 end

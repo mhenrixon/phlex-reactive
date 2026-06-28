@@ -164,7 +164,7 @@ module Phlex
         end
 
         def reactive_collections
-          @reactive_collections ||= (superclass.respond_to?(:reactive_collections) ? superclass.reactive_collections.dup : {})
+          @reactive_collections ||= superclass.respond_to?(:reactive_collections) ? superclass.reactive_collections.dup : {}
         end
 
         def reactive_collection_def(name)
@@ -190,7 +190,7 @@ module Phlex
         # forms avoids a String + Symbol allocation per key per render. Memoized
         # per class; reset when reactive_state adds a key.
         def reactive_state_ivars
-          @reactive_state_ivars ||= reactive_state_keys.map { |k| [k.to_s, :"@#{k}"] }
+          @reactive_state_ivars ||= reactive_state_keys.map { [it.to_s, :"@#{it}"] }
         end
 
         # Rebuild a component instance from a verified identity payload. Called
@@ -212,14 +212,14 @@ module Phlex
 
           if reactive_state_keys.any?
             state = payload.fetch("s", {})
-            reactive_state_keys.each do |key|
+            reactive_state_keys.each do
               # Use key presence, not the value: a signed `nil` (nullable state)
               # must round-trip distinctly. Only a genuinely absent key falls
               # back to the component's initialize default; `false` and `nil`
               # both survive.
-              next unless state.key?(key.to_s)
+              next unless state.key?(it.to_s)
 
-              kwargs[key] = state[key.to_s]
+              kwargs[it] = state[it.to_s]
             end
           end
 
@@ -313,7 +313,7 @@ module Phlex
       # hatch). The trigger (on(:save)) stays on the button, not the field — so
       # focusing the input doesn't dispatch and collapse edit mode.
       def reactive_field(param, **attrs)
-        {name: param.to_s, **attrs}
+        { name: param.to_s, **attrs }
       end
 
       # Render an <input> already bound to an action param (issue #23). Sugar for
@@ -327,8 +327,8 @@ module Phlex
       # is the element's content, so the awkward FormBuilder positional split
       # (where name: lands after the options/html-options args) goes away:
       #   reactive_select(:status) { @statuses.each { |s| option(value: s, selected: s == @record.status) { s } } }
-      def reactive_select(param, **attrs, &block)
-        select(**reactive_field(param, **attrs), &block)
+      def reactive_select(param, **attrs, &)
+        select(**reactive_field(param, **attrs), &)
       end
 
       # Map a declared nested param onto Rails' <assoc>_attributes, carrying the
@@ -344,7 +344,7 @@ module Phlex
         existing = reactive_record_for_nested.public_send(association)
         merged[:id] = existing.id if existing
 
-        {"#{association}_attributes": merged}
+        { "#{association}_attributes": merged }
       end
 
       # Map a nested param onto <assoc>_attributes (with id preservation) AND
@@ -362,9 +362,7 @@ module Phlex
       # record-backed component).
       def reactive_record_for_nested
         key = self.class.reactive_record_key
-        unless key
-          raise Error, "#{self.class} must declare `reactive_record` to use nested_update!/nested_attributes"
-        end
+        raise Error, "#{self.class} must declare `reactive_record` to use nested_update!/nested_attributes" unless key
 
         instance_variable_get(:"@#{key}")
       end
@@ -377,7 +375,7 @@ module Phlex
       # unchanged.
       def reactive_token
         klass = self.class
-        payload = {"c" => klass.name}
+        payload = { "c" => klass.name }
 
         if (record_ivar = klass.reactive_record_ivar)
           payload["gid"] = instance_variable_get(record_ivar).to_gid.to_s

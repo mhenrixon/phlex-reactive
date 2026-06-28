@@ -12,8 +12,8 @@
 
 ## Ruby Style
 
-Lint with **Standard** (`bundle exec standardrb`). Standard owns formatting —
-don't hand-fight it; run `standardrb --fix` and review.
+Lint with **RuboCop** (`bundle exec rubocop`). RuboCop owns formatting —
+don't hand-fight it; run `rubocop -A` and review.
 
 ### Classes & Methods
 
@@ -106,4 +106,4 @@ Before marking work complete:
 - [ ] Components self-target via `#id` — no hand-picked targets
 - [ ] Mutating actions authorize; inputs declare a param schema
 - [ ] pgbus features are capability-gated and degrade gracefully
-- [ ] `bundle exec standardrb` passes
+- [ ] `bundle exec rubocop` passes

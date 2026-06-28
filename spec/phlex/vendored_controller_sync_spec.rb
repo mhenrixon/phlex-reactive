@@ -17,8 +17,8 @@ RSpec.describe "vendored client controller" do
     expect(File.read(vendored)).to eq(File.read(source)),
       "spec/dummy/public/vendor/reactive_controller.js has drifted from the source " \
       "app/javascript/phlex/reactive/reactive_controller.js. Re-sync it (the system " \
-      "suite runs the vendored copy):\n\n" \
-      "  cp app/javascript/phlex/reactive/reactive_controller.js " \
+      "suite runs the vendored copy):\n\n  " \
+      "cp app/javascript/phlex/reactive/reactive_controller.js " \
       "spec/dummy/public/vendor/reactive_controller.js"
   end
 end

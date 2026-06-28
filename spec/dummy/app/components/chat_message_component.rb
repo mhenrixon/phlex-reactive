@@ -8,11 +8,12 @@ class ChatMessageComponent < ApplicationComponent
     @message = chat_message
   end
 
-  def id = dom_id(@message) # Streamable#dom_id is render-context-free
+  # Streamable#dom_id is render-context-free
+  def id = dom_id(@message)
   def self.model_param_name = :chat_message
 
   def view_template
-    div(id:, class: "msg", data: {testid: "message"}) do
+    div(id:, class: "msg", data: { testid: "message" }) do
       span(class: "author") { @message.author }
       span(class: "body") { @message.body }
     end

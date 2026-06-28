@@ -14,13 +14,13 @@ class DocumentUploadComponent < ApplicationComponent
 
   # Single-file path (has_one_attached). A caption rides alongside as a scalar
   # field to prove multipart carries scalar params + the file together.
-  action :upload, params: {file: :file, caption: :string}
+  action :upload, params: { file: :file, caption: :string }
   # Multiple-file path (has_many_attached): [:file] coerces an array of uploads.
-  action :upload_pages, params: {pages: [:file]}
+  action :upload_pages, params: { pages: [:file] }
   # Issue #39: a :file param alongside an explicit NESTED-hash param. The nested
   # `meta` used to be dropped on the multipart path (the exact combination the
   # issue flagged); it must now survive next to the file.
-  action :upload_with_meta, params: {file: :file, meta: {tag: :string, year: :integer}}
+  action :upload_with_meta, params: { file: :file, meta: { tag: :string, year: :integer } }
 
   def initialize(document:)
     @document = document
@@ -45,15 +45,15 @@ class DocumentUploadComponent < ApplicationComponent
   end
 
   def view_template
-    div(**mix(reactive_attrs, id:, data: {testid: "document"})) do
-      span(data: {testid: "title"}) { @document.title }
-      span(data: {testid: "filename"}) { @document.file.attached? ? @document.file.filename.to_s : "" }
-      span(data: {testid: "pages-count"}) { @document.pages.count.to_s }
+    div(**mix(reactive_attrs, id:, data: { testid: "document" })) do
+      span(data: { testid: "title" }) { @document.title }
+      span(data: { testid: "filename" }) { @document.file.attached? ? @document.file.filename.to_s : "" }
+      span(data: { testid: "pages-count" }) { @document.pages.count.to_s }
 
       form(**on(:upload, event: "submit")) do
-        input(type: "file", name: "file", data: {testid: "file"})
-        input(name: "caption", data: {testid: "caption"})
-        button(type: "submit", data: {testid: "save"}) { "Upload" }
+        input(type: "file", name: "file", data: { testid: "file" })
+        input(name: "caption", data: { testid: "caption" })
+        button(type: "submit", data: { testid: "save" }) { "Upload" }
       end
     end
   end

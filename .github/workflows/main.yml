@@ -22,8 +22,8 @@ jobs:
         with:
           ruby-version: "4.0"
           bundler-cache: true
-      - name: Standard
-        run: bundle exec standardrb
+      - name: RuboCop
+        run: bundle exec rubocop
       - name: Verify gem builds
         run: gem build phlex-reactive.gemspec --strict
 
@@ -34,8 +34,6 @@ jobs:
       fail-fast: false
       matrix:
         ruby:
-          - "3.2"
-          - "3.3"
           - "3.4"
           - "4.0"
     steps:

@@ -13,12 +13,12 @@ RSpec.describe "Chat broadcast", type: :request do
   def send_message(room:, body:, connection: nil)
     token = Phlex::Reactive.sign(
       "c" => "ChatComposerComponent",
-      "s" => {"room" => room, "author" => "tester"}
+      "s" => { "room" => room, "author" => "tester" }
     )
-    headers = {"Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html"}
+    headers = { "Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html" }
     headers["X-Pgbus-Connection"] = connection if connection
     post "/reactive/actions",
-      params: {token:, act: "send_message", params: {body:}}.to_json,
+      params: { token:, act: "send_message", params: { body: } }.to_json,
       headers: headers
   end
 

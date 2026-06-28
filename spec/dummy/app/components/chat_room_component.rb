@@ -13,7 +13,7 @@ class ChatRoomComponent < ApplicationComponent
       turbo_stream_from(*ChatMessage.stream_key(@room))
 
       div(id: "chat-messages-#{@room}", class: "messages") do
-        @messages.each { |m| render ChatMessageComponent.new(chat_message: m) }
+        @messages.each { render ChatMessageComponent.new(chat_message: it) }
       end
 
       render ChatComposerComponent.new(room: @room)

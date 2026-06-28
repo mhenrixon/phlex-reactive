@@ -15,7 +15,7 @@ controller = Phlex::Reactive::ActionsController.new
 schema = {
   date: :string,
   bank_account_ids: [:integer],
-  invoice_items_attributes: [{id: :integer, quantity: :float, price: :float, _destroy: :boolean}]
+  invoice_items_attributes: [{ id: :integer, quantity: :float, price: :float, _destroy: :boolean }]
 }
 
 # A flat, bracketed payload (what the client's #collectFields posts for a
@@ -38,7 +38,7 @@ controller.params = ActionController::Parameters.new(params: raw)
 run = -> { controller.send(:coerce_params, schema) }
 
 BenchSupport.header("coerce_params: nested array-of-hash (Rails bracket form)")
-BenchSupport.ips { |x| x.report("coerce_params") { run.call } }
+BenchSupport.ips { it.report("coerce_params") { run.call } }
 
 BenchSupport.header("coerce_params allocations (per call)")
 BenchSupport.allocations("coerce_params") { run.call }

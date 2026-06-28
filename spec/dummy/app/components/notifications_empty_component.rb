@@ -10,6 +10,6 @@ class NotificationsEmptyComponent < ApplicationComponent
   def id = "notifications-empty"
 
   def view_template
-    div(id:, class: "empty-state", data: {testid: "empty-state"}) { "No notifications" }
+    div(id:, class: "empty-state", data: { testid: "empty-state" }) { "No notifications" }
   end
 end
