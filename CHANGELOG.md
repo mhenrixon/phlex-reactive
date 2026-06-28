@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **CI now tests against Ruby 4.0** (added to the test matrix in `main.yml` and
+  the pre-release matrix in `release.yml`, alongside 3.2/3.3/3.4). Ruby 4.0
+  shipped December 2025 and is the current stable line. The gem requires no code
+  changes for 4.0 — its dependencies and the patterns it uses (ObjectSpace::WeakMap,
+  Data.define, Thread-locals, the MessageVerifier path) are stable across 3.4 → 4.0,
+  and it directly requires none of the gems 4.0 moved from default to bundled.
+  `required_ruby_version` stays `>= 3.2.0` (no upper bound, already permits 4.0).
+
 ### Added
 
 - **`reply.streams` — partial update with a token-only refresh (issue #30).**
