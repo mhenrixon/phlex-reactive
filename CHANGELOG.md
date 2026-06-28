@@ -24,6 +24,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Multipart path silently dropped an explicit nested-hash / array param (#39).**
+  When an action declared a `:file` param alongside an explicit nested (hash/array)
+  param, the nested param was dropped on the multipart path while the JSON path
+  handled it correctly — the two encodings were asymmetric. The client's
+  `#buildFormData` `JSON.stringify`'d a non-scalar param into one
+  `params[key]='<json>'` field, which the server received as an un-decodable
+  `String` leaf and dropped (nested hash → `{}`, array → key removed). Fixed
+  client-side: `#buildFormData` now bracket-expands a nested object/array into
+  `params[key][sub]` / `params[key][index][...]` fields (arrays use numeric
+  indices) — the same Rails-form shape the server's `expand_bracket_keys` /
+  `array_values` already parse, so a JSON body and a multipart body now coerce
+  identically. The server is unchanged. One intentional divergence: an empty
+  array/object as a whole param can't be carried by `FormData`, so the multipart
+  path omits the key (the action's keyword default applies) rather than sending an
+  explicit-clear `[]`/`{}`. Covered end-to-end: the bracketed multipart shape
+  coerces correctly (request specs), a `:file` alongside a nested param both
+  survive (request spec), and the FormData wire shape (bun unit tests).
+
 - **`to_stream_token` emitted an EMPTY token, making non-self-rendering replies
   add-once-only (cosmos#1939).** `Streamable#to_stream_token` guarded on
   `respond_to?(:reactive_token)`, but `Component#reactive_token` is **private**, so

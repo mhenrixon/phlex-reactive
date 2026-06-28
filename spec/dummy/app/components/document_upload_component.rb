@@ -17,6 +17,10 @@ class DocumentUploadComponent < ApplicationComponent
   action :upload, params: {file: :file, caption: :string}
   # Multiple-file path (has_many_attached): [:file] coerces an array of uploads.
   action :upload_pages, params: {pages: [:file]}
+  # Issue #39: a :file param alongside an explicit NESTED-hash param. The nested
+  # `meta` used to be dropped on the multipart path (the exact combination the
+  # issue flagged); it must now survive next to the file.
+  action :upload_with_meta, params: {file: :file, meta: {tag: :string, year: :integer}}
 
   def initialize(document:)
     @document = document
@@ -31,6 +35,13 @@ class DocumentUploadComponent < ApplicationComponent
 
   def upload_pages(pages: nil)
     @document.pages.attach(pages) if pages.present?
+  end
+
+  # Attach the file AND fold the nested meta into the title, so a spec can assert
+  # the nested-hash param rode alongside the file through the multipart path.
+  def upload_with_meta(file: nil, meta: nil)
+    @document.file.attach(file) if file
+    @document.update!(title: "#{meta[:tag]} #{meta[:year]}") if meta
   end
 
   def view_template

@@ -9,10 +9,8 @@ require "rails_helper"
 # sent to a `:file` param is DROPPED (consistent with #16 coercion rules), so the
 # method's keyword default applies — never a fabricated/coerced file.
 RSpec.describe "Reactive file/multipart params", type: :request do
-  def token_for(klass, payload)
-    Phlex::Reactive.sign(payload.merge("c" => klass.name))
-  end
-
+  # post_multipart stays LOCAL (it sends multipart FormData, not the shared JSON
+  # post_action), and reuses the shared token_for from ActionRequestHelpers.
   # A multipart POST, exactly as the client's FormData path produces it: token
   # and act are flat fields, params are bracketed (params[caption], params[file]).
   def post_multipart(klass, payload:, act:, params: {})
@@ -67,6 +65,21 @@ RSpec.describe "Reactive file/multipart params", type: :request do
       expect(response).to have_http_status(:ok)
       expect(document.reload.pages.count).to eq(2)
       expect(document.pages.map { |p| p.filename.to_s }).to contain_exactly("page1.txt", "page2.txt")
+    end
+  end
+
+  describe "a :file alongside an explicit nested-hash param (issue #39)" do
+    it "carries the nested param through the multipart path next to the file" do
+      # The exact combination issue #39 flagged: a :file param AND an explicit
+      # nested-hash param in one multipart action. The nested `meta` used to be
+      # dropped; it must now survive alongside the upload.
+      post_multipart(DocumentUploadComponent, payload:, act: "upload_with_meta",
+        params: {file: upload, meta: {tag: "receipts", year: "2026"}})
+
+      expect(response).to have_http_status(:ok)
+      expect(document.reload.file).to be_attached         # the file still attached
+      expect(document.file.filename.to_s).to eq("receipt.txt")
+      expect(document.title).to eq("receipts 2026")       # the nested param survived
     end
   end
 

@@ -355,7 +355,7 @@ export default class extends Controller {
     fd.append("token", token)
     fd.append("act", action)
     for (const [key, value] of Object.entries(params)) {
-      fd.append(`params[${key}]`, this.#scalarField(value))
+      this.#appendField(fd, `params[${key}]`, value)
     }
     const multiNames = this.#multiFileNames(files)
     for (const { name, file } of files) {
@@ -365,14 +365,35 @@ export default class extends Controller {
     return fd
   }
 
-  // FormData fields are strings; mirror the JSON wire shape — a boolean
-  // checkbox becomes "true"/"false" (the server's :boolean cast reads it), an
-  // array/object is JSON-encoded (the bracket-expansion path on the server
-  // handles the scalar leaves the same way it does for a JSON body).
-  #scalarField(value) {
-    if (value == null) return ""
-    if (typeof value === "object") return JSON.stringify(value)
-    return String(value)
+  // Append a param leaf to FormData under its bracketed key. FormData carries
+  // only strings, so a NON-scalar param (a nested object or an array) is
+  // bracket-EXPANDED into params[key][sub] / params[key][index][...] fields —
+  // the SAME Rails-form shape the server's expand_bracket_keys / array_values
+  // already parse, so a JSON body and a multipart body coerce identically
+  // (issue #39). Previously a non-scalar was JSON.stringify'd into one
+  // params[key]='<json>' field, which the server received as an un-decodable
+  // String leaf and DROPPED (nested hash -> {}, array -> key removed).
+  //
+  // Arrays use NUMERIC indices (params[key][0], params[key][1]) — required for
+  // an array-of-hash so each element's sub-keys stay grouped and the server's
+  // index-hash sort rebuilds order; params[key][] would collapse them. A scalar
+  // (string/number/boolean) is one string field, mirroring the JSON wire shape
+  // (the server's :boolean/:integer casts read "true"/"42"). null/undefined is
+  // an empty field. An EMPTY array/object emits NOTHING — FormData can't carry
+  // []/{}, so the key is omitted and the action's keyword default applies (this
+  // differs from the JSON path, where an explicit [] coerces to an empty array).
+  #appendField(fd, key, value) {
+    if (value == null) {
+      fd.append(key, "")
+    } else if (Array.isArray(value)) {
+      value.forEach((element, index) => this.#appendField(fd, `${key}[${index}]`, element))
+    } else if (typeof value === "object") {
+      for (const [subKey, subValue] of Object.entries(value)) {
+        this.#appendField(fd, `${key}[${subKey}]`, subValue)
+      }
+    } else {
+      fd.append(key, String(value))
+    }
   }
 
   // Names that appear more than once across the chosen files (a `multiple`

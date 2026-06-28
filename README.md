@@ -324,12 +324,15 @@ Anything not in the schema is dropped before reaching your method.
 an uploaded file in a reactive action — attach a document/receipt/image to the
 record without dropping out to a bespoke controller. When the reactive root holds
 a populated `<input type="file">`, the client sends the action as multipart
-`FormData` (instead of JSON) — `token` + `act` + scalar params as fields, the
-file(s) appended; the endpoint coerces `:file` to the
-`ActionDispatch::Http::UploadedFile`, passed through untouched. A non-file value
-sent to a `:file` param is dropped (the keyword default applies — never a
-fabricated file). Token threading and the re-render/morph are identical; only the
-request encoding changes when a file is present.
+`FormData` (instead of JSON) — `token` + `act` as fields, scalar params as fields,
+any nested/array params bracket-expanded into `params[key][sub]` /
+`params[key][index]` fields (the same Rails-form shape, so a JSON body and a
+multipart body coerce identically — #39), and the file(s) appended; the endpoint
+coerces `:file` to the `ActionDispatch::Http::UploadedFile`, passed through
+untouched. A non-file value sent to a `:file` param is dropped (the keyword
+default applies — never a fabricated file). Token threading and the
+re-render/morph are identical; only the request encoding changes when a file is
+present.
 
 ```ruby
 reactive_record :document
@@ -349,6 +352,13 @@ def view_template
   end
 end
 ```
+
+> **One multipart caveat:** `FormData` can't carry an *empty* array or hash, so on
+> the multipart (file-present) path an empty `[]`/`{}` param is **omitted** and the
+> action's keyword default applies — it does **not** arrive as an explicit empty
+> collection the way it does over JSON. If you rely on sending `tags: []` to clear
+> a collection, send that action *without* a file (the JSON path). A non-empty
+> nested/array param rides along fine next to a file.
 
 **Array & nested params.** Wrap a type in an array for an array param, or a hash
 schema in an array for Rails-style nested attributes — so one reactive action can
