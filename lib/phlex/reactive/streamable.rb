@@ -26,6 +26,13 @@ module Phlex
     module Streamable
       extend ActiveSupport::Concern
 
+      # A per-thread cache entry: an off-request view context + the Turbo
+      # TagBuilder bound to it, tagged with the renderer + generation it was
+      # built for. Rebuilt on a thread when the renderer object changes or the
+      # class generation is bumped — so a reset/reload/renderer-swap is picked
+      # up without ever sharing a mutable context across threads.
+      ThreadViewContext = Struct.new(:view_context, :builder, :renderer, :generation)
+
       # Every class that includes Streamable, so the engine can flush their
       # memoized view contexts on a Rails code reload (dev) in one pass. A
       # WeakMap used as a set (the class is the key) so a class reloaded by
@@ -76,31 +83,43 @@ module Phlex
 
         # Turbo::Streams::TagBuilder needs a real VIEW CONTEXT (it calls
         # `.formats` on it), not a controller class. Build one off-request from
-        # the configured renderer controller. Memoized per class — building a
+        # the configured renderer controller. Memoized PER THREAD — building a
         # view context instantiates the renderer controller and assembles its
         # whole helper module set, so doing it per render/broadcast was the
         # hottest server-side allocation in the action round trip. The builder
         # is bound to that one context and reused too.
+        #
+        # Why per-thread and not one-per-process: an ActionView context carries
+        # MUTABLE state (output_buffer/view_flow that #render_in's capture
+        # swaps), so a single instance shared across threads can interleave or
+        # bleed content between overlapping renders on a threaded server (Puma)
+        # or in concurrent jobs. A thread-local cache keeps the amortization
+        # (built once per thread, reused across that thread's renders) without
+        # ever sharing a buffer across threads.
         def turbo_stream_builder
-          memoized_turbo_view_context
-          @turbo_stream_builder
+          thread_view_context_cache.builder
         end
 
-        # The off-request view context, built once and reused. Keyed on the
-        # configured renderer's object identity so swapping
-        # Phlex::Reactive.renderer (tests, or a host that reconfigures it)
-        # transparently rebuilds; the engine also resets it on Rails code reload
-        # (to_prepare) so a reloaded controller class is never served stale.
+        # The off-request view context for the current thread, built once and
+        # reused. Rebuilt when the configured renderer object changes (a swap of
+        # Phlex::Reactive.renderer) or when the class's view-context generation
+        # is bumped (reset_turbo_view_context! / Rails code reload), so a
+        # reloaded controller class is never served stale.
         def turbo_view_context
-          memoized_turbo_view_context
+          thread_view_context_cache.view_context
         end
 
-        # Drop the cached view context + builder so the next call rebuilds.
-        # Registered on Rails' reloader by the engine; also used by specs.
+        # Invalidate the cached view context + builder for ALL threads by bumping
+        # this class's generation — each thread rebuilds lazily on its next use,
+        # and entries for the old generation are dropped. Registered on Rails'
+        # reloader by the engine; also used by specs. Thread-safe (an integer
+        # bump; no shared mutable structure to tear down).
         def reset_turbo_view_context!
-          @turbo_view_context = nil
-          @turbo_view_context_renderer = nil
-          @turbo_stream_builder = nil
+          @turbo_view_context_generation = turbo_view_context_generation + 1
+        end
+
+        def turbo_view_context_generation
+          @turbo_view_context_generation ||= 0
         end
 
         # Render a component to HTML with a full Rails view context. Uses
@@ -234,18 +253,23 @@ module Phlex
           Phlex::Reactive.renderer
         end
 
-        # Build the view context once and cache it alongside the builder bound
-        # to it. Invalidates automatically when the configured renderer object
-        # changes (a swap of Phlex::Reactive.renderer), so a test or host that
-        # reconfigures the renderer never gets a context tied to the old one.
-        def memoized_turbo_view_context
+        def thread_view_context_cache
+          store = (Thread.current[:phlex_reactive_view_contexts] ||= {})
           current = renderer
-          if @turbo_view_context.nil? || !@turbo_view_context_renderer.equal?(current)
-            @turbo_view_context = current.new.view_context
-            @turbo_view_context_renderer = current
-            @turbo_stream_builder = ::Turbo::Streams::TagBuilder.new(@turbo_view_context)
+          generation = turbo_view_context_generation
+          cached = store[self]
+
+          unless cached && cached.renderer.equal?(current) && cached.generation == generation
+            view_context = current.new.view_context
+            cached = ThreadViewContext.new(
+              view_context,
+              ::Turbo::Streams::TagBuilder.new(view_context),
+              current,
+              generation
+            )
+            store[self] = cached
           end
-          @turbo_view_context
+          cached
         end
       end
 

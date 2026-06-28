@@ -68,12 +68,19 @@ your branch run the *same script* on the *same machine*:
 
 ```bash
 git worktree add --detach /tmp/baseline main
-cp -r benchmark /tmp/baseline/ && cp Gemfile /tmp/baseline/
-(cd /tmp/baseline && bundle install && rake bench:micro) > /tmp/before.txt
-rake bench:micro > /tmp/after.txt          # your branch
+# Copy the harness AND the Rakefile/Gemfile so `rake bench` exists in the
+# pristine tree (main predates the bench task).
+cp -r benchmark /tmp/baseline/ && cp Gemfile Rakefile /tmp/baseline/
+(cd /tmp/baseline && bundle install && RAILS_ENV=test bundle exec rake bench:micro) > /tmp/before.txt
+RAILS_ENV=test bundle exec rake bench:micro > /tmp/after.txt   # your branch
 diff /tmp/before.txt /tmp/after.txt
 git worktree remove --force /tmp/baseline
 ```
+
+If the branch added a bench that calls a method not on `main` (e.g. a new
+`reset_*!`), write a baseline-safe script that only calls methods present on
+`main` and run *that* in both trees — exactly how this PR's render numbers were
+taken.
 
 There is no committed baseline file (shared CI runners are too noisy for a hard
 regression gate), which is exactly why the before/after has to be a deliberate

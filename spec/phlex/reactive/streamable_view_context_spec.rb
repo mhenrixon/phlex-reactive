@@ -47,6 +47,38 @@ RSpec.describe "Streamable view-context memoization (performance)" do
     end
   end
 
+  # The cache is PER THREAD, not one-per-process: an ActionView context carries
+  # mutable output_buffer/view_flow state (render_in's capture swaps it), so a
+  # single shared instance could interleave content between concurrent renders
+  # on a threaded server. Each thread must get its own context, and concurrent
+  # renders must never corrupt each other.
+  describe "thread safety" do
+    it "gives each thread its own view context" do
+      contexts = Queue.new
+      [Thread.new { contexts << CounterComponent.turbo_view_context },
+        Thread.new { contexts << CounterComponent.turbo_view_context }].each(&:join)
+      a = contexts.pop
+      b = contexts.pop
+      expect(a).not_to be(b) # distinct instances per thread
+    end
+
+    it "renders correctly under concurrent threads (no buffer interleave)" do
+      results = Queue.new
+      threads = 8.times.map do |i|
+        Thread.new do
+          20.times do
+            html = CounterComponent.render_component(CounterComponent.new(count: i))
+            results << (html.include?(">#{i}<") && html.scan('id="counter"').size == 1)
+          end
+        end
+      end
+      threads.each(&:join)
+
+      verdicts = Array.new(results.size) { results.pop }
+      expect(verdicts).to all(be(true))
+    end
+  end
+
   describe "render output is unchanged by memoization (back-compat)" do
     it "produces the same replace stream as a freshly-built context" do
       memoized = CounterComponent.new(count: 1).to_stream_replace

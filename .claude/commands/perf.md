@@ -25,8 +25,9 @@ an isolated worktree (so `lib/`+`app/` are pristine but the harness is present):
 
 ```bash
 git worktree add --detach /tmp/pr-baseline main
-cp -r benchmark /tmp/pr-baseline/ && cp Gemfile /tmp/pr-baseline/
-(cd /tmp/pr-baseline && bundle install && RAILS_ENV=test rake bench:micro) > /tmp/before.txt
+# Copy the harness AND Rakefile/Gemfile — main predates the bench task.
+cp -r benchmark /tmp/pr-baseline/ && cp Gemfile Rakefile /tmp/pr-baseline/
+(cd /tmp/pr-baseline && bundle install && RAILS_ENV=test bundle exec rake bench:micro) > /tmp/before.txt
 ```
 
 If the branch added a bench method that doesn't exist on `main` (e.g. a new
