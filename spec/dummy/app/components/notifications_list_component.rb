@@ -45,7 +45,7 @@ class NotificationsListComponent < ApplicationComponent
 
       ul(id: "notifications") do
         if Todo.exists?
-          Todo.order(:created_at, :id).each { render NotificationRowComponent.new(it:) }
+          Todo.order(:created_at, :id).each { render NotificationRowComponent.new(todo: it) }
         else
           render NotificationsEmptyComponent.new
         end

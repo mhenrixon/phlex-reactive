@@ -25,7 +25,7 @@ class TodoListComponent < ApplicationComponent
   def view_template
     div(id:, **reactive_attrs) do
       ul(id: "todos") do
-        Todo.order(:created_at, :id).each { render TodoItemComponent.new(it:) }
+        Todo.order(:created_at, :id).each { render TodoItemComponent.new(todo: it) }
       end
 
       div do

@@ -36,8 +36,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   lib/app changes were the `|x| x.foo` → `it.foo` rename plus hash-brace
   spacing — behavior is unchanged and all specs are green. The gemspec and
   Rakefile are excluded from `Style/ItBlockParameter` (their `do |spec| … end`
-  config blocks read better named), and one nested Phlex content block carries
-  an inline disable where blanket `it` would collapse two parameters. Component-
+  config blocks read better named); a nested Phlex content block and a scope
+  lambda carry inline disables where blanket `it` would collapse two parameters
+  or break a `where(room:)` kwarg shorthand; and blocks that fed a
+  keyword-argument shorthand (`Component.new(todo:)`) were rewritten to an
+  explicit `Component.new(todo: it)` so the `it` rename can't silently change
+  the keyword. Component-
   aware relaxations (line length, `Lint/MissingSuper`, unused action params)
   are scoped to `spec/dummy/app/components/**`. `bundle exec standardrb` is now
   `bundle exec rubocop`; `rake`'s default runs `spec + rubocop`.
