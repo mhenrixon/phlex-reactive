@@ -8,6 +8,7 @@ Rails.application.routes.draw do
   get "chat" => "demos#chat"
   get "todos" => "demos#todos"
   get "notifications" => "demos#notifications"
+  get "reactive_rows" => "demos#reactive_rows"
   get "rich_editor/:id" => "demos#rich_editor"
   get "form_submit/:id" => "demos#form_submit"
   get "nested_editor" => "demos#nested_editor"
