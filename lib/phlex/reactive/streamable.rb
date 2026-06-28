@@ -83,7 +83,10 @@ module Phlex
 
         # Turbo::Streams::TagBuilder needs a real VIEW CONTEXT (it calls
         # `.formats` on it), not a controller class. Build one off-request from
-        # the configured renderer controller. Memoized PER THREAD — building a
+        # the configured renderer controller, bound to a real request so
+        # request-dependent helpers (form_authenticity_token, host-aware URL
+        # helpers) work during a re-render/broadcast (issue #42). Memoized PER
+        # THREAD — building a
         # view context instantiates the renderer controller and assembles its
         # whole helper module set, so doing it per render/broadcast was the
         # hottest server-side allocation in the action round trip. The builder
@@ -260,7 +263,7 @@ module Phlex
           cached = store[self]
 
           unless cached && cached.renderer.equal?(current) && cached.generation == generation
-            view_context = current.new.view_context
+            view_context = Phlex::Reactive.request_bound_view_context(current)
             cached = ThreadViewContext.new(
               view_context,
               ::Turbo::Streams::TagBuilder.new(view_context),
