@@ -24,7 +24,7 @@ class <%= class_name %> < ApplicationComponent
 <% end -%>
 
   def view_template
-    div(id:, **reactive_attrs) do
+    div(**reactive_root) do
 <% action_names.each do |a| -%>
       button(**on(:<%= a %>)) { "<%= a.to_s.humanize %>" }
 <% end -%>
@@ -51,7 +51,7 @@ class <%= class_name %> < ApplicationComponent
 <% end -%>
 
   def view_template
-    div(id:, **reactive_attrs) do
+    div(**reactive_root) do
 <% state_keys.each do |k| -%>
       span(data: { <%= file_name %>_<%= k %>: true }) { @<%= k %>.to_s }
 <% end -%>

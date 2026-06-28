@@ -41,7 +41,7 @@ class Fields::InlineEdit < ApplicationComponent
   end
 
   def view_template
-    span(id:, **reactive_attrs) do
+    span(**reactive_root) do
       if @editing
         input(name: "value", value: current_value, autocomplete: "off")
         button(**on(:save)) { "Save" }
@@ -124,7 +124,7 @@ def update(name:)
 end
 
 def view_template
-  div(id:, **reactive_attrs) do
+  div(**reactive_root) do
     # The field both holds the value AND triggers the debounced save.
     input(**mix(on(:update, event: "input", debounce: 300),
       name: "name", value: @record.name))

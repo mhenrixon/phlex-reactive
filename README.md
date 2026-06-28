@@ -26,7 +26,7 @@ class Counter < ApplicationComponent
   def decrement = @count -= 1
 
   def view_template
-    div(id:, **reactive_attrs) do
+    div(**reactive_root) do
       button(**on(:decrement)) { "−" }
       span { @count }
       button(**on(:increment)) { "+" }
@@ -245,7 +245,7 @@ class Todos::Item < ApplicationComponent
   end
 
   def view_template
-    li(id:, **reactive_attrs, class: ("done" if @todo.done?)) do
+    li(**reactive_root(class: ("done" if @todo.done?))) do
       button(**on(:toggle)) { @todo.done? ? "✓" : "○" }
       span { @todo.title }
     end
@@ -307,7 +307,8 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_record :name` | Record-backed identity (GlobalID). State = the DB. |
 | `reactive_state :a, :b` | Signed instance-var identity. Standalone, or combined with `reactive_record` to sign transient UI state alongside the row. |
 | `action :name, params: { x: :integer }` | Declare a client-invokable action + its param schema. **Default-deny.** |
-| `reactive_attrs` | Spread onto the root element: marks it reactive + carries the signed token. |
+| `reactive_root(**overrides)` | Spread onto the root element: emits the component `id` **and** `reactive_attrs` together, so the controller root always carries `#id`. Preferred over `id:` + `reactive_attrs`. `**overrides` (`class:`/`data:`) deep-merge. |
+| `reactive_attrs` | Marks an element reactive + carries the signed token (no `id`). Spread alongside `id:` on the **same** element: `div(id:, **reactive_attrs)`. Prefer `reactive_root`, which can't split them. |
 | `on(:action, event: "click", **params)` | Spread onto a trigger element. Adds `type=button` for clicks. |
 | `on(:action, event: "input", debounce: 300)` | Coalesce rapid events into one round trip after a quiet period (live-as-you-type). |
 | `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
@@ -413,16 +414,28 @@ input(**mix(on(:update, event: "input", debounce: 300), name: "quantity", value:
 
 **Combining `on(...)` / `reactive_attrs` with your own attributes.** Both return
 a hash that includes a `data:` key. Spreading them *and* passing another `data:`
-(or `class:`, `id:`) would clobber it — use Phlex's `mix` to deep-merge:
+(or `class:`, `id:`) would clobber it — use Phlex's `mix` to deep-merge. For the
+**root**, prefer `reactive_root`, which already `mix`es id + token for you:
 
 ```ruby
 # ✅ merges cleanly (data-action survives, your data-testid/class are added)
 button(**mix(on(:increment), class: "btn", data: { testid: "inc" })) { "+" }
-div(**mix(reactive_attrs, id:, class: "card")) { ... }
+div(**reactive_root(class: "card", data: { testid: "root" })) { ... }   # id + token + your attrs
 
 # ❌ the extra data: overwrites on()'s data:, so the action never binds
 button(**on(:increment), data: { testid: "inc" }) { "+" }
 ```
+
+> **The reactive root must carry `#id` (issue #48).** The server targets your
+> component's `#id` and the client self-matches its next signed token by the root
+> element's `id`. `reactive_attrs` does **not** emit the id — so if you put `id:`
+> on a **child** instead of the `**reactive_attrs` element, the root's id is empty,
+> token threading falls back to the first token in the response, and the *next*
+> action silently fails with **HTTP 403**. Use `div(**reactive_root)` (it emits id
+> + token on one element) so the id can't land on the wrong node; if you spread
+> `reactive_attrs` directly, keep `id:` on the **same** element
+> (`div(id:, **reactive_attrs)`). The controller `console.warn`s on connect when a
+> reactive root has no id.
 
 **Binding inputs to action params (drop the magic `name:`).** A field's value
 travels with an action only if its `name` equals the param. Hand-writing
@@ -435,7 +448,7 @@ mode):
 action :save, params: { value: :string, status: :string }
 
 def view_template
-  span(id:, **reactive_attrs) do
+  span(**reactive_root) do
     reactive_input(:value, value: @record.name)            # <input name="value" …>
     reactive_select(:status) do                            # <select name="status">…</select>
       %w[open closed].each { |s| option(value: s, selected: s == @record.status) { s } }
@@ -719,7 +732,7 @@ class Counter < ApplicationComponent
   def decrement = @counter.decrement!(:value)
 
   def view_template
-    div(id:, **reactive_attrs) do
+    div(**reactive_root) do
       button(**on(:decrement)) { "−" }
       span { @counter.value }
       button(**on(:increment)) { "+" }

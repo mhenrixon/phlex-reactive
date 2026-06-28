@@ -97,7 +97,7 @@ class Chat::Composer < ApplicationComponent
   end
 
   def view_template
-    div(id:, class: "composer", **reactive_attrs) do
+    div(**reactive_root(class: "composer")) do
       input(type: "text", name: "body", placeholder: "Message as #{@author}…", autocomplete: "off")
       button(**on(:send_message)) { "Send" }
     end

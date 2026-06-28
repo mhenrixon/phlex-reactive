@@ -8,6 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`reactive_root` helper — the whole reactive root in one spread (#48).**
+  `reactive_attrs` doesn't emit `id:`, so an app could put `id:` on a *child*
+  element and leave the controller root's `id` empty — which silently re-opened
+  the #46 add-once-only bug (the client falls back to the first token in the
+  response, the next action POSTs a foreign token, and the endpoint 403s).
+  `div(**reactive_root)` emits the component `id` **and** `reactive_attrs` on one
+  element, so the id can't land on the wrong node; `reactive_root(class:, data:)`
+  deep-merges via `mix`, and an explicit `id:` override still wins. `reactive_attrs`
+  is unchanged — existing `div(id:, **reactive_attrs)` components keep working. The
+  generic Stimulus controller now also `console.warn`s on `connect()` when a
+  reactive root has an empty `id`, so the failure surfaces on page load (a one-line
+  hint) instead of on the second click. README/docs promote `div(**reactive_root)`.
+
 - **File / multipart params in a reactive action (#34).** An action can now accept
   an uploaded file: declare `params: { file: :file }` (or `[:file]` for multiple).
   When the reactive root holds a populated `<input type="file">`, the client sends

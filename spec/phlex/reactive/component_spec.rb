@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "phlex" # for the render-context-free `mix` helper used by reactive_root (issue #48)
 
 RSpec.describe Phlex::Reactive::Component do
   # A minimal state-backed component (no Rails/Phlex render needed for these).
@@ -273,6 +274,71 @@ RSpec.describe Phlex::Reactive::Component do
     it "lets an explicit name: override the param binding (escape hatch)" do
       attrs = instance.send(:reactive_field, :count, name: "other")
       expect(attrs[:name]).to eq("other")
+    end
+  end
+
+  describe "#reactive_root (issue #48 — id on the root, not a child)" do
+    subject(:instance) { root_klass.new }
+
+    # A real Phlex component (so the render-context-free `mix` helper is present,
+    # exactly as in production) with a custom #id. reactive_root must emit that id
+    # ON the reactive-controller element, so this.element.id can never be empty and
+    # #extractToken's first-token-wins fallback is unreachable.
+    let(:root_klass) do
+      Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "RootThing"
+
+        reactive_state :count
+        def initialize(count: 0) = @count = count
+
+        def id = "root-thing"
+      end
+    end
+
+    it "spreads the component id ALONGSIDE reactive_attrs on one element" do
+      attrs = instance.send(:reactive_root)
+      expect(attrs[:id]).to eq("root-thing")
+      expect(attrs[:data][:controller]).to eq("reactive")
+      expect(attrs[:data][:reactive_token_value]).to be_a(String)
+    end
+
+    it "carries the SAME token reactive_attrs would (no second signing path)" do
+      attrs = instance.send(:reactive_root)
+      payload = Phlex::Reactive.verify(attrs[:data][:reactive_token_value])
+      expect(payload["c"]).to eq("RootThing")
+    end
+
+    it "deep-merges overrides without clobbering the controller/token data:" do
+      attrs = instance.send(:reactive_root, class: "card", data: { testid: "root" })
+      expect(attrs[:class]).to eq("card")
+      # the override's data: must NOT wipe out controller/reactive_token_value
+      expect(attrs[:data][:controller]).to eq("reactive")
+      expect(attrs[:data][:reactive_token_value]).to be_a(String)
+      expect(attrs[:data][:testid]).to eq("root")
+    end
+
+    it "lets an explicit id: override win (escape hatch)" do
+      attrs = instance.send(:reactive_root, id: "explicit")
+      expect(attrs[:id]).to eq("explicit")
+    end
+
+    it "renders id and data-controller onto the SAME element (the whole point)" do
+      render_klass = Class.new(root_klass) do
+        def self.name = "RenderRootThing"
+        def view_template = div(**reactive_root(class: "card")) { "hi" }
+      end
+      html = render_klass.new.call
+
+      # the SAME opening tag carries BOTH the id and the controller — never split
+      # across elements (the issue #48 footgun is `id:` on a child). Match the one
+      # <div …> tag, then assert both attributes live inside it (order-independent).
+      open_tag = html[/<div [^>]*>/]
+      expect(open_tag).to include('id="root-thing"')
+      expect(open_tag).to include('data-controller="reactive"')
+      expect(open_tag).to include('class="card"')
     end
   end
 

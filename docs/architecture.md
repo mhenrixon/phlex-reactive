@@ -110,8 +110,8 @@ from `on(:save, extra: ...)` always win over a collected field of the same name.
 
 #### Nested reactive roots collect independently
 
-A reactive component can be rendered **inside** another — each `**reactive_attrs`
-root is its own `data-controller="reactive"` element. Field collection stops at
+A reactive component can be rendered **inside** another — each `**reactive_root`
+is its own `data-controller="reactive"` element. Field collection stops at
 nested roots: an action collects only the named inputs whose nearest
 `[data-controller~="reactive"]` ancestor is *its own* root. A descendant
 reactive component's inputs belong to that component, not the outer one.
@@ -121,7 +121,7 @@ reactive component's inputs belong to that component, not the outer one.
 class InvoiceEditor < ApplicationComponent
   # ... reactive_record :invoice; action :save, params: { notes: :string }
   def view_template
-    div(id:, **reactive_attrs) do
+    div(**reactive_root) do                                    # root carries #id + token
       input(name: "notes", value: @invoice.notes)              # collected by `save`
       @invoice.items.each { |item| render LineItem.new(item:) } # each row is its own root
       button(**on(:save)) { "Save" }
@@ -135,10 +135,17 @@ A `save` on the editor receives `{ notes: }` only — never the rows' bare
 row's* controller and updates only that row. So outer flat fields and per-row
 reactive editing compose without name-collision workarounds (issue #15).
 
-> Remember `mix` when a nested root needs its own `id`/`data`:
-> `div(**mix(reactive_attrs, id:, data: { testid: "row" }))`. A bare
-> `div(id:, **reactive_attrs, data: {...})` lets the extra `data:` clobber
-> `reactive_attrs`' `data-controller`, so the element never becomes a root.
+> **The reactive root must carry `#id` (issue #48).** The server targets the
+> component's `#id`, and the client self-matches its next signed token by the root
+> element's `id`. `reactive_attrs` does **not** emit the id, so spreading it onto a
+> wrapper while putting `id:` on a *child* (e.g. the rows container) leaves the
+> root's id empty — token threading then falls back to the first token in the
+> response (a child row's) and the *next* action silently 403s. Prefer
+> `div(**reactive_root)`: it emits id + token on one element, so the id can't land
+> on the wrong node. `reactive_root(class:, data: {...})` deep-merges via `mix`, so
+> a nested root's own `data-testid` no longer clobbers `data-controller`. If you
+> spread `reactive_attrs` directly, keep `id:` on the **same** element. The
+> controller `console.warn`s on connect when a reactive root has no id.
 
 ## Why state isn't in the browser
 

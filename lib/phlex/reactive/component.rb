@@ -270,6 +270,26 @@ module Phlex
         }
       end
 
+      # The WHOLE reactive root in one spread (issue #48). reactive_attrs alone
+      # doesn't emit `id:`, so `id:` and `data-controller="reactive"` can land on
+      # DIFFERENT elements — putting `id:` on a child leaves the controller root's
+      # `id` empty, which silently breaks token threading (the client self-matches
+      # its next token by `this.element.id`) and 403s on the next action.
+      #
+      # reactive_root binds the id to the SAME element as reactive_attrs, so the
+      # footgun is unbuildable:
+      #   div(**reactive_root) { ... }                       # id + controller + token
+      #   div(**reactive_root(class: "card")) { ... }        # add your own attrs
+      #
+      # mix deep-merges, so overrides add `class:`/`data:` without clobbering the
+      # controller/token data: (a bare data: would). The id is resolved separately
+      # (an explicit override wins as a clean replace, not a `mix` string-concat —
+      # mix would join two String ids into "default override").
+      def reactive_root(**overrides)
+        root_id = overrides.delete(:id) || id
+        mix({ **reactive_attrs }, overrides, { id: root_id })
+      end
+
       # Attributes for an element that triggers an action.
       #   button(**on(:toggle)) { "○" }
       #   form(**on(:save, event: "submit")) { ... }

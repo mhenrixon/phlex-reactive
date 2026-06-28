@@ -33,7 +33,7 @@ class Counter < ApplicationComponent
   def decrement = @count -= 1
 
   def view_template
-    div(id:, **reactive_attrs) do
+    div(**reactive_root) do
       button(**on(:decrement)) { "−" }
       span { @count }
       button(**on(:increment)) { "+" }
