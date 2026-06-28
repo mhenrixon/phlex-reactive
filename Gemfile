@@ -8,9 +8,11 @@ gem "rake", "~> 13.0"
 
 group :development do
   gem "rubocop", "~> 1.80", require: false
+  gem "rubocop-capybara", "~> 2.21", require: false
   gem "rubocop-performance", "~> 1.26", require: false
   gem "rubocop-rake", "~> 0.7", require: false
   gem "rubocop-rspec", "~> 3.0", require: false
+  gem "rubocop-thread_safety", "~> 0.7", require: false
 end
 
 group :test do

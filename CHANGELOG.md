@@ -41,11 +41,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   aware relaxations (line length, `Lint/MissingSuper`, unused action params)
   are scoped to `spec/dummy/app/components/**`. `bundle exec standardrb` is now
   `bundle exec rubocop`; `rake`'s default runs `spec + rubocop`.
+- **Added `rubocop-capybara` and `rubocop-thread_safety`.** Capybara lints the
+  browser specs (clean today — the suite already uses waiting matchers).
+  thread_safety stays on as a tripwire for unsafe shared mutable state on the
+  request/broadcast path; its `ClassInstanceVariable` /
+  `ClassAndModuleAttributes` cops are scoped off only in the three files whose
+  flagged class-level state is deliberate and audited — module-level config
+  (`lib/phlex/reactive.rb`, set once at boot), class-definition-time DSL
+  registries (`component.rb`), and the per-thread view-context cache's integer
+  generation counter (`streamable.rb`). An adversarial audit confirmed none are
+  request-path hazards; the lazy `||=` config defaults are idempotent. (A
+  follow-up may warm `verifier`/`renderer` at boot to remove even the
+  benign-by-idempotency first-call race — out of scope for this lint change.)
 
 ### Removed
 
 - **Dropped the `standard` development dependency** in favor of `rubocop`,
-  `rubocop-performance`, `rubocop-rake`, and `rubocop-rspec`.
+  `rubocop-capybara`, `rubocop-performance`, `rubocop-rake`, `rubocop-rspec`,
+  and `rubocop-thread_safety`.
 
 ### BREAKING
 

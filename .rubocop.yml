@@ -1,7 +1,9 @@
 plugins:
+  - rubocop-capybara
   - rubocop-performance
   - rubocop-rake
   - rubocop-rspec
+  - rubocop-thread_safety
 
 AllCops:
   TargetRubyVersion: 3.4
@@ -13,6 +15,8 @@ AllCops:
     - "**/node_modules/**/*"
     - "**/tmp/**/*"
     - "**/vendor/**/*"
+    # The published Jekyll docs site has its own Gemfile and is not gem code.
+    - "docs/**/*"
     - "spec/dummy/db/schema.rb"
     - "spec/dummy/bin/**/*"
     - "bin/**/*"
@@ -63,6 +67,44 @@ Lint/UnusedMethodArgument:
     # Dummy components declare action params (matching the param schema /
     # name-binding under test) that an individual action may not persist.
     - spec/dummy/app/components/**/*.rb
+
+#====================
+#=== THREAD SAFETY ===
+#====================
+
+# rubocop-thread_safety stays ON as a tripwire for genuinely unsafe shared
+# mutable state on the request/broadcast path. These two cops are scoped OFF
+# only where the flagged class-level @ivars / module attrs are deliberate,
+# audited patterns (verified against the documented invariants):
+#   * lib/phlex/reactive.rb — module-level CONFIG (renderer/verifier/
+#     base_controller_name/action_path/flash_target/authorization_errors), set
+#     once at boot in an initializer and read-only thereafter. The lazy `||=`
+#     defaults are idempotent (a first-call race assigns an equivalent constant
+#     value); action_path + base_controller are warmed at boot/class-load.
+#   * lib/phlex/reactive/component.rb — class-definition-time DSL registries
+#     (@reactive_actions/@reactive_state_keys/@reactive_collections/
+#     @reactive_record_key), written by the action/reactive_* macros in a class
+#     body and inherited from the superclass — the standard Ruby class-macro
+#     pattern, not request-path state.
+#   * lib/phlex/reactive/streamable.rb — the per-thread view-context cache's
+#     integer generation counter; the actual context is thread-keyed, and the
+#     bump is a benign `@n = n + 1` invalidation (reset on Rails reload).
+# Anywhere else (e.g. the controller request path) these cops still fire.
+ThreadSafety/ClassInstanceVariable:
+  Exclude:
+    - lib/phlex/reactive.rb
+    - lib/phlex/reactive/component.rb
+    - lib/phlex/reactive/streamable.rb
+
+ThreadSafety/ClassAndModuleAttributes:
+  Exclude:
+    - lib/phlex/reactive.rb
+
+ThreadSafety/NewThread:
+  Exclude:
+    # The view-context thread-safety spec MUST spawn real threads to prove
+    # concurrent renders don't interleave buffers.
+    - spec/**/*.rb
 
 #===============
 #=== METRICS ===
