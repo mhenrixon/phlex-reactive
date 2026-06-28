@@ -7,16 +7,6 @@ require "rails_helper"
 # accepts_nested_attributes_for editor doesn't re-derive the *_attributes + id
 # preservation boilerplate by hand (and risk a duplicate has_one build).
 RSpec.describe "accepts_nested_attributes_for helper (issue #24)", type: :request do
-  def token_for(klass, payload)
-    Phlex::Reactive.sign(payload.merge("c" => klass.name))
-  end
-
-  def post_action(klass, payload:, act:, params: {})
-    post "/reactive/actions",
-      params: {token: token_for(klass, payload), act:, params:}.to_json,
-      headers: {"Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html"}
-  end
-
   let(:account) { Account.create!(name: "Acme") }
   let(:component) { AddressEditorComponent.new(account:) }
 

@@ -163,6 +163,7 @@ module Phlex
 
       # Coerce a value against a declared type. A type is one of:
       #   * a scalar symbol            (:string/:integer/:float/:boolean)
+      #   * :file                      — a multipart upload (issue #34)
       #   * a Hash schema              ({ id: :integer, ... })   — nested object
       #   * a one-element Array        ([:integer] / [{ ... }])  — array of that
       # Arrays accept both a real JSON array and a Rails-style index hash
@@ -172,20 +173,49 @@ module Phlex
           coerce_array(value, type.first)
         elsif type.is_a?(Hash)
           coerce_hash(value, type)
+        elsif type == :file
+          coerce_file(value)
         else
           coerce_scalar(value, type)
         end
+      end
+
+      # An uploaded file (issue #34) passes through UNTOUCHED — never .to_s'd,
+      # which would corrupt it into a string the action can't attach. Anything
+      # that isn't an uploaded file (a forged/malformed scalar, an empty input)
+      # returns DROP, so the method's keyword default applies — consistent with
+      # the #16 rule that a value that can't be coerced to its type is dropped,
+      # not fabricated. Duck-types on UploadedFile's interface (original_filename
+      # + a readable IO) rather than naming a class, so a Rack::Test upload, an
+      # ActionDispatch upload, and a Falcon multipart body all qualify.
+      def coerce_file(value)
+        uploaded_file?(value) ? value : DROP
+      end
+
+      def uploaded_file?(value)
+        value.respond_to?(:original_filename) && value.respond_to?(:read)
       end
 
       # A real array (or Rails index hash) coerces element-wise. A malformed
       # present-but-non-array value returns DROP rather than [] — coercing a stray
       # scalar to an empty array would let a bad payload read as an explicit
       # "clear everything" on update!(declared_array:).
+      #
+      # An ELEMENT that coerces to DROP (e.g. a non-file in a [:file] array, a
+      # forged/mixed payload) is rejected from the result — the same rule
+      # coerce_hash applies to a dropped value, so the internal DROP sentinel
+      # never leaks into the action. A genuinely empty input array stays [] (an
+      # explicit empty collection), but an array whose every element drops
+      # returns DROP, so the keyword default applies rather than handing the
+      # action a surprise [].
       def coerce_array(value, element_type)
         values = array_values(value)
         return DROP if values.nil?
+        return [] if values.empty?
 
-        values.map { |element| coerce(element, element_type) }
+        coerced = values.map { |element| coerce(element, element_type) }
+        coerced.reject! { |element| element.equal?(DROP) }
+        coerced.empty? ? DROP : coerced
       end
 
       # Keep declared keys only (drop undeclared — no mass assignment), recursing

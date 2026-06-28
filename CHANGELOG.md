@@ -6,7 +6,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **File / multipart params in a reactive action (#34).** An action can now accept
+  an uploaded file: declare `params: { file: :file }` (or `[:file]` for multiple).
+  When the reactive root holds a populated `<input type="file">`, the client sends
+  the action as multipart `FormData` instead of JSON — `token` + `act` + scalar
+  params as fields, the file(s) appended — and the endpoint coerces `:file` to the
+  `ActionDispatch::Http::UploadedFile`, passed through untouched. A non-file value
+  sent to a `:file` param is dropped (the keyword default applies), consistent with
+  the #16 coercion rules — and for a `[:file]` array, a non-file *element* (a
+  forged/mixed payload) is rejected from the array too, so the internal coercion
+  sentinel never leaks to the action. A `<input type="file" multiple>` keeps its
+  array shape (`params[name][]`) even when the user picks exactly one file, so a
+  `[:file]` schema still coerces it. Token threading and the re-render/morph are
+  identical; only the request encoding changes when a file is present — so
+  attaching a document/receipt/image stays a reactive action instead of dropping
+  out to a bespoke controller + upload Stimulus controller. Covered end-to-end:
+  server coercion (request specs), the FormData wire shape (bun unit tests), and a
+  real browser upload under Puma + Falcon (system spec).
+
 ### Fixed
+
+- **Multipart path silently dropped an explicit nested-hash / array param (#39).**
+  When an action declared a `:file` param alongside an explicit nested (hash/array)
+  param, the nested param was dropped on the multipart path while the JSON path
+  handled it correctly — the two encodings were asymmetric. The client's
+  `#buildFormData` `JSON.stringify`'d a non-scalar param into one
+  `params[key]='<json>'` field, which the server received as an un-decodable
+  `String` leaf and dropped (nested hash → `{}`, array → key removed). Fixed
+  client-side: `#buildFormData` now bracket-expands a nested object/array into
+  `params[key][sub]` / `params[key][index][...]` fields (arrays use numeric
+  indices) — the same Rails-form shape the server's `expand_bracket_keys` /
+  `array_values` already parse, so a JSON body and a multipart body now coerce
+  identically. The server is unchanged. One intentional divergence: an empty
+  array/object as a whole param can't be carried by `FormData`, so the multipart
+  path omits the key (the action's keyword default applies) rather than sending an
+  explicit-clear `[]`/`{}`. Covered end-to-end: the bracketed multipart shape
+  coerces correctly (request specs), a `:file` alongside a nested param both
+  survive (request spec), and the FormData wire shape (bun unit tests).
 
 - **`to_stream_token` emitted an EMPTY token, making non-self-rendering replies
   add-once-only (cosmos#1939).** `Streamable#to_stream_token` guarded on

@@ -41,6 +41,10 @@ group :development, :test do
   gem "actioncable", ">= 7.1", "< 9.0"
   gem "activejob", ">= 7.1", "< 9.0"
   gem "activerecord", ">= 7.1", "< 9.0"
+  # ActiveStorage backs the file/multipart upload fixture (issue #34). Dev/test
+  # only — phlex-reactive itself doesn't depend on it; the dummy app uses it to
+  # attach an uploaded file from a reactive action.
+  gem "activestorage", ">= 7.1", "< 9.0"
   gem "sqlite3", ">= 1.4"
 
   # pgbus is NOT a runtime dependency (it stays out of the gemspec — broadcasts

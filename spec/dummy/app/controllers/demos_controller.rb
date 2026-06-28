@@ -51,6 +51,10 @@ class DemosController < ActionController::Base
     render_component PartialGridComponent.new(line_item: LineItem.find(params[:id]))
   end
 
+  def document_upload
+    render_component DocumentUploadComponent.new(document: Document.find(params[:id]))
+  end
+
   # The page a non-intercepted form submit would navigate to (issue #11).
   def nav_probe
     render html: "<div data-testid='nav-probe'>NAVIGATED</div>".html_safe, layout: true

@@ -6,16 +6,6 @@ require "rails_helper"
 # helper (issue #35): an action calls reply.append/reply.remove on a declared
 # collection, and the endpoint renders the row + count + empty-state streams.
 RSpec.describe "Reactive collection endpoint (issue #35)", type: :request do
-  def token_for(klass, payload = {})
-    Phlex::Reactive.sign(payload.merge("c" => klass.name))
-  end
-
-  def post_action(klass, act:, params: {}, payload: {})
-    post "/reactive/actions",
-      params: {token: token_for(klass, payload), act:, params:}.to_json,
-      headers: {"Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html"}
-  end
-
   let(:klass) { NotificationsListComponent }
 
   describe "add (reply.append)" do

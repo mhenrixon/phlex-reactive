@@ -10,16 +10,6 @@ require "rails_helper"
 # ("invoice[date]" => { "invoice" => { "date" => … } }) before coercion, so a
 # nested schema matches a normal Rails form with zero field renaming.
 RSpec.describe "Flat bracketed param coercion (issue #21)", type: :request do
-  def token_for(klass, payload)
-    Phlex::Reactive.sign(payload.merge("c" => klass.name))
-  end
-
-  def post_action(klass, payload:, act:, params: {})
-    post "/reactive/actions",
-      params: {token: token_for(klass, payload), act:, params:}.to_json,
-      headers: {"Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html"}
-  end
-
   def received(response)
     json = response.body[/data-testid="received">(.*?)<\/pre>/m, 1]
     JSON.parse(CGI.unescapeHTML(json))

@@ -11,9 +11,20 @@ require "rspec/rails"
 ActiveRecord::Schema.verbose = false
 load Rails.root.join("db/schema.rb")
 
+# Auto-load request-spec support modules (mirrors system_helper.rb's
+# system/support autoload). Holds the shared token_for / post_action helpers.
+Dir[File.join(__dir__, "requests/support/**/*.rb")].each { |f| require f }
+
 RSpec.configure do |config|
   config.infer_spec_type_from_file_location!
   config.use_transactional_fixtures = true
+
+  # fixture_file_upload (multipart upload specs, issue #34) resolves files here.
+  config.file_fixture_path = File.expand_path("fixtures/files", __dir__)
+  config.include ActionDispatch::TestProcess::FixtureFile
+
+  # Shared request helpers (token_for / post_action) — issue #40.
+  config.include ActionRequestHelpers, type: :request
 
   # In the dummy app the verifier comes from secret_key_base; align the test
   # verifier so tokens minted in specs verify against the running app.

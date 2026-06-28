@@ -7,16 +7,6 @@ require "rails_helper"
 # `name: "value"` magic string. We assert BOTH the rendered markup carries the
 # right name AND the action actually receives the bound param end-to-end.
 RSpec.describe "reactive_input / reactive_select binding (issue #23)", type: :request do
-  def token_for(klass, payload)
-    Phlex::Reactive.sign(payload.merge("c" => klass.name))
-  end
-
-  def post_action(klass, payload:, act:, params: {})
-    post "/reactive/actions",
-      params: {token: token_for(klass, payload), act:, params:}.to_json,
-      headers: {"Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html"}
-  end
-
   let!(:todo) { Todo.create!(title: "before", done: false) }
   let(:payload) { {"gid" => todo.to_gid.to_s, "s" => {"attribute" => "title"}} }
 

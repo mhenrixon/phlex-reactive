@@ -8,9 +8,12 @@ import { Controller } from "@hotwired/stimulus"
 // (replace by default; method="morph" — Response.morph — preserves focus).
 //
 // Wire format (client -> server), POST <action path>, turbo-stream Accept:
-//   { token: "<signed identity>", act: "<action>", params: {...} }
+//   { token: "<signed identity>", act: "<action>", params: {...} }   (JSON)
 // (`act`, not `action`: `action` is a reserved Rails routing param.)
 // The token is a MessageVerifier-signed { component, gid } — NO state is sent.
+// When the root holds a chosen <input type="file">, the SAME payload is sent as
+// multipart FormData instead (token/act flat, params bracketed, files appended)
+// so an upload reaches the action (issue #34) — only the encoding differs.
 // The response is a <turbo-stream> that replaces the component by its id.
 //
 // Server -> client live updates use the SAME element id, pushed over the
@@ -203,24 +206,34 @@ export default class extends Controller {
 
   async #perform(action, params) {
     // Auto-collect named field values inside this component so a button-
-    // triggered action still receives sibling inputs (Livewire-style).
-    // Explicit params (data-reactive-params-param) win over collected fields.
-    const fieldParams = this.#collectFields()
+    // triggered action still receives sibling inputs (Livewire-style), plus any
+    // chosen file inputs in the SAME walk. Explicit params
+    // (data-reactive-params-param) win over collected fields.
+    const { fields, files } = this.#collectFields()
+    const allParams = { ...fields, ...this.#parseParams(params) }
+    const token = this.#currentToken
 
-    const body = JSON.stringify({
-      token: this.#currentToken,
-      act: action,
-      params: { ...fieldParams, ...this.#parseParams(params) },
-    })
+    // File/multipart path (issue #34): if THIS root has a populated
+    // <input type="file">, the action can't be JSON (JSON.stringify drops the
+    // File). Send FormData instead — token + act + scalar params as fields, each
+    // chosen file appended. The morph/token machinery downstream is identical;
+    // only the request ENCODING differs when files are present.
+    const multipart = files.length > 0
+    const body = multipart
+      ? this.#buildFormData(token, action, allParams, files)
+      : JSON.stringify({ token, act: action, params: allParams })
 
     this.element.setAttribute("aria-busy", "true")
 
     try {
       const headers = {
-        "Content-Type": "application/json",
         Accept: "text/vnd.turbo-stream.html",
         "X-CSRF-Token": this.#csrfToken(),
       }
+      // For JSON we declare the content type; for multipart we must NOT — the
+      // browser sets `multipart/form-data; boundary=…` itself, and overriding it
+      // would strip the boundary and corrupt the body server-side.
+      if (!multipart) headers["Content-Type"] = "application/json"
       // Send the pgbus SSE connection id (if subscribed) so the server can
       // exclude this connection from its own broadcast echo — the actor
       // already gets the action's HTTP response. Harmless without pgbus.
@@ -288,12 +301,22 @@ export default class extends Controller {
     return el.closest('[data-controller~="reactive"]') === this.element
   }
 
+  // One walk over THIS root's named controls (not a nested reactive root's),
+  // returning both the scalar `fields` and any chosen `files`. A file input's
+  // `.value` is the useless "C:\fakepath\…" string, never a scalar — so its
+  // chosen files are collected separately (honoring `multiple`) and it adds no
+  // phantom blank value (issue #34). An empty `files` keeps the JSON path.
   #collectFields() {
     const fields = {}
-    // Standard form controls owned by THIS root (not a nested reactive root).
+    const files = []
     this.element.querySelectorAll("input[name], select[name], textarea[name]").forEach((field) => {
       if (!this.#ownsField(field)) return
-      if (field.type === "checkbox") {
+      if (field.type === "file") {
+        // Carry the input's `multiple` flag so #buildFormData keeps the array
+        // shape (params[name][]) even when the user picked exactly one file —
+        // otherwise a [:file] schema would see a lone scalar upload and drop it.
+        for (const file of field.files ?? []) files.push({ name: field.name, file, multiple: field.multiple })
+      } else if (field.type === "checkbox") {
         fields[field.name] = field.checked
       } else if (field.type === "radio") {
         if (field.checked) fields[field.name] = field.value
@@ -321,7 +344,71 @@ export default class extends Controller {
           fields[name] = el.value ?? el.textContent ?? el.innerHTML ?? ""
         }
       })
-    return fields
+    return { fields, files }
+  }
+
+  // Build the multipart body (issue #34). `token`/`act` are flat fields the
+  // endpoint reads from params[:token]/params[:act]; scalar params nest under
+  // params[<key>] (Rails parses the bracket into params[:params]); each file is
+  // appended under params[<name>] (single) — a second file with the same name
+  // (a `multiple` picker, several inputs sharing a name) is sent as
+  // params[<name>][] so Rails coerces it to an array for a [:file] schema.
+  #buildFormData(token, action, params, files) {
+    const fd = new FormData()
+    fd.append("token", token)
+    fd.append("act", action)
+    for (const [key, value] of Object.entries(params)) {
+      this.#appendField(fd, `params[${key}]`, value)
+    }
+    const multiNames = this.#multiFileNames(files)
+    for (const { name, file, multiple } of files) {
+      // params[name][] when the input is `multiple` (array shape even for one
+      // file) OR the name repeats across inputs; otherwise a lone scalar file.
+      const asArray = multiple || multiNames.has(name)
+      const key = asArray ? `params[${name}][]` : `params[${name}]`
+      fd.append(key, file, file.name)
+    }
+    return fd
+  }
+
+  // Append a param leaf to FormData under its bracketed key. FormData carries
+  // only strings, so a NON-scalar param (a nested object or an array) is
+  // bracket-EXPANDED into params[key][sub] / params[key][index][...] fields —
+  // the SAME Rails-form shape the server's expand_bracket_keys / array_values
+  // already parse, so a JSON body and a multipart body coerce identically
+  // (issue #39). Previously a non-scalar was JSON.stringify'd into one
+  // params[key]='<json>' field, which the server received as an un-decodable
+  // String leaf and DROPPED (nested hash -> {}, array -> key removed).
+  //
+  // Arrays use NUMERIC indices (params[key][0], params[key][1]) — required for
+  // an array-of-hash so each element's sub-keys stay grouped and the server's
+  // index-hash sort rebuilds order; params[key][] would collapse them. A scalar
+  // (string/number/boolean) is one string field, mirroring the JSON wire shape
+  // (the server's :boolean/:integer casts read "true"/"42"). null/undefined is
+  // an empty field. An EMPTY array/object emits NOTHING — FormData can't carry
+  // []/{}, so the key is omitted and the action's keyword default applies (this
+  // differs from the JSON path, where an explicit [] coerces to an empty array).
+  #appendField(fd, key, value) {
+    if (value == null) {
+      fd.append(key, "")
+    } else if (Array.isArray(value)) {
+      value.forEach((element, index) => this.#appendField(fd, `${key}[${index}]`, element))
+    } else if (typeof value === "object") {
+      for (const [subKey, subValue] of Object.entries(value)) {
+        this.#appendField(fd, `${key}[${subKey}]`, subValue)
+      }
+    } else {
+      fd.append(key, String(value))
+    }
+  }
+
+  // Names that appear more than once across the chosen files (a `multiple`
+  // picker, or several file inputs sharing a name) — those go to params[name][]
+  // so the server sees an array; a lone file stays params[name].
+  #multiFileNames(files) {
+    const counts = new Map()
+    for (const { name } of files) counts.set(name, (counts.get(name) ?? 0) + 1)
+    return new Set([...counts].filter(([, n]) => n > 1).map(([name]) => name))
   }
 
   #parseParams(raw) {
