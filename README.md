@@ -313,7 +313,9 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
+| `reactive_collection :name, item:, container:, count:, empty:, size:` | Declare an add/remove-row list once; actions call `reply.append`/`prepend`/`remove`. See [Reactive collections](#reactive-collections-addremove-rows--count--empty-state). |
 | `reply.replace` / `.morph` / `.update` / `.remove` / `.redirect(url)` / `.with(*)` | Return from an action to control the reply (flash, remove, redirect, multi-stream). See [Controlling the action's reply](#reply--controlling-the-actions-reply). |
+| `reply.append(name, model)` / `.prepend(...)` / `.remove(name, model)` | Add/remove a row in a declared `reactive_collection` (row + count + empty-state in one reply). |
 
 Param types: `:string` (default), `:integer`, `:float`, `:boolean`. Anything not
 in the schema is dropped before reaching your method.
@@ -485,11 +487,76 @@ update only the targets you name) and refreshes the token via a tiny inert
 > (`Phlex::Reactive::Response.replace(self)`) and it still works, but `reply` is
 > the preferred surface; treat `Response` as an internal detail.
 > **`html:`/`content` escaping.** A plain string is **HTML-escaped** by Turbo, so
-> **`html:`/`content` escaping.** A plain string is **HTML-escaped** by Turbo, so
 > `html: @account.name` is safe even for user-supplied values. To emit intentional
 > markup, pass a **Phlex component** (`html: Heading.new(name: @record.name)`) —
 > rendered and auto-escaped through the renderer — or an `html_safe` string for
 > raw HTML you control.
+
+### Reactive collections (add/remove rows + count + empty-state)
+
+An add/remove-row list — line items, attachments, tags, comments, a
+notifications list — is one of the most common reactive surfaces, and every one
+re-implements the same orchestration by hand: append the row to the right
+container, remove it on delete, keep a **count badge** in sync, and swap an
+**empty-state** in/out as the list crosses 0↔1. `reactive_collection` declares
+that contract **once** on the container so each action is a single call.
+
+Declare the collection on the container component, then `reply.append` /
+`reply.prepend` / `reply.remove` in the actions:
+
+```ruby
+class NotificationsList < ApplicationComponent
+  include Phlex::Reactive::Streamable
+  include Phlex::Reactive::Component
+
+  reactive_collection :notifications,
+    item: NotificationRow,        # the per-row Streamable component
+    container: "notifications",    # the DOM id rows live in
+    count: "notifications-count",  # optional companion id (the size badge)
+    empty: NotificationsEmpty,     # optional empty-state component
+    size: -> { Todo.count }        # resolves the live size (re-counted, never client state)
+
+  action :add, params: {title: :string}
+  action :dismiss, params: {id: :integer}
+
+  def add(title:)
+    todo = Todo.create!(title:)
+    reply.append(:notifications, todo)   # append row + bump count + clear empty-state
+  end
+
+  def dismiss(id:)
+    Todo.find(id).destroy!
+    reply.remove(:notifications, id)     # remove row + bump count + restore empty-state at 0
+  end
+
+  # view_template renders the count, the container <ul>, and the empty-state on
+  # first paint — the same components the helper streams in/out on each delta.
+end
+```
+
+| Builder | Reply (one `Response`) |
+|---|---|
+| `reply.append(name, model)` | append the row into the container + update the count + remove the empty-state when the list crosses 0→1 |
+| `reply.prepend(name, model)` | as `append`, but the row goes to the top |
+| `reply.remove(name, model)` | remove the row by its `dom_id` + update the count + append the empty-state back when the list crosses →0 |
+
+- **`size:` is the source of truth** — it's *re-counted* server-side after the
+  mutation, so the badge and the empty-state are correct-by-construction (no
+  off-by-one, no client-held count). `count:`, `empty:`, and `size:` are all
+  optional: omit them and only the row stream is emitted.
+- **Repeated add/remove just works** — each reply rolls the **container's** signed
+  token forward (via the inert `reactive:token` refresh), so the second click from
+  the list root is accepted. Without this an add/remove list would be add-once-only
+  (correct on the first click, silently rejected after); the helper bakes the
+  refresh in so you never hit it.
+- **`remove` takes the record or its `dom_id` string** — a just-destroyed
+  ActiveRecord still answers `dom_id` correctly, so `reply.remove(:items, todo)`
+  works; pass the raw id only if your row `#id` matches `ActiveRecord::RecordIdentifier`.
+- **Reply governs the actor's HTTP response only.** For a *cross-tab* live list
+  (other viewers see the row appear) keep broadcasting the row with
+  `NotificationRow.broadcast_append_to(..., exclude: reactive_connection_id)` —
+  `reactive_collection` is the per-actor add/remove + count + empty-state wrapper,
+  not a replacement for the broadcast.
 
 ### Configuration (`config/initializers/phlex_reactive.rb`)
 

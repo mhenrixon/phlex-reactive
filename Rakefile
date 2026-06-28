@@ -9,9 +9,19 @@ RSpec::Core::RakeTask.new(:spec) do |t|
 end
 
 namespace :spec do
-  desc "Run browser system specs (needs Playwright)"
+  desc "Run browser system specs (needs Playwright). CAPYBARA_SERVER=puma|falcon (default puma)"
   RSpec::Core::RakeTask.new(:system) do |t|
     t.pattern = "spec/system/**/*_spec.rb"
+  end
+
+  desc "Run the browser system specs under BOTH real servers (puma + falcon)"
+  task :system_servers do
+    # A reactive round trip must be transport-agnostic — prove it under both the
+    # sync (Puma) and async (Falcon) server before a client-touching change ships.
+    %w[puma falcon].each do |server|
+      puts "\e[1;35m\n### system specs under CAPYBARA_SERVER=#{server} ###\e[0m"
+      sh({"CAPYBARA_SERVER" => server}, "bundle exec rspec spec/system")
+    end
   end
 end
 

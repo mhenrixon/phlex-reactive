@@ -167,7 +167,7 @@ If you can identify that certain failures will persist for environmental reasons
 - **Read before fixing** -- always read the actual failing code before attempting a fix
 - **Fix the root cause** -- don't add `# standard:disable` to bypass lint; fix the actual issue (a targeted `# rubocop:disable` is acceptable only when Standard is demonstrably wrong, e.g. `save_screenshot` flagged as a debugger)
 - **Don't fix unrelated failures** -- if a spec was already failing on main, note it but don't fix it in this PR
-- **CI environment differences** -- system specs run Playwright (cached browsers); locally use `CAPYBARA_SERVER=webrick` if Puma's reactor segfaults. pgbus-dependent specs run only on Ruby >= 3.3 (pgbus's floor) and need PostgreSQL; on 3.2 they are skipped by design.
+- **CI environment differences** -- system specs run Playwright (cached browsers) under a server matrix: Puma (default) AND Falcon (`CAPYBARA_SERVER=falcon`). A failure on only one server is a transport-specific bug, not flakiness. pgbus-dependent specs run only on Ruby >= 3.3 (pgbus's floor) and need PostgreSQL; on 3.2 they are skipped by design.
 - **Flaky tests** -- if a test passes locally but fails in CI, note it as potentially flaky rather than adding workarounds. Browser specs that assert a value right after a click (racing the morph) are a common false-flake — fix them to use a waiting matcher.
 - **Don't retry CI blindly** -- diagnose first, fix, then push. Each push triggers a full CI run.
 

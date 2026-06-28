@@ -51,6 +51,106 @@ module Phlex
         # Escape hatch / multi-stream root: zero or more raw turbo-stream strings.
         def with(*strings) = new(streams: strings.flatten)
 
+        # --- Reactive collections (issue #35) ---
+        # Add/remove a row in a declared reactive_collection, emitting the row
+        # stream + the count companion update + the empty-state toggle as ONE
+        # Response. `component` is the bound CONTAINER (it carries the
+        # declaration and the size resolver); `model` is the row's record (or, for
+        # remove, a model OR a dom-id string). count/empty/size are optional — a
+        # stream is emitted only for the pieces declared.
+        #
+        # render_self is false: the row append/prepend/remove IS the update, so
+        # we must NOT also replace the whole container (that would re-render every
+        # row and clobber the just-streamed delta).
+        #
+        # token_component is the CONTAINER (cosmos#1939): a reply that does NOT
+        # re-render self must STILL refresh self's signed token, or the list is
+        # add-once-only — correct on the first click, then every subsequent dispatch
+        # from the list root is rejected (its token went stale) with no error. The
+        # container owns the add/remove trigger, so the endpoint appends its inert
+        # `reactive:token` stream (the same #30 machinery reply.streams uses) to roll
+        # the token forward without re-rendering the rows.
+        def collection_append(component, name, model)
+          definition = collection_def!(component, name)
+          new(streams: collection_add_streams(definition, component, model, :append),
+            render_self: false, token_component: component)
+        end
+
+        def collection_prepend(component, name, model)
+          definition = collection_def!(component, name)
+          new(streams: collection_add_streams(definition, component, model, :prepend),
+            render_self: false, token_component: component)
+        end
+
+        def collection_remove(component, name, model)
+          definition = collection_def!(component, name)
+          new(streams: collection_remove_streams(definition, component, model),
+            render_self: false, token_component: component)
+        end
+
+        private
+
+        # Resolve the declaration off the container's class, raising a clear error
+        # for an undeclared name (a typo'd collection should fail loudly, not
+        # silently emit an empty Response).
+        def collection_def!(component, name)
+          component.class.reactive_collection_def(name) ||
+            raise(Phlex::Reactive::Error, "undeclared reactive_collection :#{name} on #{component.class}")
+        end
+
+        # Row add (append/prepend) + count + empty-state clear. The empty-state is
+        # removed only when the list just crossed 0->1 (size == 1) — appending to
+        # an already-populated list leaves it untouched.
+        def collection_add_streams(definition, component, model, action)
+          streams = [definition.item.public_send(action, target: definition.container, model:)]
+          append_count_stream(streams, definition, component)
+
+          size = definition.size_for(component)
+          if definition.empty && size == 1
+            streams << definition.empty.new.to_stream_remove
+          end
+          streams
+        end
+
+        # Row remove + count + empty-state restore. The empty-state is appended
+        # back into the container only when the list just emptied (size == 0).
+        def collection_remove_streams(definition, component, model)
+          streams = [collection_row_remove(definition, model)]
+          append_count_stream(streams, definition, component)
+
+          size = definition.size_for(component)
+          if definition.empty && size&.zero?
+            # Render the empty-state and append it INTO the container (not its
+            # own id) — restoring "No items yet" when the last row was removed.
+            # model: nil builds it argument-free (an empty-state is a static view).
+            streams << definition.empty.append(target: definition.container, model: nil)
+          end
+          streams
+        end
+
+        # Remove the row by its DOM id. Accepts the record (so dom_id is derived)
+        # or an already-built dom-id string (e.g. the value the row used as #id).
+        def collection_row_remove(definition, model)
+          if model.is_a?(String)
+            Phlex::Reactive.flash_builder.remove(model)
+          else
+            definition.item.remove(model)
+          end
+        end
+
+        # Append the count companion's update stream when a count id + a size
+        # resolver are both declared. The size is a number, HTML-escaped by Turbo.
+        def append_count_stream(streams, definition, component)
+          return unless definition.count
+
+          size = definition.size_for(component)
+          return if size.nil?
+
+          streams << update_stream(definition.count, size.to_s)
+        end
+
+        public
+
         # Partial / per-field update with a TOKEN-ONLY refresh (issue #30). Emits
         # EXACTLY the given streams — no forced full-self replace — but binds
         # `component` so the endpoint appends its tiny `to_stream_token` stream.

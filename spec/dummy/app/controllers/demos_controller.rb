@@ -14,6 +14,10 @@ class DemosController < ActionController::Base
     render_component TodoListComponent.new
   end
 
+  def notifications
+    render_component NotificationsListComponent.new
+  end
+
   def chat
     room = params[:room].presence || "lobby"
     render_component ChatRoomComponent.new(room:, messages: ChatMessage.for_room(room).last(50))

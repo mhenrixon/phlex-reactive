@@ -62,6 +62,24 @@ module Phlex
       # A declared, client-invokable action and its param schema.
       Action = Data.define(:name, :params)
 
+      # A declared add/remove-row collection (issue #35): the list contract tied
+      # into one unit — the per-row item component, the container DOM id rows
+      # live in, an optional companion count id, an optional empty-state
+      # component, and a size resolver (a proc evaluated against the container
+      # instance) used to re-render the count and toggle the empty-state at the
+      # 0<->1 boundary. count/empty/size are nil when not declared, and the
+      # corresponding stream is simply omitted — so a list with just rows still
+      # works.
+      CollectionDefinition = Data.define(:name, :item, :container, :count, :empty, :size) do
+        # The collection's current size, evaluated against the bound container
+        # instance (instance_exec so the proc reads the component's ivars /
+        # association). nil when no resolver was declared — callers skip the
+        # count/empty streams that need a number.
+        def size_for(component)
+          size && component.instance_exec(&size)
+        end
+      end
+
       class_methods do
         # Declare the ActiveRecord (GlobalID-able) record this component is
         # rebuilt from. The signed token carries its GlobalID; the server
@@ -120,6 +138,41 @@ module Phlex
 
         def reactive_action?(name)
           reactive_actions.key?(name.to_sym)
+        end
+
+        # Declare an add/remove-row collection (issue #35) — the list contract
+        # in one place, so actions append/prepend/remove a row WITHOUT
+        # re-deriving the container id, count, and empty-state in every action:
+        #
+        #   reactive_collection :items,
+        #     item: ItemRowComponent,    # the per-row Streamable component
+        #     container: "items-list",   # the DOM id rows live in
+        #     count: "items-count",      # optional companion id (the size badge)
+        #     empty: ItemsEmptyComponent, # optional empty-state component
+        #     size: -> { @record.items.size } # resolves the live size
+        #
+        # An action then governs the reply with one call:
+        #   reply.append(:items, item)   # row append + count + clear empty-state
+        #   reply.remove(:items, id)     # row remove + count + restore empty-state
+        #
+        # count/empty/size are optional: a list with just rows omits them and the
+        # corresponding stream isn't emitted. See Phlex::Reactive::Reply and the
+        # README "Reactive collections" section.
+        def reactive_collection(name, item:, container:, count: nil, empty: nil, size: nil)
+          reactive_collections[name.to_sym] =
+            CollectionDefinition.new(name: name.to_sym, item:, container:, count:, empty:, size:)
+        end
+
+        def reactive_collections
+          @reactive_collections ||= (superclass.respond_to?(:reactive_collections) ? superclass.reactive_collections.dup : {})
+        end
+
+        def reactive_collection_def(name)
+          reactive_collections[name.to_sym]
+        end
+
+        def reactive_collection?(name)
+          reactive_collections.key?(name.to_sym)
         end
 
         # The record's instance-variable symbol (e.g. :@todo), computed once.
