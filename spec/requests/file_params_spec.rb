@@ -66,6 +66,40 @@ RSpec.describe "Reactive file/multipart params", type: :request do
       expect(document.reload.pages.count).to eq(2)
       expect(document.pages.map { |p| p.filename.to_s }).to contain_exactly("page1.txt", "page2.txt")
     end
+
+    it "drops non-file elements from a forged [:file] array (no DROP sentinel leaks)" do
+      # A forged/mixed pages[] payload mixes a real upload with a stray scalar.
+      # The non-file element must be dropped — never reach the action as the
+      # internal DROP sentinel (which would explode on .attach).
+      post_multipart(DocumentUploadComponent, payload:, act: "upload_pages",
+        params: {pages: [fixture_file_upload("page1.txt", "text/plain"), "not-a-file"]})
+
+      expect(response).to have_http_status(:ok)
+      expect(document.reload.pages.count).to eq(1) # only the real file attached
+      expect(document.pages.map { |p| p.filename.to_s }).to contain_exactly("page1.txt")
+    end
+
+    it "applies the keyword default when EVERY [:file] element is a non-file (all dropped)" do
+      # All-forged array: nothing coercible → the param is dropped entirely, so
+      # the action's keyword default (nil) applies — never [] or [DROP].
+      post_multipart(DocumentUploadComponent, payload:, act: "upload_pages",
+        params: {pages: ["nope", "still-not-a-file"]})
+
+      expect(response).to have_http_status(:ok)
+      expect(document.reload.pages.count).to eq(0) # nothing attached
+    end
+
+    it "coerces a single-element array shape from a `multiple` picker (one file)" do
+      # The server side of the client's `multiple`-with-one-file fix: the array
+      # shape (a one-element array, not a scalar upload) coerces to a [:file]
+      # array and attaches the lone file.
+      post_multipart(DocumentUploadComponent, payload:, act: "upload_pages",
+        params: {pages: [fixture_file_upload("page1.txt", "text/plain")]})
+
+      expect(response).to have_http_status(:ok)
+      expect(document.reload.pages.count).to eq(1)
+      expect(document.pages.map { |p| p.filename.to_s }).to contain_exactly("page1.txt")
+    end
   end
 
   describe "a :file alongside an explicit nested-hash param (issue #39)" do

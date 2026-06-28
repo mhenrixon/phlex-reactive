@@ -312,7 +312,10 @@ export default class extends Controller {
     this.element.querySelectorAll("input[name], select[name], textarea[name]").forEach((field) => {
       if (!this.#ownsField(field)) return
       if (field.type === "file") {
-        for (const file of field.files ?? []) files.push({ name: field.name, file })
+        // Carry the input's `multiple` flag so #buildFormData keeps the array
+        // shape (params[name][]) even when the user picked exactly one file —
+        // otherwise a [:file] schema would see a lone scalar upload and drop it.
+        for (const file of field.files ?? []) files.push({ name: field.name, file, multiple: field.multiple })
       } else if (field.type === "checkbox") {
         fields[field.name] = field.checked
       } else if (field.type === "radio") {
@@ -358,8 +361,11 @@ export default class extends Controller {
       this.#appendField(fd, `params[${key}]`, value)
     }
     const multiNames = this.#multiFileNames(files)
-    for (const { name, file } of files) {
-      const key = multiNames.has(name) ? `params[${name}][]` : `params[${name}]`
+    for (const { name, file, multiple } of files) {
+      // params[name][] when the input is `multiple` (array shape even for one
+      // file) OR the name repeats across inputs; otherwise a lone scalar file.
+      const asArray = multiple || multiNames.has(name)
+      const key = asArray ? `params[${name}][]` : `params[${name}]`
       fd.append(key, file, file.name)
     }
     return fd

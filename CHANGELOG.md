@@ -15,12 +15,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   params as fields, the file(s) appended — and the endpoint coerces `:file` to the
   `ActionDispatch::Http::UploadedFile`, passed through untouched. A non-file value
   sent to a `:file` param is dropped (the keyword default applies), consistent with
-  the #16 coercion rules. Token threading and the re-render/morph are identical;
-  only the request encoding changes when a file is present — so attaching a
-  document/receipt/image stays a reactive action instead of dropping out to a
-  bespoke controller + upload Stimulus controller. Covered end-to-end: server
-  coercion (request specs), the FormData wire shape (bun unit tests), and a real
-  browser upload under Puma + Falcon (system spec).
+  the #16 coercion rules — and for a `[:file]` array, a non-file *element* (a
+  forged/mixed payload) is rejected from the array too, so the internal coercion
+  sentinel never leaks to the action. A `<input type="file" multiple>` keeps its
+  array shape (`params[name][]`) even when the user picks exactly one file, so a
+  `[:file]` schema still coerces it. Token threading and the re-render/morph are
+  identical; only the request encoding changes when a file is present — so
+  attaching a document/receipt/image stays a reactive action instead of dropping
+  out to a bespoke controller + upload Stimulus controller. Covered end-to-end:
+  server coercion (request specs), the FormData wire shape (bun unit tests), and a
+  real browser upload under Puma + Falcon (system spec).
 
 ### Fixed
 

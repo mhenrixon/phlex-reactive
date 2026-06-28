@@ -27,13 +27,14 @@ beforeAll(async () => {
 //   - querySelectorAll for descendant named fields
 //   - a file input exposes type === "file" and a `files` array (FileList-ish)
 class FakeNode {
-  constructor({ tag = "div", name = null, type = null, value = "", checked = false, files = null, controller = null } = {}) {
+  constructor({ tag = "div", name = null, type = null, value = "", checked = false, files = null, multiple = false, controller = null } = {}) {
     this.tag = tag.toLowerCase()
     this.name = name
     this.type = type
     this.value = value
     this.checked = checked
     this.files = files // array of File for a file input
+    this.multiple = multiple // the <input multiple> attribute (file inputs)
     this.parentNode = null
     this.children = []
     this.dataset = {}
@@ -180,6 +181,69 @@ test("a multiple file input appends every chosen file under params[name][] (issu
   const all = captured.body.getAll("params[pages][]")
   expect(all.length).toBe(2)
   expect(all.map((f) => f.name)).toEqual(["page1.txt", "page2.txt"])
+})
+
+test("a `multiple` file input with ONE file still sends params[name][] (array shape preserved)", async () => {
+  // A `<input type="file" multiple>` where the user picks exactly one file must
+  // keep its array shape so a [:file] schema coerces it (a scalar params[pages]
+  // would be array_values(file) -> nil -> DROP). The `multiple` attribute, not
+  // the count, decides the encoding.
+  const root = new FakeNode({ tag: "div", controller: "reactive" })
+  const pages = new FakeNode({
+    tag: "input",
+    type: "file",
+    name: "pages",
+    multiple: true,
+    files: [fakeFile("only.txt")],
+  })
+  root.append(pages)
+
+  let captured = null
+  globalThis.fetch = (path, opts) => {
+    captured = opts
+    return Promise.resolve({
+      redirected: false,
+      ok: true,
+      headers: { get: () => "text/vnd.turbo-stream.html" },
+      text: () => Promise.resolve(""),
+    })
+  }
+  stubEnv()
+
+  const controller = buildController(root)
+  await controller.dispatch({ params: { action: "upload_pages", params: "{}" }, preventDefault: () => {} })
+
+  const fd = captured.body
+  const all = fd.getAll("params[pages][]")
+  expect(all.length).toBe(1)
+  expect(all[0].name).toBe("only.txt")
+  // NOT sent as a scalar params[pages].
+  expect(fd.get("params[pages]")).toBeNull()
+})
+
+test("a non-multiple single file input stays scalar params[name] (unchanged)", async () => {
+  const root = new FakeNode({ tag: "div", controller: "reactive" })
+  const file = new FakeNode({ tag: "input", type: "file", name: "file", files: [fakeFile("one.txt")] })
+  root.append(file)
+
+  let captured = null
+  globalThis.fetch = (path, opts) => {
+    captured = opts
+    return Promise.resolve({
+      redirected: false,
+      ok: true,
+      headers: { get: () => "text/vnd.turbo-stream.html" },
+      text: () => Promise.resolve(""),
+    })
+  }
+  stubEnv()
+
+  const controller = buildController(root)
+  await controller.dispatch({ params: { action: "upload", params: "{}" }, preventDefault: () => {} })
+
+  const fd = captured.body
+  expect(fd.get("params[file]").name).toBe("one.txt") // scalar, not array
+  expect(fd.getAll("params[file][]").length).toBe(0)
 })
 
 // Issue #39: an explicit NESTED-hash / ARRAY param sent on the multipart path

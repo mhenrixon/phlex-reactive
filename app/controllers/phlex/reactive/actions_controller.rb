@@ -200,11 +200,22 @@ module Phlex
       # present-but-non-array value returns DROP rather than [] — coercing a stray
       # scalar to an empty array would let a bad payload read as an explicit
       # "clear everything" on update!(declared_array:).
+      #
+      # An ELEMENT that coerces to DROP (e.g. a non-file in a [:file] array, a
+      # forged/mixed payload) is rejected from the result — the same rule
+      # coerce_hash applies to a dropped value, so the internal DROP sentinel
+      # never leaks into the action. A genuinely empty input array stays [] (an
+      # explicit empty collection), but an array whose every element drops
+      # returns DROP, so the keyword default applies rather than handing the
+      # action a surprise [].
       def coerce_array(value, element_type)
         values = array_values(value)
         return DROP if values.nil?
+        return [] if values.empty?
 
-        values.map { |element| coerce(element, element_type) }
+        coerced = values.map { |element| coerce(element, element_type) }
+        coerced.reject! { |element| element.equal?(DROP) }
+        coerced.empty? ? DROP : coerced
       end
 
       # Keep declared keys only (drop undeclared — no mass assignment), recursing

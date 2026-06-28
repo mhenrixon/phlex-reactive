@@ -18,12 +18,18 @@ require "rails_helper"
 # and bracket_params_spec cover the same shapes over application/json; this is
 # the missing multipart coverage.
 RSpec.describe "Multipart nested/array param coercion (issue #39)", type: :request do
-  # A real multipart POST. Rack::Test flattens a nested hash into the bracketed
-  # field names the fixed client emits (params[invoice][date], params[items][0]
-  # [qty]) — the multipart encoding, not a JSON body.
+  # A real multipart POST. Rack::Test only switches to multipart/form-data when
+  # an UploadedFile is present — a nested-hash-only body posts as
+  # application/x-www-form-urlencoded, which would NOT exercise the multipart
+  # parser this spec is about. So we attach a throwaway upload under an
+  # UNDECLARED key (dropped by the schema — no mass assignment) purely to force
+  # the multipart encoding. Rack::Test then flattens the nested hash into the
+  # bracketed field names the fixed client emits (params[invoice][date],
+  # params[items][0][qty]) and the genuine multipart parser reconstructs them.
   def post_multipart(klass, payload:, act:, params: {})
+    probe = fixture_file_upload("receipt.txt", "text/plain")
     post "/reactive/actions",
-      params: {token: token_for(klass, payload), act:, params:},
+      params: {token: token_for(klass, payload), act:, params:, _multipart_probe: probe},
       headers: {"Accept" => "text/vnd.turbo-stream.html"}
   end
 
