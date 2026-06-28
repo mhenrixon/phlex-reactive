@@ -126,4 +126,71 @@ RSpec.describe "Streamable view-context memoization (performance)" do
       expect(html).to include('data-controller="reactive"')
     end
   end
+
+  # Issue #42: the off-request view context lost the `request` when 0.4.0 swapped
+  # to `controller.new.view_context`, so any request-dependent helper
+  # (form_authenticity_token, protect_against_forgery?, host-aware URL helpers)
+  # raised "undefined method 'env' for nil" on every re-render and broadcast.
+  # The cached context must be bound to a request so those helpers keep working.
+  describe "request-dependent helpers (issue #42)" do
+    let(:todo) { Todo.create!(title: "t", done: false) }
+
+    it "exposes a request on the cached view context's controller" do
+      expect(CounterComponent.turbo_view_context.controller.request).not_to be_nil
+    end
+
+    it "renders a component that calls form_authenticity_token without raising" do
+      expect { CsrfFormComponent.render_component(CsrfFormComponent.new(todo:)) }
+        .not_to raise_error
+    end
+
+    it "renders the authenticity token field into the HTML" do
+      html = CsrfFormComponent.render_component(CsrfFormComponent.new(todo:))
+      expect(html).to include('name="authenticity_token"')
+    end
+
+    it "answers protect_against_forgery? without raising (request present)" do
+      expect { CounterComponent.turbo_view_context.protect_against_forgery? }
+        .not_to raise_error
+    end
+
+    # The issue's second failure mode: a component rendering a host-aware path
+    # (an Action with a full URL). When the renderer is a real app controller
+    # (one with routes + default_url_options, as in a real app), the request
+    # picks up the host so `*_url` helpers resolve instead of raising. We mutate
+    # the host on the route set's default_url_options and restore it EXACTLY —
+    # deleting the key if it was absent rather than setting it to nil, because a
+    # `{ host: nil }` differs from `{}` and makes default_env recompute with a nil
+    # host ("Missing host to link to!"), leaking into every other example. The
+    # route set recomputes default_env automatically once the options match again.
+    it "resolves host-aware URL helpers when the renderer has routes" do
+      routed = DemosController # a real app controller — carries the app routes
+      opts = Rails.application.routes.default_url_options
+      had_host = opts.key?(:host)
+      previous_host = opts[:host]
+      opts[:host] = "example.test"
+
+      vc = Phlex::Reactive.request_bound_view_context(routed)
+      expect(vc.controller.request.host).to eq("example.test")
+      name = Rails.application.routes.named_routes.names.first
+      expect(vc.public_send("#{name}_url")).to start_with("http://example.test/")
+    ensure
+      had_host ? (opts[:host] = previous_host) : opts.delete(:host)
+    end
+  end
+
+  # The standalone off-request render path (Phlex::Reactive.render — used for a
+  # Response#with embedded component) shares the same regression: it must also
+  # carry a request so an embedded CSRF form renders.
+  describe "Phlex::Reactive.render request-dependent helpers (issue #42)" do
+    let(:todo) { Todo.create!(title: "t", done: false) }
+
+    it "exposes a request on the standalone off-request view context" do
+      expect(Phlex::Reactive.off_request_view_context.controller.request).not_to be_nil
+    end
+
+    it "renders an embedded CSRF form without raising" do
+      expect { Phlex::Reactive.render(CsrfFormComponent.new(todo:)) }.not_to raise_error
+    end
+  end
 end

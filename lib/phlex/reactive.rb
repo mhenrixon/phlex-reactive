@@ -78,6 +78,30 @@ module Phlex
         @renderer ||= defined?(::ActionController::Base) ? ::ActionController::Base : nil
       end
 
+      # Build an off-request view context whose controller has a REAL `request`.
+      #
+      # A bare `controller.new.view_context` (the naive off-request context) has
+      # `request == nil`, so any request-dependent helper raises
+      # `undefined method 'env' for nil` — form_authenticity_token,
+      # protect_against_forgery?, and host-aware URL helpers all read
+      # `request.env` (issue #42). We replicate exactly what
+      # ActionController::Renderer#render does to set up its mock request — build
+      # an ActionDispatch::Request from the renderer's env (which derives the host
+      # from the routes' default_url_options), bind the routes, and attach it —
+      # then return the controller's view context instead of rendering a template.
+      # The result keeps the 0.4.0 render_in speedup (no renderer.render
+      # machinery) while restoring the request those helpers need.
+      def request_bound_view_context(controller_class)
+        ar_renderer = controller_class.renderer
+        request = ::ActionDispatch::Request.new(ar_renderer.send(:env_for_request))
+        request.routes = controller_class._routes
+
+        instance = controller_class.new
+        instance.set_request!(request)
+        instance.set_response!(controller_class.make_response!(request))
+        instance.view_context
+      end
+
       # DOM id of the host-app container a Response#flash appends into.
       # Default "flash"; override to match your layout's flash region.
       def flash_target
@@ -136,7 +160,7 @@ module Phlex
         generation = off_request_view_context_generation
 
         unless cache && cache[:renderer].equal?(current) && cache[:generation] == generation
-          view_context = current.new.view_context
+          view_context = request_bound_view_context(current)
           cache = {
             view_context: view_context,
             builder: ::Turbo::Streams::TagBuilder.new(view_context),

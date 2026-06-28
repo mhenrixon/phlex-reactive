@@ -72,6 +72,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **0.4.0 regression: re-renders lost the `request`, crashing `form_authenticity_token`
+  and other request-dependent helpers (#42).** The 0.4.0 render-path perf rework
+  built the cached off-request view context from a bare
+  `ActionController::Base.new.view_context`, whose controller has `request == nil`.
+  Any reactive component whose `view_template` calls `form_authenticity_token`,
+  `protect_against_forgery?`, or a host-aware URL helper (all of which read
+  `request.env`) then raised `NoMethodError: undefined method 'env' for nil` on
+  **every** re-render — through the action endpoint AND on broadcasts — so any app
+  with a reactive component rendering a Rails CSRF form could not adopt 0.4.0. Fixed
+  by building the cached view context through a request-bound controller
+  (`Phlex::Reactive.request_bound_view_context`), replicating exactly what
+  `ActionController::Renderer#render` does to set up its mock request: an
+  `ActionDispatch::Request` whose host is derived from the routes'
+  `default_url_options`. The 0.4.0 `render_in` speedup is kept — the request is set
+  up once when the per-thread context is built (not per render), and steady-state
+  render throughput/allocations are unchanged (retained-per-render stays 0). Covered
+  at the request level (a reactive `save` re-rendering a CSRF form returns 200, not
+  500), the broadcast level (the form component broadcasts without crashing), and the
+  unit level (a request is present on the cached context; host-aware `*_url` helpers
+  resolve when the renderer carries routes).
+
 - **Multipart path silently dropped an explicit nested-hash / array param (#39).**
   When an action declared a `:file` param alongside an explicit nested (hash/array)
   param, the nested param was dropped on the multipart path while the JSON path

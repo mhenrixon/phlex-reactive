@@ -23,7 +23,7 @@ harness below exists so you never have to guess.
 | Path | When it runs | What we did |
 |------|--------------|-------------|
 | `render_component` | every action re-render **and every broadcast render** | Renders through phlex-rails' lightweight `#render_in` against a **memoized** off-request view context, instead of `ActionController.renderer.render`. ~1.9× faster, ~half the allocations, byte-identical HTML. |
-| view context / `TagBuilder` | every render + broadcast | Built **once per component class** and reused (the comment used to say "memoized" — now it actually is). Reset on Rails code reload so a reloaded controller is never served stale. |
+| view context / `TagBuilder` | every render + broadcast | Built **once per thread per component class** and reused. The context is **request-bound** (`Phlex::Reactive.request_bound_view_context`, the same mock-request `ActionController::Renderer#render` sets up) so request-dependent helpers — `form_authenticity_token`, `protect_against_forgery?`, host-aware `*_url` — keep working during a re-render/broadcast (#42). The request setup happens **only on the build**, not per render, so steady-state throughput/allocations are unchanged. Reset on Rails code reload so a reloaded controller is never served stale. |
 | `reactive_token` | every render (it's in `reactive_attrs`) | Ivar symbols (`:@count`) and state string-keys are precomputed per class, so signing no longer allocates a `Symbol`/`String` per state key. The HMAC itself dominates and is unavoidable. |
 | `on(:action)` | every trigger rendered | The no-params case (the common one) skips re-serializing `{}` to JSON. |
 | `coerce_params` | every action with a param schema | The bracket-key regex is hoisted to a frozen constant (no per-key recompile). |
