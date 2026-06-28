@@ -48,7 +48,7 @@ class NotificationsList < ApplicationComponent
   end
 
   def view_template
-    div(id:, **reactive_attrs) do
+    div(**reactive_root) do
       span(id: "notifications-count") { Todo.count.to_s }
 
       ul(id: "notifications") do

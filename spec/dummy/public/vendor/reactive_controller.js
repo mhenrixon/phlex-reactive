@@ -135,6 +135,22 @@ export default class extends Controller {
   // guard above knows the controller was registered (issue #26 part 2).
   connect() {
     reactiveConnected = true
+
+    // Root-id guard (issue #48). The token round trip assumes the reactive root
+    // element's id == component.id: the server targets component.id and the client
+    // self-matches its NEXT token by this.element.id (#extractToken, issue #46).
+    // If `id:` landed on a CHILD instead of the `**reactive_attrs` root, this id is
+    // "" — #extractToken falls back to the FIRST token in the response (a child's),
+    // so the next action POSTs a foreign token → endpoint default-deny → silent 403.
+    // Warn NOW (on connect) so the failure surfaces on page load, not on click 2.
+    if (this.element.id === "") {
+      console.warn(
+        "[phlex-reactive] a reactive root has no id; its next-action token can't self-match " +
+          "and may fall back to the first token in the response → a silent HTTP 403 on the NEXT action. " +
+          "Put id: on the SAME element as reactive_attrs — use div(**reactive_root) (emits id + token together), " +
+          "or div(id:, **reactive_attrs). The id: must NOT be on a child. See the README."
+      )
+    }
   }
 
   // Tear down any pending debounce timers when the controller leaves the DOM

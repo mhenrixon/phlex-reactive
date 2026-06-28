@@ -62,7 +62,7 @@ class Todos::Item < ApplicationComponent
   end
 
   def view_template
-    li(id:, **reactive_attrs, class: ("done" if @todo.done?)) do
+    li(**reactive_root(class: ("done" if @todo.done?))) do
       button(**on(:toggle)) { @todo.done? ? "✓" : "○" }
       input(name: "title", value: @todo.title, **on(:rename, event: "change"))
       button(**on(:destroy)) { "✕" }
@@ -106,7 +106,7 @@ class Todos::List < ApplicationComponent
   end
 
   def view_template
-    div(id:, **reactive_attrs) do
+    div(**reactive_root) do
       turbo_stream_from @list, :todos                       # subscribe to live updates
 
       ul(id: dom_id(@list, :todos)) do
