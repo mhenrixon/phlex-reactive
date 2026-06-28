@@ -63,18 +63,26 @@ RSpec.describe "Streamable view-context memoization (performance)" do
     end
 
     it "renders correctly under concurrent threads (no buffer interleave)" do
+      renders_per_thread = 20
+      thread_count = 8
       results = Queue.new
-      threads = 8.times.map do |i|
+      threads = thread_count.times.map do |i|
         Thread.new do
-          20.times do
+          renders_per_thread.times do
             html = CounterComponent.render_component(CounterComponent.new(count: i))
             results << (html.include?(">#{i}<") && html.scan('id="counter"').size == 1)
           end
         end
       end
-      threads.each(&:join)
+      # #value (not #join) re-raises any exception from a worker thread — a render
+      # that crashed mid-thread would otherwise be swallowed AND shrink the queue,
+      # letting all(be(true)) pass on the survivors. Then assert the EXACT count
+      # so a partial run can't masquerade as a clean one.
+      threads.each(&:value)
 
-      verdicts = Array.new(results.size) { results.pop }
+      expected = thread_count * renders_per_thread
+      expect(results.size).to eq(expected)
+      verdicts = Array.new(expected) { results.pop }
       expect(verdicts).to all(be(true))
     end
   end
