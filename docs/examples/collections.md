@@ -147,7 +147,12 @@ container's `#id` is the append target). A reactive child's token, embedded in t
 appended content at the container's target, is **not** the container's own
 refresh — the endpoint only counts a stream that re-renders the container's root
 (`replace`/`update`/`reactive:token`), so the container's token still rolls forward
-and the list keeps working (#44).
+and the list keeps working (#44). The **client** applies the same rule when it
+reads the next token out of the response: it takes the token that re-renders *its
+own* element id (the trailing `reactive:token` stream for the container), never the
+first token in the body — which, for a prepended/appended reactive row, is the
+**row's** token, not the list's. Reading the first match made the list add-once-only
+*in the browser* even though the server response was correct (#46).
 
 ## Cross-tab: keep broadcasting the row
 

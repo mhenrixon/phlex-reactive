@@ -64,6 +64,13 @@ export function registerReactiveActions() {
   registerReactiveToken()
 }
 
+// Escape a DOM id for safe interpolation into a RegExp (an id can legally contain
+// regex metacharacters like `.`/`:` — e.g. an `escape:`-namespaced or dotted id).
+// Used by #extractToken to match the stream that re-renders THIS element by id.
+export function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
 if (typeof window !== "undefined") {
   if (window.Turbo) registerReactiveActions()
   else document.addEventListener("turbo:load", registerReactiveActions, { once: true })
@@ -286,9 +293,46 @@ export default class extends Controller {
     this.#tokenCache = value
   }
 
+  // Read the next token for THIS controller — the one that re-renders THIS
+  // element's id, never just the first token in the body (issue #46). On a
+  // collection of REACTIVE rows the prepended/appended ROW carries its OWN
+  // data-reactive-token-value and it sorts FIRST in the response; the list's own
+  // fresh token rides a trailing `reactive:token` stream targeting the container.
+  // Grabbing the first match stored the ROW's token, so the list's SECOND
+  // dispatch sent a row token → failed verification → add-once-only. This mirrors
+  // the server's carries_token_for? (#44): a stream carries OUR token only when it
+  // RE-RENDERS our id (reactive:token / replace / update of `this.element.id`) —
+  // append/prepend insert children and never count. Returns undefined when no
+  // stream re-renders our id, so #currentToken keeps its existing value.
   #extractToken(html) {
-    const match = html.match(/data-reactive-token-value="([^"]+)"/)
-    return match?.[1]
+    const id = this.element.id
+    if (!id) {
+      // No id to self-match (shouldn't happen for a reactive root). Fall back to
+      // the legacy first-token behavior so a single-component response still works.
+      return html.match(/data-reactive-token-value="([^"]+)"/)?.[1]
+    }
+
+    // The dedicated token-only refresh for THIS element (partial updates / the
+    // collection container) — an attribute on the <turbo-stream> itself.
+    const tokenStream = html.match(
+      new RegExp(
+        `<turbo-stream\\b[^>]*\\baction="reactive:token"[^>]*\\btarget="${escapeRegExp(id)}"[^>]*\\bdata-reactive-token-value="([^"]+)"`,
+      ),
+    )
+    if (tokenStream) return tokenStream[1]
+
+    // A full self re-render: a replace/update of THIS element whose template root
+    // carries the fresh token. Scope the token search to that one stream so a
+    // sibling/child token elsewhere in the body can't leak in.
+    const selfStream = html.match(
+      new RegExp(
+        `<turbo-stream\\b[^>]*\\baction="(?:replace|update)"[^>]*\\btarget="${escapeRegExp(id)}"[^>]*>([\\s\\S]*?)</turbo-stream>`,
+      ),
+    )
+    if (selfStream) return selfStream[1].match(/data-reactive-token-value="([^"]+)"/)?.[1]
+
+    // Nothing re-rendered our id — keep the current token.
+    return undefined
   }
 
   // True when `el` is collected by THIS reactive root and not by a nested one.

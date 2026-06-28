@@ -72,6 +72,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Client mirror of #44: collections of *reactive* rows were STILL add-once-only in
+  the browser — `#extractToken` read the FIRST token in the response, not this
+  controller's own (#46).** The server fix in 0.4.2 (#44) made the `add` response
+  correct — the container's fresh `reactive:token` stream is present — but the
+  client still broke. After each action the reactive controller stores the
+  response's fresh token for its NEXT dispatch; `#extractToken` did
+  `html.match(/data-reactive-token-value="([^"]+)"/)` — the FIRST match in the whole
+  body. On a collection of reactive rows the response is, in body order: the
+  appended/prepended ROW (carrying its OWN token, since a reactive row is itself a
+  `data-controller="reactive"` root) FIRST, then the container's `reactive:token`
+  refresh LAST. So the list controller stored the ROW's token; its second dispatch
+  sent a row token → failed verification → the second add silently did nothing. The
+  fix reads the token that RE-RENDERS this controller's own element id — preferring
+  the dedicated `reactive:token` stream targeting `this.element.id`, then a self
+  `replace`/`update` of it — and otherwise keeps the existing token (never adopting
+  a child row's or a sibling component's token). This is the exact client analogue
+  of the #44 server rule: a stream "carries the token for C" only when it re-renders
+  C itself, never when it inserts children into C. A request-level test can't catch
+  this (the server response is already correct); covered by a bun unit test on the
+  token selection AND a real two-click browser test (a collection of reactive rows →
+  three rows after three adds) under Puma + Falcon. Refs cosmos#1939, #44, #30.
+
 - **Collections of *reactive* rows were still add-once-only — a prepended/appended
   row's OWN token suppressed the container's token refresh (#44).** When an action
   appended/prepended a *reactive* child row into a container whose `#id` equals the
