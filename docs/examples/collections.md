@@ -141,6 +141,14 @@ on the list root, so without the refresh the list would be *add-once-only*
 container's token went stale, with no error). The helper bakes this in, so
 repeated adds and removes just work.
 
+This holds even when the **rows are themselves reactive** (each row carries its
+own signed token) and they're appended directly *into* the container element (the
+container's `#id` is the append target). A reactive child's token, embedded in the
+appended content at the container's target, is **not** the container's own
+refresh — the endpoint only counts a stream that re-renders the container's root
+(`replace`/`update`/`reactive:token`), so the container's token still rolls forward
+and the list keeps working (#44).
+
 ## Cross-tab: keep broadcasting the row
 
 `reactive_collection` governs the **actor's** HTTP reply. For a *live* list where

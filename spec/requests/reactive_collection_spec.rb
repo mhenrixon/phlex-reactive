@@ -160,6 +160,52 @@ RSpec.describe "Reactive collection endpoint (issue #35)", type: :request do
     end
   end
 
+  # Regression for issue #44: when the container's #id EQUALS the append target
+  # AND the rows are themselves reactive (each carries its OWN
+  # data-reactive-token-value), the row's embedded token landed in the SAME stream
+  # string as `target="<container>"`. carries_token_for? matched
+  # `include?("data-reactive-token-value") && include?(target)` in that one string
+  # → both true → it concluded the container's token was already fresh and SKIPPED
+  # the container's reactive:token refresh. So the container's token never rolled
+  # forward and the second add was rejected — collections of reactive rows were
+  # add-once-only. The fix: a stream "carries the token for C" only when its action
+  # RE-RENDERS C itself (replace/update/reactive:token at C's target); append/prepend
+  # (which insert children INTO C) must never count.
+  describe "container id == append target with reactive rows (issue #44)" do
+    let(:klass) { ReactiveRowsListComponent }
+    let(:container_id) { "reactive-rows" }
+
+    it "still emits the container's reactive:token even though the prepended row carries its own token" do
+      post_action(klass, act: "add", params: { title: "ping" })
+
+      expect(response).to have_http_status(:ok)
+      # The appended row IS reactive — it carries its own token, at the container target.
+      expect(response.body).to include('action="append"')
+      expect(response.body).to include(%(target="#{container_id}"))
+      # ...and the container's OWN token-only refresh is STILL present (this is what
+      # carries_token_for? wrongly suppressed before the fix).
+      expect(response.body).to include('action="reactive:token"')
+      expect(token_from(response.body, container_id)).to be_present
+    end
+
+    # The load-bearing assertion: a SECOND add using the token the first response
+    # rolled forward must succeed. Before the fix this 400s (stale container token).
+    it "supports repeated adds — the second uses the token the first refreshed" do
+      post_action(klass, act: "add", params: { title: "first" })
+      expect(response).to have_http_status(:ok)
+      next_token = token_from(response.body, container_id)
+      expect(next_token).to be_present
+
+      post "/reactive/actions",
+        params: { token: next_token, act: "add", params: { title: "second" } }.to_json,
+        headers: { "Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html" }
+
+      expect(response).to have_http_status(:ok)
+      expect(Todo.count).to eq(2)
+      expect(response.body).to include("second")
+    end
+  end
+
   # Pull the fresh data-reactive-token-value from the reactive:token stream that
   # targets the given container id — exactly what the client's #extractToken does.
   def token_from(body, container_id)

@@ -16,6 +16,7 @@ class CounterComponent < ApplicationComponent
   action :go_home
   action :bump_via_partial
   action :bump_with_sibling
+  action :bump_with_self_stream
 
   def initialize(count: 0)
     @count = count
@@ -73,6 +74,16 @@ class CounterComponent < ApplicationComponent
   def bump_with_sibling
     @count += 1
     reply.streams(TodoItemComponent.replace(Todo.create!(title: "sibling", done: false)))
+  end
+
+  # Reply: a partial update whose streams ALREADY include the actor's OWN
+  # self-replace (which re-renders the root and carries the fresh token). The
+  # endpoint must NOT also append a token-only stream — that would double the
+  # token. Locks the idempotency carries_token_for? guarantees: a self-rendering
+  # stream at the actor's own target counts as the refresh. REQUEST-spec fixture.
+  def bump_with_self_stream
+    @count += 1
+    reply.streams(self.class.replace(count: @count))
   end
 
   def view_template

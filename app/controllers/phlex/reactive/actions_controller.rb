@@ -107,15 +107,49 @@ module Phlex
         streams
       end
 
-      # True when one of `streams` already carries a fresh token TARGETING this
-      # component — i.e. the caller hand-built the actor's own token-bearing
-      # stream, so appending to_stream_token would double it. Scoped to the
-      # component's target id (not a global substring) so a sibling component's
-      # stream, which carries its OWN token for a DIFFERENT target, doesn't fool
-      # us into skipping this component's refresh.
+      # Actions that RE-RENDER the component's own root (so the root's fresh
+      # data-reactive-token-value rolls the signed token forward). `append`/
+      # `prepend` are deliberately excluded: they insert CHILDREN into the
+      # component, and a reactive child carries its OWN token — that child token is
+      # not the component's (issue #44). reactive:token is our inert token-only
+      # refresh; replace/update re-render the root.
+      SELF_RENDER_ACTIONS = %w[replace update reactive:token].freeze
+      private_constant :SELF_RENDER_ACTIONS
+
+      # True when one of `streams` already carries a fresh token by RE-RENDERING
+      # this component itself — i.e. the caller hand-built the actor's own
+      # token-bearing stream, so appending to_stream_token would double it.
+      #
+      # The match requires BOTH (a) the stream's action re-renders the component's
+      # ROOT (replace/update/reactive:token — never append/prepend, which insert
+      # children) AND (b) it targets the component's id AND (c) it actually carries
+      # a token. This is stricter than a same-string substring check on purpose:
+      #   * A sibling component's replace targets a DIFFERENT id → (b) fails, so we
+      #     still refresh ours (issue #30).
+      #   * A reactive child row appended/prepended INTO the component carries its
+      #     own token at the component's target, but the action is append/prepend →
+      #     (a) fails, so we still refresh the CONTAINER's token (issue #44). Before
+      #     this, the child's token at the container target suppressed the
+      #     container's refresh and the list was add-once-only.
       def carries_token_for?(streams, component)
         target = %(target="#{ERB::Util.html_escape(component.id)}")
-        streams.any? {  it.include?("data-reactive-token-value") && it.include?(target) }
+        streams.any? do
+          it.include?("data-reactive-token-value") &&
+            it.include?(target) &&
+            self_render_stream_for?(it, target)
+        end
+      end
+
+      # Does this turbo-stream's OPENING tag re-render `target` itself? Matches a
+      # `<turbo-stream action="<self-render>" ... target="<id>">` opening tag — the
+      # action and target on the SAME tag — so a child row's token embedded in an
+      # append/prepend `<template>` can never count as the container's own refresh.
+      def self_render_stream_for?(stream, target)
+        open_tag = stream[/<turbo-stream\b[^>]*>/]
+        return false unless open_tag&.include?(target)
+
+        action = open_tag[/\baction="([^"]+)"/, 1]
+        SELF_RENDER_ACTIONS.include?(action)
       end
 
       # A 200 turbo-stream carrying a namespaced custom action the client turns
