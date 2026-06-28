@@ -6,16 +6,6 @@ require "rails_helper"
 # just scalars, so a reactive action can receive Rails-style nested attributes
 # (invoice[invoice_items_attributes][i][...]) or array params (ids[]) in one call.
 RSpec.describe "Nested/array param coercion (issue #16)", type: :request do
-  def token_for(klass, payload)
-    Phlex::Reactive.sign(payload.merge("c" => klass.name))
-  end
-
-  def post_action(klass, payload:, act:, params: {})
-    post "/reactive/actions",
-      params: {token: token_for(klass, payload), act:, params:}.to_json,
-      headers: {"Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html"}
-  end
-
   # Pull the reflected coerced params back out of the rendered <pre>. Phlex
   # auto-escapes the JSON text, so unescape before parsing.
   def received(response)

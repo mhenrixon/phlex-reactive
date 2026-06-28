@@ -6,17 +6,6 @@ require "turbo/broadcastable/test_helper"
 RSpec.describe "Reactive actions", type: :request do
   include Turbo::Broadcastable::TestHelper
 
-  # Mint a token exactly as a component would, using the app's verifier.
-  def token_for(klass, payload)
-    Phlex::Reactive.sign(payload.merge("c" => klass.name))
-  end
-
-  def post_action(klass, payload:, act:, params: {})
-    post "/reactive/actions",
-      params: {token: token_for(klass, payload), act:, params:}.to_json,
-      headers: {"Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html"}
-  end
-
   describe "state-backed component (CounterComponent)" do
     it "runs an action and returns an auto-targeted turbo-stream" do
       post_action(CounterComponent, payload: {"s" => {"count" => 1}}, act: "increment")
