@@ -66,10 +66,8 @@ class FakeNode {
       const c = this.dataset.controller
       return !!c && c.split(/\s+/).includes("reactive")
     }
-    // #collectFiles uses input[type="file"][name] — match a named file input.
-    if (selector.includes('input[type="file"]')) {
-      return this.tag === "input" && this.type === "file" && this.name != null
-    }
+    // #collectFields walks input[name]/select[name]/textarea[name] — a file
+    // input matches here too (it has a name), and its files are read off it.
     if (selector.includes("input[name]")) {
       return ["input", "select", "textarea"].includes(this.tag) && this.name != null
     }

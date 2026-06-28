@@ -206,10 +206,11 @@ export default class extends Controller {
 
   async #perform(action, params) {
     // Auto-collect named field values inside this component so a button-
-    // triggered action still receives sibling inputs (Livewire-style).
-    // Explicit params (data-reactive-params-param) win over collected fields.
-    const fieldParams = this.#collectFields()
-    const allParams = { ...fieldParams, ...this.#parseParams(params) }
+    // triggered action still receives sibling inputs (Livewire-style), plus any
+    // chosen file inputs in the SAME walk. Explicit params
+    // (data-reactive-params-param) win over collected fields.
+    const { fields, files } = this.#collectFields()
+    const allParams = { ...fields, ...this.#parseParams(params) }
     const token = this.#currentToken
 
     // File/multipart path (issue #34): if THIS root has a populated
@@ -217,7 +218,6 @@ export default class extends Controller {
     // File). Send FormData instead — token + act + scalar params as fields, each
     // chosen file appended. The morph/token machinery downstream is identical;
     // only the request ENCODING differs when files are present.
-    const files = this.#collectFiles()
     const multipart = files.length > 0
     const body = multipart
       ? this.#buildFormData(token, action, allParams, files)
@@ -301,16 +301,18 @@ export default class extends Controller {
     return el.closest('[data-controller~="reactive"]') === this.element
   }
 
+  // One walk over THIS root's named controls (not a nested reactive root's),
+  // returning both the scalar `fields` and any chosen `files`. A file input's
+  // `.value` is the useless "C:\fakepath\…" string, never a scalar — so its
+  // chosen files are collected separately (honoring `multiple`) and it adds no
+  // phantom blank value (issue #34). An empty `files` keeps the JSON path.
   #collectFields() {
     const fields = {}
-    // Standard form controls owned by THIS root (not a nested reactive root).
+    const files = []
     this.element.querySelectorAll("input[name], select[name], textarea[name]").forEach((field) => {
       if (!this.#ownsField(field)) return
       if (field.type === "file") {
-        // A file input's `.value` is the useless "C:\fakepath\…" string — never
-        // a scalar param. Its chosen files travel via #collectFiles (multipart);
-        // skip it here so an empty picker doesn't post a phantom blank value
-        // (issue #34).
+        for (const file of field.files ?? []) files.push({ name: field.name, file })
       } else if (field.type === "checkbox") {
         fields[field.name] = field.checked
       } else if (field.type === "radio") {
@@ -339,23 +341,7 @@ export default class extends Controller {
           fields[name] = el.value ?? el.textContent ?? el.innerHTML ?? ""
         }
       })
-    return fields
-  }
-
-  // Chosen files inside THIS reactive root (issue #34). Returns a flat list of
-  // { name, file } for every populated <input type="file"> the root owns —
-  // honoring `multiple` (every file in the picker) and the nested-root scoping
-  // (#ownsField) so an outer action never sweeps an inner root's file input. An
-  // empty list means "no files" → the JSON path stays in effect.
-  #collectFiles() {
-    const chosen = []
-    this.element.querySelectorAll('input[type="file"][name]').forEach((input) => {
-      if (!this.#ownsField(input)) return
-      const files = input.files
-      if (!files || files.length === 0) return
-      for (const file of files) chosen.push({ name: input.name, file })
-    })
-    return chosen
+    return { fields, files }
   }
 
   // Build the multipart body (issue #34). `token`/`act` are flat fields the
