@@ -258,13 +258,19 @@ module Phlex
         end
       end
 
+      # Matches each bracket segment in "items_attributes][0][qty]" — the part
+      # after the first "[". Hoisted to a frozen constant so coercing a bracketed
+      # key doesn't recompile the pattern per key on every request.
+      BRACKET_SEGMENT = /[^\[\]]+/
+      private_constant :BRACKET_SEGMENT
+
       # "invoice[items_attributes][0][qty]" => ["invoice", "items_attributes",
       # "0", "qty"]. A key with no brackets is a single-element path.
       def bracket_path(key)
         return [key] unless key.include?("[")
 
         head, rest = key.split("[", 2)
-        [head, *rest.scan(/[^\[\]]+/)]
+        [head, *rest.scan(BRACKET_SEGMENT)]
       end
 
       # Walk/create nested hashes along `path`, then merge `value` at the leaf so

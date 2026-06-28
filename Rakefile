@@ -17,6 +17,66 @@ end
 
 require "standard/rake"
 
+# --- Performance benchmarks -------------------------------------------------
+# Micro-benches isolate the hot methods (render, reactive_token, param
+# coercion); the request bench drives the dummy app through derailed_benchmarks
+# for end-to-end latency + memory. See docs/performance.md.
+namespace :bench do
+  micro_dir = "benchmark/micro"
+
+  desc "Run the micro-benchmarks (render, token, coerce_params)"
+  task :micro do
+    files = Dir["#{micro_dir}/*.rb"].sort
+    abort "No micro-benchmarks found in #{micro_dir}" if files.empty?
+
+    # Capture a plain-text report (CI uploads it as an artifact) while still
+    # streaming to the console. Strip ANSI colors from the saved copy.
+    require "fileutils"
+    FileUtils.mkdir_p("tmp/benchmarks")
+    failed = []
+    out = File.open("tmp/benchmarks/micro.txt", "w")
+    files.each do |file|
+      header = "\n### #{file} ###"
+      puts "\e[1;35m#{header}\e[0m"
+      out.puts header
+      result = `ruby #{file} 2>&1`
+      puts result
+      out.puts result.gsub(/\e\[[0-9;]*m/, "")
+      # A crashed bench must not pass silently — record the failure (and note it
+      # in the saved report) so CI surfaces a broken bench instead of a green tick.
+      unless $?.success?
+        failed << file
+        out.puts "!!! FAILED (exit #{$?.exitstatus})"
+      end
+    end
+    out.close
+    puts "\nSaved report to tmp/benchmarks/micro.txt"
+    abort "\nBenchmark(s) failed: #{failed.join(", ")}" if failed.any?
+  end
+
+  desc "Run a single micro-benchmark: rake bench:one[render]"
+  task :one, [:name] do |_t, args|
+    name = args[:name] or abort "Usage: rake bench:one[render|token|coerce_params]"
+    # Resolve against the actual bench files (no shell interpolation of arbitrary
+    # input into an executable path) so a stray name can't escape the benchmark dir.
+    available = Dir["#{micro_dir}/*.rb"].map { |f| File.basename(f, ".rb") }
+    unless available.include?(name)
+      abort "No such benchmark: #{name}. Available: #{available.sort.join(", ")}"
+    end
+    ruby "#{micro_dir}/#{name}.rb"
+  end
+
+  desc "End-to-end request-cycle benchmark (derailed; needs a booted dummy app)"
+  task :request do
+    require "fileutils"
+    FileUtils.mkdir_p("tmp/benchmarks")
+    sh({"RAILS_ENV" => "test"}, "ruby benchmark/request/derailed.rb")
+  end
+end
+
+desc "Run the micro-benchmark suite (alias for bench:micro)"
+task bench: "bench:micro"
+
 desc "Build gem and verify contents"
 task :build do
   sh("gem build phlex-reactive.gemspec --strict")

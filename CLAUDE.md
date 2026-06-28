@@ -34,6 +34,7 @@ hand-picking Turbo Stream targets.
 5. **Capability-detect pgbus features at runtime** — probe the actual keyword (`broadcast.parameters` includes `:exclude`), never `defined?(Pgbus)` alone or a version string
 6. **Degrade gracefully** — every pgbus-only feature must no-op or fall back when pgbus is absent
 7. **Control the reply via the return value** — return a `Phlex::Reactive::Response` (`replace`/`update`/`remove`/`redirect`/`with`, chain `.flash(level, content)` / `.stream(...)`) to govern the actor's HTTP reply; returning anything else keeps the implicit single replace. See the README "Controlling the action's reply" section and `lib/phlex/reactive/response.rb`.
+8. **Measure performance, don't guess** — any hot-path change (render, token signing, param coercion, broadcast, client dispatch) ships with a same-machine before/after from `rake bench` (or `/perf`). No speedup claim without a measured baseline. Report throughput AND allocations; distinguish a method-level win from a request-level one. See `.claude/rules/performance.md` and `docs/performance.md`.
 
 ## Commands
 
@@ -42,6 +43,8 @@ bundle exec rspec spec/phlex spec/requests   # Fast suite (unit + request + broa
 bundle exec rspec spec/system                # Browser suite (Playwright; CAPYBARA_SERVER=webrick locally)
 bundle exec standardrb                       # Lint
 bundle exec rake                             # spec + standard
+bundle exec rake bench                        # Performance micro-benches (render, token, coerce_params)
+bundle exec rake bench:request                # End-to-end request-cycle bench (derailed)
 ```
 
 ## Slash Commands
@@ -50,6 +53,7 @@ bundle exec rake                             # spec + standard
 |---------|---------|
 | `/lfg` | Full autonomous workflow: branch → understand → explore → plan → TDD → verify → PR |
 | `/tdd` | Enforce RED → GREEN → REFACTOR |
+| `/perf` | Benchmark the branch vs main (same-machine before/after) and keep perf docs in sync |
 | `/architect` | Coordinate a change across the component → endpoint → client layers |
 | `/security` | Security audit (signed identity, default-deny, params, CSRF, connection-id) |
 | `/review-pr` | Review a PR for pattern compliance |
@@ -118,9 +122,30 @@ optionality is a core invariant — never break it.
   `defined?(Pgbus)`. phlex-reactive's own runtime still supports Ruby 3.2.
 - See `docs/testing.md`.
 
+## Performance
+
+phlex-reactive is benchmarked, not assumed. The hot paths are the re-render
+(`render_component` → phlex-rails `render_in` against a memoized view context),
+token signing (`reactive_token`), and param coercion. Key facts:
+
+- **Render goes through `render_in`, not `renderer.render`** — ~2× faster, ~half
+  the allocations, byte-identical HTML. The off-request view context + Turbo
+  `TagBuilder` are memoized per class and reset on Rails code reload
+  (`config.to_prepare`).
+- **The render win matters most for broadcasts** (N subscribers = N renders, no
+  HTTP). At the full-request level the Rails stack + DB dominate — don't expect
+  a render optimization to move request throughput.
+- **Measure before you change.** `rake bench` (micro) and `rake bench:request`
+  (end-to-end); `/perf` captures a same-machine before/after against `main`. The
+  CI `bench` job is run-and-report (artifact), never a hard fail.
+- **Cache correctness:** key any hot-path memo on what can change (renderer
+  identity), reset on reload, never cache values that rotate (CSRF token, pgbus
+  connection id are read live).
+- See `docs/performance.md` and `.claude/rules/performance.md`.
+
 ## More Documentation
 
 See `.claude/` and `docs/`:
 - `.claude/commands/` — slash command definitions
-- `.claude/rules/` — coding style, git workflow, testing, agents
-- `docs/` — published site (architecture, security, broadcasting, transport-pgbus, testing, examples)
+- `.claude/rules/` — coding style, git workflow, testing, performance, agents
+- `docs/` — published site (architecture, security, broadcasting, transport-pgbus, testing, performance, examples)

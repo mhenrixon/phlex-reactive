@@ -100,6 +100,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   trip still goes through the per-component queue so token threading holds.
   Omitting `debounce:` keeps the immediate-dispatch default.
 
+### Performance
+
+- **Re-render is ~2× faster with ~half the allocations.** `render_component` now
+  renders through phlex-rails' lightweight `#render_in` against a memoized
+  off-request view context, instead of `ActionController.renderer.render` (which
+  dragged in ActionView's `TemplateRenderer`/`LookupContext`/log subscriber).
+  Measured same-machine before/after: `render_component` 6.99k→14.1k i/s (212→99
+  obj/call); `to_stream_replace` 4.60k→8.00k i/s (331→191 obj/call). HTML is
+  byte-identical and the full Rails helper set (`dom_id`/`url_for`/`t`/CSRF) still
+  works. The biggest win is on the **broadcast** path (N subscribers = N renders,
+  no HTTP to amortize against); at the full-request level the Rails stack + DB
+  dominate, so request throughput is roughly unchanged.
+
+- **View context, Turbo `TagBuilder`, and flash builder are memoized** per
+  component class (the comment used to claim this; now it's true). Keyed on the
+  configured renderer's identity so swapping `Phlex::Reactive.renderer` rebuilds,
+  and reset on Rails code reload (`config.to_prepare`) so a reloaded controller
+  is never served stale.
+
+- **Smaller per-render allocations on the token path.** `reactive_token`
+  precomputes its ivar symbols + state string-keys per class (14→11 obj/call,
+  state-backed), and `on(:action)` skips re-serializing an empty params hash
+  (6→5 obj/call). The bracket-key regex in param coercion is hoisted to a frozen
+  constant.
+
+- **Client: the page-stable action path is resolved once per controller** instead
+  of a `querySelector` per dispatch. CSRF token and pgbus connection id stay live
+  (they can rotate).
+
+- **Benchmark harness + CI report.** `rake bench` (micro: render/token/coerce) and
+  `rake bench:request` (end-to-end via derailed) measure the hot paths; a CI
+  `bench` job runs them on every PR and uploads the report as an artifact
+  (run-and-report, not a hard gate). See `docs/performance.md` and the `/perf`
+  command.
+
 ### Fixed
 
 - **Model-scoped form fields feed a nested param (issue #21).** A Rails

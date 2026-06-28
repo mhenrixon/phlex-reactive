@@ -661,6 +661,7 @@ See [docs/broadcasting.md](docs/broadcasting.md) and
 - [Broadcasting & live updates](docs/broadcasting.md)
 - [Transport: pgbus vs Action Cable](docs/transport-pgbus.md)
 - [Testing reactive components](docs/testing.md)
+- [Performance & benchmarking](docs/performance.md)
 - Examples: [counter](docs/examples/counter.md) ·
   [chat](docs/examples/chat.md) · [todo list](docs/examples/todo_list.md) ·
   [inline edit](docs/examples/inline_edit.md) ·

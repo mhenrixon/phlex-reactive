@@ -146,13 +146,19 @@ RSpec.describe Phlex::Reactive::Component do
 
     it "the state cannot be tampered without breaking the signature" do
       token = record_state_klass.new(record:, attribute: :name, editing: false).send(:reactive_token)
-      # Re-encode a payload that switches the editable column to "ssn" onto the
-      # ORIGINAL signature — the signed digest no longer matches the data.
+      # Mutate the signed DATA segment (left of the `--`) while keeping the
+      # ORIGINAL signature — the HMAC over the data no longer matches, so verify
+      # fails. Flipping a byte in the encoded payload is serializer-agnostic: it
+      # works whether the verifier Marshals (the plain MessageVerifier in
+      # spec_helper) or JSON-serializes (the app verifier under rails_helper),
+      # unlike decoding+re-encoding a known payload shape.
       data, sig = token.split("--", 2)
-      decoded = JSON.parse(Base64.urlsafe_decode64(data))
-      decoded["_rails"]["data"]["s"]["attribute"] = "ssn"
-      forged = "#{Base64.urlsafe_encode64(decoded.to_json, padding: false)}--#{sig}"
+      mutated = data.dup
+      i = data.length / 2
+      mutated[i] = ((data[i] == "A") ? "B" : "A")
+      forged = "#{mutated}--#{sig}"
 
+      expect(forged).not_to eq(token) # sanity: we actually changed the data
       expect(Phlex::Reactive.verify(forged)).to be_nil
     end
   end
@@ -286,6 +292,36 @@ RSpec.describe Phlex::Reactive::Component do
     it "keeps debounce out of the explicit params payload" do
       attrs = instance.send(:on, :set, event: "input", debounce: 300, count: 5)
       expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({"count" => 5})
+    end
+
+    # Performance: the no-params case (the common on(:increment)) must NOT
+    # re-serialize an empty hash to JSON on every render — but the wire format
+    # must stay exactly "{}" so the client's #parseParams is unaffected.
+    it "emits an empty-object params payload (verbatim) with no explicit params" do
+      attrs = instance.send(:on, :increment)
+      expect(attrs[:data][:reactive_params_param]).to eq("{}")
+    end
+
+    it "still serializes explicit params" do
+      attrs = instance.send(:on, :set, count: 9)
+      expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({"count" => 9})
+    end
+  end
+
+  # Performance: reactive_token runs on EVERY render. It must produce a byte-
+  # identical payload before/after caching the ivar symbols + class name. These
+  # pin the payload SHAPE (decoded) so an allocation optimization can't silently
+  # change what's signed.
+  describe "#reactive_token payload (perf invariants)" do
+    it "signs {c, s} for a state-backed component, with string keys" do
+      token = state_klass.new(count: 5).send(:reactive_token)
+      expect(Phlex::Reactive.verify(token)).to eq("c" => "StateThing", "s" => {"count" => 5})
+    end
+
+    it "is stable across repeated renders of equal state" do
+      a = Phlex::Reactive.verify(state_klass.new(count: 3).send(:reactive_token))
+      b = Phlex::Reactive.verify(state_klass.new(count: 3).send(:reactive_token))
+      expect(a).to eq(b)
     end
   end
 end

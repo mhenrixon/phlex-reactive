@@ -68,6 +68,7 @@ module Phlex
         # re-finds it on each action. State lives in the DB.
         def reactive_record(name)
           @reactive_record_key = name.to_sym
+          remove_instance_variable(:@reactive_record_ivar) if defined?(@reactive_record_ivar)
         end
 
         def reactive_record_key
@@ -80,6 +81,7 @@ module Phlex
         #   reactive_state :count, :open
         def reactive_state(*names)
           reactive_state_keys.concat(names.map(&:to_sym))
+          @reactive_state_ivars = nil # rebuild the cached [key, ivar] pairs
         end
 
         def reactive_state_keys
@@ -118,6 +120,24 @@ module Phlex
 
         def reactive_action?(name)
           reactive_actions.key?(name.to_sym)
+        end
+
+        # The record's instance-variable symbol (e.g. :@todo), computed once.
+        # reactive_token reads it on every render; interpolating :"@#{key}" each
+        # time would allocate a symbol per render. Nil when record-less. Memoized
+        # per class; reset alongside reactive_record so it can't go stale.
+        def reactive_record_ivar
+          return @reactive_record_ivar if defined?(@reactive_record_ivar)
+
+          @reactive_record_ivar = reactive_record_key ? :"@#{reactive_record_key}" : nil
+        end
+
+        # [string_key, ivar_symbol] pairs for the signed state, computed once.
+        # reactive_token walks these every render; precomputing the "count"/:@count
+        # forms avoids a String + Symbol allocation per key per render. Memoized
+        # per class; reset when reactive_state adds a key.
+        def reactive_state_ivars
+          @reactive_state_ivars ||= reactive_state_keys.map { |k| [k.to_s, :"@#{k}"] }
         end
 
         # Rebuild a component instance from a verified identity payload. Called
@@ -211,12 +231,18 @@ module Phlex
       # live-update-as-you-type doesn't POST per keystroke. A blur flushes a
       # pending dispatch so the last edit is never dropped. Omit it for the
       # immediate-dispatch default.
+      # The verbatim JSON for an empty explicit-params payload. The common
+      # trigger (on(:increment), no params) hits this on EVERY render — skipping
+      # params.to_json (which re-serializes {} to the same "{}" each time) avoids
+      # a per-render allocation while keeping the wire format byte-identical.
+      EMPTY_PARAMS_JSON = "{}"
+
       def on(action_name, event: "click", debounce: nil, **params)
         attrs = {
           data: {
             action: "#{event}->reactive#dispatch",
             reactive_action_param: action_name.to_s,
-            reactive_params_param: params.to_json
+            reactive_params_param: params.empty? ? EMPTY_PARAMS_JSON : params.to_json
           }
         }
         attrs[:data][:reactive_debounce_param] = debounce if debounce
@@ -297,17 +323,18 @@ module Phlex
       # record. Record-only ({c, gid}) and state-only ({c, s}) shapes are
       # unchanged.
       def reactive_token
-        payload = {"c" => self.class.name}
+        klass = self.class
+        payload = {"c" => klass.name}
 
-        if self.class.reactive_record_key
-          record = instance_variable_get(:"@#{self.class.reactive_record_key}")
-          payload["gid"] = record.to_gid.to_s
+        if (record_ivar = klass.reactive_record_ivar)
+          payload["gid"] = instance_variable_get(record_ivar).to_gid.to_s
         end
 
-        if self.class.reactive_state_keys.any?
-          payload["s"] = self.class.reactive_state_keys.to_h do |k|
-            [k.to_s, instance_variable_get(:"@#{k}").as_json]
-          end
+        state_ivars = klass.reactive_state_ivars
+        unless state_ivars.empty?
+          state = {}
+          state_ivars.each { |key, ivar| state[key] = instance_variable_get(ivar).as_json }
+          payload["s"] = state
         end
 
         Phlex::Reactive.sign(payload)

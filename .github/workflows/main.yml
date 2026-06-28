@@ -49,6 +49,37 @@ jobs:
       - name: Unit + request + generator specs
         run: bundle exec rspec spec/phlex spec/requests spec/generators
 
+  bench:
+    runs-on: ubuntu-latest
+    name: Benchmarks (report only)
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+      # Run + report: this job NEVER fails the build on a perf regression
+      # (continue-on-error). It exists to surface throughput/allocation trends
+      # over time as an artifact, not to gate merges on a flaky threshold (shared
+      # CI runners are too noisy for a hard cutoff). Read the numbers on the PR.
+      - name: Micro-benchmarks
+        id: micro
+        continue-on-error: true
+        run: bundle exec rake bench:micro
+      - name: Request-cycle benchmark (derailed)
+        continue-on-error: true
+        run: bundle exec rake bench:request | tee tmp/benchmarks/request.txt
+      - name: Upload benchmark report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmarks
+          path: tmp/benchmarks/*.txt
+          if-no-files-found: warn
+
   system:
     runs-on: ubuntu-latest
     name: System (browser)

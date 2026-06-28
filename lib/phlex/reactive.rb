@@ -87,16 +87,68 @@ module Phlex
       attr_writer :flash_target
 
       # Render a Phlex component to HTML with a full (off-request) view context.
+      # Uses phlex-rails' #render_in against the memoized view context — a direct
+      # component.call that skips ActionController's renderer.render machinery
+      # (~2x faster, ~half the allocations), with the same HTML and full helper
+      # access (dom_id/url_for/t/csrf). Used for a Phlex component embedded as
+      # Response#with content.
       def render(component)
-        renderer.render(component, layout: false)
+        component.render_in(off_request_view_context)
       end
 
       # A Turbo::Streams::TagBuilder bound to an off-request view context, used
       # to build standalone streams (e.g. a Response flash append) not tied to a
-      # specific component's id.
+      # specific component's id. Cached PER THREAD alongside the context it's
+      # bound to (see off_request_view_context for why per-thread).
       def flash_builder
-        ::Turbo::Streams::TagBuilder.new(renderer.new.view_context)
+        off_request_view_context_cache[:builder]
       end
+
+      # The off-request view context for the current thread, built once and
+      # reused for both the flash builder and standalone component renders.
+      # Cached PER THREAD, not per process: an ActionView context carries mutable
+      # output_buffer/view_flow state (render_in's capture swaps it), so sharing
+      # one instance across threads can interleave content on a threaded server.
+      # Rebuilt when the renderer object changes or the generation is bumped
+      # (reset_flash_builder! / Rails code reload), so a reloaded controller is
+      # never served stale.
+      def off_request_view_context
+        off_request_view_context_cache[:view_context]
+      end
+
+      # Invalidate the per-thread context + builder for ALL threads by bumping
+      # the generation; each thread rebuilds lazily on next use. Registered on
+      # Rails' reloader by the engine; also used by specs. Thread-safe (an
+      # integer bump, no shared structure to tear down).
+      def reset_flash_builder!
+        @off_request_view_context_generation = off_request_view_context_generation + 1
+      end
+
+      def off_request_view_context_generation
+        @off_request_view_context_generation ||= 0
+      end
+
+      private
+
+      def off_request_view_context_cache
+        cache = Thread.current[:phlex_reactive_off_request_view_context]
+        current = renderer
+        generation = off_request_view_context_generation
+
+        unless cache && cache[:renderer].equal?(current) && cache[:generation] == generation
+          view_context = current.new.view_context
+          cache = {
+            view_context: view_context,
+            builder: ::Turbo::Streams::TagBuilder.new(view_context),
+            renderer: current,
+            generation: generation
+          }
+          Thread.current[:phlex_reactive_off_request_view_context] = cache
+        end
+        cache
+      end
+
+      public
 
       def base_controller_name
         @base_controller_name ||= "ActionController::Base"

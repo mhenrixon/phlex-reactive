@@ -119,6 +119,7 @@ export default class extends Controller {
 
   #tokenCache // freshest token, threaded synchronously across queued requests
   #debounceTimers = new Map() // trigger element -> { timer, flush } pending dispatch
+  #actionPathCache // page-stable action path, resolved once per controller
 
   // Mark that a reactive controller actually connected, so the registration
   // guard above knows the controller was registered (issue #26 part 2).
@@ -332,13 +333,21 @@ export default class extends Controller {
     }
   }
 
+  // The action path comes from a <meta> tag that is fixed for the page's life,
+  // so resolve it once per controller and cache it — avoids a querySelector on
+  // every dispatch (this runs on the request hot path, once per click/keystroke
+  // round trip). Cached on the instance, so a fresh connect() (after a Turbo
+  // navigation swaps the element) re-reads it.
   #actionPath() {
-    return (
+    return (this.#actionPathCache ??=
       document.querySelector('meta[name="phlex-reactive-action-path"]')?.content ||
-      "/reactive/actions"
-    )
+      "/reactive/actions")
   }
 
+  // CSRF token and connection id are read LIVE (not cached) on purpose: Rails
+  // can rotate the CSRF token, and the pgbus connection id changes on an SSE
+  // reconnect — caching either would send a stale value. A single querySelector
+  // per request is cheap next to the round trip itself.
   #csrfToken() {
     return document.querySelector('meta[name="csrf-token"]')?.content ?? ""
   }
