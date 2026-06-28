@@ -41,6 +41,15 @@ module Phlex
         end
       end
 
+      # Flush memoized off-request view contexts on every code reload (dev) so a
+      # reloaded renderer controller class is never served from a stale memo. In
+      # production to_prepare runs once (eager load), so the cache simply builds
+      # fresh after boot. See Streamable.reset_all_view_contexts!.
+      config.to_prepare do
+        Phlex::Reactive::Streamable.reset_all_view_contexts!
+        Phlex::Reactive.reset_flash_builder!
+      end
+
       # Boot-time guard (issue #26): warn if the action path doesn't resolve to
       # the gem controller. Runs after_initialize so the host's full route set
       # (including a bottom-of-file catch-all that would shadow our appended

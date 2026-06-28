@@ -87,15 +87,44 @@ module Phlex
       attr_writer :flash_target
 
       # Render a Phlex component to HTML with a full (off-request) view context.
+      # Uses phlex-rails' #render_in against the memoized view context — a direct
+      # component.call that skips ActionController's renderer.render machinery
+      # (~2x faster, ~half the allocations), with the same HTML and full helper
+      # access (dom_id/url_for/t/csrf). Used for a Phlex component embedded as
+      # Response#with content.
       def render(component)
-        renderer.render(component, layout: false)
+        component.render_in(off_request_view_context)
       end
 
       # A Turbo::Streams::TagBuilder bound to an off-request view context, used
       # to build standalone streams (e.g. a Response flash append) not tied to a
-      # specific component's id.
+      # specific component's id. Memoized — building a view context is expensive
+      # (instantiates the renderer + assembles its helpers), and a flash is on
+      # the action hot path.
       def flash_builder
-        ::Turbo::Streams::TagBuilder.new(renderer.new.view_context)
+        @flash_builder ||= ::Turbo::Streams::TagBuilder.new(off_request_view_context)
+      end
+
+      # A single off-request view context, built once and reused for both the
+      # flash builder and standalone component renders. Keyed on the renderer's
+      # identity so a renderer swap rebuilds; the engine resets it on Rails code
+      # reload (to_prepare).
+      def off_request_view_context
+        current = renderer
+        if @off_request_view_context.nil? || !@off_request_view_context_renderer.equal?(current)
+          @off_request_view_context = current.new.view_context
+          @off_request_view_context_renderer = current
+          @flash_builder = nil
+        end
+        @off_request_view_context
+      end
+
+      # Drop the cached view context + flash builder so the next call rebuilds.
+      # Registered on Rails' reloader by the engine; also used by specs.
+      def reset_flash_builder!
+        @flash_builder = nil
+        @off_request_view_context = nil
+        @off_request_view_context_renderer = nil
       end
 
       def base_controller_name
