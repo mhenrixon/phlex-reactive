@@ -53,9 +53,14 @@ RSpec.describe "Notifications (reactive_collection)", type: :system do
     find("[data-testid='add']").click
     expect(page).to have_css("[data-testid='count']", text: "1")
 
+    # The SECOND add dispatches from the SAME list root as the first — so it only
+    # succeeds if the first reply rolled the container's signed token forward.
+    # Before the cosmos#1939 fix this 400'd silently (stale token) and the count
+    # stuck at 1: the add-once-only bug. Reaching "2" proves the token refreshed.
     find("[data-testid='new-notification']").set("two")
     find("[data-testid='add']").click
     expect(page).to have_css("[data-testid='count']", text: "2")
+    expect(page).to have_css("[data-testid='notification']", count: 2)
 
     within first("[data-testid='notification']") do
       find("[data-testid='dismiss']").click

@@ -321,8 +321,16 @@ module Phlex
       # The component carries its token via Component#reactive_token; a Streamable
       # that isn't a Component (no token) simply has nothing to refresh — guarded
       # by respond_to? so the primitive stays usable on a bare Streamable.
+      #
+      # respond_to? MUST include private methods (the `true` arg): Component
+      # defines `reactive_token` as PRIVATE, so a plain `respond_to?(:reactive_token)`
+      # is false for every Component and the stream silently carries an EMPTY token —
+      # which makes any non-self-rendering reply (reply.streams #30, reply.append /
+      # reply.remove #35) add-once-only: the first action works, then the stale (here
+      # empty) token is rejected on the next dispatch (cosmos#1939). A bare Streamable
+      # has no reactive_token method at all, so it still returns false correctly.
       def to_stream_token
-        token = respond_to?(:reactive_token) ? reactive_token : nil
+        token = respond_to?(:reactive_token, true) ? reactive_token : nil
         %(<turbo-stream action="reactive:token" target="#{ERB::Util.html_escape(id)}" data-reactive-token-value="#{ERB::Util.html_escape(token)}"></turbo-stream>)
       end
 

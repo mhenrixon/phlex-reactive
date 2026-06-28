@@ -90,6 +90,16 @@ RSpec.describe "reactive_collection streams (issue #35)", type: :request do
       response = container_class.new(size: 1).reply.append(:todos, todo)
       expect(response.render_self?).to be(false)
     end
+
+    # cosmos#1939: render_self false MUST still refresh the container's token, or
+    # the list is add-once-only. The Response binds the container as token_component
+    # so the endpoint appends its inert reactive:token stream (the #30 machinery).
+    it "binds the container as token_component so its token rolls forward" do
+      container = container_class.new(size: 1)
+      response = container.reply.append(:todos, todo)
+      expect(response.refresh_token?).to be(true)
+      expect(response.token_component).to eq(container)
+    end
   end
 
   describe "reply.prepend(name, model)" do
@@ -97,6 +107,11 @@ RSpec.describe "reactive_collection streams (issue #35)", type: :request do
       response = container_class.new(size: 1).reply.prepend(:todos, todo)
       expect(response.streams).to include(a_string_including('action="prepend"', 'target="todos-list"'))
       expect(response.streams).to include(a_string_including('target="todos-count"'))
+    end
+
+    it "binds the container as token_component (cosmos#1939)" do
+      container = container_class.new(size: 1)
+      expect(container.reply.prepend(:todos, todo).token_component).to eq(container)
     end
   end
 
@@ -121,6 +136,13 @@ RSpec.describe "reactive_collection streams (issue #35)", type: :request do
     it "does NOT restore the empty-state while rows remain (size > 0)" do
       response = container_class.new(size: 3).reply.remove(:todos, todo)
       expect(response.streams).not_to include(a_string_including("No todos yet"))
+    end
+
+    it "binds the container as token_component so repeated removes work (cosmos#1939)" do
+      container = container_class.new(size: 0)
+      response = container.reply.remove(:todos, todo)
+      expect(response.refresh_token?).to be(true)
+      expect(response.token_component).to eq(container)
     end
 
     it "accepts a dom-id string as well as a model" do

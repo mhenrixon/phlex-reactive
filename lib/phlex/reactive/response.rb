@@ -62,19 +62,30 @@ module Phlex
         # render_self is false: the row append/prepend/remove IS the update, so
         # we must NOT also replace the whole container (that would re-render every
         # row and clobber the just-streamed delta).
+        #
+        # token_component is the CONTAINER (cosmos#1939): a reply that does NOT
+        # re-render self must STILL refresh self's signed token, or the list is
+        # add-once-only — correct on the first click, then every subsequent dispatch
+        # from the list root is rejected (its token went stale) with no error. The
+        # container owns the add/remove trigger, so the endpoint appends its inert
+        # `reactive:token` stream (the same #30 machinery reply.streams uses) to roll
+        # the token forward without re-rendering the rows.
         def collection_append(component, name, model)
           definition = collection_def!(component, name)
-          new(streams: collection_add_streams(definition, component, model, :append), render_self: false)
+          new(streams: collection_add_streams(definition, component, model, :append),
+            render_self: false, token_component: component)
         end
 
         def collection_prepend(component, name, model)
           definition = collection_def!(component, name)
-          new(streams: collection_add_streams(definition, component, model, :prepend), render_self: false)
+          new(streams: collection_add_streams(definition, component, model, :prepend),
+            render_self: false, token_component: component)
         end
 
         def collection_remove(component, name, model)
           definition = collection_def!(component, name)
-          new(streams: collection_remove_streams(definition, component, model), render_self: false)
+          new(streams: collection_remove_streams(definition, component, model),
+            render_self: false, token_component: component)
         end
 
         private

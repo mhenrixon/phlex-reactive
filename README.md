@@ -544,6 +544,11 @@ end
   mutation, so the badge and the empty-state are correct-by-construction (no
   off-by-one, no client-held count). `count:`, `empty:`, and `size:` are all
   optional: omit them and only the row stream is emitted.
+- **Repeated add/remove just works** — each reply rolls the **container's** signed
+  token forward (via the inert `reactive:token` refresh), so the second click from
+  the list root is accepted. Without this an add/remove list would be add-once-only
+  (correct on the first click, silently rejected after); the helper bakes the
+  refresh in so you never hit it.
 - **`remove` takes the record or its `dom_id` string** — a just-destroyed
   ActiveRecord still answers `dom_id` correctly, so `reply.remove(:items, todo)`
   works; pass the raw id only if your row `#id` matches `ActiveRecord::RecordIdentifier`.

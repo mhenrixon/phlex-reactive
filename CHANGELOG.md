@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`to_stream_token` emitted an EMPTY token, making non-self-rendering replies
+  add-once-only (cosmos#1939).** `Streamable#to_stream_token` guarded on
+  `respond_to?(:reactive_token)`, but `Component#reactive_token` is **private**, so
+  the guard was false for every component and the refresh stream carried
+  `data-reactive-token-value=""`. Any reply that opts out of the full-self replace
+  but relies on the token-only refresh — `reply.streams` (#30) and the new
+  `reply.append`/`reply.remove` (#35) — therefore rolled an empty token forward:
+  the first action worked, then the next dispatch from that root was rejected (the
+  stale/empty token fails verification) with no error. Fixed by checking private
+  methods (`respond_to?(:reactive_token, true)`); a bare Streamable (genuinely no
+  token) still skips correctly. The `reactive_collection` builders also now bind the
+  **container** as the `token_component`, so an add/remove rolls the list root's
+  token forward (the load-bearing part for repeated add/remove). Regression tests
+  assert the token is non-empty AND re-verifies, and that a second add using the
+  first reply's token succeeds.
+
 ### Changed
 
 - **The browser suite now runs under two real servers — Puma and Falcon.** The

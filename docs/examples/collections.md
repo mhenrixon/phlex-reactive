@@ -129,6 +129,18 @@ number the client holds. That's deliberate:
 `count:`, `empty:`, and `size:` are all optional — omit them and `reply.append`
 emits just the row stream.
 
+## Repeated add/remove: the container's token rolls forward
+
+`reply.append` / `reply.remove` don't re-render the whole container (that would
+clobber the streamed-in rows), so they ride the same token-only refresh as
+[`reply.streams`](../../#reply--controlling-the-actions-reply): each reply emits
+an inert `<turbo-stream action="reactive:token">` that rolls the **list root's**
+signed token forward. That's the load-bearing part — the add/remove trigger lives
+on the list root, so without the refresh the list would be *add-once-only*
+(correct on the first click, then every later dispatch rejected because the
+container's token went stale, with no error). The helper bakes this in, so
+repeated adds and removes just work.
+
 ## Cross-tab: keep broadcasting the row
 
 `reactive_collection` governs the **actor's** HTTP reply. For a *live* list where
