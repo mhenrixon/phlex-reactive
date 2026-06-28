@@ -25,6 +25,12 @@ module Phlex
     # Response remains the public value object (it's what the endpoint reads); it
     # is simply an internal detail you rarely name directly now.
     class Reply
+      # Distinguishes `reply.remove` (no args — remove the bound component
+      # itself) from `reply.remove(:items, model)` (remove a collection row).
+      # A sentinel, not nil, so `reply.remove(:items, nil)` stays unambiguous.
+      UNSET = Object.new
+      private_constant :UNSET
+
       def initialize(component)
         @component = component
       end
@@ -47,9 +53,29 @@ module Phlex
         Response.update(@component)
       end
 
-      # Remove the component's element from the DOM (render_self false).
-      def remove
-        Response.remove(@component)
+      # Reactive collections (issue #35) — add/remove a row in a declared
+      # reactive_collection, emitting the row stream + the count companion +
+      # the empty-state toggle as ONE Response. The bound component is the
+      # container (it carries the declaration + size resolver).
+      #
+      #   def add_item(...)    = (item = @list.items.create!(...); reply.append(:items, item))
+      #   def remove_item(id:) = (@list.items.find(id).destroy!;   reply.remove(:items, id))
+      #
+      # `model` is the row's record; remove also accepts the row's dom-id string.
+      def append(name, model)
+        Response.collection_append(@component, name, model)
+      end
+
+      def prepend(name, model)
+        Response.collection_prepend(@component, name, model)
+      end
+
+      # Two forms:
+      #   reply.remove               # remove the bound component's own element
+      #   reply.remove(:items, model) # remove a collection row + count + empty
+      def remove(name = UNSET, model = UNSET)
+        return Response.remove(@component) if name.equal?(UNSET)
+        Response.collection_remove(@component, name, model)
       end
 
       # Subject-free builders — pass straight through so they read naturally.

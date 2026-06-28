@@ -17,3 +17,4 @@ complete, working feature.
 | [Live todo list](todo_list) | Per-row components; add / toggle / rename |
 | [Inline edit](inline_edit) | Show ↔ edit mode toggle in one component |
 | [Notifications / badges](notifications) | Pure broadcast (no client action) |
+| [Reactive collections](collections) | Add/remove rows + count + empty-state, declared once |

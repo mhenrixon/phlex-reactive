@@ -92,6 +92,11 @@ Because both paths target the component by its `id`, you can start with a pure
 broadcast badge and later add a `dismiss` action without changing the target or
 the subscription.
 
+> For an add/remove-row **list** (not just a badge) — rows plus a count badge and
+> an empty-state that toggle as the list grows and shrinks — see
+> [Reactive collections](collections), which declares that whole contract once
+> with `reactive_collection`.
+
 ## Transactional safety
 
 If you broadcast from an `after_create_commit`/`after_update_commit` callback (or

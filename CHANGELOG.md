@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The browser suite now runs under two real servers — Puma and Falcon.** The
+  `system` CI job runs as a matrix (`CAPYBARA_SERVER=puma` and `=falcon`), and a
+  new `rake spec:system_servers` task runs both locally, so a reactive round trip
+  is proven transport-agnostic across a sync (Puma, thread-pool) and an async
+  (Falcon, fiber-per-request) server. `webrick` is **removed** as a test server
+  (it isn't a real server) — `falcon` (with `protocol-rack`) replaces it as the
+  alternative, registered via `Capybara.register_server(:falcon)`. No production
+  dependency change; this is test infrastructure only.
+
 - **CI now tests against Ruby 4.0** (added to the test matrix in `main.yml` and
   the pre-release matrix in `release.yml`, alongside 3.2/3.3/3.4; the lint and
   browser-system jobs also run on 4.0 now). Ruby 4.0 shipped December 2025 and is
@@ -20,6 +29,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   4.0.5 with zero deprecation or unbundled-gem warnings.
 
 ### Added
+
+- **`reactive_collection` — add/remove-row lists in one declaration (issue #35).**
+  An add/remove-row list (line items, tags, comments, a notifications list) is one
+  of the most common reactive surfaces, and every one re-implements the same
+  orchestration by hand: append the row to the right container, remove it on
+  delete, keep a count badge in sync, and swap an empty-state in/out as the list
+  crosses 0↔1. `reactive_collection :items, item:, container:, count:, empty:,
+  size:` declares that contract **once** on the container component, so each action
+  is a single call: `reply.append(:items, model)` (row + count + empty-state
+  clear), `reply.prepend(:items, model)`, and `reply.remove(:items, model_or_id)`
+  (row + count + empty-state restore). The size badge and empty-state toggle are
+  driven by the declared `size:` resolver, **re-counted server-side after the
+  mutation** — so they're correct-by-construction (no off-by-one, no client-held
+  count, consistent between the first render and the deltas). `count:`/`empty:`/
+  `size:` are optional (omit them and only the row stream is emitted), and the new
+  builders compose with `.flash`/`.stream` like any other reply. Reply governs the
+  actor's HTTP response only; a cross-tab live list still broadcasts the row with
+  `broadcast_append_to(..., exclude: reactive_connection_id)`. New
+  `Phlex::Reactive::Component::CollectionDefinition`,
+  `reactive_collection`/`reactive_collection_def`/`reactive_collection?` macros,
+  and `Response.collection_append`/`collection_prepend`/`collection_remove` behind
+  the `reply.*` surface.
 
 - **`reply.streams` — partial update with a token-only refresh (issue #30).**
   `reply.streams(Totals.update(@item))` emits **exactly** the streams you pass —
