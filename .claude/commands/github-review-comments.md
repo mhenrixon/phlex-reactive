@@ -115,7 +115,7 @@ For all comments you've decided to accept:
    ```
 3. **Run validators**:
    ```bash
-   bundle exec standardrb <changed_files>
+   bundle exec rubocop <changed_files>
    ```
 4. **Commit** all fixes together with a clear message:
    ```bash

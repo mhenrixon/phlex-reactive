@@ -13,7 +13,7 @@ class PartialGridComponent < ApplicationComponent
 
   reactive_record :line_item
 
-  action :update, params: {quantity: :integer, price: :integer}
+  action :update, params: { quantity: :integer, price: :integer }
 
   def initialize(line_item:)
     @line_item = line_item
@@ -36,9 +36,9 @@ class PartialGridComponent < ApplicationComponent
   def view_template
     div(id:, **reactive_attrs) do
       input(**mix(on(:update, event: "input", debounce: 100),
-        name: "quantity", value: @line_item.quantity, data: {testid: "quantity"}))
+        name: "quantity", value: @line_item.quantity, data: { testid: "quantity" }))
       input(**mix(on(:update, event: "input", debounce: 100),
-        name: "price", value: @line_item.price, data: {testid: "price"}))
+        name: "price", value: @line_item.price, data: { testid: "price" }))
       total_cell
     end
   end
@@ -48,7 +48,7 @@ class PartialGridComponent < ApplicationComponent
   # The companion total cell — rendered both on first paint (inside the row) and
   # re-streamed on its own by #total_stream after a save.
   def total_cell
-    span(id: total_id, data: {testid: "total"}) { @line_item.total.to_s }
+    span(id: total_id, data: { testid: "total" }) { @line_item.total.to_s }
   end
 
   # A raw turbo-stream that updates only the total cell. Built off the same

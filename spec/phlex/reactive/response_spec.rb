@@ -160,7 +160,8 @@ RSpec.describe Phlex::Reactive::Response do
 
   it "flash accepts a Phlex component, rendered through the configured renderer" do
     klass = Class.new(Phlex::HTML) do
-      def self.name = "FlashAlertProbe" # ActionView's render logger needs a name
+      # ActionView's render logger needs a name
+      def self.name = "FlashAlertProbe"
       def view_template = span { "rendered flash" }
     end
     response = described_class.with.flash(:error, klass.new)

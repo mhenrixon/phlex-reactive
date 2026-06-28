@@ -29,18 +29,18 @@ module BenchSupport
   # comparison table. `time:`/`warmup:` kept short so the full suite stays fast
   # in CI; bump them locally when chasing a small delta.
   def ips(time: 2, warmup: 1)
-    Benchmark.ips do |x|
-      x.config(time: time, warmup: warmup)
-      yield x
-      x.compare!
+    Benchmark.ips do
+      it.config(time: time, warmup: warmup)
+      yield it
+      it.compare!
     end
   end
 
   # Print the total allocated objects/bytes for one labelled proc — the number
   # that actually moves when we kill a per-call allocation. Returns the report
   # so a caller can assert on it if needed.
-  def allocations(label)
-    report = MemoryProfiler.report { yield }
+  def allocations(label, &)
+    report = MemoryProfiler.report(&)
     puts format(
       "  %-32s %8d objects  %10d bytes (retained: %d objects)",
       label, report.total_allocated, report.total_allocated_memsize, report.total_retained

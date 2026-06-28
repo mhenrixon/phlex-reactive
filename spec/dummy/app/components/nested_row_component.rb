@@ -8,7 +8,7 @@ class NestedRowComponent < ApplicationComponent
   include Phlex::Reactive::Component
 
   reactive_state :label, :quantity
-  action :update, params: {quantity: :string}
+  action :update, params: { quantity: :string }
 
   def initialize(label:, quantity: "1")
     @label = label
@@ -22,9 +22,9 @@ class NestedRowComponent < ApplicationComponent
   end
 
   def view_template
-    div(**mix(reactive_attrs, id:, data: {testid: "row"})) do
-      input(**mix(on(:update, event: "change"), name: "quantity", value: @quantity, data: {testid: "row-qty-#{@label}"}))
-      span(data: {testid: "row-echo-#{@label}"}) { @quantity }
+    div(**mix(reactive_attrs, id:, data: { testid: "row" })) do
+      input(**mix(on(:update, event: "change"), name: "quantity", value: @quantity, data: { testid: "row-qty-#{@label}" }))
+      span(data: { testid: "row-echo-#{@label}" }) { @quantity }
     end
   end
 end

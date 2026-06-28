@@ -11,7 +11,7 @@ class FormSubmitComponent < ApplicationComponent
   include Phlex::Reactive::Component
 
   reactive_record :todo
-  action :save, params: {title: :string}
+  action :save, params: { title: :string }
 
   def initialize(todo:)
     @todo = todo
@@ -28,10 +28,10 @@ class FormSubmitComponent < ApplicationComponent
       # Explicit action to a different route: a native submit would land on the
       # nav-probe page. on(:save, event: "submit") must intercept it first.
       form(action: "/nav_probe", method: "post", **mix(on(:save, event: "submit"))) do
-        input(name: "title", value: @todo.title, data: {testid: "title"})
-        button(type: "submit", data: {testid: "save"}) { "Save" }
+        input(name: "title", value: @todo.title, data: { testid: "title" })
+        button(type: "submit", data: { testid: "save" }) { "Save" }
       end
-      span(data: {testid: "current"}) { @todo.title }
+      span(data: { testid: "current" }) { @todo.title }
     end
   end
 end

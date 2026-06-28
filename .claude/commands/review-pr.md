@@ -66,6 +66,6 @@ mcp__github__pull_request_read
   method: "get_files"  -> File list
   method: "get_status" -> CI status
 
-bundle exec standardrb   -> Style checks
+bundle exec rubocop      -> Style checks
 bundle exec rspec        -> Tests
 ```

@@ -18,8 +18,8 @@ reset = -> { CounterComponent.reset_turbo_view_context! if no_cache }
 
 BenchSupport.header("render: CounterComponent#to_stream_replace#{" (NO CACHE)" if no_cache}")
 
-BenchSupport.ips do |x|
-  x.report("to_stream_replace") do
+BenchSupport.ips do
+  it.report("to_stream_replace") do
     reset.call
     CounterComponent.new(count: 1).to_stream_replace
   end
@@ -37,8 +37,8 @@ end
 # win that matters MOST for broadcasts, where a single change fans out to N
 # subscribers as N renders with NO HTTP round trip to amortize against.
 BenchSupport.header("render_component (the broadcast/fan-out unit)")
-BenchSupport.ips do |x|
-  x.report("render_component") { CounterComponent.render_component(CounterComponent.new(count: 1)) }
+BenchSupport.ips do
+  it.report("render_component") { CounterComponent.render_component(CounterComponent.new(count: 1)) }
 end
 BenchSupport.allocations("render_component") do
   CounterComponent.render_component(CounterComponent.new(count: 1))

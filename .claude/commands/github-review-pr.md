@@ -56,7 +56,7 @@ Follow that command's full process — phases 1–6 of the failures runbook. The
 2. Fetch failure logs.
 3. Diagnose root cause for each.
 4. Fix locally — lint first (fast, deterministic), then specs, then build issues.
-5. Verify locally before commit (`bundle exec rspec <files>`, `bundle exec standardrb`).
+5. Verify locally before commit (`bundle exec rspec <files>`, `bundle exec rubocop`).
 6. Commit + push + report which checks are now running.
 
 ### Phase A exit criteria
@@ -79,7 +79,7 @@ The slash command is at `.claude/commands/github-review-comments.md`. Its workfl
 
 1. Fetch all unresolved review threads via the GitHub GraphQL API.
 2. Read and categorise each comment (valid fix / invalid suggestion / unclear).
-3. Implement accepted fixes; verify locally (specs, validators, standardrb).
+3. Implement accepted fixes; verify locally (specs, validators, rubocop).
 4. Commit all fixes together with a clear message; push.
 5. Reply to every thread with the commit SHA (for accepted fixes) or technical reasoning (for rejections).
 6. Resolve each thread via the GraphQL `resolveReviewThread` mutation.

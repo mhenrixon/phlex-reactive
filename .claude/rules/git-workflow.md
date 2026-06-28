@@ -53,7 +53,7 @@ to RubyGems via trusted publishing (OIDC + Sigstore). Never `gem push` by hand.
 
 Run before EVERY commit:
 ```bash
-bundle exec standardrb                       # Style
+bundle exec rubocop                          # Style
 bundle exec rspec spec/phlex spec/requests   # Fast suite
 # (browser suite — spec/system — runs in CI; run locally before a PR touching the client)
 ```

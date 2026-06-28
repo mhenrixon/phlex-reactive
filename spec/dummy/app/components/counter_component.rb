@@ -9,7 +9,7 @@ class CounterComponent < ApplicationComponent
   reactive_state :count
   action :increment
   action :decrement
-  action :set, params: {count: :integer}
+  action :set, params: { count: :integer }
   action :reset_with_flash
   action :bump_via_update
   action :bump_via_morph
@@ -77,12 +77,12 @@ class CounterComponent < ApplicationComponent
 
   def view_template
     div(id:, **reactive_attrs) do
-      button(**mix(on(:decrement), data: {testid: "dec"})) { "−" }
-      span(id: "counter-value", data: {testid: "count"}) { @count.to_s }
-      button(**mix(on(:increment), data: {testid: "inc"})) { "+" }
-      button(**mix(on(:bump_via_update), data: {testid: "bump-update"})) { "+1 (update)" }
-      button(**mix(on(:reset_with_flash), data: {testid: "reset"})) { "reset" }
-      button(**mix(on(:go_home), data: {testid: "go-home"})) { "go home" }
+      button(**mix(on(:decrement), data: { testid: "dec" })) { "−" }
+      span(id: "counter-value", data: { testid: "count" }) { @count.to_s }
+      button(**mix(on(:increment), data: { testid: "inc" })) { "+" }
+      button(**mix(on(:bump_via_update), data: { testid: "bump-update" })) { "+1 (update)" }
+      button(**mix(on(:reset_with_flash), data: { testid: "reset" })) { "reset" }
+      button(**mix(on(:go_home), data: { testid: "go-home" })) { "go home" }
     end
   end
 end

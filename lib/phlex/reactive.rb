@@ -218,7 +218,7 @@ module Phlex
         logger.warn(
           "[phlex-reactive] POST #{path} does not resolve to #{ACTIONS_CONTROLLER}. " \
           "A host catch-all route (e.g. match \"*path\", ...) likely shadows it, so reactive " \
-          "actions will 404. Exempt #{path.sub(%r{\A/}, "")} from the catch-all, or set " \
+          "actions will 404. Exempt #{path.delete_prefix("/")} from the catch-all, or set " \
           "Phlex::Reactive.action_path to an unshadowed path. See the README integration section."
         )
       end
@@ -277,4 +277,4 @@ loader.ignore("#{lib}/generators")
 loader.do_not_eager_load("#{__dir__}/reactive/engine.rb")
 loader.setup
 
-require "phlex/reactive/engine" if defined?(::Rails::Engine)
+require "phlex/reactive/engine" if defined?(Rails::Engine)

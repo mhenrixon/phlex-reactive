@@ -6,13 +6,13 @@ hand-picking Turbo Stream targets.
 
 ## Tech Stack
 
-- **Ruby**: >= 3.2 | **Rails**: >= 7.1
+- **Ruby**: >= 3.4 | **Rails**: >= 7.1
 - **Rendering**: phlex-rails (Phlex 2)
 - **Transport**: turbo-rails (Turbo Streams); [pgbus](https://github.com/mhenrixon/pgbus) optional for Postgres SSE
 - **Client**: one generic Stimulus controller (no per-feature JS)
 - **Autoloading**: zeitwerk
 - **Testing**: RSpec + Capybara/Playwright (via `spec/dummy`)
-- **Linting**: Standard (`standardrb`)
+- **Linting**: RuboCop (`rubocop`) — all new cops on; teaches modern Ruby (e.g. `it` block param)
 
 ## Critical Rules
 
@@ -42,8 +42,8 @@ hand-picking Turbo Stream targets.
 bundle exec rspec spec/phlex spec/requests   # Fast suite (unit + request + broadcast)
 bundle exec rspec spec/system                # Browser suite (Playwright; Puma default, CAPYBARA_SERVER=falcon for the async server)
 bundle exec rake spec:system_servers         # Browser suite under BOTH real servers (puma + falcon)
-bundle exec standardrb                       # Lint
-bundle exec rake                             # spec + standard
+bundle exec rubocop                          # Lint (rubocop -A to autocorrect)
+bundle exec rake                             # spec + rubocop
 bundle exec rake bench                        # Performance micro-benches (render, token, coerce_params)
 bundle exec rake bench:request                # End-to-end request-cycle bench (derailed)
 ```
@@ -122,7 +122,7 @@ optionality is a core invariant — never break it.
   (default) and Falcon (`CAPYBARA_SERVER=falcon`); CI runs both in a matrix, and
   `rake spec:system_servers` runs both locally. (No webrick — not a real server.)
 - pgbus-dependent specs run only on Ruby ≥ 3.3 (pgbus's floor) and guard with
-  `defined?(Pgbus)`. phlex-reactive's own runtime still supports Ruby 3.2.
+  `defined?(Pgbus)`. phlex-reactive's own runtime floor is Ruby 3.4.
 - See `docs/testing.md`.
 
 ## Performance

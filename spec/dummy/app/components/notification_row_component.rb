@@ -22,9 +22,9 @@ class NotificationRowComponent < ApplicationComponent
   def id = dom_id(@todo)
 
   def view_template
-    li(id:, class: "notification", data: {testid: "notification"}) do
+    li(id:, class: "notification", data: { testid: "notification" }) do
       span(class: "body") { @todo.title }
-      button(**mix(on(:dismiss, id: @todo.id), data: {testid: "dismiss"})) { "×" }
+      button(**mix(on(:dismiss, id: @todo.id), data: { testid: "dismiss" })) { "×" }
     end
   end
 end

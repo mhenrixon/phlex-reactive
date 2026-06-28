@@ -10,7 +10,7 @@ class DebounceComponent < ApplicationComponent
 
   reactive_state :query, :runs
 
-  action :search, params: {query: :string}
+  action :search, params: { query: :string }
 
   def initialize(query: "", runs: 0)
     @query = query
@@ -27,9 +27,9 @@ class DebounceComponent < ApplicationComponent
   def view_template
     div(id:, **reactive_attrs) do
       input(**mix(on(:search, event: "input", debounce: 150),
-        name: "query", value: @query, data: {testid: "query"}))
-      span(data: {testid: "runs"}) { @runs.to_s }
-      span(data: {testid: "echo"}) { @query }
+        name: "query", value: @query, data: { testid: "query" }))
+      span(data: { testid: "runs" }) { @runs.to_s }
+      span(data: { testid: "echo" }) { @query }
     end
   end
 end

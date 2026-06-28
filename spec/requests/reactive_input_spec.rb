@@ -8,7 +8,7 @@ require "rails_helper"
 # right name AND the action actually receives the bound param end-to-end.
 RSpec.describe "reactive_input / reactive_select binding (issue #23)", type: :request do
   let!(:todo) { Todo.create!(title: "before", done: false) }
-  let(:payload) { {"gid" => todo.to_gid.to_s, "s" => {"attribute" => "title"}} }
+  let(:payload) { { "gid" => todo.to_gid.to_s, "s" => { "attribute" => "title" } } }
 
   it "renders an input whose name is the bound param (not a magic string)" do
     html = Phlex::Reactive.render(ReactiveInputComponent.new(record: todo, attribute: :title))
@@ -26,7 +26,7 @@ RSpec.describe "reactive_input / reactive_select binding (issue #23)", type: :re
   end
 
   it "delivers the bound value to the action end-to-end" do
-    post_action(ReactiveInputComponent, payload:, act: "save", params: {value: "after"})
+    post_action(ReactiveInputComponent, payload:, act: "save", params: { value: "after" })
 
     expect(response).to have_http_status(:ok)
     expect(todo.reload.title).to eq("after")

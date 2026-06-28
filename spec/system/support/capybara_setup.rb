@@ -24,34 +24,34 @@ Capybara.register_server(:falcon) do |app, port, host|
   Falcon::Server.new(rack_app, endpoint).run.wait
 end
 
-Capybara.server = case ENV["CAPYBARA_SERVER"]
-when "falcon"
-  :falcon
-else
-  [:puma, {Silent: true}]
-end
+Capybara.server = case ENV.fetch("CAPYBARA_SERVER", nil)
+                  when "falcon"
+                    :falcon
+                  else
+                    [:puma, { Silent: true }]
+                  end
 
-RSpec.configure do |config|
-  config.before(:each, type: :system) do
-    Capybara.configure do |c|
-      c.default_max_wait_time = 5
-      c.default_driver = :playwright
-      c.javascript_driver = :playwright
-      c.save_path = "tmp/capybara"
-      c.always_include_port = true
+RSpec.configure do
+  it.before(:each, type: :system) do
+    Capybara.configure do
+      it.default_max_wait_time = 5
+      it.default_driver = :playwright
+      it.javascript_driver = :playwright
+      it.save_path = "tmp/capybara"
+      it.always_include_port = true
     end
 
     driven_by(:playwright, screen_size: [1280, 800])
   end
 
   # Screenshot on failure (best-effort).
-  config.after(:each, type: :system) do |example|
-    next unless example.exception
+  it.after(:each, type: :system) do
+    next unless it.exception
 
     begin
       path = Rails.root.join("..", "..", "tmp", "capybara")
-      page.save_screenshot(path.join("failure-#{example.full_description.parameterize}.png").to_s) # rubocop:disable Lint/Debugger
-    rescue
+      page.save_screenshot(path.join("failure-#{it.full_description.parameterize}.png").to_s) # rubocop:disable Lint/Debugger
+    rescue StandardError
       # ignore screenshot failures
     end
   end

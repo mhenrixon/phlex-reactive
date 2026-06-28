@@ -48,25 +48,25 @@ end
 
 # A state-backed action (no DB) and a record-backed action (GlobalID re-find +
 # DB write) — the two shapes of a real round trip.
-state_body = {token: sign(CounterComponent, "s" => {"count" => 1}), act: "increment", params: {}}.to_json
+state_body = { token: sign(CounterComponent, "s" => { "count" => 1 }), act: "increment", params: {} }.to_json
 
 todo = Todo.create!(title: "bench", done: false)
-record_body = {token: sign(TodoItemComponent, "gid" => todo.to_gid.to_s), act: "toggle", params: {}}.to_json
+record_body = { token: sign(TodoItemComponent, "gid" => todo.to_gid.to_s), act: "toggle", params: {} }.to_json
 
 # Sanity: both must return 200 before we benchmark, else we'd be timing an error.
-%w[state record].each do |kind|
-  body = (kind == "state") ? state_body : record_body
+%w[state record].each do
+  body = it == "state" ? state_body : record_body
   status = post(mock, body).status
-  abort "[bench] #{kind} request returned HTTP #{status}, expected 200" unless status == 200
+  abort "[bench] #{it} request returned HTTP #{status}, expected 200" unless status == 200
 end
 
 puts "\n\e[1;36mrequest cycle: POST /reactive/actions (full Rack stack)\e[0m"
 puts "─" * 54
-Benchmark.ips do |x|
-  x.config(time: 3, warmup: 1)
-  x.report("state-backed action") { post(mock, state_body) }
-  x.report("record-backed action") { post(mock, record_body) }
-  x.compare!
+Benchmark.ips do
+  it.config(time: 3, warmup: 1)
+  it.report("state-backed action") { post(mock, state_body) }
+  it.report("record-backed action") { post(mock, record_body) }
+  it.compare!
 end
 
 puts "\n\e[1;36mallocations per request\e[0m"

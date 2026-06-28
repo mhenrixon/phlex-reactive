@@ -18,7 +18,7 @@ module ActionRequestHelpers
   # the client uses when no file input is present.
   def post_action(klass, act:, payload: {}, params: {})
     post "/reactive/actions",
-      params: {token: token_for(klass, payload), act:, params:}.to_json,
-      headers: {"Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html"}
+      params: { token: token_for(klass, payload), act:, params: }.to_json,
+      headers: { "Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html" }
   end
 end

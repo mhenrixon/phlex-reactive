@@ -43,7 +43,7 @@ Categorise each failing check:
 
 | Check Type | Examples | How to Get Logs |
 |------------|----------|----------------|
-| Lint (standardrb) + gem build | `Lint` | `gh run view <RUN_ID> --job=<JOB_ID> --log-failed` |
+| Lint (rubocop) + gem build | `Lint` | `gh run view <RUN_ID> --job=<JOB_ID> --log-failed` |
 | Unit + request specs | `Ruby 3.2` / `3.3` / `3.4` | `gh run view <RUN_ID> --job=<JOB_ID> --log-failed` |
 | Browser system specs (Playwright) | `System (browser)` | `gh run view <RUN_ID> --job=<JOB_ID> --log-failed` |
 
@@ -79,9 +79,9 @@ For each failure, determine the root cause:
 ### Lint Failures
 
 Look for:
-- Standard offenses: file path, line number, cop name, message
+- RuboCop offenses: file path, line number, cop name, message
 
-**Key**: Standard failures can often be auto-fixed with `bundle exec standardrb --fix <file>`.
+**Key**: RuboCop failures can often be auto-fixed with `bundle exec rubocop -A <file>`.
 
 ### Spec Failures
 
@@ -114,8 +114,8 @@ For each diagnosed failure:
 3. **Verify locally** before committing:
 
 ```bash
-# For standardrb failures
-bundle exec standardrb <changed_files>
+# For rubocop failures
+bundle exec rubocop <changed_files>
 
 # For spec failures
 bundle exec rspec <failing_spec_files>
@@ -165,7 +165,7 @@ If you can identify that certain failures will persist for environmental reasons
 ## Important Notes
 
 - **Read before fixing** -- always read the actual failing code before attempting a fix
-- **Fix the root cause** -- don't add `# standard:disable` to bypass lint; fix the actual issue (a targeted `# rubocop:disable` is acceptable only when Standard is demonstrably wrong, e.g. `save_screenshot` flagged as a debugger)
+- **Fix the root cause** -- don't add `# rubocop:disable` to bypass lint; fix the actual issue (a targeted `# rubocop:disable` is acceptable only when RuboCop is demonstrably wrong, e.g. `save_screenshot` flagged as a debugger)
 - **Don't fix unrelated failures** -- if a spec was already failing on main, note it but don't fix it in this PR
 - **CI environment differences** -- system specs run Playwright (cached browsers) under a server matrix: Puma (default) AND Falcon (`CAPYBARA_SERVER=falcon`). A failure on only one server is a transport-specific bug, not flakiness. pgbus-dependent specs run only on Ruby >= 3.3 (pgbus's floor) and need PostgreSQL; on 3.2 they are skipped by design.
 - **Flaky tests** -- if a test passes locally but fails in CI, note it as potentially flaky rather than adding workarounds. Browser specs that assert a value right after a click (racing the morph) are a common false-flake — fix them to use a waiting matcher.

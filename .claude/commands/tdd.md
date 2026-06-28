@@ -80,7 +80,7 @@ Improve while staying green: extract methods, improve names, reduce duplication.
 
 ```bash
 bundle exec rspec spec/phlex spec/requests
-bundle exec standardrb
+bundle exec rubocop
 ```
 
 ## Coverage Expectations
@@ -114,4 +114,4 @@ by `data-testid` with waiting matchers; mock the verifier in unit specs.
 - [ ] Coverage meets the bar (100% on security + the gate)
 - [ ] Edge + error paths covered
 - [ ] pgbus-present AND pgbus-absent both tested
-- [ ] `bundle exec standardrb` passes
+- [ ] `bundle exec rubocop` passes

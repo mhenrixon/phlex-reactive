@@ -8,15 +8,16 @@ class TodoItemComponent < ApplicationComponent
 
   reactive_record :todo
   action :toggle
-  action :rename, params: {title: :string}
+  action :rename, params: { title: :string }
   action :archive
-  action :rename_strict, params: {title: :string}
+  action :rename_strict, params: { title: :string }
 
   def initialize(todo:)
     @todo = todo
   end
 
-  def id = dom_id(@todo) # Streamable#dom_id is render-context-free
+  # Streamable#dom_id is render-context-free
+  def id = dom_id(@todo)
   # No model_param_name override needed: reactive_record :todo makes the
   # broadcast path build with the same `todo:` keyword the action endpoint uses.
 
@@ -48,14 +49,14 @@ class TodoItemComponent < ApplicationComponent
   end
 
   def view_template
-    li(**mix(reactive_attrs, id:, data: {testid: "todo", done: @todo.done?.to_s})) do
-      button(**mix(on(:toggle), data: {testid: "toggle"})) { @todo.done? ? "✓" : "○" }
+    li(**mix(reactive_attrs, id:, data: { testid: "todo", done: @todo.done?.to_s })) do
+      button(**mix(on(:toggle), data: { testid: "toggle" })) { @todo.done? ? "✓" : "○" }
       input(**mix(on(:rename, event: "change"), name: "title", value: @todo.title))
       # archive returns Response.remove(self) — drops this row in place. (The
       # rename_strict flash-on-blank path would need a second title input that
       # collides with field collection above, so it's covered by the request
       # specs rather than wired into this single-input demo row.)
-      button(**mix(on(:archive), data: {testid: "archive"})) { "archive" }
+      button(**mix(on(:archive), data: { testid: "archive" })) { "archive" }
     end
   end
 end

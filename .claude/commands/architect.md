@@ -84,7 +84,7 @@ capability gate, the security model) that you must hold in your head.
 - [ ] Security model preserved (signed identity, default-deny, params, authz)
 - [ ] A dummy example component exercises the feature
 - [ ] Tests cover every touched layer
-- [ ] `bundle exec standardrb` + `bundle exec rspec` pass
+- [ ] `bundle exec rubocop` + `bundle exec rspec` pass
 
 ## Handoff
 

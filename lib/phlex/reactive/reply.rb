@@ -75,6 +75,7 @@ module Phlex
       #   reply.remove(:items, model) # remove a collection row + count + empty
       def remove(name = UNSET, model = UNSET)
         return Response.remove(@component) if name.equal?(UNSET)
+
         Response.collection_remove(@component, name, model)
       end
 

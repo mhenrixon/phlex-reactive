@@ -62,7 +62,7 @@ RSpec.describe "reactive_collection streams (issue #35)", type: :request do
   describe "reply.append(name, model)" do
     it "appends the row component into the container" do
       response = container_class.new(size: 1).reply.append(:todos, todo)
-      append = response.streams.find { |s| s.include?('action="append"') }
+      append = response.streams.find { it.include?('action="append"') }
       expect(append).to include('target="todos-list"')
       expect(append).to include(%(id="#{dom_id}"))
       expect(append).to include("buy milk")
@@ -70,14 +70,14 @@ RSpec.describe "reactive_collection streams (issue #35)", type: :request do
 
     it "updates the count companion with the fresh size" do
       response = container_class.new(size: 1).reply.append(:todos, todo)
-      count = response.streams.find { |s| s.include?('target="todos-count"') }
+      count = response.streams.find { it.include?('target="todos-count"') }
       expect(count).to include('action="update"')
       expect(count).to include(">1<").or include("1")
     end
 
     it "removes the empty-state when the list crosses 0->1 (size becomes 1)" do
       response = container_class.new(size: 1).reply.append(:todos, todo)
-      empty = response.streams.find { |s| s.include?('target="todos-empty"') }
+      empty = response.streams.find { it.include?('target="todos-empty"') }
       expect(empty).to include('action="remove"')
     end
 
@@ -118,7 +118,7 @@ RSpec.describe "reactive_collection streams (issue #35)", type: :request do
   describe "reply.remove(name, model)" do
     it "removes the row by its dom id" do
       response = container_class.new(size: 0).reply.remove(:todos, todo)
-      remove = response.streams.find { |s| s.include?(%(target="#{dom_id}")) }
+      remove = response.streams.find { it.include?(%(target="#{dom_id}")) }
       expect(remove).to include('action="remove"')
     end
 
@@ -129,7 +129,7 @@ RSpec.describe "reactive_collection streams (issue #35)", type: :request do
 
     it "restores the empty-state when the list crosses ->0 (size becomes 0)" do
       response = container_class.new(size: 0).reply.remove(:todos, todo)
-      empty = response.streams.find { |s| s.include?('target="todos-list"') && s.include?("No todos yet") }
+      empty = response.streams.find { it.include?('target="todos-list"') && it.include?("No todos yet") }
       expect(empty).to include('action="append"')
     end
 
@@ -147,7 +147,7 @@ RSpec.describe "reactive_collection streams (issue #35)", type: :request do
 
     it "accepts a dom-id string as well as a model" do
       response = container_class.new(size: 0).reply.remove(:todos, dom_id)
-      remove = response.streams.find { |s| s.include?('action="remove"') }
+      remove = response.streams.find { it.include?('action="remove"') }
       expect(remove).to include(%(target="#{dom_id}"))
     end
   end

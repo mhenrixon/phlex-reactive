@@ -12,10 +12,11 @@ RSpec.describe Phlex::Reactive::Component do
 
       reactive_state :count
       action :increment
-      action :set, params: {count: :integer}
+      action :set, params: { count: :integer }
 
       def initialize(count: 0) = @count = count
       attr_reader :count
+
       def increment = @count += 1
       def set(count:) = @count = count
     end
@@ -24,7 +25,7 @@ RSpec.describe Phlex::Reactive::Component do
   describe "action declarations (default-deny)" do
     it "registers declared actions" do
       expect(state_klass.reactive_action?(:increment)).to be(true)
-      expect(state_klass.reactive_action(:set).params).to eq({count: :integer})
+      expect(state_klass.reactive_action(:set).params).to eq({ count: :integer })
     end
 
     it "does not register undeclared methods" do
@@ -39,7 +40,7 @@ RSpec.describe Phlex::Reactive::Component do
       payload = Phlex::Reactive.verify(token)
 
       expect(payload["c"]).to eq("StateThing")
-      expect(payload["s"]).to eq({"count" => 5})
+      expect(payload["s"]).to eq({ "count" => 5 })
 
       rebuilt = state_klass.from_identity(payload)
       expect(rebuilt.count).to eq(5)
@@ -97,7 +98,7 @@ RSpec.describe Phlex::Reactive::Component do
 
       expect(payload["c"]).to eq("InlineThing")
       expect(payload["gid"]).to eq(record.gid_string)
-      expect(payload["s"]).to eq({"attribute" => "name", "editing" => true})
+      expect(payload["s"]).to eq({ "attribute" => "name", "editing" => true })
     end
 
     it "restores the record AND the state on rebuild (round trip)" do
@@ -155,7 +156,7 @@ RSpec.describe Phlex::Reactive::Component do
       data, sig = token.split("--", 2)
       mutated = data.dup
       i = data.length / 2
-      mutated[i] = ((data[i] == "A") ? "B" : "A")
+      mutated[i] = (data[i] == "A" ? "B" : "A")
       forged = "#{mutated}--#{sig}"
 
       expect(forged).not_to eq(token) # sanity: we actually changed the data
@@ -180,6 +181,7 @@ RSpec.describe Phlex::Reactive::Component do
 
         def initialize(baz:) = @baz = baz
         attr_reader :baz
+
         def id = "foo-bar-#{@baz.object_id}"
       end
     end
@@ -262,10 +264,10 @@ RSpec.describe Phlex::Reactive::Component do
     end
 
     it "merges extra attributes over the bound name" do
-      attrs = instance.send(:reactive_field, :count, value: 7, data: {testid: "f"})
+      attrs = instance.send(:reactive_field, :count, value: 7, data: { testid: "f" })
       expect(attrs[:name]).to eq("count")
       expect(attrs[:value]).to eq(7)
-      expect(attrs[:data]).to eq({testid: "f"})
+      expect(attrs[:data]).to eq({ testid: "f" })
     end
 
     it "lets an explicit name: override the param binding (escape hatch)" do
@@ -291,7 +293,7 @@ RSpec.describe Phlex::Reactive::Component do
 
     it "keeps debounce out of the explicit params payload" do
       attrs = instance.send(:on, :set, event: "input", debounce: 300, count: 5)
-      expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({"count" => 5})
+      expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({ "count" => 5 })
     end
 
     # Performance: the no-params case (the common on(:increment)) must NOT
@@ -304,7 +306,7 @@ RSpec.describe Phlex::Reactive::Component do
 
     it "still serializes explicit params" do
       attrs = instance.send(:on, :set, count: 9)
-      expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({"count" => 9})
+      expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({ "count" => 9 })
     end
   end
 
@@ -315,7 +317,7 @@ RSpec.describe Phlex::Reactive::Component do
   describe "#reactive_token payload (perf invariants)" do
     it "signs {c, s} for a state-backed component, with string keys" do
       token = state_klass.new(count: 5).send(:reactive_token)
-      expect(Phlex::Reactive.verify(token)).to eq("c" => "StateThing", "s" => {"count" => 5})
+      expect(Phlex::Reactive.verify(token)).to eq("c" => "StateThing", "s" => { "count" => 5 })
     end
 
     it "is stable across repeated renders of equal state" do

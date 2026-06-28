@@ -12,7 +12,7 @@ class NestedEditorComponent < ApplicationComponent
   include Phlex::Reactive::Component
 
   reactive_state :notes, :saved
-  action :save, params: {notes: :string}
+  action :save, params: { notes: :string }
 
   def initialize(notes: "", saved: nil)
     @notes = notes
@@ -28,9 +28,9 @@ class NestedEditorComponent < ApplicationComponent
 
   def view_template
     div(id:, **reactive_attrs) do
-      input(name: "notes", value: @notes, data: {testid: "editor-notes"})
-      button(**mix(on(:save), data: {testid: "editor-save"})) { "Save editor" }
-      span(data: {testid: "editor-saved"}) { @saved.to_s }
+      input(name: "notes", value: @notes, data: { testid: "editor-notes" })
+      button(**mix(on(:save), data: { testid: "editor-save" })) { "Save editor" }
+      span(data: { testid: "editor-saved" }) { @saved.to_s }
 
       # Two nested reactive roots, each owning a bare `quantity` input. Pre-fix,
       # the editor's save swept BOTH rows' quantity (last one wins) into its own

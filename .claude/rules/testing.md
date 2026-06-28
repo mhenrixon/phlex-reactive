@@ -69,4 +69,4 @@ end
 - [ ] Browser suite green for client-touching changes
 - [ ] Edge cases: tampered token, undeclared action, missing record, unauthorized
 - [ ] pgbus-present AND pgbus-absent paths both covered for any pgbus feature
-- [ ] `bundle exec standardrb` passes
+- [ ] `bundle exec rubocop` passes

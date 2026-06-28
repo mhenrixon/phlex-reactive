@@ -10,7 +10,7 @@ class ReactiveInputComponent < ApplicationComponent
   reactive_record :record
   reactive_state :attribute
 
-  action :save, params: {value: :string, status: :string}
+  action :save, params: { value: :string, status: :string }
 
   STATUSES = %w[open closed].freeze
 
@@ -30,13 +30,15 @@ class ReactiveInputComponent < ApplicationComponent
   def view_template
     div(id:, **reactive_attrs) do
       # name="value" emitted by the helper, not hand-written.
-      reactive_input(:value, value: @record.public_send(@attribute).to_s, data: {testid: "field"})
+      reactive_input(:value, value: @record.public_send(@attribute).to_s, data: { testid: "field" })
 
-      reactive_select(:status, data: {testid: "status"}) do
-        STATUSES.each { |s| option(value: s) { s } }
+      reactive_select(:status, data: { testid: "status" }) do
+        # Named param required: the inner Phlex content block reuses `s`, so `it`
+        # would collapse both blocks onto one implicit param (wrong output).
+        STATUSES.each { |s| option(value: s) { s } } # rubocop:disable Style/ItBlockParameter
       end
 
-      button(**mix(on(:save), data: {testid: "save"})) { "Save" }
+      button(**mix(on(:save), data: { testid: "save" })) { "Save" }
     end
   end
 end

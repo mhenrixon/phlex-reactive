@@ -14,14 +14,14 @@ class NestedParamsComponent < ApplicationComponent
   action :save, params: {
     date: :string,
     bank_account_ids: [:integer],
-    invoice_items_attributes: [{id: :integer, quantity: :float, price: :float, _destroy: :boolean}]
+    invoice_items_attributes: [{ id: :integer, quantity: :float, price: :float, _destroy: :boolean }]
   }
 
   # Issue #21: a model-scoped nested hash, matching what a Rails Form(model:)
   # posts as flat bracketed keys (invoice[date], invoice[status], …).
   action :save_invoice, params: {
     date: :string,
-    invoice: {date: :string, status: :string, total: :float, active: :boolean}
+    invoice: { date: :string, status: :string, total: :float, active: :boolean }
   }
 
   def initialize(received: nil)
@@ -39,13 +39,13 @@ class NestedParamsComponent < ApplicationComponent
   end
 
   def save_invoice(date: nil, invoice: nil)
-    @received = {date:, invoice:}.compact
+    @received = { date:, invoice: }.compact
   end
 
   def view_template
     div(id:, **reactive_attrs) do
       # Reflect the exact coerced structure (types intact) for assertions.
-      pre(data: {testid: "received"}) { @received.to_json }
+      pre(data: { testid: "received" }) { @received.to_json }
     end
   end
 end

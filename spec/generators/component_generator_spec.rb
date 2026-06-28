@@ -20,7 +20,7 @@ RSpec.describe Phlex::Reactive::Generators::ComponentGenerator do
 
   describe "state-backed (default)" do
     it "generates a component signing :value with the given actions" do
-      generate(["Counter", "increment", "decrement"])
+      generate(%w[Counter increment decrement])
 
       src = component("counter.rb")
       expect(src).to include("class Counter < ApplicationComponent")
@@ -56,7 +56,7 @@ RSpec.describe Phlex::Reactive::Generators::ComponentGenerator do
 
   it "generates a matching spec when the app uses RSpec" do
     FileUtils.mkdir_p(tmp.join("spec")) # signal an RSpec app
-    generate(["Counter", "increment"])
+    generate(%w[Counter increment])
 
     spec = File.read(tmp.join("spec/components/counter_spec.rb"))
     expect(spec).to include("RSpec.describe Counter")
@@ -64,7 +64,7 @@ RSpec.describe Phlex::Reactive::Generators::ComponentGenerator do
   end
 
   it "skips the spec when the app has no spec/ directory" do
-    generate(["Counter", "increment"])
+    generate(%w[Counter increment])
     expect(File).not_to exist(tmp.join("spec/components/counter_spec.rb"))
   end
 end

@@ -26,6 +26,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server coercion (request specs), the FormData wire shape (bun unit tests), and a
   real browser upload under Puma + Falcon (system spec).
 
+### Changed
+
+- **Linter: Standard → RuboCop.** The gem now lints with RuboCop (all new cops
+  enabled, `NewCops: enable`) instead of StandardRB, so the suite teaches and
+  enforces newer Ruby idioms that Standard leaves alone — chiefly the Ruby 3.4
+  `it` implicit single block parameter (`map { it.foo }`) via
+  `Style/ItBlockParameter: always`. The whole tree was autocorrected; the
+  lib/app changes were the `|x| x.foo` → `it.foo` rename plus hash-brace
+  spacing — behavior is unchanged and all specs are green. The gemspec and
+  Rakefile are excluded from `Style/ItBlockParameter` (their `do |spec| … end`
+  config blocks read better named), and one nested Phlex content block carries
+  an inline disable where blanket `it` would collapse two parameters. Component-
+  aware relaxations (line length, `Lint/MissingSuper`, unused action params)
+  are scoped to `spec/dummy/app/components/**`. `bundle exec standardrb` is now
+  `bundle exec rubocop`; `rake`'s default runs `spec + rubocop`.
+
+### Removed
+
+- **Dropped the `standard` development dependency** in favor of `rubocop`,
+  `rubocop-performance`, `rubocop-rake`, and `rubocop-rspec`.
+
+### BREAKING
+
+- **Minimum Ruby is now 3.4** (was 3.2). Enabling the `it` block parameter
+  requires Ruby 3.4, so `required_ruby_version` is `>= 3.4.0` and the CI matrix
+  drops 3.2 and 3.3. Stay on phlex-reactive 0.3.x if you need Ruby 3.2/3.3.
+
 ### Fixed
 
 - **Multipart path silently dropped an explicit nested-hash / array param (#39).**

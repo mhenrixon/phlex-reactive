@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "English"
 require "rspec/core/rake_task"
 
 # Unit + request specs (the fast suite the release task runs). System specs need
@@ -20,12 +21,13 @@ namespace :spec do
     # sync (Puma) and async (Falcon) server before a client-touching change ships.
     %w[puma falcon].each do |server|
       puts "\e[1;35m\n### system specs under CAPYBARA_SERVER=#{server} ###\e[0m"
-      sh({"CAPYBARA_SERVER" => server}, "bundle exec rspec spec/system")
+      sh({ "CAPYBARA_SERVER" => server }, "bundle exec rspec spec/system")
     end
   end
 end
 
-require "standard/rake"
+require "rubocop/rake_task"
+RuboCop::RakeTask.new
 
 # --- Performance benchmarks -------------------------------------------------
 # Micro-benches isolate the hot methods (render, reactive_token, param
@@ -36,7 +38,7 @@ namespace :bench do
 
   desc "Run the micro-benchmarks (render, token, coerce_params)"
   task :micro do
-    files = Dir["#{micro_dir}/*.rb"].sort
+    files = Dir["#{micro_dir}/*.rb"]
     abort "No micro-benchmarks found in #{micro_dir}" if files.empty?
 
     # Capture a plain-text report (CI uploads it as an artifact) while still
@@ -44,22 +46,22 @@ namespace :bench do
     require "fileutils"
     FileUtils.mkdir_p("tmp/benchmarks")
     failed = []
-    out = File.open("tmp/benchmarks/micro.txt", "w")
-    files.each do |file|
-      header = "\n### #{file} ###"
-      puts "\e[1;35m#{header}\e[0m"
-      out.puts header
-      result = `ruby #{file} 2>&1`
-      puts result
-      out.puts result.gsub(/\e\[[0-9;]*m/, "")
-      # A crashed bench must not pass silently — record the failure (and note it
-      # in the saved report) so CI surfaces a broken bench instead of a green tick.
-      unless $?.success?
-        failed << file
-        out.puts "!!! FAILED (exit #{$?.exitstatus})"
+    File.open("tmp/benchmarks/micro.txt", "w") do |out|
+      files.each do |file|
+        header = "\n### #{file} ###"
+        puts "\e[1;35m#{header}\e[0m"
+        out.puts header
+        result = `ruby #{file} 2>&1`
+        puts result
+        out.puts result.gsub(/\e\[[0-9;]*m/, "")
+        # A crashed bench must not pass silently — record the failure (and note it
+        # in the saved report) so CI surfaces a broken bench instead of a green tick.
+        unless $CHILD_STATUS.success?
+          failed << file
+          out.puts "!!! FAILED (exit #{$CHILD_STATUS.exitstatus})"
+        end
       end
     end
-    out.close
     puts "\nSaved report to tmp/benchmarks/micro.txt"
     abort "\nBenchmark(s) failed: #{failed.join(", ")}" if failed.any?
   end
@@ -70,9 +72,7 @@ namespace :bench do
     # Resolve against the actual bench files (no shell interpolation of arbitrary
     # input into an executable path) so a stray name can't escape the benchmark dir.
     available = Dir["#{micro_dir}/*.rb"].map { |f| File.basename(f, ".rb") }
-    unless available.include?(name)
-      abort "No such benchmark: #{name}. Available: #{available.sort.join(", ")}"
-    end
+    abort "No such benchmark: #{name}. Available: #{available.sort.join(", ")}" unless available.include?(name)
     ruby "#{micro_dir}/#{name}.rb"
   end
 
@@ -80,7 +80,7 @@ namespace :bench do
   task :request do
     require "fileutils"
     FileUtils.mkdir_p("tmp/benchmarks")
-    sh({"RAILS_ENV" => "test"}, "ruby benchmark/request/derailed.rb")
+    sh({ "RAILS_ENV" => "test" }, "ruby benchmark/request/derailed.rb")
   end
 end
 
@@ -218,8 +218,8 @@ task :release, %i[version force] do |_t, args|
   puts "    • Upload assets to the release"
 end
 
-desc "Run the dummy app for local QA (PORT=3010)"
 namespace :dummy do
+  desc "Run the dummy app for local QA (PORT=3010)"
   task :server do
     port = ENV.fetch("PORT", "3010")
     ENV["RAILS_ENV"] = "development"
@@ -227,4 +227,4 @@ namespace :dummy do
   end
 end
 
-task default: %i[spec standard]
+task default: %i[spec rubocop]

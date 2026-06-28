@@ -15,9 +15,9 @@ todo = Todo.create!(title: "t", done: false)
 record = TodoItemComponent.new(todo:)            # record-backed ({c, gid})
 
 BenchSupport.header("reactive_token throughput")
-BenchSupport.ips do |x|
-  x.report("state-backed token") { state.send(:reactive_token) }
-  x.report("record-backed token") { record.send(:reactive_token) }
+BenchSupport.ips do
+  it.report("state-backed token") { state.send(:reactive_token) }
+  it.report("record-backed token") { record.send(:reactive_token) }
 end
 
 BenchSupport.header("reactive_token allocations (per call)")
