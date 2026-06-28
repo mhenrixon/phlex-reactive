@@ -72,6 +72,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Collections of *reactive* rows were still add-once-only — a prepended/appended
+  row's OWN token suppressed the container's token refresh (#44).** When an action
+  appended/prepended a *reactive* child row into a container whose `#id` equals the
+  append target (the most common collection shape — rows go directly into the
+  container element), that single `append`/`prepend` stream carried BOTH
+  `target="<container>"` and the row's own `data-reactive-token-value` (embedded in
+  the `<template>`). `carries_token_for?` matched
+  `include?("data-reactive-token-value") && include?(target)` in that one string →
+  both true → it concluded the container's token was already fresh and **skipped**
+  the container's `reactive:token` refresh. So the container (which owns the
+  add/remove trigger) never rolled its token forward, and the second dispatch was
+  rejected with the stale token — the list silently stopped after the first add.
+  This hit both the hand-rolled `reply.streams(Row.prepend(...), …)` form **and**
+  the `reactive_collection` / `reply.append`/`reply.prepend` helper, since they
+  share the gate. Fixed by tightening `carries_token_for?`: a stream "carries the
+  token for C" only when its action RE-RENDERS C itself (`replace`/`update`/
+  `reactive:token` at C's target) — `append`/`prepend` (which insert *children*
+  into C) never count, because a reactive child's token is not the container's. The
+  idempotency the gate provided is preserved (a caller's own self-replace still
+  suppresses the duplicate token) and the #30 sibling case still refreshes
+  correctly. Covered at the request level: a reactive row appended twice in a row
+  (the second using the token the first rolled forward) now succeeds, and each
+  response carries a `reactive:token` stream targeting the container with a
+  non-empty token. Refs cosmos#1939, #35, #30.
+
 - **0.4.0 regression: re-renders lost the `request`, crashing `form_authenticity_token`
   and other request-dependent helpers (#42).** The 0.4.0 render-path perf rework
   built the cached off-request view context from a bare

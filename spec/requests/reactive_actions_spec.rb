@@ -307,6 +307,26 @@ RSpec.describe "Reactive actions", type: :request do
         # Sanity: the sibling stream targets the sibling, not the counter.
         expect(sibling_dom).not_to eq("counter")
       end
+
+      # Idempotency (the flip side of the issue #44 fix): when the caller's own
+      # streams ALREADY include a self-replace/update (which re-renders the root
+      # and carries the fresh token), the endpoint must NOT also append a token-only
+      # stream — that would double the token. carries_token_for? counts a
+      # self-RENDERING stream (replace/update at the actor's target), so exactly one
+      # token-bearing stream targets self.
+      it "does NOT double the token when the caller's streams already re-render self" do
+        post_action(CounterComponent, payload: { "s" => { "count" => 4 } }, act: "bump_with_self_stream")
+
+        expect(response).to have_http_status(:ok)
+        # The caller's self-replace is present (re-renders the root, carries the token)...
+        expect(response.body).to include('action="replace"')
+        expect(response.body).to include('target="counter"')
+        # ...and it is NOT doubled with an extra reactive:token stream.
+        expect(response.body).not_to include('action="reactive:token"')
+        # Exactly one stream targets self — the caller's self-replace, no extra.
+        expect(response.body.scan('target="counter"').size).to eq(1)
+        expect(response.body.scan("data-reactive-token-value=").size).to eq(1)
+      end
     end
   end
 
