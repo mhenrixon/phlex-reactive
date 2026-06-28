@@ -32,7 +32,9 @@ group :test do
   gem "capybara", require: false
   gem "capybara-playwright-driver", require: false
   gem "puma", require: false
-  gem "webrick", require: false
+  # Falcon is the real-server fallback for the browser suite (CAPYBARA_SERVER=falcon)
+  # — an async, production-grade alternative to Puma. No webrick (not a real server).
+  gem "falcon", require: false
 end
 
 group :development, :test do

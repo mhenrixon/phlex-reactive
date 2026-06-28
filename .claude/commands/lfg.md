@@ -177,7 +177,8 @@ The best fix is usually NOT where the error surfaced:
 bundle exec standardrb
 bundle exec rspec spec/phlex spec/requests
 # client-touching changes: also run the browser suite
-bundle exec rspec spec/system    # CAPYBARA_SERVER=webrick locally if Puma segfaults
+bundle exec rspec spec/system    # Puma (default); CAPYBARA_SERVER=falcon for the async server
+bundle exec rake spec:system_servers  # client-touching changes: run BOTH real servers (puma + falcon)
 ```
 
 ### Solution verification

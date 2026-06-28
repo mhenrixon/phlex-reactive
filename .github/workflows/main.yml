@@ -83,10 +83,21 @@ jobs:
 
   system:
     runs-on: ubuntu-latest
-    name: System (browser)
+    name: System (${{ matrix.server }})
+    # Run the browser suite under BOTH real web servers — Puma (sync, thread-pool)
+    # and Falcon (async, fiber-per-request) — so a reactive round trip is proven
+    # transport-agnostic. CAPYBARA_SERVER selects the server (see
+    # spec/system/support/capybara_setup.rb).
+    strategy:
+      fail-fast: false
+      matrix:
+        server:
+          - puma
+          - falcon
     env:
       RAILS_ENV: test
       HEADLESS: "true"
+      CAPYBARA_SERVER: ${{ matrix.server }}
       PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
     steps:
       - uses: actions/checkout@v4

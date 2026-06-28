@@ -40,7 +40,8 @@ hand-picking Turbo Stream targets.
 
 ```bash
 bundle exec rspec spec/phlex spec/requests   # Fast suite (unit + request + broadcast)
-bundle exec rspec spec/system                # Browser suite (Playwright; CAPYBARA_SERVER=webrick locally)
+bundle exec rspec spec/system                # Browser suite (Playwright; Puma default, CAPYBARA_SERVER=falcon for the async server)
+bundle exec rake spec:system_servers         # Browser suite under BOTH real servers (puma + falcon)
 bundle exec standardrb                       # Lint
 bundle exec rake                             # spec + standard
 bundle exec rake bench                        # Performance micro-benches (render, token, coerce_params)
@@ -117,7 +118,9 @@ optionality is a core invariant — never break it.
 - `spec/dummy/` is a minimal Rails app (models + example components) that the
   request and system specs drive.
 - Unit specs mock/avoid the DB; request specs boot the dummy; system specs use
-  Capybara + Playwright (`CAPYBARA_SERVER=webrick` locally if Puma segfaults).
+  Capybara + Playwright. The browser suite runs under two REAL servers — Puma
+  (default) and Falcon (`CAPYBARA_SERVER=falcon`); CI runs both in a matrix, and
+  `rake spec:system_servers` runs both locally. (No webrick — not a real server.)
 - pgbus-dependent specs run only on Ruby ≥ 3.3 (pgbus's floor) and guard with
   `defined?(Pgbus)`. phlex-reactive's own runtime still supports Ruby 3.2.
 - See `docs/testing.md`.

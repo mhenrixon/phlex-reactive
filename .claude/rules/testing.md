@@ -47,7 +47,10 @@ end
 - Use **waiting matchers** (`have_css(..., text:)`, `have_field(with:)`) as the
   barrier for the async morph — never assert a snapshot value right after a click.
 - Prove "no full-page reload" by setting a `window.__marker` and re-reading it.
-- `CAPYBARA_SERVER=webrick` locally if Puma's reactor segfaults; CI uses Puma.
+- The browser suite runs under two REAL servers — Puma (default) and Falcon
+  (`CAPYBARA_SERVER=falcon`). CI runs both in a matrix; `rake spec:system_servers`
+  runs both locally. A reactive round trip must pass under sync (Puma) AND async
+  (Falcon). No webrick — it isn't a real server.
 
 ## pgbus in tests
 
