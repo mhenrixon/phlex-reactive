@@ -101,6 +101,13 @@ jobs:
       HEADLESS: "true"
       CAPYBARA_SERVER: ${{ matrix.server }}
       PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
+      # The site depends on the gem via `path: ".."`, and the gem's gemspec lists
+      # files with `git ls-files`. Every commit changes that file list, so the
+      # path-gem's gemspec digest never matches a previously-committed lock —
+      # which makes bundler's frozen/deployment mode (forced by bundler-cache)
+      # fail with "the gemspecs for path gems changed". Disable frozen for this
+      # app; the lock is still respected, just allowed to update the path entry.
+      BUNDLE_FROZEN: "false"
     steps:
       - uses: actions/checkout@v4
         with:
