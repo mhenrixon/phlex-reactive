@@ -41,3 +41,4 @@
 
 # Playwright / Capybara artifacts.
 /tmp/capybara
+codedb.snapshot

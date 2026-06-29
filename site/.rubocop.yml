@@ -41,6 +41,17 @@ Metrics/BlockLength:
     - "app/views/**/*"
     - "app/reactive_components/**/*"
     - "spec/**/*"
+Metrics/ClassLength:
+  Exclude:
+    - "app/views/**/*"
+    - "app/reactive_components/**/*"
+
+# The Phlex doc Page base uses class-level ivars for its title/eyebrow DSL — a
+# standard class-macro pattern, set once at class-definition time (not mutated
+# per request), so the thread-safety concern doesn't apply.
+ThreadSafety/ClassInstanceVariable:
+  Exclude:
+    - "app/views/docs/page.rb"
 
 # Phlex components legitimately don't call super in #initialize (Phlex::HTML's
 # initialize takes no args); requiring it is a false positive for the view DSL.

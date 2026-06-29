@@ -46,6 +46,8 @@ module Views
         # manifest for any extra app CSS.
         stylesheet_link_tag('tailwind', data: { turbo_track: 'reload' })
         stylesheet_link_tag('application', data: { turbo_track: 'reload' })
+        # Rouge syntax-highlight theme for Views::Code (.code-highlight).
+        stylesheet_link_tag('rouge', data: { turbo_track: 'reload' })
         javascript_importmap_tags
       end
     end

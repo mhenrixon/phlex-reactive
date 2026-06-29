@@ -1,36 +1,35 @@
 # frozen_string_literal: true
 
-# Registry of the reference docs (ported from the gem's docs/*.md). Each entry
-# maps a URL slug to its title, sidebar group, and the source Markdown file under
-# site/docs_content. Docs::Show renders the file as a first-class Phlex page.
+# Registry of the reference docs. Each entry maps a URL slug to its title, sidebar
+# group, and the Phlex page class that renders it (hand-authored — the docs are
+# self-contained Phlex, so they survive when the gem's docs/ folder is gone at
+# deploy). DocsController renders `view_class`.
 class Doc
-  ROOT = Rails.root.join('docs_content')
-
   REGISTRY = [
-    { slug: 'installation',     title: 'Installation',            group: 'Guide', file: 'installation.md' },
-    { slug: 'architecture',     title: 'Architecture',            group: 'Guide', file: 'architecture.md' },
-    { slug: 'security',         title: 'Security & threat model', group: 'Guide', file: 'security.md' },
-    { slug: 'broadcasting',     title: 'Broadcasting',            group: 'Guide', file: 'broadcasting.md' },
-    { slug: 'transport-pgbus',  title: 'Transport: pgbus',        group: 'Guide', file: 'transport-pgbus.md' },
-    { slug: 'testing',          title: 'Testing',                 group: 'Guide', file: 'testing.md' },
-    { slug: 'performance',      title: 'Performance',             group: 'Guide', file: 'performance.md' },
-    { slug: 'examples',         title: 'Examples overview',       group: 'Examples', file: 'examples/index.md' },
-    { slug: 'example-counter',  title: 'Counter',                 group: 'Examples', file: 'examples/counter.md' },
-    { slug: 'example-todo-list', title: 'Todo list',              group: 'Examples', file: 'examples/todo_list.md' },
-    { slug: 'example-inline-edit', title: 'Inline edit',          group: 'Examples', file: 'examples/inline_edit.md' },
-    { slug: 'example-collections', title: 'Collections',          group: 'Examples', file: 'examples/collections.md' },
-    { slug: 'example-notifications', title: 'Notifications', group: 'Examples',
-      file: 'examples/notifications.md' },
-    { slug: 'example-chat', title: 'Cross-tab chat', group: 'Examples', file: 'examples/chat.md' }
+    { slug: 'installation',          title: 'Installation',            group: 'Guide',    view: 'Installation' },
+    { slug: 'architecture',          title: 'Architecture',            group: 'Guide',    view: 'Architecture' },
+    { slug: 'security',              title: 'Security & threat model', group: 'Guide',    view: 'Security' },
+    { slug: 'broadcasting',          title: 'Broadcasting',            group: 'Guide',    view: 'Broadcasting' },
+    { slug: 'transport-pgbus',       title: 'Transport: pgbus',        group: 'Guide',    view: 'TransportPgbus' },
+    { slug: 'testing',               title: 'Testing',                 group: 'Guide',    view: 'Testing' },
+    { slug: 'performance',           title: 'Performance',             group: 'Guide',    view: 'Performance' },
+    { slug: 'examples',              title: 'Examples overview',       group: 'Examples', view: 'ExamplesOverview' },
+    { slug: 'example-counter',       title: 'Counter',                 group: 'Examples', view: 'ExampleCounter' },
+    { slug: 'example-todo-list',     title: 'Todo list',               group: 'Examples', view: 'ExampleTodoList' },
+    { slug: 'example-inline-edit',   title: 'Inline edit',             group: 'Examples', view: 'ExampleInlineEdit' },
+    { slug: 'example-collections',   title: 'Collections',             group: 'Examples', view: 'ExampleCollections' },
+    { slug: 'example-notifications', title: 'Notifications',           group: 'Examples',
+      view: 'ExampleNotifications' },
+    { slug: 'example-chat',          title: 'Cross-tab chat',          group: 'Examples', view: 'ExampleChat' }
   ].freeze
 
-  attr_reader :slug, :title, :group, :file
+  attr_reader :slug, :title, :group, :view_name
 
-  def initialize(slug:, title:, group:, file:)
+  def initialize(slug:, title:, group:, view:)
     @slug = slug
     @title = title
     @group = group
-    @file = file
+    @view_name = view
   end
 
   def self.all
@@ -45,11 +44,8 @@ class Doc
     all.group_by(&:group)
   end
 
-  def path
-    ROOT.join(file)
-  end
-
-  def body
-    path.read
+  # The hand-authored Phlex page class for this doc (nil if not yet written).
+  def view_class
+    "Views::Docs::Pages::#{view_name}".safe_constantize
   end
 end

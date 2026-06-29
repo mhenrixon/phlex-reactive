@@ -76,15 +76,30 @@ class SearchableComboboxComponent < Phlex::HTML
     # reactive_root co-locates #id + the controller + the signed token on ONE
     # element (issue #48): never put id: on a child or token threading breaks.
     div(**reactive_root(class: 'flex flex-col gap-3')) do
-      search_field
+      # The input + the floating results share a relative wrapper so the popup
+      # anchors under the field (like a real combobox dropdown).
+      div(class: 'relative') do
+        search_field
+        results if show_results?
+      end
       selection_chip if selected?
-      results
     end
   end
 
   private
 
   def selected? = @selected_name.present?
+
+  # The dropdown pops up only while the user is actively typing a search — not
+  # when the field is empty, and not after a selection (when @query == the
+  # chosen name). Re-rendered on every keystroke via the debounced morph, so the
+  # panel appears/disappears as the query changes.
+  def show_results?
+    q = @query.to_s.strip
+    return false if q.empty?
+
+    q != @selected_name.to_s
+  end
 
   # The list filtered by the current query, grouped by paradigm. Re-derived every
   # action from @query — it is NOT reactive_state (the list isn't client state).
@@ -118,17 +133,25 @@ class SearchableComboboxComponent < Phlex::HTML
     end
   end
 
+  # The floating dropdown panel, absolutely positioned under the input. Only
+  # rendered when show_results? — so it pops up while typing and collapses
+  # otherwise.
   def results
-    groups = filtered
-    if groups.empty?
-      div(class: 'text-sm opacity-60 px-1', data: { testid: 'combobox-empty' }) { 'No matches' }
-      return
-    end
+    div(class: 'absolute left-0 right-0 top-full z-20 mt-1') do
+      groups = filtered
+      if groups.empty?
+        div(class: 'bg-base-200 rounded-box border border-base-300 px-3 py-2 text-sm opacity-60 shadow-lg',
+            data: { testid: 'combobox-empty' }) { 'No matches' }
+        return
+      end
 
-    ul(class: 'menu bg-base-200 rounded-box w-full', data: { testid: 'combobox-results' }) do
-      groups.each do |paradigm, langs|
-        li(class: 'menu-title') { paradigm }
-        langs.each { option_row(it) }
+      ul(class: 'menu bg-base-200 rounded-box border border-base-300 w-full ' \
+                'max-h-64 flex-nowrap overflow-y-auto shadow-lg',
+         data: { testid: 'combobox-results' }) do
+        groups.each do |paradigm, langs|
+          li(class: 'menu-title') { paradigm }
+          langs.each { option_row(it) }
+        end
       end
     end
   end

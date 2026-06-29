@@ -3,8 +3,9 @@
 class DocsController < ApplicationController
   def show
     doc = Doc.from_slug(params[:doc])
-    return head :not_found unless doc
+    view = doc&.view_class
+    return head :not_found unless view
 
-    render_page Views::Docs::Show.new(doc: doc)
+    render_page view.new
   end
 end

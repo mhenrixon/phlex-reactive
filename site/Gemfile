@@ -30,9 +30,6 @@ gem "rails_icons", "~> 1.1"
 gem "rouge"
 gem "method_source"
 
-# Render the ported reference docs (Markdown) as first-class Phlex pages.
-gem "commonmarker"
-
 group :development, :test do
   gem "debug", platforms: %i[mri windows], require: "debug/prelude"
   gem "rspec-rails"

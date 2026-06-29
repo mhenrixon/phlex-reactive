@@ -7,6 +7,7 @@ module Views
   class Sidebar < Phlex::HTML
     include Phlex::Rails::Helpers::Routes
     include Phlex::Rails::Helpers::Request
+    include DaisyUI
 
     # A lucide icon per nav entry, keyed by slug; groups fall back to a default.
     ICONS = {
@@ -24,9 +25,9 @@ module Views
       div(class: 'bg-base-200 flex min-h-full w-72 flex-col') do
         header_section
         div(class: 'flex-1 overflow-y-auto px-2 pb-6') do
-          ul(class: 'menu w-full gap-1') do
+          Menu(class: 'w-full gap-1') do
             nav_group('Demos', Demo.grouped) { |demo| nav_link(demo_path(demo.slug), demo.title, ICONS[demo.slug]) }
-            nav_group('Docs', Doc.grouped) { |doc| nav_link(doc_path(doc.slug), doc.title, doc_icon(doc)) }
+            nav_group('Docs', authored_docs) { |doc| nav_link(doc_path(doc.slug), doc.title, doc_icon(doc)) }
           end
         end
       end
@@ -69,6 +70,12 @@ module Views
 
     def doc_icon(doc)
       GROUP_ICON[doc.group] || 'file-text'
+    end
+
+    # Only docs whose Phlex page exists are linkable (no dead links while the
+    # remaining pages are being authored).
+    def authored_docs
+      Doc.all.select(&:view_class).group_by(&:group)
     end
 
     def current_path

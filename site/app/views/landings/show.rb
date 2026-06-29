@@ -32,7 +32,7 @@ module Views
           section do
             h2(class: 'text-sm uppercase tracking-wide opacity-60 mb-4') { 'Documentation' }
             div(class: 'grid gap-2 sm:grid-cols-2') do
-              Doc.all.each { doc_link(it) }
+              Doc.all.select(&:view_class).each { doc_link(it) }
             end
           end
         end

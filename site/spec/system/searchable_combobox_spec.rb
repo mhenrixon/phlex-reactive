@@ -7,6 +7,19 @@ require 'system_helper'
 # whole point of reply.morph over reply.replace), and clicking an option reports
 # the selection back — all with no custom JavaScript and no full-page reload.
 RSpec.describe 'Searchable combobox', type: :system do
+  it 'keeps the dropdown collapsed until the user types' do
+    visit '/demos/searchable-combobox'
+
+    # Wait for the page to settle on the input, then assert the popup is closed
+    # (it is a dropdown, not an always-open list).
+    expect(page).to have_css("[data-testid='combobox-query']")
+    expect(page).to have_no_css("[data-testid='combobox-results']")
+
+    find("[data-testid='combobox-query']").set('ru')
+    # Now it pops up.
+    expect(page).to have_css("[data-testid='combobox-results']")
+  end
+
   it 'filters as you type while keeping focus and the typed value' do
     visit '/demos/searchable-combobox'
     page.execute_script("window.__noReload = 'alive'")
@@ -46,6 +59,8 @@ RSpec.describe 'Searchable combobox', type: :system do
     # The selection chip appears, driven entirely by server state (the signed
     # token now carries selected_name).
     expect(page).to have_css("[data-testid='combobox-selection']", text: 'Ruby')
+    # ...and the dropdown collapses once a choice is made (query == selection).
+    expect(page).to have_no_css("[data-testid='combobox-results']")
   end
 
   it 'shows an empty state for a query that matches nothing' do
