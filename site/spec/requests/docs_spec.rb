@@ -3,18 +3,12 @@
 require 'rails_helper'
 
 # The reference docs are hand-authored Phlex pages (self-contained, so they
-# survive when the gem's docs/ folder is gone at deploy).
+# survive when the gem's docs/ folder is gone at deploy). Every registered doc
+# has a page class and renders through the doc shell.
 RSpec.describe 'Docs pages', type: :request do
-  # Only docs whose Phlex page class exists are routable yet; the rest are being
-  # authored. Each authored page must render through the doc shell.
-  authored = Doc.all.select(&:view_class)
-
-  it 'has at least the foundational pages authored' do
-    expect(authored.map(&:slug)).to include('architecture', 'transport-pgbus')
-  end
-
-  authored.each do |doc|
+  Doc.all.each do |doc|
     it "renders the #{doc.slug} page" do
+      expect(doc.view_class).to be_present, "no Phlex page for #{doc.slug}"
       get "/docs/#{doc.slug}"
       expect(response).to have_http_status(:ok)
       expect(response.body).to include('<h1') # the doc Header
@@ -26,7 +20,7 @@ RSpec.describe 'Docs pages', type: :request do
     expect(response.body).to include('Architecture')
   end
 
-  it '404s a doc whose page is not authored yet' do
+  it '404s an unknown doc slug' do
     get '/docs/does-not-exist'
     expect(response).to have_http_status(:not_found)
   end

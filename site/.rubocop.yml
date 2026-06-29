@@ -3,6 +3,7 @@ plugins:
   - rubocop-rails
   - rubocop-rspec
   - rubocop-capybara
+  - rubocop-thread_safety
 
 AllCops:
   TargetRubyVersion: 3.4
