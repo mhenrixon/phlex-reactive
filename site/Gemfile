@@ -23,6 +23,9 @@ gem "phlex-rails"
 gem "daisyui", github: "mhenrixon/daisyui", require: "daisy_ui"
 gem "tailwindcss-rails"
 
+# Icons — lucide via rails_icons (SVGs synced into app/assets/svg/icons).
+gem "rails_icons", "~> 1.1"
+
 # Syntax highlighting + source extraction for the code-alongside panels.
 gem "rouge"
 gem "method_source"

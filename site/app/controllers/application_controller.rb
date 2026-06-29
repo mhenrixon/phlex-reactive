@@ -9,10 +9,14 @@ class ApplicationController < ActionController::Base
 
   private
 
-  # Render a Phlex page view. phlex-rails renders it through a real Rails view
-  # context, so the reactive token signer, dom_id, csrf, and url helpers all work
-  # inside the reactive components on the page.
+  # Render a Phlex page view. Views::Layout IS the full HTML document (its own
+  # <html>/<head>/<body> + the daisyUI drawer shell), so it must NOT be wrapped
+  # in the Rails ERB application layout — `layout: false` prevents the double
+  # <html> nesting (and the scaffold layout's `main.container mt-28 flex` that
+  # was offsetting and mis-columning the page). phlex-rails still renders through
+  # a real view context, so the reactive token signer, dom_id, csrf, and url
+  # helpers all work inside the components on the page.
   def render_page(view)
-    render view
+    render view, layout: false
   end
 end
