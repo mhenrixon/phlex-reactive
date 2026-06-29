@@ -47,6 +47,10 @@ class DemosController < ActionController::Base
     render_component DebounceComponent.new
   end
 
+  def confirm
+    render_component ConfirmComponent.new
+  end
+
   def morph_grid
     render_component MorphGridComponent.new(account: Account.find(params[:id]))
   end

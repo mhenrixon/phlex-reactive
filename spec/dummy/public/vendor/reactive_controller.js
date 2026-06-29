@@ -168,8 +168,21 @@ export default class extends Controller {
   // a per-controller promise makes each dispatch wait for the previous one, so
   // it always uses the freshest token.
   dispatch(event) {
-    const { action, params, debounce } = event.params
+    const { action, params, debounce, confirm } = event.params
     if (!action) return
+
+    // Confirmation gate (issue #52). A destructive reactive trigger can't use
+    // Hotwire's data-turbo-confirm — this controller preempts the event — so a
+    // `confirm:` message threads a data-reactive-confirm-param and we prompt
+    // HERE, BEFORE any preventDefault/enqueue/debounce. On decline we still
+    // preventDefault (so a `submit`/click can't natively navigate on cancel)
+    // and bail — nothing is enqueued, no timer is scheduled. window.confirm is
+    // synchronous + screen-reader friendly and keeps the no-dependency default;
+    // a richer/async dialog can be layered on additively later.
+    if (confirm && !window.confirm(confirm)) {
+      event.preventDefault()
+      return
+    }
 
     // Stop native behavior (button submit / FORM NAVIGATION) HERE, synchronously
     // within the event dispatch. preventDefault() only works while the event is

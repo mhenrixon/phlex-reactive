@@ -376,6 +376,31 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  describe "#on confirm gate (issue #52)" do
+    subject(:instance) { state_klass.new }
+
+    it "omits the confirm param by default" do
+      attrs = instance.send(:on, :increment)
+      expect(attrs[:data]).not_to have_key(:reactive_confirm_param)
+    end
+
+    it "emits the confirm message as a Stimulus param when given" do
+      attrs = instance.send(:on, :destroy, confirm: "Really delete this item?")
+      expect(attrs[:data][:reactive_confirm_param]).to eq("Really delete this item?")
+    end
+
+    it "keeps confirm out of the explicit params payload" do
+      attrs = instance.send(:on, :set, confirm: "Sure?", count: 5)
+      expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({ "count" => 5 })
+    end
+
+    it "threads confirm alongside debounce without collision" do
+      attrs = instance.send(:on, :set, event: "input", debounce: 300, confirm: "Sure?")
+      expect(attrs[:data][:reactive_debounce_param]).to eq(300)
+      expect(attrs[:data][:reactive_confirm_param]).to eq("Sure?")
+    end
+  end
+
   # Performance: reactive_token runs on EVERY render. It must produce a byte-
   # identical payload before/after caching the ivar symbols + class name. These
   # pin the payload SHAPE (decoded) so an allocation optimization can't silently
