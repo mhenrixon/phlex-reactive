@@ -24,7 +24,10 @@ module Phlex
       initializer "phlex_reactive.assets" do
         if it.config.respond_to?(:assets)
           it.config.assets.paths << root.join("app/javascript").to_s
-          it.config.assets.precompile += %w[phlex/reactive/reactive_controller.js]
+          it.config.assets.precompile += %w[
+            phlex/reactive/reactive_controller.js
+            phlex/reactive/confirm.js
+          ]
         end
       end
 
@@ -36,6 +39,14 @@ module Phlex
           it.importmap.pin(
             "phlex/reactive/reactive_controller",
             to: "phlex/reactive/reactive_controller.js",
+            preload: true
+          )
+          # The overridable confirm resolver (issue #55). reactive_controller.js
+          # imports it relatively (./confirm.js), and an app reuses its themed
+          # dialog via `import { setConfirmResolver } from "phlex/reactive/confirm"`.
+          it.importmap.pin(
+            "phlex/reactive/confirm",
+            to: "phlex/reactive/confirm.js",
             preload: true
           )
         end

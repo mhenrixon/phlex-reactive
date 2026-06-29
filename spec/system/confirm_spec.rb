@@ -40,4 +40,62 @@ RSpec.describe "Confirmation-gated reactive action (issue #52)", type: :system d
     expect(page).to have_css("[data-testid='runs']", text: "1")
     expect(page.evaluate_script("window.__noReload")).to eq("alive")
   end
+
+  # Issue #55: setConfirmResolver lets an app swap the native window.confirm for
+  # its own (possibly async) dialog — the seam that lets a reactive trigger reuse
+  # Turbo.config.forms.confirm. We install an async resolver whose verdict is
+  # driven by window.__confirmAnswer, so a Promise-returning dialog gates the
+  # action exactly as the sync native prompt does — proving the gate is async
+  # end-to-end in a real browser, under both Puma and Falcon.
+  def install_async_resolver
+    # A module script: import the vendored confirm seam and override it. The
+    # resolver resolves on a later macrotask, so this also exercises the
+    # "await an async dialog" path (not just a synchronously-resolved Promise).
+    page.execute_script(<<~JS)
+      window.__resolverInstalled = (async () => {
+        const { setConfirmResolver } = await import("/vendor/confirm.js")
+        setConfirmResolver((message) => new Promise((resolve) => {
+          window.__confirmMessage = message
+          setTimeout(() => resolve(window.__confirmAnswer === true), 10)
+        }))
+        window.__resolverReady = true
+      })()
+    JS
+    # Block until the dynamic import + override has actually applied (bounded
+    # poll — no native default to race, but the click must wait for the seam).
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5
+    until page.evaluate_script("window.__resolverReady === true")
+      raise "confirm resolver never installed" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
+      sleep(0.05)
+    end
+  end
+
+  it "runs the action when a custom async resolver resolves true (#55)" do
+    visit "/confirm"
+    install_async_resolver
+    page.execute_script("window.__confirmAnswer = true")
+    expect(page).to have_css("[data-testid='runs']", text: "0")
+
+    find("[data-testid='delete']").click
+
+    expect(page).to have_css("[data-testid='runs']", text: "1")
+    expect(page.evaluate_script("window.__confirmMessage")).to eq("Really delete this item?")
+  end
+
+  it "does NOT run the action when a custom async resolver resolves false (#55)" do
+    visit "/confirm"
+    install_async_resolver
+    page.execute_script("window.__confirmAnswer = false")
+    page.execute_script("window.__noReload = 'alive'")
+    expect(page).to have_css("[data-testid='runs']", text: "0")
+
+    find("[data-testid='delete']").click
+
+    # Let the (non-)round-trip have time to NOT happen; runs must stay 0 and the
+    # page must not have navigated (the async decline still preventDefaulted).
+    expect(page).to have_css("[data-testid='runs']", text: "0")
+    expect(page.evaluate_script("window.__noReload")).to eq("alive")
+    expect(page.evaluate_script("window.__confirmMessage")).to eq("Really delete this item?")
+  end
 end

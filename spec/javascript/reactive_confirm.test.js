@@ -111,6 +111,7 @@ test("accepting the confirm proceeds to the round trip", async () => {
     params: { action: "destroy", params: "{}", confirm: "Sure?" },
     preventDefault: () => {},
   })
+  await wait(0) // the confirm gate is async now (#55) — let the resolver settle
 
   expect(calls()).toBe(1) // confirmed → the action fires
 })

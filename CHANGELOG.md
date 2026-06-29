@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Overridable / async confirm resolver — reuse your themed dialog (#55).**
+  Follow-up to #52. The `confirm:` gate was hardcoded to the synchronous,
+  browser-native `window.confirm`, so a reactive trigger was the one interaction
+  a Hotwire app couldn't theme — every confirmable reactive action showed the
+  unstyled native chrome instead of the app's `Turbo.config.forms.confirm`
+  dialog. The client now resolves the confirmation through an overridable hook
+  (`confirmResolver`, set via `setConfirmResolver` from `phlex/reactive/confirm`),
+  defaulting to `window.confirm`. An app reuses its styled dialog in one line:
+  `setConfirmResolver((m) => window.Turbo.config.forms.confirm(m))`. The resolver
+  may be **async** — `dispatch` `preventDefault`s up front (preserving the #11
+  submit-trigger guarantee), then `await`s the resolver and enqueues only on a
+  truthy result; a falsy resolve or a rejection cancels the action and never
+  leaks an unhandled rejection. Unset, behavior is byte-for-byte identical to
+  0.4.5 (sync native confirm, no dependency); the `confirm:` markup/`on(...)` API
+  is unchanged. README documents the one-line opt-in.
+
 - **`reactive_root` helper — the whole reactive root in one spread (#48).**
   `reactive_attrs` doesn't emit `id:`, so an app could put `id:` on a *child*
   element and leave the controller root's `id` empty — which silently re-opened
