@@ -304,13 +304,22 @@ module Phlex
       # live-update-as-you-type doesn't POST per keystroke. A blur flushes a
       # pending dispatch so the last edit is never dropped. Omit it for the
       # immediate-dispatch default.
+      #
+      # `confirm:` (a message string) gates the action behind a confirmation
+      # prompt (issue #52). Destructive reactive triggers can't use Hotwire's
+      # `data-turbo-confirm` — the reactive controller calls preventDefault and
+      # enqueues the POST itself, so Turbo's confirm handling never runs. The
+      # client shows window.confirm(message) FIRST and bails before any
+      # enqueue/debounce if the user declines (and prevents the native default so
+      # a `submit` trigger can't navigate on cancel). Omit it for no prompt.
+      #   button(**on(:destroy, confirm: "Really delete this item?")) { "Delete" }
       # The verbatim JSON for an empty explicit-params payload. The common
       # trigger (on(:increment), no params) hits this on EVERY render — skipping
       # params.to_json (which re-serializes {} to the same "{}" each time) avoids
       # a per-render allocation while keeping the wire format byte-identical.
       EMPTY_PARAMS_JSON = "{}"
 
-      def on(action_name, event: "click", debounce: nil, **params)
+      def on(action_name, event: "click", debounce: nil, confirm: nil, **params)
         attrs = {
           data: {
             action: "#{event}->reactive#dispatch",
@@ -319,6 +328,7 @@ module Phlex
           }
         }
         attrs[:data][:reactive_debounce_param] = debounce if debounce
+        attrs[:data][:reactive_confirm_param] = confirm if confirm
         attrs[:type] = "button" if event == "click"
         attrs
       end
