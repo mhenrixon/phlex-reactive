@@ -79,6 +79,64 @@ jobs:
           path: tmp/benchmarks/*.txt
           if-no-files-found: warn
 
+  site:
+    runs-on: ubuntu-latest
+    name: Demo site (${{ matrix.server }})
+    # The interactive demo site (site/) is a separate Rails app that dogfoods the
+    # gem via `path: ".."`. Run its request + system suites under BOTH real
+    # servers, plus its RuboCop, so the showcase can't rot. `rake lint` is used
+    # (not bare `rubocop`) because the gem's ancestor .rubocop.yml excludes
+    # site/**/* — a bare run would lint zero files.
+    strategy:
+      fail-fast: false
+      matrix:
+        server:
+          - puma
+          - falcon
+    defaults:
+      run:
+        working-directory: site
+    env:
+      RAILS_ENV: test
+      HEADLESS: "true"
+      CAPYBARA_SERVER: ${{ matrix.server }}
+      PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+          working-directory: site
+      - uses: oven-sh/setup-bun@v2
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: site-playwright-${{ runner.os }}-${{ hashFiles('site/bun.lock') }}
+          restore-keys: |
+            site-playwright-${{ runner.os }}-
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: bunx --bun playwright install chromium chromium-headless-shell
+      - name: Install Playwright system dependencies
+        run: sudo bunx --bun playwright install-deps chromium 2>/dev/null || true
+      - name: Prepare database
+        run: bin/rails db:test:prepare
+      - name: RuboCop
+        if: matrix.server == 'puma'
+        run: bundle exec rake lint
+      - name: Request specs
+        run: bundle exec rspec spec/requests
+      - name: System specs
+        run: bundle exec rspec spec/system
+
   system:
     runs-on: ubuntu-latest
     name: System (${{ matrix.server }})
