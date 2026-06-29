@@ -17,6 +17,9 @@ AllCops:
     - "**/vendor/**/*"
     # The published Jekyll docs site has its own Gemfile and is not gem code.
     - "docs/**/*"
+    # The interactive demo site is a separate Rails app with its own Gemfile and
+    # RuboCop config; it dogfoods the gem but is not gem code.
+    - "site/**/*"
     - "spec/dummy/db/schema.rb"
     - "spec/dummy/bin/**/*"
     - "bin/**/*"

@@ -1,0 +1,66 @@
+plugins:
+  - rubocop-performance
+  - rubocop-rails
+  - rubocop-rspec
+  - rubocop-capybara
+
+AllCops:
+  TargetRubyVersion: 3.4
+  NewCops: enable
+  SuggestExtensions: false
+  # Re-include this app's source. The gem's ancestor .rubocop.yml excludes
+  # `site/**/*` (correct for ITS run), and RuboCop merges that exclude into ours,
+  # which would exclude everything here. Listing our own files under Include
+  # forces them back into the target set.
+  Include:
+    - "app/**/*.rb"
+    - "spec/**/*.rb"
+    - "Rakefile"
+    - "config.ru"
+  Exclude:
+    - "bin/**/*"
+    - "db/schema.rb"
+    - "config/**/*"
+    - "node_modules/**/*"
+    - "tmp/**/*"
+    - "vendor/**/*"
+    - "storage/**/*"
+
+# Phlex view_template methods are declarative trees — length/ABC limits there
+# fight the DSL, not the code.
+Metrics/MethodLength:
+  Exclude:
+    - "app/views/**/*"
+    - "app/reactive_components/**/*"
+Metrics/AbcSize:
+  Exclude:
+    - "app/views/**/*"
+    - "app/reactive_components/**/*"
+Metrics/BlockLength:
+  Exclude:
+    - "app/views/**/*"
+    - "app/reactive_components/**/*"
+    - "spec/**/*"
+
+# Phlex components legitimately don't call super in #initialize (Phlex::HTML's
+# initialize takes no args); requiring it is a false positive for the view DSL.
+Lint/MissingSuper:
+  Exclude:
+    - "app/views/**/*"
+    - "app/reactive_components/**/*"
+
+# Keyword args don't carry the positional-argument-list readability smell this
+# cop targets; the demo registry row is a flat record of named fields.
+Metrics/ParameterLists:
+  CountKeywordArgs: false
+
+Style/Documentation:
+  Enabled: false
+
+# Specs read fine without these.
+RSpec/ExampleLength:
+  Enabled: false
+RSpec/MultipleExpectations:
+  Enabled: false
+RSpec/DescribeClass:
+  Enabled: false
