@@ -32,7 +32,10 @@ module Views
         end
 
         body(class: 'min-h-screen bg-base-100 text-base-content') do
-          main(class: 'mx-auto max-w-5xl px-4 py-8', &)
+          div(class: 'mx-auto max-w-7xl px-4 py-8 flex gap-8') do
+            render Views::Sidebar.new
+            main(class: 'flex-1 min-w-0', &)
+          end
         end
       end
     end

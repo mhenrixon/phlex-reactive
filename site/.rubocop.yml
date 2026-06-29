@@ -54,6 +54,15 @@ Lint/MissingSuper:
 Metrics/ParameterLists:
   CountKeywordArgs: false
 
+# Demo and Doc are plain-Ruby registries, NOT ActiveRecord — `.all` returns an
+# Array, so `find_each` does not exist. The cop's autocorrect would break them.
+Rails/FindEach:
+  Exclude:
+    - "app/models/demo.rb"
+    - "app/models/doc.rb"
+    - "app/views/**/*"
+    - "spec/**/*"
+
 Style/Documentation:
   Enabled: false
 

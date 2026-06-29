@@ -8,6 +8,9 @@
 /tmp/
 *.gem
 Gemfile.lock
+# The demo site is a deployable app, not a gem — commit its lockfile for
+# reproducible builds (Docker/Kamal).
+!site/Gemfile.lock
 node_modules/
 .DS_Store
 

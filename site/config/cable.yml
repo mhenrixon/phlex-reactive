@@ -1,0 +1,11 @@
+# The Chat demo broadcasts Turbo Streams over Action Cable. The async (in-process)
+# adapter keeps the demo dependency-free — live updates are same-process. True
+# cross-tab/cross-client delivery needs Redis or pgbus (out of scope for the demo).
+development:
+  adapter: async
+
+test:
+  adapter: test
+
+production:
+  adapter: async

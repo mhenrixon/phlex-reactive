@@ -16,4 +16,7 @@ Rails.application.routes.draw do
   # the in-memory registry. The phlex-reactive engine mounts POST /reactive/actions
   # itself — do NOT add it here.
   get "demos/:demo" => "demos#show", as: :demo
+
+  # Reference docs, rendered from Markdown as first-class Phlex pages.
+  get "docs/:doc" => "docs#show", as: :doc
 end

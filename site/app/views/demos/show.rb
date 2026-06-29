@@ -21,7 +21,7 @@ module Views
           end
 
           render Views::Examples::DemoPanel.new(
-            component: @demo.component_class.new,
+            component: @demo.component,
             call_site: @demo.call_site
           )
         end
