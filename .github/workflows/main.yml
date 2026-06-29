@@ -129,6 +129,8 @@ jobs:
         run: sudo bunx --bun playwright install-deps chromium 2>/dev/null || true
       - name: Prepare database
         run: bin/rails db:test:prepare
+      - name: Build daisyUI/Tailwind CSS
+        run: bin/rails tailwindcss:build
       - name: RuboCop
         if: matrix.server == 'puma'
         run: bundle exec rake lint

@@ -1,1 +1,17 @@
 @import "tailwindcss";
+
+/* Don't let Tailwind scan the daisyUI plugin bundles for utility classes. */
+@source not "./daisyui{,*}.mjs";
+
+/* daisyUI plugin (downloaded into this dir — see the Rails install docs).
+   A curated set of built-in themes; `dark` is the default and `light` follows
+   the OS preference. The theme-controller in the navbar switches between them
+   with zero JavaScript (it sets data-theme on <html>). */
+@plugin "./daisyui.mjs" {
+  themes: dark --default, light --prefersdark, synthwave, retro, cyberpunk,
+    valentine, dracula, night, coffee, nord, sunset;
+}
+
+@plugin "./daisyui-theme.mjs" {
+  /* custom theme overrides can go here */
+}
