@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Local Kamal deploy for the phlex-reactive docs site.
+# Convenience wrapper for local Kamal commands against the phlex-reactive docs site.
 #
-# Kamal reads KAMAL_REGISTRY_PASSWORD from the environment (see .kamal/secrets);
-# locally we source it from the gh CLI token. CI sets it from GITHUB_TOKEN instead
-# and runs `kamal deploy` directly, so this helper is for local deploys only.
+# This is OPTIONAL: .kamal/secrets already resolves the registry token on its own
+# (env var if set, else `gh auth token`), so a bare `kamal deploy` / `kamal setup`
+# works too. This helper just also sets the deploy target env (host/domain/ssh
+# user) so you don't have to, and passes any subcommand through:
+#   bin/deploy          # -> kamal deploy
+#   bin/deploy setup    # -> kamal setup
+#   bin/deploy app logs # -> kamal app logs
 #
 # DEPLOY_HOST / DEPLOY_DOMAIN / DEPLOY_SSH_USER can be overridden via the env;
 # they default to the oss-infrastructure target.
