@@ -1,0 +1,87 @@
+plugins:
+  - rubocop-performance
+  - rubocop-rails
+  - rubocop-rspec
+  - rubocop-capybara
+  - rubocop-thread_safety
+
+AllCops:
+  TargetRubyVersion: 3.4
+  NewCops: enable
+  SuggestExtensions: false
+  # Re-include this app's source. The gem's ancestor .rubocop.yml excludes
+  # `site/**/*` (correct for ITS run), and RuboCop merges that exclude into ours,
+  # which would exclude everything here. Listing our own files under Include
+  # forces them back into the target set.
+  Include:
+    - "app/**/*.rb"
+    - "spec/**/*.rb"
+    - "Rakefile"
+    - "config.ru"
+  Exclude:
+    - "bin/**/*"
+    - "db/schema.rb"
+    - "config/**/*"
+    - "node_modules/**/*"
+    - "tmp/**/*"
+    - "vendor/**/*"
+    - "storage/**/*"
+
+# Phlex view_template methods are declarative trees — length/ABC limits there
+# fight the DSL, not the code.
+Metrics/MethodLength:
+  Exclude:
+    - "app/views/**/*"
+    - "app/reactive_components/**/*"
+Metrics/AbcSize:
+  Exclude:
+    - "app/views/**/*"
+    - "app/reactive_components/**/*"
+Metrics/BlockLength:
+  Exclude:
+    - "app/views/**/*"
+    - "app/reactive_components/**/*"
+    - "spec/**/*"
+Metrics/ClassLength:
+  Exclude:
+    - "app/views/**/*"
+    - "app/reactive_components/**/*"
+
+# The Phlex doc Page base uses class-level ivars for its title/eyebrow DSL — a
+# standard class-macro pattern, set once at class-definition time (not mutated
+# per request), so the thread-safety concern doesn't apply.
+ThreadSafety/ClassInstanceVariable:
+  Exclude:
+    - "app/views/docs/page.rb"
+
+# Phlex components legitimately don't call super in #initialize (Phlex::HTML's
+# initialize takes no args); requiring it is a false positive for the view DSL.
+Lint/MissingSuper:
+  Exclude:
+    - "app/views/**/*"
+    - "app/reactive_components/**/*"
+
+# Keyword args don't carry the positional-argument-list readability smell this
+# cop targets; the demo registry row is a flat record of named fields.
+Metrics/ParameterLists:
+  CountKeywordArgs: false
+
+# Demo and Doc are plain-Ruby registries, NOT ActiveRecord — `.all` returns an
+# Array, so `find_each` does not exist. The cop's autocorrect would break them.
+Rails/FindEach:
+  Exclude:
+    - "app/models/demo.rb"
+    - "app/models/doc.rb"
+    - "app/views/**/*"
+    - "spec/**/*"
+
+Style/Documentation:
+  Enabled: false
+
+# Specs read fine without these.
+RSpec/ExampleLength:
+  Enabled: false
+RSpec/MultipleExpectations:
+  Enabled: false
+RSpec/DescribeClass:
+  Enabled: false

@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+/* Don't let Tailwind scan the daisyUI plugin bundles for utility classes. */
+@source not "./daisyui{,*}.mjs";
+
+/* The daisyUI Phlex component gem generates some component class names at render
+   time (e.g. the Drawer emits `drawer`/`drawer-content`/`drawer-side`), so those
+   strings never appear in our scanned .rb sources and Tailwind would tree-shake
+   their CSS away — leaving the app-shell unstyled. Force-include the component
+   classes the gem generates that we rely on. (Classes we write as literals in
+   views — btn/card/menu/navbar/tabs/badge/chat — are detected normally.) */
+@source inline("drawer drawer-content drawer-side drawer-toggle drawer-overlay {lg:}drawer-open drawer-end");
+
+/* daisyUI plugin (downloaded into this dir — see the Rails install docs).
+   A curated set of built-in themes; `dark` is the default and `light` follows
+   the OS preference. The theme-controller in the navbar switches between them
+   with zero JavaScript (it sets data-theme on <html>). */
+@plugin "./daisyui.mjs" {
+  themes: dark --default, light --prefersdark, synthwave, retro, cyberpunk,
+    valentine, dracula, night, coffee, nord, sunset;
+}
+
+@plugin "./daisyui-theme.mjs" {
+  /* custom theme overrides can go here */
+}

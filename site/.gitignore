@@ -1,0 +1,44 @@
+# See https://help.github.com/articles/ignoring-files for more about ignoring files.
+
+# Ignore bundler config.
+/.bundle
+
+# Ignore all environment files.
+/.env*
+!/.env.example
+
+# Ignore all logfiles and tempfiles.
+/log/*
+/tmp/*
+!/log/.keep
+!/tmp/.keep
+
+# Ignore pidfiles, but keep the directory.
+/tmp/pids/*
+!/tmp/pids/.keep
+
+# Ignore storage (uploaded files in development and any SQLite databases).
+/storage/*
+!/storage/.keep
+/tmp/storage/*
+!/tmp/storage/.keep
+
+# Ignore the default SQLite databases.
+/db/*.sqlite3
+/db/*.sqlite3-*
+
+# Ignore master key for decrypting credentials and more.
+/config/master.key
+
+# Ignore CI/local secrets and Kamal secrets (added in the deploy PR).
+/.kamal/secrets*
+
+# Node / asset build artifacts.
+/node_modules
+/app/assets/builds/*
+!/app/assets/builds/.keep
+/public/assets
+
+# Playwright / Capybara artifacts.
+/tmp/capybara
+codedb.snapshot
