@@ -29,11 +29,26 @@ Gem::Specification.new do |spec|
   spec.metadata["changelog_uri"] = "https://github.com/mhenrixon/phlex-reactive/blob/main/CHANGELOG.md"
   spec.metadata["rubygems_mfa_required"] = "true"
 
-  spec.files = IO.popen(%w[git ls-files -z], chdir: __dir__, err: IO::NULL) do |ls|
-    ls.readlines("\x0", chomp: true).select do |f|
-      f.start_with?("app/", "config/", "lib/") ||
-        f == "CHANGELOG.md" || f == "LICENSE.txt" || f == "README.md"
+  # List the gem's files. Prefer `git ls-files` (respects .gitignore), but fall
+  # back to a Dir glob when git or the working tree is unavailable — e.g. when the
+  # gem is a `path:` dependency in another app's Docker image that ships neither
+  # git nor a .git directory. Bundler re-evaluates a path gem's gemspec on every
+  # boot, so a hard git dependency here would crash the app at runtime.
+  gem_files =
+    begin
+      tracked = IO.popen(%w[git ls-files -z], chdir: __dir__, err: IO::NULL, &:read)
+      raise "git unavailable" if tracked.nil? || tracked.empty?
+
+      tracked.split("\x0")
+    rescue StandardError
+      pattern = "{app,config,lib}/**/*"
+      Dir.glob(pattern, File::FNM_DOTMATCH, base: __dir__).select { |f| File.file?(File.join(__dir__, f)) } +
+        %w[CHANGELOG.md LICENSE.txt README.md].select { |f| File.file?(File.join(__dir__, f)) }
     end
+
+  spec.files = gem_files.select do |f|
+    f.start_with?("app/", "config/", "lib/") ||
+      %w[CHANGELOG.md LICENSE.txt README.md].include?(f)
   end
   spec.require_paths = ["lib"]
 
