@@ -2,37 +2,81 @@ name: Deploy docs
 
 # Deploys the docs site (docs/) to the oss-infrastructure server via Kamal when a
 # release is published, or on demand. See oss-infrastructure/docs/adding-a-new-gem.md.
+#
+# Two jobs, mirroring the daisyui docs deploy:
+#   build  — builds + pushes the image to ghcr with docker/build-push-action,
+#            logged in as the Actions actor with GITHUB_TOKEN. Pushing the image
+#            FROM the repo's Actions context is what links the ghcr package to the
+#            repo, so GITHUB_TOKEN keeps push access (no PAT needed).
+#   deploy — pulls that pre-pushed image and boots it: `kamal deploy --skip-push`.
 on:
   release:
     types: [published]
   workflow_dispatch:
 
+concurrency:
+  group: deploy-docs
+  cancel-in-progress: false
+
 permissions:
   contents: read
+  packages: write
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine image tag
+        id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ "$EVENT_NAME" = "release" ]; then
+            TAG="$RELEASE_TAG"
+          else
+            TAG="sha-$(git rev-parse --short HEAD)"
+          fi
+          echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Building image tag: $TAG"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          # Build context is the repo root so the path gem dependency
+          # (`gem "phlex-reactive", path: ".."`) resolves; the Dockerfile lives in docs/.
+          context: .
+          file: docs/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/mhenrixon/phlex-reactive:${{ steps.tag.outputs.image_tag }}
+            ghcr.io/mhenrixon/phlex-reactive:latest
+          cache-from: type=registry,ref=ghcr.io/mhenrixon/phlex-reactive:buildcache
+          cache-to: type=registry,ref=ghcr.io/mhenrixon/phlex-reactive:buildcache,mode=max
+
   deploy:
+    needs: build
     runs-on: ubuntu-latest
     environment: docs
-    env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_DOMAIN: ${{ secrets.DEPLOY_DOMAIN }}
-      # No 1Password / OP_SERVICE_ACCOUNT_TOKEN: this demo has no managed secrets
-      # (SECRET_KEY_BASE + DB password are inline in config/deploy.yml).
-      #
-      # The ghcr package `phlex-reactive` is user-owned and not connected to this
-      # repo, so the default GITHUB_TOKEN can't push to it (403 Forbidden even with
-      # packages:write). Use a PAT with write:packages instead, stored as the repo
-      # secret GHCR_TOKEN. (If the package is ever connected to the repo via the
-      # ghcr UI, this can revert to GITHUB_TOKEN + `permissions: packages: write`.)
-      KAMAL_REGISTRY_PASSWORD: ${{ secrets.GHCR_TOKEN }}
     defaults:
       run:
         working-directory: docs
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -43,15 +87,21 @@ jobs:
       - name: Install Kamal
         run: gem install kamal
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Add SSH key
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Deploy with Kamal
-        run: kamal deploy
+      - name: Deploy with Kamal (image already pushed by the build job)
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_DOMAIN: ${{ secrets.DEPLOY_DOMAIN }}
+          # kamal still logs into the registry to pull; GITHUB_TOKEN can pull the
+          # now repo-linked package. No image push happens here (--skip-push).
+          KAMAL_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+        run: kamal deploy --skip-push --version="$IMAGE_TAG"
