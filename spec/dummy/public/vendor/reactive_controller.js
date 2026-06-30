@@ -1,5 +1,15 @@
 import { Controller } from "@hotwired/stimulus"
-import { confirmResolver } from "./confirm.js"
+// Import the BARE specifier the engine already pins (phlex/reactive/confirm),
+// NOT a relative "./confirm.js" (issue #57). Under importmap-rails + Propshaft
+// the controller is served at its DIGESTED url; a relative sibling import is
+// left untouched (Propshaft rewrites only RAILS_ASSET_URL(...), and the import
+// map resolves ONLY bare specifiers), so "./confirm.js" resolves against the
+// digested controller url → an undigested /assets/.../confirm.js that 404s, and
+// the throwing import takes down every Stimulus controller on the page. The
+// bare specifier resolves to the digested asset through the import map, and
+// bundlers/bun resolve it the same way they already resolve
+// "phlex/reactive/reactive_controller" (see tsconfig.json paths for the tests).
+import { confirmResolver } from "phlex/reactive/confirm"
 
 // The ONE generic controller behind every reactive Phlex component. It
 // replaces the per-feature Stimulus controllers you'd otherwise hand-write

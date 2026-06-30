@@ -1,0 +1,9 @@
+{
+  "//": "Bun (test + build) module resolution for the gem's client runtime. The controller imports the BARE specifier `phlex/reactive/confirm` (issue #57: a relative `./confirm.js` 404s under importmap-rails + Propshaft). Real apps resolve that bare specifier through the import map (importmap, engine-pinned) or their bundler's gem path mapping; the bun JS suite imports the controller from disk, so it needs this `paths` alias to resolve the same bare specifier.",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "phlex/reactive/confirm": ["./app/javascript/phlex/reactive/confirm.js"]
+    }
+  }
+}

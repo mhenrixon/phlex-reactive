@@ -42,8 +42,13 @@ module Phlex
             preload: true
           )
           # The overridable confirm resolver (issue #55). reactive_controller.js
-          # imports it relatively (./confirm.js), and an app reuses its themed
-          # dialog via `import { setConfirmResolver } from "phlex/reactive/confirm"`.
+          # imports it by this BARE specifier — `import { confirmResolver } from
+          # "phlex/reactive/confirm"` — NOT a relative "./confirm.js" (issue #57:
+          # a relative sibling import inside the digested controller resolves to
+          # an undigested /assets/.../confirm.js that 404s under Propshaft). This
+          # pin maps the bare specifier to the digested asset, so the controller's
+          # own import AND an app's `import { setConfirmResolver } from
+          # "phlex/reactive/confirm"` both resolve through the import map.
           it.importmap.pin(
             "phlex/reactive/confirm",
             to: "phlex/reactive/confirm.js",

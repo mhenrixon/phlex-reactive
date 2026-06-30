@@ -101,6 +101,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`reactive_controller.js` used a relative `./confirm.js` import that 404'd under
+  importmap-rails + Propshaft — taking down every Stimulus controller on the page (#57).**
+  The #55 confirm resolver added `import { confirmResolver } from "./confirm.js"` to the
+  client controller. Under importmap + Propshaft the controller is served at its
+  **digested** URL, and a relative sibling import is left untouched (Propshaft's JS
+  compiler rewrites only `RAILS_ASSET_URL(...)`, and the import map resolves **only**
+  bare specifiers, never relative-resolved URLs). So the browser resolved `./confirm.js`
+  against the digested controller URL and requested an **undigested**
+  `/assets/phlex/reactive/confirm.js` → **404**. The throwing import meant
+  `reactive_controller.js` never evaluated, and in an app that eagerly registers it the
+  whole controllers entrypoint died — **every** Stimulus controller on the page stopped,
+  with no obvious link to phlex-reactive. The fix imports the **bare** specifier the
+  engine already pins (`phlex/reactive/confirm`), which resolves to the digested asset
+  through the import map and mirrors how the gem already expects apps to import the
+  module (`import { setConfirmResolver } from "phlex/reactive/confirm"`). Bundlers
+  (esbuild/webpack/bun) resolve the bare specifier the same way they already resolve
+  `phlex/reactive/reactive_controller`; the gem's bun JS suite resolves it via a new
+  `tsconfig.json` `paths` alias. Covered by a bun unit test (the bare import resolves,
+  and the source no longer carries the relative form). 0.4.5 was unaffected (inline
+  `window.confirm`, no relative import).
+
 - **Client mirror of #44: collections of *reactive* rows were STILL add-once-only in
   the browser — `#extractToken` read the FIRST token in the response, not this
   controller's own (#46).** The server fix in 0.4.2 (#44) made the `add` response
