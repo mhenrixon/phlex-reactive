@@ -33,11 +33,13 @@ registry:
   password:
     - KAMAL_REGISTRY_PASSWORD
 
-# The build context is the REPO ROOT (gem + app); the Dockerfile lives in docs/.
+# The build context is the REPO ROOT (gem + app, since the app depends on the gem
+# via path: ".."). Run kamal from docs/, so `dockerfile` is relative to docs/
+# (just "Dockerfile") and `context: ..` points the build at the repo root.
 builder:
   arch: amd64
   context: ..
-  dockerfile: docs/Dockerfile
+  dockerfile: Dockerfile
 
 env:
   clear:
