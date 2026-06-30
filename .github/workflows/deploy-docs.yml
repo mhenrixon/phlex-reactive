@@ -18,7 +18,8 @@ jobs:
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
       DEPLOY_DOMAIN: ${{ secrets.DEPLOY_DOMAIN }}
-      OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+      # No 1Password / OP_SERVICE_ACCOUNT_TOKEN: this demo has no managed secrets
+      # (SECRET_KEY_BASE + DB password are inline in config/deploy.yml).
       KAMAL_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
     defaults:
       run:

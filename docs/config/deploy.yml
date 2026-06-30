@@ -8,6 +8,15 @@ servers:
   web:
     - <%= ENV["DEPLOY_HOST"] %>
 
+# The server's deploy user is `oss` (a sudo, docker-group user; there is no root
+# SSH). Kamal defaults to root, so this MUST be set or the deploy can't connect.
+ssh:
+  user: <%= ENV.fetch("DEPLOY_SSH_USER", "oss") %>
+
+# Kamal puts the app AND accessories on the auto-created `kamal` Docker network,
+# so the app reaches the postgres accessory by its container name
+# (phlex-reactive-docs-postgres) with no manual network config — see DATABASE_URL.
+
 # kamal-proxy routes by host; TLS is at the Cloudflare edge, so ssl: false.
 proxy:
   host: <%= ENV["DEPLOY_DOMAIN"] %>
@@ -24,21 +33,26 @@ registry:
   password:
     - KAMAL_REGISTRY_PASSWORD
 
-# The build context is the REPO ROOT (gem + app); the Dockerfile lives in docs/.
+# The build context is the REPO ROOT (gem + app, since the app depends on the gem
+# via path: ".."). Run kamal from docs/, so `dockerfile` is relative to docs/
+# (just "Dockerfile") and `context: ..` points the build at the repo root.
 builder:
   arch: amd64
   context: ..
-  dockerfile: docs/Dockerfile
+  dockerfile: Dockerfile
 
 env:
   clear:
     RAILS_SERVE_STATIC_FILES: "true"
     RAILS_LOG_TO_STDOUT: "true"
-    # Point the app at the postgres accessory below (pgbus uses this connection).
-    DATABASE_URL: "postgres://phlex_reactive:<%= ENV['POSTGRES_PASSWORD'] %>@phlex-reactive-docs-postgres:5432/phlex_reactive_docs_production"
-  secret:
-    - RAILS_MASTER_KEY
-    - POSTGRES_PASSWORD
+    # This is a throwaway demo site with NO real secrets: the DB is seeded
+    # todos/chat reachable only over the internal Docker network (behind SSH + the
+    # Cloudflare Tunnel), and the app reads no Rails encrypted credentials. So
+    # SECRET_KEY_BASE (used to sign cookies AND phlex-reactive's identity tokens)
+    # and the DB password are inline rather than managed secrets — no master key,
+    # no 1Password needed. Rotate here if ever required.
+    SECRET_KEY_BASE: "b9155e47dce1f0bb6c653eeef87d02fc8ce3b77210338903c74a82c17f8959e442c13d3072f56ac5c074aa498909e34236f0e22c38ccb6f529c97d90a5dc6049"
+    DATABASE_URL: "postgres://phlex_reactive:49aefea6368f231f568fc7efcdd1aa19c72f19314610983d@phlex-reactive-docs-postgres:5432/phlex_reactive_docs_production"
 
 # Postgres 18 + PGMQ — the transport the deployed site dogfoods via pgbus.
 accessories:
@@ -50,7 +64,11 @@ accessories:
       clear:
         POSTGRES_USER: phlex_reactive
         POSTGRES_DB: phlex_reactive_docs_production
-      secret:
-        - POSTGRES_PASSWORD
+        # Inline (throwaway demo DB) — must match DATABASE_URL above.
+        POSTGRES_PASSWORD: "49aefea6368f231f568fc7efcdd1aa19c72f19314610983d"
+    # PG18 stores its cluster at $PGDATA = /var/lib/postgresql/18/docker (a
+    # version-specific subdir), and the image REFUSES to boot if a volume is
+    # mounted at the legacy /var/lib/postgresql/data path. Mount the parent
+    # /var/lib/postgresql so PGDATA persists inside it. See docker-library/postgres#1259.
     directories:
-      - data:/var/lib/postgresql/data
+      - data:/var/lib/postgresql
