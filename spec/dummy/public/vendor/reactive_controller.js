@@ -194,15 +194,19 @@ export default class extends Controller {
     // trigger can't use Hotwire's data-turbo-confirm — this controller preempts
     // the event — so a `confirm:` message routes through confirmResolver (default
     // window.confirm; an app can override it to reuse Turbo.config.forms.confirm).
-    // The resolver may be sync or async, so wrap + await it; enqueue ONLY on a
-    // truthy resolution. A falsy resolve OR a rejection cancels — nothing is
-    // enqueued, no timer scheduled — and we swallow the rejection so a dismissed
-    // dialog never surfaces as an unhandled promise rejection.
-    Promise.resolve(confirmResolver(confirm))
+    // The resolver may be sync or async; call it INSIDE the chain (via the leading
+    // .then) so even a SYNCHRONOUS override throw rejects this promise instead of
+    // escaping dispatch — a throwing dialog is treated as a cancel, like the user
+    // dismissing it. The .catch is scoped to the resolver step (→ false = cancel),
+    // so a dismissed/erroring dialog never surfaces as an unhandled rejection AND a
+    // genuine bug inside #proceed is NOT silently swallowed. Enqueue ONLY on a
+    // truthy resolution — nothing is enqueued, no timer scheduled, otherwise.
+    Promise.resolve()
+      .then(() => confirmResolver(confirm))
+      .catch(() => false)
       .then((ok) => {
         if (ok) this.#proceed(target, action, params, debounce)
       })
-      .catch(() => {})
   }
 
   // Enqueue the action — debounced if a debounce window is set, else immediately.

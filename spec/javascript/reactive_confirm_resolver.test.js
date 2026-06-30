@@ -69,9 +69,13 @@ function buildController() {
 }
 
 // Reset to the default (window.confirm) resolver between tests so an override in
-// one test can't leak into the next.
+// one test can't leak into the next. Mirror confirm.js's exact default contract
+// — Promise-wrapped window.confirm, and `true` when window is absent — so a later
+// test never passes against semantics the shipped module doesn't actually have.
 beforeEach(() => {
-  confirmModule.setConfirmResolver((message) => Promise.resolve(globalThis.window?.confirm?.(message)))
+  confirmModule.setConfirmResolver((message) =>
+    Promise.resolve(typeof globalThis.window !== "undefined" ? globalThis.window.confirm(message) : true),
+  )
 })
 
 test("setConfirmResolver overrides the gate; an async resolve(true) proceeds", async () => {
@@ -129,6 +133,31 @@ test("a resolver that rejects enqueues nothing and leaks no unhandled rejection"
   globalThis.removeEventListener?.("unhandledrejection", onRej)
   expect(calls()).toBe(0) // rejection → nothing enqueued
   expect(rejections).toEqual([]) // and the rejection was handled, not leaked
+})
+
+test("a resolver that throws SYNCHRONOUSLY cancels and never escapes dispatch", async () => {
+  const { controller, calls } = buildController()
+  // A misconfigured custom dialog that throws synchronously (not a rejected
+  // Promise). The resolver is called inside the chain, so the throw becomes a
+  // rejection → treated as a cancel, not an exception bubbling out of dispatch.
+  confirmModule.setConfirmResolver(() => {
+    throw new Error("dialog blew up")
+  })
+
+  let threw = false
+  try {
+    await controller.dispatch({
+      target: makeTarget(),
+      params: { action: "destroy", params: "{}", confirm: "Sure?" },
+      preventDefault: () => {},
+    })
+  } catch {
+    threw = true // dispatch must NOT throw — the sync throw is caught as a cancel
+  }
+  await wait(0)
+
+  expect(threw).toBe(false) // the synchronous throw did not escape dispatch
+  expect(calls()).toBe(0) // and the action was canceled, like a decline
 })
 
 test("a synchronous (non-Promise) resolver return value still works", async () => {
