@@ -8,6 +8,12 @@ servers:
   web:
     - <%= ENV["DEPLOY_HOST"] %>
 
+# Put the app on a shared Docker network so it can reach the postgres accessory
+# by its container name (phlex-reactive-docs-postgres). Kamal creates this
+# network on the host; the accessory joins it too (see accessories.postgres.options).
+options:
+  network: phlex-reactive-docs
+
 # kamal-proxy routes by host; TLS is at the Cloudflare edge, so ssl: false.
 proxy:
   host: <%= ENV["DEPLOY_DOMAIN"] %>
@@ -52,5 +58,8 @@ accessories:
         POSTGRES_DB: phlex_reactive_docs_production
       secret:
         - POSTGRES_PASSWORD
+    # Join the same network as the app so the app resolves this container by name.
+    options:
+      network: phlex-reactive-docs
     directories:
       - data:/var/lib/postgresql/data
