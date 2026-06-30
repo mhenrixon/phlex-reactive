@@ -2,13 +2,13 @@
 
 [![CI](https://github.com/mhenrixon/phlex-reactive/actions/workflows/main.yml/badge.svg)](https://github.com/mhenrixon/phlex-reactive/actions/workflows/main.yml)
 [![Gem Version](https://img.shields.io/gem/v/phlex-reactive)](https://rubygems.org/gems/phlex-reactive)
-[![Docs](https://img.shields.io/badge/docs-mhenrixon.github.io-blue)](https://mhenrixon.github.io/phlex-reactive)
+[![Docs](https://img.shields.io/badge/docs-phlex--reactive.zoolutions.llc-blue)](https://phlex-reactive.zoolutions.llc)
 
 **Reactive [Phlex](https://www.phlex.fun) components for Rails — Livewire-style
 actions and live cross-tab updates, without writing Stimulus controllers or
 hand-picking Turbo Stream targets.**
 
-📖 **[Full documentation](https://mhenrixon.github.io/phlex-reactive)**
+📖 **[Full documentation](https://phlex-reactive.zoolutions.llc)**
 
 ```ruby
 class Counter < ApplicationComponent
@@ -130,7 +130,7 @@ application.register("reactive", ReactiveController)
 
 The JS ships at `app/javascript/phlex/reactive/reactive_controller.js` in the
 gem; point your bundler at the gem path or copy it in. See
-[docs/installation.md](docs/installation.md).
+[docs/installation.md](https://phlex-reactive.zoolutions.llc/docs/installation).
 </details>
 
 **Requirements:** Rails 7.1+, Phlex 2 (`phlex-rails`), Turbo 8+ (for morphing),
@@ -265,7 +265,7 @@ action. Keep state small and JSON-serializable.
 reactive_state :count, :step       # signed; rebuilt on each action
 ```
 
-The [inline edit example](docs/examples/inline_edit.md) combines both: a
+The [inline edit example](https://phlex-reactive.zoolutions.llc/docs/example-inline-edit) combines both: a
 `reactive_record :record` plus `reactive_state :attribute, :editing`.
 
 ---
@@ -274,14 +274,14 @@ The [inline edit example](docs/examples/inline_edit.md) combines both: a
 
 | Example | What it shows |
 |---|---|
-| [Counter](docs/examples/counter.md) | State-backed, the smallest reactive component |
-| [Cross-tab chat](docs/examples/chat.md) | Record-backed action **+ pgbus broadcast** → live sync across tabs/browsers |
-| [Live todo list](docs/examples/todo_list.md) | Per-row components, add/toggle/rename/delete, broadcast on change |
-| [Inline edit](docs/examples/inline_edit.md) | Show ↔ edit mode toggle, replacing a Stimulus controller + 3 routes |
-| [Notifications / badges](docs/examples/notifications.md) | Pure broadcast (no client action) — a job pushes a re-render |
+| [Counter](https://phlex-reactive.zoolutions.llc/docs/example-counter) | State-backed, the smallest reactive component |
+| [Cross-tab chat](https://phlex-reactive.zoolutions.llc/docs/example-chat) | Record-backed action **+ pgbus broadcast** → live sync across tabs/browsers |
+| [Live todo list](https://phlex-reactive.zoolutions.llc/docs/example-todo-list) | Per-row components, add/toggle/rename/delete, broadcast on change |
+| [Inline edit](https://phlex-reactive.zoolutions.llc/docs/example-inline-edit) | Show ↔ edit mode toggle, replacing a Stimulus controller + 3 routes |
+| [Notifications / badges](https://phlex-reactive.zoolutions.llc/docs/example-notifications) | Pure broadcast (no client action) — a job pushes a re-render |
 
 The cross-tab chat in ~60 lines of Ruby (and zero JS) is the showcase — see
-[docs/examples/chat.md](docs/examples/chat.md).
+[docs/examples/chat.md](https://phlex-reactive.zoolutions.llc/docs/example-chat).
 
 ---
 
@@ -696,7 +696,7 @@ real, so read this once.
   but if you have *public* reactive components, ensure the action path isn't
   force-redirected to a login page for logged-out users.
 
-See [docs/security.md](docs/security.md) for the threat model and a checklist.
+See [docs/security.md](https://phlex-reactive.zoolutions.llc/docs/security) for the threat model and a checklist.
 
 ---
 
@@ -800,24 +800,24 @@ end
   replayed, not lost.
 - **No Redis, no Action Cable.**
 
-See [docs/broadcasting.md](docs/broadcasting.md) and
-[docs/transport-pgbus.md](docs/transport-pgbus.md).
+See [docs/broadcasting.md](https://phlex-reactive.zoolutions.llc/docs/broadcasting) and
+[docs/transport-pgbus.md](https://phlex-reactive.zoolutions.llc/docs/transport-pgbus).
 
 ---
 
 ## Documentation
 
-- [Installation & bundler setups](docs/installation.md)
-- [Mental model & architecture](docs/architecture.md)
-- [Security & threat model](docs/security.md)
-- [Broadcasting & live updates](docs/broadcasting.md)
-- [Transport: pgbus vs Action Cable](docs/transport-pgbus.md)
-- [Testing reactive components](docs/testing.md)
-- [Performance & benchmarking](docs/performance.md)
-- Examples: [counter](docs/examples/counter.md) ·
-  [chat](docs/examples/chat.md) · [todo list](docs/examples/todo_list.md) ·
-  [inline edit](docs/examples/inline_edit.md) ·
-  [notifications](docs/examples/notifications.md)
+- [Installation & bundler setups](https://phlex-reactive.zoolutions.llc/docs/installation)
+- [Mental model & architecture](https://phlex-reactive.zoolutions.llc/docs/architecture)
+- [Security & threat model](https://phlex-reactive.zoolutions.llc/docs/security)
+- [Broadcasting & live updates](https://phlex-reactive.zoolutions.llc/docs/broadcasting)
+- [Transport: pgbus vs Action Cable](https://phlex-reactive.zoolutions.llc/docs/transport-pgbus)
+- [Testing reactive components](https://phlex-reactive.zoolutions.llc/docs/testing)
+- [Performance & benchmarking](https://phlex-reactive.zoolutions.llc/docs/performance)
+- Examples: [counter](https://phlex-reactive.zoolutions.llc/docs/example-counter) ·
+  [chat](https://phlex-reactive.zoolutions.llc/docs/example-chat) · [todo list](https://phlex-reactive.zoolutions.llc/docs/example-todo-list) ·
+  [inline edit](https://phlex-reactive.zoolutions.llc/docs/example-inline-edit) ·
+  [notifications](https://phlex-reactive.zoolutions.llc/docs/example-notifications)
 
 ## Credits & prior art
 

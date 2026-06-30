@@ -82,11 +82,11 @@ jobs:
   site:
     runs-on: ubuntu-latest
     name: Demo site (${{ matrix.server }})
-    # The interactive demo site (site/) is a separate Rails app that dogfoods the
-    # gem via `path: ".."`. Run its request + system suites under BOTH real
-    # servers, plus its RuboCop, so the showcase can't rot. `rake lint` is used
-    # (not bare `rubocop`) because the gem's ancestor .rubocop.yml excludes
-    # site/**/* — a bare run would lint zero files.
+    # The docs/ Rails app is a separate app that dogfoods the gem via
+    # `path: ".."`. Run its request + system suites under BOTH real servers,
+    # plus its RuboCop, so the showcase can't rot. `rake lint` is used (not bare
+    # `rubocop`) because the gem's ancestor .rubocop.yml excludes docs/**/* — a
+    # bare run would lint zero files.
     strategy:
       fail-fast: false
       matrix:
@@ -95,13 +95,13 @@ jobs:
           - falcon
     defaults:
       run:
-        working-directory: site
+        working-directory: docs
     env:
       RAILS_ENV: test
       HEADLESS: "true"
       CAPYBARA_SERVER: ${{ matrix.server }}
       PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
-      # The site depends on the gem via `path: ".."`, and the gem's gemspec lists
+      # The app depends on the gem via `path: ".."`, and the gem's gemspec lists
       # files with `git ls-files`. Every commit changes that file list, so the
       # path-gem's gemspec digest never matches a previously-committed lock —
       # which makes bundler's frozen/deployment mode (forced by bundler-cache)
@@ -117,7 +117,7 @@ jobs:
         with:
           ruby-version: "3.4"
           bundler-cache: true
-          working-directory: site
+          working-directory: docs
       - uses: oven-sh/setup-bun@v2
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
@@ -126,9 +126,9 @@ jobs:
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
-          key: site-playwright-${{ runner.os }}-${{ hashFiles('site/bun.lock') }}
+          key: docs-playwright-${{ runner.os }}-${{ hashFiles('docs/bun.lock') }}
           restore-keys: |
-            site-playwright-${{ runner.os }}-
+            docs-playwright-${{ runner.os }}-
       - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: bunx --bun playwright install chromium chromium-headless-shell
