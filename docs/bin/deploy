@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Local Kamal deploy for the phlex-reactive docs site.
+#
+# Kamal reads KAMAL_REGISTRY_PASSWORD from the environment (see .kamal/secrets);
+# locally we source it from the gh CLI token. CI sets it from GITHUB_TOKEN instead
+# and runs `kamal deploy` directly, so this helper is for local deploys only.
+#
+# DEPLOY_HOST / DEPLOY_DOMAIN / DEPLOY_SSH_USER can be overridden via the env;
+# they default to the oss-infrastructure target.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+export DEPLOY_HOST="${DEPLOY_HOST:-178.105.2.54}"
+export DEPLOY_DOMAIN="${DEPLOY_DOMAIN:-phlex-reactive.zoolutions.llc}"
+export DEPLOY_SSH_USER="${DEPLOY_SSH_USER:-oss}"
+export KAMAL_REGISTRY_PASSWORD="${KAMAL_REGISTRY_PASSWORD:-$(gh auth token)}"
+
+if [ -z "$KAMAL_REGISTRY_PASSWORD" ]; then
+  echo "error: KAMAL_REGISTRY_PASSWORD is empty (gh auth token returned nothing)." >&2
+  echo "       Run 'gh auth login' or export KAMAL_REGISTRY_PASSWORD yourself." >&2
+  exit 1
+fi
+
+exec kamal "${@:-deploy}"
