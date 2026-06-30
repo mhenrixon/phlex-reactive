@@ -311,6 +311,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_attrs` | Marks an element reactive + carries the signed token (no `id`). Spread alongside `id:` on the **same** element: `div(id:, **reactive_attrs)`. Prefer `reactive_root`, which can't split them. |
 | `on(:action, event: "click", **params)` | Spread onto a trigger element. Adds `type=button` for clicks. |
 | `on(:action, event: "input", debounce: 300)` | Coalesce rapid events into one round trip after a quiet period (live-as-you-type). |
+| `on(:action, confirm: "Sure?")` | Gate a destructive trigger behind a confirmation. Defaults to `window.confirm`; override the dialog with [`setConfirmResolver`](#custom-confirmation-dialogs-setconfirmresolver). |
 | `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
@@ -477,6 +478,37 @@ end
 
 `nested_attributes(:address, address)` returns the id-merged hash without
 updating, if you need to combine it with other attributes.
+
+### Custom confirmation dialogs (`setConfirmResolver`)
+
+`on(:action, confirm: "Really delete this?")` gates a destructive trigger behind
+a confirmation. Because the reactive controller preempts the event (its own
+`preventDefault` + POST), Hotwire's `data-turbo-confirm` — which routes through
+`Turbo.config.forms.confirm` — never runs for a reactive trigger. So by default
+the gate uses the browser-native `window.confirm` (synchronous, no dependency,
+screen-reader friendly).
+
+If your app already themes confirmations (the common Hotwire setup —
+`Turbo.config.forms.confirm = (message) => Promise<boolean>`, backed by a styled
+modal), reuse that exact dialog for reactive triggers with one line at boot:
+
+```js
+import { setConfirmResolver } from "phlex/reactive/confirm"
+
+// Reuse the same themed dialog the rest of the app already uses.
+setConfirmResolver((message) => window.Turbo.config.forms.confirm(message))
+```
+
+The resolver receives the `confirm:` message and returns `true`/`false` (or a
+`Promise` of one). It may be **async** — the controller `await`s it, then runs
+the action only on a truthy result; a falsy result (or a rejected promise — e.g.
+the user dismissed the dialog) cancels the action, exactly like declining the
+native prompt. The native default is always prevented up front, so a `submit`
+trigger never navigates while the dialog is open.
+
+Unset, behavior is identical to the native `window.confirm` — the `confirm:`
+markup and `on(...)` API are unchanged; only the client's resolution strategy
+gains a seam.
 
 ### `reply` — controlling the action's reply
 

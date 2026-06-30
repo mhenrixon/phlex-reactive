@@ -1,4 +1,5 @@
 import { Controller } from "@hotwired/stimulus"
+import { confirmResolver } from "./confirm.js"
 
 // The ONE generic controller behind every reactive Phlex component. It
 // replaces the per-feature Stimulus controllers you'd otherwise hand-write
@@ -171,37 +172,53 @@ export default class extends Controller {
     const { action, params, debounce, confirm } = event.params
     if (!action) return
 
-    // Confirmation gate (issue #52). A destructive reactive trigger can't use
-    // Hotwire's data-turbo-confirm — this controller preempts the event — so a
-    // `confirm:` message threads a data-reactive-confirm-param and we prompt
-    // HERE, BEFORE any preventDefault/enqueue/debounce. On decline we still
-    // preventDefault (so a `submit`/click can't natively navigate on cancel)
-    // and bail — nothing is enqueued, no timer is scheduled. window.confirm is
-    // synchronous + screen-reader friendly and keeps the no-dependency default;
-    // a richer/async dialog can be layered on additively later.
-    if (confirm && !window.confirm(confirm)) {
-      event.preventDefault()
-      return
-    }
-
     // Stop native behavior (button submit / FORM NAVIGATION) HERE, synchronously
-    // within the event dispatch. preventDefault() only works while the event is
-    // still being handled — deferring it into the request-queue microtask (below)
-    // is too late: a `submit` trigger would natively POST the form and navigate
-    // before the reactive round trip runs (issue #11). For a `click` trigger
-    // there's no default to miss, so this was previously invisible. This holds
+    // within the event dispatch — BEFORE the (possibly async) confirm gate below.
+    // preventDefault() only works while the event is still being handled; once we
+    // await the confirm resolver it's too late, and a `submit` trigger would
+    // natively POST the form and navigate before the reactive round trip runs
+    // (issue #11). For a `click` trigger there's no default to miss. This holds
     // for debounced triggers too — the round trip is deferred, but the native
-    // default must still be prevented now.
+    // default must still be prevented now. (Moved ahead of the confirm branch in
+    // issue #55: an async resolver means we can't preventDefault after awaiting.)
     event.preventDefault()
 
+    // Capture the trigger element now; #proceed runs in a later microtask (after
+    // the confirm resolver settles), by which point event.target may be reset.
+    const target = event.target
+
+    // No confirm message → proceed straight away (unchanged fast path).
+    if (!confirm) return this.#proceed(target, action, params, debounce)
+
+    // Confirmation gate (issue #52, made overridable + async in #55). A reactive
+    // trigger can't use Hotwire's data-turbo-confirm — this controller preempts
+    // the event — so a `confirm:` message routes through confirmResolver (default
+    // window.confirm; an app can override it to reuse Turbo.config.forms.confirm).
+    // The resolver may be sync or async; call it INSIDE the chain (via the leading
+    // .then) so even a SYNCHRONOUS override throw rejects this promise instead of
+    // escaping dispatch — a throwing dialog is treated as a cancel, like the user
+    // dismissing it. The .catch is scoped to the resolver step (→ false = cancel),
+    // so a dismissed/erroring dialog never surfaces as an unhandled rejection AND a
+    // genuine bug inside #proceed is NOT silently swallowed. Enqueue ONLY on a
+    // truthy resolution — nothing is enqueued, no timer scheduled, otherwise.
+    Promise.resolve()
+      .then(() => confirmResolver(confirm))
+      .catch(() => false)
+      .then((ok) => {
+        if (ok) this.#proceed(target, action, params, debounce)
+      })
+  }
+
+  // Enqueue the action — debounced if a debounce window is set, else immediately.
+  // Split out of dispatch so both the no-confirm fast path and the post-confirm
+  // microtask share one place (issue #55). `target` is captured up front because
+  // this can run in a later microtask, after event.target has been reset.
+  #proceed(target, action, params, debounce) {
     // Debounced trigger (e.g. on(:update, event: "input", debounce: 300)):
     // coalesce rapid events into ONE round trip after a quiet period, instead of
     // one POST per keystroke (issue #17). A blur flushes a pending dispatch.
     const ms = Number(debounce) || 0
-    if (ms > 0) return this.#debounceDispatch(event.target, ms, action, params)
-
-    // Capture action/params now; the queued work runs in a later microtask, by
-    // which point the event object may have been reset by the browser.
+    if (ms > 0) return this.#debounceDispatch(target, ms, action, params)
     return this.#enqueue(action, params)
   }
 
