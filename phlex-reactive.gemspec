@@ -41,8 +41,14 @@ Gem::Specification.new do |spec|
 
       tracked.split("\x0")
     rescue StandardError
-      pattern = "{app,config,lib}/**/*"
-      Dir.glob(pattern, File::FNM_DOTMATCH, base: __dir__).select { |f| File.file?(File.join(__dir__, f)) } +
+      # Constrain the no-git fallback to the source files the gem actually ships
+      # (.rb/.js/.erb under app|config|lib, the generator USAGE docs, plus the
+      # three root docs), so a glob in a dirty working tree can't sweep in
+      # machine-local artifacts (logs, .env, tmp, editor backups). This keeps
+      # spec.files stable across build environments without a hand-written manifest.
+      patterns = %w[{app,config,lib}/**/*.{rb,js,erb} lib/**/USAGE]
+      patterns.flat_map { |p| Dir.glob(p, base: __dir__) }
+        .select { |f| File.file?(File.join(__dir__, f)) } +
         %w[CHANGELOG.md LICENSE.txt README.md].select { |f| File.file?(File.join(__dir__, f)) }
     end
 
