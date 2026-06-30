@@ -8,6 +8,11 @@ servers:
   web:
     - <%= ENV["DEPLOY_HOST"] %>
 
+# The server's deploy user is `oss` (a sudo, docker-group user; there is no root
+# SSH). Kamal defaults to root, so this MUST be set or the deploy can't connect.
+ssh:
+  user: <%= ENV.fetch("DEPLOY_SSH_USER", "oss") %>
+
 # Put the app on a shared Docker network so it can reach the postgres accessory
 # by its container name (phlex-reactive-docs-postgres). Kamal creates this
 # network on the host; the accessory joins it too (see accessories.postgres.options).
@@ -40,11 +45,14 @@ env:
   clear:
     RAILS_SERVE_STATIC_FILES: "true"
     RAILS_LOG_TO_STDOUT: "true"
-    # Point the app at the postgres accessory below (pgbus uses this connection).
-    DATABASE_URL: "postgres://phlex_reactive:<%= ENV['POSTGRES_PASSWORD'] %>@phlex-reactive-docs-postgres:5432/phlex_reactive_docs_production"
-  secret:
-    - RAILS_MASTER_KEY
-    - POSTGRES_PASSWORD
+    # This is a throwaway demo site with NO real secrets: the DB is seeded
+    # todos/chat reachable only over the internal Docker network (behind SSH + the
+    # Cloudflare Tunnel), and the app reads no Rails encrypted credentials. So
+    # SECRET_KEY_BASE (used to sign cookies AND phlex-reactive's identity tokens)
+    # and the DB password are inline rather than managed secrets — no master key,
+    # no 1Password needed. Rotate here if ever required.
+    SECRET_KEY_BASE: "7c4883791c11038674b9ecb2b4f4efab57e2e63d0d7b8e75834ae752e247014dfa52e415272e8c45929b6caf74986881e78fc4ddd9ebebcd591df0d75c58e19c"
+    DATABASE_URL: "postgres://phlex_reactive:49aefea6368f231f568fc7efcdd1aa19c72f19314610983d@phlex-reactive-docs-postgres:5432/phlex_reactive_docs_production"
 
 # Postgres 18 + PGMQ — the transport the deployed site dogfoods via pgbus.
 accessories:
@@ -56,8 +64,8 @@ accessories:
       clear:
         POSTGRES_USER: phlex_reactive
         POSTGRES_DB: phlex_reactive_docs_production
-      secret:
-        - POSTGRES_PASSWORD
+        # Inline (throwaway demo DB) — must match DATABASE_URL above.
+        POSTGRES_PASSWORD: "49aefea6368f231f568fc7efcdd1aa19c72f19314610983d"
     # Join the same network as the app so the app resolves this container by name.
     options:
       network: phlex-reactive-docs
