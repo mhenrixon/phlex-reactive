@@ -51,7 +51,7 @@ env:
     # SECRET_KEY_BASE (used to sign cookies AND phlex-reactive's identity tokens)
     # and the DB password are inline rather than managed secrets — no master key,
     # no 1Password needed. Rotate here if ever required.
-    SECRET_KEY_BASE: "7c4883791c11038674b9ecb2b4f4efab57e2e63d0d7b8e75834ae752e247014dfa52e415272e8c45929b6caf74986881e78fc4ddd9ebebcd591df0d75c58e19c"
+    SECRET_KEY_BASE: "b9155e47dce1f0bb6c653eeef87d02fc8ce3b77210338903c74a82c17f8959e442c13d3072f56ac5c074aa498909e34236f0e22c38ccb6f529c97d90a5dc6049"
     DATABASE_URL: "postgres://phlex_reactive:49aefea6368f231f568fc7efcdd1aa19c72f19314610983d@phlex-reactive-docs-postgres:5432/phlex_reactive_docs_production"
 
 # Postgres 18 + PGMQ — the transport the deployed site dogfoods via pgbus.
