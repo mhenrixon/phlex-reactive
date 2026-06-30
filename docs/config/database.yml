@@ -1,0 +1,27 @@
+# Dev + test use SQLite (fast, no Postgres needed for the default suite).
+# Production uses Postgres so the deployed site can dogfood pgbus (which is built
+# on PGMQ and needs PostgreSQL).
+sqlite_default: &sqlite_default
+  adapter: sqlite3
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  timeout: 5000
+
+development:
+  <<: *sqlite_default
+  database: storage/development.sqlite3
+
+# Warning: The database defined as "test" will be erased and re-generated from
+# your development database when you run "rake". Do not set this db to the same
+# as development or production.
+test:
+  <<: *sqlite_default
+  database: storage/test.sqlite3
+
+# Postgres in production (DATABASE_URL is provided by Kamal from the postgres
+# accessory; pgbus uses this same connection). The pgmq extension is preinstalled
+# in the ghcr.io/pgmq/pg18-pgmq image and enabled by a migration.
+production:
+  adapter: postgresql
+  encoding: unicode
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  url: <%= ENV.fetch("DATABASE_URL", nil) %>

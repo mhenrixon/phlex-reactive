@@ -1,0 +1,37 @@
+# Docker build context is the repo root (the gem + the docs/ app). KEEP .git —
+# the gem's gemspec runs `git ls-files` to list its files. Exclude everything
+# that bloats the context or is rebuilt in the image.
+
+# Node / Playwright
+**/node_modules
+docs/tmp/capybara
+
+# Build + runtime artifacts (rebuilt in the image)
+docs/app/assets/builds/*
+!docs/app/assets/builds/.keep
+docs/public/assets
+docs/log/*
+docs/tmp/*
+!docs/tmp/.keep
+docs/storage/*
+!docs/storage/.keep
+
+# Local databases + secrets
+**/*.sqlite3
+**/*.sqlite3-*
+docs/config/master.key
+.kamal/secrets*
+
+# Gem-side dev artifacts
+/tmp
+/pkg
+*.gem
+benchmark/tmp
+spec/dummy/tmp
+spec/dummy/log
+spec/dummy/storage
+
+# Editor / OS
+.DS_Store
+codedb.snapshot
+docs/codedb.snapshot

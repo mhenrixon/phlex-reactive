@@ -17,6 +17,11 @@ Rails.application.routes.draw do
   # itself — do NOT add it here.
   get "demos/:demo" => "demos#show", as: :demo
 
-  # Reference docs, rendered from Markdown as first-class Phlex pages.
+  # Reference docs — hand-authored Phlex pages.
   get "docs/:doc" => "docs#show", as: :doc
+
+  # The pgbus dashboard, for visibility into the Postgres-backed transport that
+  # powers the live demos in production. Mounted only when pgbus is loaded (it's
+  # a production-group gem), so dev/test on SQLite stay unaffected.
+  mount Pgbus::Engine => "/pgbus" if defined?(Pgbus::Engine)
 end

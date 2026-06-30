@@ -1,9 +1,69 @@
-# frozen_string_literal: true
-
-# Gemfile for the documentation site (GitHub Pages, Jekyll + Just the Docs).
-# Separate from the gem's own Gemfile so the docs build doesn't pull Rails.
 source "https://rubygems.org"
 
-gem "jekyll", "~> 4.3"
-gem "just-the-docs", "~> 0.10"
-gem "jekyll-remote-theme", "~> 0.4"
+# Rails core
+gem "rails", "~> 8.1.3"
+gem "propshaft"
+gem "puma", ">= 5.0"
+gem "thruster", require: false
+gem "bootsnap", require: false
+gem "tzinfo-data", platforms: %i[windows jruby]
+
+# Database. SQLite for fast local dev + CI (no Postgres needed for the default
+# suite); Postgres + pgbus in production so the DEPLOYED site dogfoods pgbus —
+# real cross-tab broadcasts over Postgres SSE, plus the pgbus dashboard.
+gem "sqlite3", ">= 2.1", group: %i[development test]
+
+group :production do
+  gem "pg", "~> 1.5"
+  gem "pgbus" # latest (>= 0.9.4 has the reactive Streams primitives)
+end
+
+# Hotwire + import maps
+gem "importmap-rails"
+gem "stimulus-rails"
+gem "turbo-rails"
+
+# Views — Phlex + the gem we're dogfooding
+gem "phlex-reactive", path: ".."
+gem "phlex-rails"
+
+# Docs UI: daisyUI Phlex components for chrome (sidebar, drawer, tabs, cards).
+# The reactive demo components themselves stay framework-agnostic.
+gem "daisyui", github: "mhenrixon/daisyui", require: "daisy_ui"
+gem "tailwindcss-rails"
+
+# Icons — lucide via rails_icons (SVGs synced into app/assets/svg/icons).
+gem "rails_icons", "~> 1.1"
+
+# Syntax highlighting + source extraction for the code-alongside panels.
+gem "rouge"
+gem "method_source"
+
+group :development, :test do
+  gem "debug", platforms: %i[mri windows], require: "debug/prelude"
+  gem "rspec-rails"
+end
+
+group :development do
+  gem "web-console"
+  # The gem repo's .rubocop.yml is an ancestor of this nested app, so RuboCop
+  # merges its plugin list; include the same plugins here so it resolves. The
+  # site's own .rubocop.yml overrides the rules.
+  gem "rubocop", require: false
+  gem "rubocop-capybara", require: false
+  gem "rubocop-performance", require: false
+  gem "rubocop-rails", require: false
+  gem "rubocop-rake", require: false
+  gem "rubocop-rspec", require: false
+  gem "rubocop-thread_safety", require: false
+end
+
+group :test do
+  gem "capybara"
+  gem "capybara-playwright-driver"
+  gem "playwright-ruby-client"
+  # Real-server fallback for the browser suite (CAPYBARA_SERVER=falcon): proves
+  # the reactive round trip works under async (fiber-per-request), not just Puma.
+  gem "falcon", require: false
+  gem "protocol-rack", require: false
+end

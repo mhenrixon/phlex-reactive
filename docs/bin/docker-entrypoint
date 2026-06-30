@@ -1,0 +1,15 @@
+#!/bin/bash -e
+
+# On server boot: enable PGMQ + install/refresh pgbus's tables against the live
+# Postgres (idempotent — pgbus:install is a no-op once installed), then prepare
+# the app DB (create + migrate + seed). Runs only for the web server command.
+if [ "${1}" == "./bin/rails" ] && [ "${2}" == "server" ]; then
+  # PGMQ extension (preinstalled in the ghcr.io/pgmq/pg18-pgmq image) + pgbus
+  # tables. pgbus's install generator renders the migration for the running gem
+  # version, so we never ship version-mismatched migrations.
+  ./bin/rails runner "ActiveRecord::Base.connection.execute('CREATE EXTENSION IF NOT EXISTS pgmq')" || true
+  ./bin/rails generate pgbus:install --force >/dev/null 2>&1 || true
+  ./bin/rails db:prepare
+fi
+
+exec "${@}"

@@ -1,0 +1,73 @@
+# syntax = docker/dockerfile:1
+#
+# The docs app dogfoods the gem via `gem "phlex-reactive", path: ".."`, so the
+# build context is the REPO ROOT (not docs/): the gem lives at /app and the docs
+# app at /app/docs. Build with `docker build -f docs/Dockerfile .` from the repo
+# root, or via Kamal's builder `context: ..` + `dockerfile: docs/Dockerfile`.
+
+ARG RUBY_VERSION=3.4.2
+FROM ruby:$RUBY_VERSION-slim AS base
+
+WORKDIR /app/docs
+
+ENV BUNDLE_DEPLOYMENT="0" \
+    BUNDLE_PATH="/usr/local/bundle" \
+    BUNDLE_WITHOUT="development:test" \
+    BUNDLE_GEMFILE="/app/docs/Gemfile" \
+    RAILS_ENV="production"
+
+# libpq for the pg gem (production uses Postgres so the site dogfoods pgbus).
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y libpq5 && \
+    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+
+RUN gem update --system --no-document && gem install -N bundler
+
+
+# --- Build stage --------------------------------------------------------------
+FROM base AS build
+
+# build-essential + libpq-dev/libyaml-dev to compile native gems (pg, etc.);
+# git so the gem's gemspec (`git ls-files`) resolves the path dependency.
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y \
+      build-essential curl git libpq-dev libyaml-dev pkg-config
+
+# Copy the WHOLE repo first (gem at /app, app at /app/docs) — the gem is a path
+# dependency whose gemspec runs `git ls-files`, so it needs the full checkout
+# (incl. .git) present before bundle install resolves it.
+COPY . /app/
+
+# Frozen is off: the path-gem's git-ls-files gemspec digest can't be pinned
+# across commits (see the CI note); the lock still pins every other gem.
+RUN bundle config set frozen false && bundle install && \
+    rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache
+
+# Precompile assets (daisyUI/Tailwind build + propshaft) without the master key.
+RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails tailwindcss:build && \
+    SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile
+
+
+# --- Final stage --------------------------------------------------------------
+FROM base
+
+# curl for the healthcheck; libpq5 (Postgres client lib) is already in `base`.
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y curl && \
+    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+
+COPY --from=build "${BUNDLE_PATH}" "${BUNDLE_PATH}"
+COPY --from=build /app /app
+
+# Non-root runtime user; owns the writable dirs.
+RUN groupadd --system --gid 1000 rails && \
+    useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash && \
+    chown -R 1000:1000 /app/docs/log /app/docs/tmp /app/docs/storage
+USER 1000:1000
+
+# DATABASE_URL is injected by Kamal from the postgres accessory at runtime.
+
+ENTRYPOINT ["/app/docs/bin/docker-entrypoint"]
+
+EXPOSE 3000
+CMD ["./bin/rails", "server", "-b", "0.0.0.0"]
