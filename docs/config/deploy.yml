@@ -1,0 +1,56 @@
+# Kamal deploy for the phlex-reactive docs site → the oss-infrastructure server.
+# Routing is via kamal-proxy behind a Cloudflare Tunnel (no Traefik; TLS is
+# terminated at the Cloudflare edge), per oss-infrastructure/docs/adding-a-new-gem.md.
+service: phlex-reactive-docs
+image: mhenrixon/phlex-reactive-docs
+
+servers:
+  web:
+    - <%= ENV["DEPLOY_HOST"] %>
+
+# kamal-proxy routes by host; TLS is at the Cloudflare edge, so ssl: false.
+proxy:
+  host: <%= ENV["DEPLOY_DOMAIN"] %>
+  app_port: 3000
+  ssl: false
+  healthcheck:
+    path: /up
+    interval: 5
+    timeout: 30
+
+registry:
+  server: ghcr.io
+  username: mhenrixon
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+# The build context is the REPO ROOT (gem + app); the Dockerfile lives in docs/.
+builder:
+  arch: amd64
+  context: ..
+  dockerfile: docs/Dockerfile
+
+env:
+  clear:
+    RAILS_SERVE_STATIC_FILES: "true"
+    RAILS_LOG_TO_STDOUT: "true"
+    # Point the app at the postgres accessory below (pgbus uses this connection).
+    DATABASE_URL: "postgres://phlex_reactive:<%= ENV['POSTGRES_PASSWORD'] %>@phlex-reactive-docs-postgres:5432/phlex_reactive_docs_production"
+  secret:
+    - RAILS_MASTER_KEY
+    - POSTGRES_PASSWORD
+
+# Postgres 18 + PGMQ — the transport the deployed site dogfoods via pgbus.
+accessories:
+  postgres:
+    image: ghcr.io/pgmq/pg18-pgmq:v1.11.1
+    host: <%= ENV["DEPLOY_HOST"] %>
+    port: "127.0.0.1:5432:5432"
+    env:
+      clear:
+        POSTGRES_USER: phlex_reactive
+        POSTGRES_DB: phlex_reactive_docs_production
+      secret:
+        - POSTGRES_PASSWORD
+    directories:
+      - data:/var/lib/postgresql/data

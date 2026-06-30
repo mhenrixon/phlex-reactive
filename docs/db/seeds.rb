@@ -1,9 +1,16 @@
-# This file should ensure the existence of records required to run the application in every environment (production,
-# development, test). The code here should be idempotent so that it can be executed at any point in every environment.
-# The data can then be loaded with the bin/rails db:seed command (or created alongside the database with db:setup).
-#
-# Example:
-#
-#   ["Action", "Comedy", "Drama", "Horror"].each do |genre_name|
-#     MovieGenre.find_or_create_by!(name: genre_name)
-#   end
+# frozen_string_literal: true
+
+# Idempotent demo seed data so the deployed docs site has something to show in
+# the record-backed demos (Todos, Chat). Safe to run on every boot.
+if Todo.count.zero?
+  ["Try the searchable combobox", "Toggle me done", "Rename me inline"].each do |title|
+    Todo.create!(title:)
+  end
+end
+
+if ChatMessage.where(room: "lobby").none?
+  [
+    { author: "ruby", body: "Welcome to the phlex-reactive chat demo!" },
+    { author: "you", body: "Send a message — it broadcasts with zero custom JS." }
+  ].each { |attrs| ChatMessage.create!(room: "lobby", **attrs) }
+end
