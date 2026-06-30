@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   deploy:
@@ -20,7 +19,13 @@ jobs:
       DEPLOY_DOMAIN: ${{ secrets.DEPLOY_DOMAIN }}
       # No 1Password / OP_SERVICE_ACCOUNT_TOKEN: this demo has no managed secrets
       # (SECRET_KEY_BASE + DB password are inline in config/deploy.yml).
-      KAMAL_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      #
+      # The ghcr package `phlex-reactive` is user-owned and not connected to this
+      # repo, so the default GITHUB_TOKEN can't push to it (403 Forbidden even with
+      # packages:write). Use a PAT with write:packages instead, stored as the repo
+      # secret GHCR_TOKEN. (If the package is ever connected to the repo via the
+      # ghcr UI, this can revert to GITHUB_TOKEN + `permissions: packages: write`.)
+      KAMAL_REGISTRY_PASSWORD: ${{ secrets.GHCR_TOKEN }}
     defaults:
       run:
         working-directory: docs
