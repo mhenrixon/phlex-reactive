@@ -2,8 +2,9 @@
 
 # Record-backed reactive row. Identity is the Todo's GlobalID (reactive_record),
 # so the signed token re-finds the record server-side — never trusts client state.
-# Demonstrates a toggle, an inline rename (change event), and an archive that
-# removes the row from the DOM via reply.remove.
+# Demonstrates a toggle, an inline rename that saves on Enter (via the Stimulus
+# keyboard filter event: "keydown.enter"), and an archive that removes the row
+# from the DOM via reply.remove.
 class TodoItemComponent < Phlex::HTML
   include Phlex::Reactive::Streamable
   include Phlex::Reactive::Component
@@ -24,8 +25,10 @@ class TodoItemComponent < Phlex::HTML
     @todo.update!(done: !@todo.done?)
   end
 
+  # Morph in place so the rename input keeps focus + caret after an Enter save.
   def rename(title:)
     @todo.update!(title:) if title.present?
+    reply.morph
   end
 
   # Reply: drop this row from the DOM in place (no doomed self re-render).
@@ -39,8 +42,12 @@ class TodoItemComponent < Phlex::HTML
                             data: { testid: 'todo', done: @todo.done?.to_s })) do
       button(**mix(on(:toggle), class: 'btn btn-xs btn-circle',
                                 data: { testid: 'toggle' })) { @todo.done? ? '✓' : '○' }
-      input(**mix(on(:rename, event: 'change'),
+      # Enter saves the rename (event: "keydown.enter" is Stimulus's native
+      # keyboard filter, so ONLY Enter fires it — not every keystroke). The
+      # Todo's title travels as the `title` param (a named control of this row).
+      input(**mix(on(:rename, event: 'keydown.enter'),
                   name: 'title', value: @todo.title,
+                  data: { testid: 'todo-title' },
                   class: ['input input-sm flex-1', ('line-through opacity-60' if @todo.done?)]))
       button(**mix(on(:archive), class: 'btn btn-xs btn-ghost',
                                  data: { testid: 'archive' })) { 'archive' }

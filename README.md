@@ -275,8 +275,9 @@ The [inline edit example](https://phlex-reactive.zoolutions.llc/docs/example-inl
 | Example | What it shows |
 |---|---|
 | [Counter](https://phlex-reactive.zoolutions.llc/docs/example-counter) | State-backed, the smallest reactive component |
+| [Payment split](https://phlex-reactive.zoolutions.llc/docs/example-payment-split) | Live sum-to-total rebalancer — nested bracketed params, a disabled computed field, auto-collected siblings (#64–#67) |
 | [Cross-tab chat](https://phlex-reactive.zoolutions.llc/docs/example-chat) | Record-backed action **+ pgbus broadcast** → live sync across tabs/browsers |
-| [Live todo list](https://phlex-reactive.zoolutions.llc/docs/example-todo-list) | Per-row components, add/toggle/rename/delete, broadcast on change |
+| [Live todo list](https://phlex-reactive.zoolutions.llc/docs/example-todo-list) | Per-row components, add/toggle/rename/delete, Enter-to-add, broadcast on change |
 | [Inline edit](https://phlex-reactive.zoolutions.llc/docs/example-inline-edit) | Show ↔ edit mode toggle, replacing a Stimulus controller + 3 routes |
 | [Notifications / badges](https://phlex-reactive.zoolutions.llc/docs/example-notifications) | Pure broadcast (no client action) — a job pushes a re-render |
 
@@ -311,6 +312,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_attrs` | Marks an element reactive + carries the signed token (no `id`). Spread alongside `id:` on the **same** element: `div(id:, **reactive_attrs)`. Prefer `reactive_root`, which can't split them. |
 | `on(:action, event: "click", **params)` | Spread onto a trigger element. Adds `type=button` for clicks. |
 | `on(:action, event: "input", debounce: 300)` | Coalesce rapid events into one round trip after a quiet period (live-as-you-type). |
+| `on(:action, event: "keydown.enter")` | Fire only on a specific key — Enter-to-submit / Escape-to-cancel — via Stimulus's native keyboard filter (`event:` passes straight through). See [Keyboard triggers](#keyboard-triggers-enter-to-submit--escape-to-cancel). |
 | `on(:action, confirm: "Sure?")` | Gate a destructive trigger behind a confirmation. Defaults to `window.confirm`; override the dialog with [`setConfirmResolver`](#custom-confirmation-dialogs-setconfirmresolver). |
 | `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
@@ -395,6 +397,16 @@ action :save, params: {invoice: {date: :string, status: :string}}
 # client posts { "invoice[date]": "…", "invoice[status]": "…" }  → save(invoice: { date:, status: })
 ```
 
+> **A flat schema silently drops bracketed names (issue #67).** The schema must
+> mirror the field *names*, not the conceptual params. Because the endpoint
+> expands `invoice[date]` to `{ "invoice" => { "date" => … } }` **before**
+> matching the schema, a flat `params: { date: :string }` matches nothing — the
+> top-level key is now `invoice`, not `date`. There is no error: the action just
+> receives its keyword defaults (`date` never set). If your inputs are named
+> `invoice[…]` (any `Form(model:)`-style form), nest the schema under `invoice:`
+> to match. When in doubt, read a field's real `name` attribute and shape the
+> schema to it.
+
 **Nested reactive components compose.** A reactive component rendered inside
 another is its own root — field collection stops at nested
 `data-controller="reactive"` roots, so an outer action collects only *its own*
@@ -412,6 +424,62 @@ Omit `debounce:` for the immediate-dispatch default.
 # Recompute a total live as the user types, without hammering the endpoint.
 input(**mix(on(:update, event: "input", debounce: 300), name: "quantity", value: @item.quantity))
 ```
+
+**Auto-collected sibling fields — the read contract.** A reactive action doesn't
+just receive its own trigger's value: the client gathers **every named control**
+in the reactive root (`input[name]`, `select[name]`, `textarea[name]`, and named
+rich-text/`contenteditable` editors) and merges them under the action's params,
+so one action reads the whole form. Explicit `on(:act, x: …)` params win over a
+collected field of the same name; collection stops at nested reactive roots (see
+*Nested reactive components compose* above). Two things worth pinning down:
+
+- **Timing — params reflect the DOM at dispatch, not a pre-event snapshot
+  (issue #65).** Field values are read when the request is sent (after the
+  debounce quiet period, if any), so a `change`/`input` trigger sees **its own
+  field's new value and every peer's current value.** There is no capture of the
+  values as they were *before* the interaction — if your computation needs a
+  peer's prior value (e.g. a spill-back that folds an overflow into the edited
+  field), that peer's current DOM value *is* the prior value only because nothing
+  else has changed it yet. Read at dispatch time, trust the current DOM.
+- **Disabled fields ARE collected (issue #66) — deliberately different from a
+  native form.** A `<form>` submit omits `disabled` controls; reactive collection
+  does **not** check `disabled`, so a disabled field that carries a
+  computed/display value (a read-only `total` the client keeps in sync) reaches
+  the action. This is intentional — it's what makes "read a computed disabled
+  field" work. If you need form-submit parity (drop the disabled value), give the
+  control no `name`, or make it `readonly` instead of `disabled` when you *do*
+  want it collected by both paths.
+
+**Keyboard triggers (Enter-to-submit / Escape-to-cancel).** `event:` is
+interpolated straight into the Stimulus action descriptor, so any Stimulus event
+string works — including its **native keyboard filters**. Pass `event:
+"keydown.enter"` to fire only on Enter, `event: "keydown.esc"` for Escape — the
+classic "Enter adds the row", "Escape cancels the edit" interactions. The action
+runs *only* on that key, not on every keypress — no client JavaScript, no
+`event.key` check of your own, and no new option to learn (it's Stimulus's own
+[keyboard-filter syntax](https://stimulus.hotwired.dev/reference/actions#keyboardevent-filter)):
+
+```ruby
+# Enter in the composer adds the todo (same action as the Add button).
+input(**mix(on(:add, event: "keydown.enter"), name: "title", placeholder: "New todo…"))
+
+# Inline editor: Enter on the field saves; a separate control cancels on Escape.
+input(**mix(on(:save, event: "keydown.enter"), name: "title", value: @todo.title))
+button(**on(:cancel, event: "keydown.esc")) { "Cancel" }
+```
+
+The filter tokens are Stimulus's (`enter`, `esc`, `space`, `up`, `down`, a bare
+letter, …). Because a keyboard trigger isn't a click, it does **not** get the
+`type="button"` a click trigger does. Folding the key into `event:` keeps `key`
+free as an ordinary action-param name (`on(:switch, key: "pgbus")` still passes
+`key` through as a param).
+
+> **One action per element.** Each trigger element carries a single reactive
+> action (its `data-reactive-action-param`), so you can't put `on(:save, event:
+> "keydown.enter")` *and* `on(:cancel, event: "keydown.esc")` on the **same**
+> input — the second would overwrite the first's action name. Bind each key
+> trigger to its own element (the field saves on Enter; a Cancel button — or the
+> field's own blur — handles Escape), as above.
 
 **Combining `on(...)` / `reactive_attrs` with your own attributes.** Both return
 a hash that includes a `data:` key. Spreading them *and* passing another `data:`
@@ -566,6 +634,40 @@ the rule: it deliberately skips the full-self replace (so your hand-built stream
 update only the targets you name) and refreshes the token via a tiny inert
 `reactive:token` stream instead — the token rolls forward without re-rendering
 (and clobbering) the component's live inputs.
+
+#### Record-authorized, transient-state actions (issue #64)
+
+A `reactive_record` component isn't obligated to persist or broadcast — the
+record can be there purely for **identity + authorization** while the action's
+real job is to recompute **live, unsaved form values** the user is mid-edit. The
+record is re-located and instantiated on each action (`from_identity`), never
+auto-saved and never auto-broadcast; persistence and cross-tab broadcast are both
+opt-in (you call `record.update!` / `broadcast_*_to` yourself). Pair that with
+`reply.streams` and you get a first-class "authorize via the row, compute over
+the params, stream a partial update, touch neither the DB nor peer tabs" action:
+
+```ruby
+class Invoice::PaymentFields < ApplicationComponent
+  include Phlex::Reactive::Streamable
+  include Phlex::Reactive::Component
+
+  reactive_record :invoice   # identity + authorization ONLY — not persisted here
+  action :rebalance, params: { invoice: { field_a: :integer, field_b: :integer,
+                                          field_c: :integer, total: :integer } }
+
+  def rebalance(invoice:)
+    authorize! @invoice, :update?          # the token proves identity, not permission
+    result = recompute(invoice)            # pure computation over the collected params
+    reply.streams(*set_value_streams(result))  # NO persist, NO broadcast
+  end
+end
+```
+
+This is deliberate, not a misuse: `reply.streams` is exactly the reply for "emit
+these targeted updates, roll the token forward, and leave everything else — the
+DB, the other tabs, the sibling inputs the user is typing in — untouched."
+Broadcasting is deliberately omitted so peer tabs with their own in-flight edits
+aren't clobbered. Authorize the record as always — identity is never permission.
 
 > **Under the hood.** `reply.<verb>` returns a `Phlex::Reactive::Response` — the
 > immutable value object the endpoint reads. You can build one directly

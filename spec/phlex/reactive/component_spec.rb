@@ -401,6 +401,46 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  describe "#on keyboard filters via event: (Enter-to-submit / Escape-to-cancel)" do
+    subject(:instance) { state_klass.new }
+
+    it "passes a Stimulus keyboard-filter event through verbatim (Enter)" do
+      attrs = instance.send(:on, :add, event: "keydown.enter")
+      expect(attrs[:data][:action]).to eq("keydown.enter->reactive#dispatch")
+    end
+
+    it "passes an Escape filter through verbatim" do
+      attrs = instance.send(:on, :cancel, event: "keydown.esc")
+      expect(attrs[:data][:action]).to eq("keydown.esc->reactive#dispatch")
+    end
+
+    it "does not force type=button for a keyboard trigger (it's not a click)" do
+      attrs = instance.send(:on, :add, event: "keydown.enter")
+      expect(attrs).not_to have_key(:type)
+    end
+
+    it "threads a keyboard event alongside debounce and explicit params" do
+      attrs = instance.send(:on, :add, event: "keydown.enter", debounce: 200, title: "x")
+      expect(attrs[:data][:action]).to eq("keydown.enter->reactive#dispatch")
+      expect(attrs[:data][:reactive_debounce_param]).to eq(200)
+      expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({ "title" => "x" })
+    end
+
+    # Regression: `key` is an ordinary action-param name and MUST stay one (the
+    # docs context switcher does on(:switch, key: opt[:key])). It is not a
+    # reserved keyword — it rides in the params payload like any other.
+    it "treats key: as a normal action param, not a keyboard filter" do
+      attrs = instance.send(:on, :switch, key: "pgbus")
+      expect(attrs[:data][:action]).to eq("click->reactive#dispatch")
+      expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({ "key" => "pgbus" })
+    end
+
+    it "leaves the plain (non-keyboard) event descriptor untouched" do
+      attrs = instance.send(:on, :toggle, event: "change")
+      expect(attrs[:data][:action]).to eq("change->reactive#dispatch")
+    end
+  end
+
   # A record-backed component whose record is UNSAVED (new_record?) has no
   # GlobalID to sign. reactive_token must not crash calling to_gid on it — it
   # signs the declared state instead (the draft seed), so the client controller

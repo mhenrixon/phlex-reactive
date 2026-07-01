@@ -8,6 +8,7 @@ module DocsNav
   DEMO_ICONS = {
     'searchable-combobox' => 'search',
     'counter' => 'calculator',
+    'payment-split' => 'scale',
     'todos' => 'list-checks',
     'chat' => 'messages-square'
   }.freeze

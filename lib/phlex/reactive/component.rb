@@ -356,6 +356,14 @@ module Phlex
       # a per-render allocation while keeping the wire format byte-identical.
       EMPTY_PARAMS_JSON = "{}"
 
+      # `event:` is interpolated verbatim into the Stimulus action descriptor
+      # (`#{event}->reactive#dispatch`), so any Stimulus event string works —
+      # including its native KEYBOARD FILTERS. Pass `event: "keydown.enter"` for
+      # Enter-to-submit or `event: "keydown.esc"` for Escape-to-cancel, and the
+      # action fires only on that key — no separate option, no client code, and
+      # `key` stays free as an ordinary action-param name (on(:switch, key: …)):
+      #   input(**on(:add, event: "keydown.enter"))      # Enter submits
+      #   button(**on(:cancel, event: "keydown.esc"))     # Escape cancels
       def on(action_name, event: "click", debounce: nil, confirm: nil, **params)
         attrs = {
           data: {

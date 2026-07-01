@@ -32,16 +32,20 @@ module Views
                 ) do
                   plain 'State-backed — the smallest reactive component.'
                 end
+                example_item('example-payment-split', 'Payment split') do
+                  plain 'Live sum-to-total rebalancer — nested bracketed params, a disabled '
+                  plain 'computed field, auto-collected siblings.'
+                end
                 example_item('example-chat', 'Cross-tab chat') do
                   plain 'Record-backed action '
                   strong { 'and broadcast' }
                   plain ' → live cross-tab sync.'
                 end
                 example_item('example-todo-list', 'Live todo list') do
-                  plain 'Per-row components; add / toggle / rename.'
+                  plain 'Per-row components; add / toggle / rename, with Enter-to-add.'
                 end
                 example_item('example-inline-edit', 'Inline edit') do
-                  plain 'Show ↔ edit mode toggle in one component.'
+                  plain 'Show ↔ edit mode toggle; Enter saves, Escape cancels.'
                 end
                 example_item('example-notifications', 'Notifications / badges') do
                   plain 'Pure broadcast (no client action).'
