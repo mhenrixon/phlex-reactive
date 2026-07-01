@@ -31,10 +31,10 @@ class TodoListComponent < Phlex::HTML
 
       div(class: 'flex gap-2') do
         # Enter in the field adds the todo — the same :add action the button
-        # fires on click. key: "Enter" emits Stimulus's keydown.enter filter, so
-        # only Enter dispatches (not every keystroke). The field's value rides as
-        # the `title` param because it's a named control of this reactive root.
-        input(**mix(on(:add, key: 'Enter'),
+        # fires on click. event: "keydown.enter" is Stimulus's native keyboard
+        # filter, so only Enter dispatches (not every keystroke). The field's
+        # value rides as the `title` param (a named control of this root).
+        input(**mix(on(:add, event: 'keydown.enter'),
                     name: 'title', placeholder: 'New todo…', autocomplete: 'off',
                     class: 'input input-bordered flex-1', data: { testid: 'new-todo' }))
         button(**mix(on(:add), class: 'btn btn-primary', data: { testid: 'add' })) { 'Add' }

@@ -8,20 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **`key:` filter on `on(...)` — Enter-to-submit / Escape-to-cancel with no
-  client JavaScript.** A reactive trigger fired on `event: "keydown"` used to run
-  on *every* keypress — there was no way to say "only on Enter". `on(:add, key:
-  "Enter")` now emits Stimulus's **native** keyboard-filter descriptor
-  (`keydown.enter->reactive#dispatch`), so the action fires only on that key.
-  `event:` defaults to `"keydown"` when a `key:` is given; the DOM key spellings
-  you'd reach for (`"Enter"`, `"Escape"`/`"Esc"`, a bare letter) are normalized to
-  Stimulus's aliases (`enter`, `esc`, `space`, …). It composes with `debounce:`,
-  `confirm:`, and explicit params, never leaks into the action's param payload,
-  and — since a key trigger isn't a click — does not get the `type="button"` a
-  click trigger does. **Purely gem-side**: it translates to a Stimulus filter, so
-  there is no client change and no vendored-client re-sync. One action per element
-  still holds — bind Enter-save and Escape-cancel to separate elements. README
-  documents it under "Keyboard triggers".
+- **Keyboard triggers on `on(...)` via `event:` — Enter-to-submit /
+  Escape-to-cancel with no client JavaScript.** `event:` is interpolated straight
+  into the Stimulus action descriptor, so **Stimulus's native keyboard filters
+  just work**: `on(:add, event: "keydown.enter")` emits
+  `keydown.enter->reactive#dispatch` and the action fires only on Enter, not on
+  every keypress. `event: "keydown.esc"` gives Escape-to-cancel. No new option to
+  learn (it's Stimulus's own filter syntax), no client change, no vendored-client
+  re-sync — and, deliberately, **no reserved `key:` keyword**, so `key` stays a
+  normal action-param name (`on(:switch, key: "pgbus")` keeps passing `key`
+  through as a param — no backward-incompatibility). Because a keyboard trigger
+  isn't a click, it does not get the `type="button"` a click trigger does. One
+  action per element still holds — bind Enter-save and Escape-cancel to separate
+  elements. README documents it under "Keyboard triggers".
 
 - **Overridable / async confirm resolver — reuse your themed dialog (#55).**
   Follow-up to #52. The `confirm:` gate was hardcoded to the synchronous,

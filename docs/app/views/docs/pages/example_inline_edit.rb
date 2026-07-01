@@ -69,12 +69,12 @@ module Views
                   span(**reactive_root) do
                     if @editing
                       # Enter saves; a dedicated Cancel button reverts on Escape.
-                      # key: emits Stimulus's keydown.enter / keydown.esc filter,
-                      # so each fires only on its key — no custom JavaScript.
-                      input(**mix(on(:save, key: "Enter"), name: "value",
+                      # event: "keydown.enter" / "keydown.esc" is Stimulus's native
+                      # keyboard filter, so each fires only on its key — no JS.
+                      input(**mix(on(:save, event: "keydown.enter"), name: "value",
                                   value: current_value, autocomplete: "off"))
                       button(**on(:save)) { "Save" }
-                      button(**on(:cancel, key: "Escape")) { "Cancel" }
+                      button(**on(:cancel, event: "keydown.esc")) { "Cancel" }
                     else
                       span(**on(:edit), class: "editable") { current_value.presence || "—" }
                     end
@@ -137,15 +137,14 @@ module Views
                 li do
                   strong { 'Enter saves, Escape cancels.' }
                   plain ' '
-                  code { 'on(:save, key: "Enter")' }
+                  code { 'on(:save, event: "keydown.enter")' }
                   plain ' and '
-                  code { 'on(:cancel, key: "Escape")' }
-                  plain ' bind each key to its own element — a key trigger emits Stimulus’s native '
-                  code { 'keydown.enter' }
-                  plain ' / '
-                  code { 'keydown.esc' }
-                  plain ' filter, so it fires only on that key. (One action per element: keep the '
-                  plain 'Enter-save on the input and the Escape-cancel on the Cancel button.)'
+                  code { 'on(:cancel, event: "keydown.esc")' }
+                  plain ' bind each key to its own element — '
+                  code { 'event:' }
+                  plain ' passes Stimulus’s native keyboard filter straight through, so the trigger fires '
+                  plain 'only on that key. (One action per element: keep the Enter-save on the input and '
+                  plain 'the Escape-cancel on the Cancel button.)'
                 end
                 li do
                   strong { 'The display text is the click target.' }

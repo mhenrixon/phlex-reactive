@@ -82,9 +82,9 @@ module Views
                 def view_template
                   li(**reactive_root(class: ("done" if @todo.done?))) do
                     button(**on(:toggle)) { @todo.done? ? "✓" : "○" }
-                    # Enter saves the rename (only Enter — key: emits Stimulus's
-                    # keydown.enter filter, not a fire-on-every-keystroke handler):
-                    input(name: "title", value: @todo.title, **on(:rename, key: "Enter"))
+                    # Enter saves the rename (only Enter — event: "keydown.enter"
+                    # is Stimulus's native filter, not a fire-on-every-keystroke handler):
+                    input(name: "title", value: @todo.title, **on(:rename, event: "keydown.enter"))
                     button(**on(:destroy)) { "✕" }
                   end
                 end
@@ -146,7 +146,7 @@ module Views
                       # Enter in the field adds the todo — the same :add action
                       # the button fires on click:
                       input(name: "title", placeholder: "New todo…", autocomplete: "off",
-                            **on(:add, key: "Enter"))
+                            **on(:add, event: "keydown.enter"))
                       button(**on(:add)) { "Add" }
                     end
                   end
@@ -168,12 +168,12 @@ module Views
                 li do
                   strong { 'Enter-to-add and Enter-to-save' }
                   plain ' via '
-                  code { 'on(:add, key: "Enter")' }
-                  plain ' — the '
-                  code { 'key:' }
-                  plain ' option emits Stimulus’s native '
+                  code { 'on(:add, event: "keydown.enter")' }
+                  plain ' — '
+                  code { 'event:' }
+                  plain ' passes Stimulus’s native '
                   code { 'keydown.enter' }
-                  plain ' filter, so the action fires only on Enter (not every keystroke) with no custom JavaScript.'
+                  plain ' filter straight through, so the action fires only on Enter — no custom JavaScript.'
                 end
                 li do
                   plain 'Every change broadcasts the affected '
