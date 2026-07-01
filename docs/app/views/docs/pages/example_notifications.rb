@@ -3,7 +3,7 @@
 module Views
   module Docs
     module Pages
-      class ExampleNotifications < Views::Docs::Page
+      class ExampleNotifications < DocsUI::Page
         title 'Notifications / live badges (pure broadcast, no client action)'
         eyebrow 'Examples'
 
@@ -23,8 +23,8 @@ module Views
         private
 
         def intro
-          render Views::Docs::Section.new('When the server just pushes') do
-            render Views::Docs::Prose.new do
+          DocsUI::Section('When the server just pushes') do
+            DocsUI::Prose() do
               p do
                 plain 'Not every reactive component needs a client action. Sometimes the server just needs to '
                 strong { 'push' }
@@ -40,17 +40,17 @@ module Views
         end
 
         def badge
-          render Views::Docs::Section.new('A notification badge') do
-            render Views::Code.new(badge_component_source, lexer: :ruby)
-            render Views::Docs::Prose.new do
+          DocsUI::Section('A notification badge') do
+            DocsUI::Code(badge_component_source, lexer: :ruby)
+            DocsUI::Prose() do
               p { plain 'Subscribe on the page:' }
             end
-            render Views::Code.new(subscribe_source, lexer: :ruby)
-            render Views::Docs::Prose.new do
+            DocsUI::Code(subscribe_source, lexer: :ruby)
+            DocsUI::Prose() do
               p { plain 'Push an update from anywhere — a model callback, a job, a service:' }
             end
-            render Views::Code.new(broadcast_source, lexer: :ruby)
-            render Views::Docs::Prose.new do
+            DocsUI::Code(broadcast_source, lexer: :ruby)
+            DocsUI::Prose() do
               p do
                 plain 'Now creating a notification re-renders the badge in every tab the user has open. '
                 plain 'No client action, no Stimulus, no Action Cable.'
@@ -60,15 +60,15 @@ module Views
         end
 
         def pill
-          render Views::Docs::Section.new('A “new items” pill driven by a background job') do
-            render Views::Code.new(job_source, lexer: :ruby)
-            render Views::Code.new(status_component_source, lexer: :ruby)
+          DocsUI::Section('A “new items” pill driven by a background job') do
+            DocsUI::Code(job_source, lexer: :ruby)
+            DocsUI::Code(status_component_source, lexer: :ruby)
           end
         end
 
         def when_to_use
-          render Views::Docs::Section.new('When to use this vs a full reactive component') do
-            render Views::Docs::Prose.new do
+          DocsUI::Section('When to use this vs a full reactive component') do
+            DocsUI::Prose() do
               ul do
                 li do
                   plain 'Server pushes a re-render (job, callback, another user) → '
@@ -98,7 +98,7 @@ module Views
                 plain ' action without changing the target or the subscription.'
               end
             end
-            render Views::Docs::Callout.new(:note, title: 'For a list, not just a badge') do
+            DocsUI::Callout(:note, title: 'For a list, not just a badge') do
               plain 'For an add/remove-row list — rows plus a count badge and an empty-state that toggle as the ' \
                     'list grows and shrinks — see Reactive collections, which declares that whole contract once with '
               code { 'reactive_collection' }
@@ -108,8 +108,8 @@ module Views
         end
 
         def transactional_safety
-          render Views::Docs::Section.new('Transactional safety') do
-            render Views::Docs::Prose.new do
+          DocsUI::Section('Transactional safety') do
+            DocsUI::Prose() do
               p do
                 plain 'If you broadcast from an '
                 code { 'after_create_commit' }

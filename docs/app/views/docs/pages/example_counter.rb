@@ -3,7 +3,7 @@
 module Views
   module Docs
     module Pages
-      class ExampleCounter < Views::Docs::Page
+      class ExampleCounter < DocsUI::Page
         title 'Example: counter (the smallest reactive component)'
         eyebrow 'Examples'
 
@@ -21,27 +21,27 @@ module Views
         private
 
         def component
-          render Views::Docs::Section.new('The component') do
-            render Views::Docs::Prose.new do
+          DocsUI::Section('The component') do
+            DocsUI::Prose() do
               p do
                 plain 'Include both mixins, sign the count into the DOM with '
                 code { 'reactive_state' }
                 plain ', and declare the actions a click may invoke.'
               end
             end
-            render Views::Code.new(component_source, lexer: :ruby, filename: 'app/components/counter.rb')
+            DocsUI::Code(component_source, lexer: :ruby, filename: 'app/components/counter.rb')
           end
         end
 
         def rendering
-          render Views::Docs::Section.new('Render it anywhere') do
-            render Views::Code.new('render Counter.new(count: 0)', lexer: :ruby)
+          DocsUI::Section('Render it anywhere') do
+            DocsUI::Code('render Counter.new(count: 0)', lexer: :ruby)
           end
         end
 
         def notes
-          render Views::Docs::Section.new('Notes') do
-            render Views::Docs::Prose.new do
+          DocsUI::Section('Notes') do
+            DocsUI::Prose() do
               ul do
                 li do
                   code { 'reactive_state :count' }
@@ -64,7 +64,7 @@ module Views
                 end
               end
             end
-            render Views::Docs::Callout.new(:tip) do
+            DocsUI::Callout(:tip) do
               plain 'This is record-less on purpose. For anything backed by data, prefer '
               code { 'reactive_record' }
               plain ' so state lives in the DB.'

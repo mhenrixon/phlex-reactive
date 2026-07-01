@@ -9,10 +9,7 @@
 # id, so the same component drives any "pick one of N contexts" widget (e.g.
 # transport: Action Cable vs pgbus). Content is looked up server-side from the
 # frozen registry — never shipped to or trusted from the client.
-class ContextSwitcherComponent < Phlex::HTML
-  include Phlex::Reactive::Streamable
-  include Phlex::Reactive::Component
-
+class ContextSwitcherComponent < ReactiveBase
   reactive_state :registry, :key
 
   action :switch, params: { key: :string }
@@ -67,7 +64,7 @@ class ContextSwitcherComponent < Phlex::HTML
     opt = current
     div(class: 'mt-3', data: { testid: 'context-panel' }) do
       p(class: 'mb-2 text-sm text-base-content/70') { opt[:summary] } if opt[:summary]
-      render Views::Code.new(opt[:code], lexer: opt.fetch(:lexer, :ruby), filename: opt[:filename])
+      DocsUI::Code(opt[:code], lexer: opt.fetch(:lexer, :ruby), filename: opt[:filename])
     end
   end
 end

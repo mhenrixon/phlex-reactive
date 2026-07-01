@@ -8,6 +8,10 @@
 ARG RUBY_VERSION=3.4.2
 FROM ruby:$RUBY_VERSION-slim AS base
 
+ARG BUN_VERSION=1.3.2
+ENV BUN_INSTALL="/usr/local/bun"
+ENV PATH="/usr/local/bun/bin:$PATH"
+
 WORKDIR /app/docs
 
 ENV BUNDLE_DEPLOYMENT="0" \
@@ -28,10 +32,15 @@ RUN gem update --system --no-document && gem install -N bundler
 FROM base AS build
 
 # build-essential + libpq-dev/libyaml-dev to compile native gems (pg, etc.);
-# git so the gem's gemspec (`git ls-files`) resolves the path dependency.
+# git so the gem's gemspec (`git ls-files`) resolves the path dependency;
+# unzip for the Bun installer.
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y \
-      build-essential curl git libpq-dev libyaml-dev pkg-config
+      build-essential curl git libpq-dev libyaml-dev pkg-config unzip
+
+# Bun runs the Tailwind CSS v4 CLI (bun run build:css) — the canonical CSS build
+# shared with the daisyUI docs site (no tailwindcss-rails).
+RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}"
 
 # Copy the WHOLE repo first (gem at /app, app at /app/docs) — the gem is a path
 # dependency whose gemspec runs `git ls-files`, so it needs the full checkout
@@ -43,18 +52,22 @@ COPY . /app/
 RUN bundle config set frozen false && bundle install && \
     rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache
 
-# Precompile assets (daisyUI/Tailwind build + propshaft) without the master key.
-RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails tailwindcss:build && \
-    SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile
+# Install JS deps (Tailwind CLI + daisyUI). assets:precompile is enhanced by the
+# css:build rake task (lib/tasks/build_css.rake), so it runs `bun run build:css`
+# — which shells to bin/build-css, resolving the daisyui + docs-kit gem @source
+# globs from `bundle show` — before propshaft fingerprints application.css.
+RUN bun install --frozen-lockfile
+RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile
 
 
 # --- Final stage --------------------------------------------------------------
 FROM base
 
-# Kamal verifies this label on deploy (must match `service:` in deploy.yml). When
-# Kamal builds the image it injects `--label service=...` itself, but CI builds
-# the image with docker/build-push-action (so the package links to the repo), so
-# set the label here rather than relying on Kamal's injection.
+# Kamal verifies this `service` label on deploy; it MUST equal `service:` in
+# config/deploy.yml (= the repo name, phlex-reactive, so the ghcr package links
+# to the repo). The reusable deploy workflow also stamps it via
+# docker/build-push-action, but keep it here so a plain `docker build` produces a
+# Kamal-deployable image too.
 LABEL service="phlex-reactive"
 
 # curl for the healthcheck; libpq5 (Postgres client lib) is already in `base`.

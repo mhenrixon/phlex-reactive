@@ -10,7 +10,7 @@ module Views
       end
 
       def view_template
-        render Views::Layout.new(title: @demo.title) do
+        DocsUI::Shell(title: @demo.title) do
           nav(class: 'mb-6') do
             a(href: root_path, class: 'link link-hover text-sm opacity-70') { '← All demos' }
           end

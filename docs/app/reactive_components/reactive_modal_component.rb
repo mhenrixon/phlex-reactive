@@ -6,10 +6,7 @@
 # (DocModals), so the client only carries the chosen key + open flag.
 #
 #   render ReactiveModalComponent.new(modal: "architecture-diagram", label: "View the full picture")
-class ReactiveModalComponent < Phlex::HTML
-  include Phlex::Reactive::Streamable
-  include Phlex::Reactive::Component
-
+class ReactiveModalComponent < ReactiveBase
   reactive_state :modal, :open, :label
 
   action :open_modal
@@ -52,7 +49,7 @@ class ReactiveModalComponent < Phlex::HTML
       class: 'btn btn-sm btn-outline gap-2',
       data: { testid: "modal-open-#{@modal}" }
     )) do
-      render Views::Icon.new('maximize-2', class: 'size-4')
+      DocsUI::Icon('maximize-2', class: 'size-4')
       plain @label
     end
   end
@@ -67,7 +64,7 @@ class ReactiveModalComponent < Phlex::HTML
           h3(class: 'text-lg font-semibold') { e&.fetch(:title, 'Details') }
           button(**mix(on(:close_modal), class: 'btn btn-sm btn-circle btn-ghost',
                                          data: { testid: "modal-close-#{@modal}" })) do
-            render Views::Icon.new('x', class: 'size-4')
+            DocsUI::Icon('x', class: 'size-4')
           end
         end
         modal_body(e)
@@ -80,7 +77,7 @@ class ReactiveModalComponent < Phlex::HTML
     return div(class: 'opacity-60') { 'Not found.' } unless entry
 
     if entry[:code]
-      render Views::Code.new(entry[:code], lexer: entry.fetch(:lexer, :ruby), filename: entry[:filename])
+      DocsUI::Code(entry[:code], lexer: entry.fetch(:lexer, :ruby), filename: entry[:filename])
     else
       p(class: 'text-base-content/80') { entry[:body] }
     end

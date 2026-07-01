@@ -3,7 +3,7 @@
 module Views
   module Docs
     module Pages
-      class Architecture < Views::Docs::Page
+      class Architecture < DocsUI::Page
         title 'Architecture'
         eyebrow 'Guide'
 
@@ -21,8 +21,8 @@ module Views
         private
 
         def mental_model
-          render Views::Docs::Section.new('The mental model') do
-            render Views::Docs::Prose.new do
+          DocsUI::Section('The mental model') do
+            DocsUI::Prose() do
               p do
                 plain 'Client interactivity ('
                 code { 'Component' }
@@ -38,8 +38,8 @@ module Views
         end
 
         def layers
-          render Views::Docs::Section.new('The layers') do
-            render Views::Docs::Prose.new do
+          DocsUI::Section('The layers') do
+            DocsUI::Prose() do
               ul do
                 li { plain 'Client runtime — one generic Stimulus controller.' }
                 li { plain 'Endpoint — verify token → run action → render the reply.' }
@@ -51,15 +51,15 @@ module Views
         end
 
         def identity
-          render Views::Docs::Section.new('Signed identity, not state') do
-            render Views::Docs::Prose.new do
+          DocsUI::Section('Signed identity, not state') do
+            DocsUI::Prose() do
               p do
                 plain 'The DOM holds a signed identity — a '
                 code { 'MessageVerifier' }
                 plain ' token, never raw state. Tampering fails verification.'
               end
             end
-            render Views::Docs::Callout.new(:warning, title: 'Never trust client input') do
+            DocsUI::Callout(:warning, title: 'Never trust client input') do
               plain 'The signature proves the token is ours, NOT that this user may act. Authorize inside the action.'
             end
             # Dogfood: a reactive modal shows what the token actually contains.

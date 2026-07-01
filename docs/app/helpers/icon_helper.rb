@@ -5,7 +5,7 @@
 # back to a question-mark icon (in production) instead of raising.
 #
 # In Phlex views, render it with `raw(safe(_lucide("search", class: "size-4")))`,
-# or use the Views::Icon component which wraps this.
+# or use the Docs::Icon component (from docs-kit) which wraps rails_icons directly.
 module IconHelper
   MISSING_ICON = 'circle-question-mark'
 

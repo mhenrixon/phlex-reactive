@@ -3,7 +3,7 @@
 module Views
   module Docs
     module Pages
-      class Installation < Views::Docs::Page
+      class Installation < DocsUI::Page
         title 'Installation'
         eyebrow 'Guide'
 
@@ -26,15 +26,15 @@ module Views
         private
 
         def install
-          render Views::Docs::Section.new('Install') do
-            render Views::Code.new(<<~RUBY, lexer: :ruby, filename: 'Gemfile')
+          DocsUI::Section('Install') do
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'Gemfile')
               gem "phlex-reactive"
             RUBY
-            render Views::Code.new(<<~SHELL, lexer: :shell)
+            DocsUI::Code(<<~SHELL, lexer: :shell)
               bundle install
               bin/rails generate phlex:reactive:install
             SHELL
-            render Views::Docs::Prose.new do
+            DocsUI::Prose() do
               p { plain 'The Rails engine automatically:' }
               ul do
                 li do
@@ -81,8 +81,8 @@ module Views
         end
 
         def generators
-          render Views::Docs::Section.new('Generators') do
-            render Views::Code.new(<<~SHELL, lexer: :shell)
+          DocsUI::Section('Generators') do
+            DocsUI::Code(<<~SHELL, lexer: :shell)
               # Setup (idempotent)
               bin/rails generate phlex:reactive:install
 
@@ -95,7 +95,7 @@ module Views
               # Custom signed state vars
               bin/rails generate phlex:reactive:component Wizard next_step --state step open
             SHELL
-            render Views::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 plain 'The component generator also writes an RSpec spec when your app has a '
                 code { 'spec/' }
@@ -106,13 +106,13 @@ module Views
         end
 
         def importmap
-          render Views::Docs::Section.new('importmap-rails (default Rails 7+)') do
-            render Views::Code.new(<<~JS, lexer: :javascript, filename: 'app/javascript/controllers/index.js')
+          DocsUI::Section('importmap-rails (default Rails 7+)') do
+            DocsUI::Code(<<~JS, lexer: :javascript, filename: 'app/javascript/controllers/index.js')
               import { application } from "controllers/application"
               import ReactiveController from "phlex/reactive/reactive_controller"
               application.register("reactive", ReactiveController)
             JS
-            render Views::Docs::Callout.new(:warning, title: 'Register eagerly, not lazily') do
+            DocsUI::Callout(:warning, title: 'Register eagerly, not lazily') do
               plain 'If you '
               code { 'lazyLoadControllersFrom' }
               plain ', the controller is fetched on first appearance — and a user who clicks ' \
@@ -124,22 +124,22 @@ module Views
         end
 
         def jsbundling
-          render Views::Docs::Section.new('esbuild / rollup / webpack (jsbundling)') do
-            render Views::Code.new(<<~JS, lexer: :javascript, filename: 'app/javascript/controllers/index.js')
+          DocsUI::Section('esbuild / rollup / webpack (jsbundling)') do
+            DocsUI::Code(<<~JS, lexer: :javascript, filename: 'app/javascript/controllers/index.js')
               import { application } from "./application"
               import ReactiveController from "phlex/reactive/reactive_controller"
               application.register("reactive", ReactiveController)
             JS
-            render Views::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 plain "If your bundler can't resolve the gem path, copy the file in:"
               end
             end
-            render Views::Code.new(<<~SHELL, lexer: :shell)
+            DocsUI::Code(<<~SHELL, lexer: :shell)
               cp "$(bundle show phlex-reactive)/app/javascript/phlex/reactive/reactive_controller.js" \\
                  app/javascript/controllers/reactive_controller.js
             SHELL
-            render Views::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 plain '…and '
                 code { 'import ReactiveController from "./reactive_controller"' }
@@ -164,8 +164,8 @@ module Views
         end
 
         def bun
-          render Views::Docs::Section.new('bun (bun-rails)') do
-            render Views::Docs::Prose.new do
+          DocsUI::Section('bun (bun-rails)') do
+            DocsUI::Prose() do
               p do
                 plain 'Same as esbuild. Point the import at the gem path or vendor the file.'
               end
@@ -174,8 +174,8 @@ module Views
         end
 
         def requirements
-          render Views::Docs::Section.new('Requirements') do
-            render Views::Docs::Prose.new do
+          DocsUI::Section('Requirements') do
+            DocsUI::Prose() do
               ul do
                 li do
                   strong { 'Rails' }
@@ -216,15 +216,15 @@ module Views
         end
 
         def configuration
-          render Views::Docs::Section.new('Configuration') do
-            render Views::Docs::Prose.new do
+          DocsUI::Section('Configuration') do
+            DocsUI::Prose() do
               p do
                 plain 'Create '
                 code { 'config/initializers/phlex_reactive.rb' }
                 plain ' as needed:'
               end
             end
-            render Views::Code.new(<<~RUBY, lexer: :ruby, filename: 'config/initializers/phlex_reactive.rb')
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'config/initializers/phlex_reactive.rb')
               Phlex::Reactive.base_controller_name = "ApplicationController"   # CSRF + auth + Current
               Phlex::Reactive.renderer             = ApplicationController     # app helpers during render
               Phlex::Reactive.authorization_errors = [Pundit::NotAuthorizedError]
@@ -232,22 +232,22 @@ module Views
               # Phlex::Reactive.verifier    = ActiveSupport::MessageVerifier.new(ENV["REACTIVE_KEY"])
               # Phlex::Reactive.flash_target = "flash"                         # DOM id reply…flash appends into
             RUBY
-            render Views::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 plain 'If you change '
                 code { 'action_path' }
                 plain ', expose it to the client:'
               end
             end
-            render Views::Code.new(<<~ERB, lexer: :erb)
+            DocsUI::Code(<<~ERB, lexer: :erb)
               <meta name="phlex-reactive-action-path" content="<%= Phlex::Reactive.action_path %>">
             ERB
           end
         end
 
         def verify
-          render Views::Docs::Section.new('Verify it works') do
-            render Views::Docs::Prose.new do
+          DocsUI::Section('Verify it works') do
+            DocsUI::Prose() do
               p do
                 plain 'Drop a counter on any page, click '
                 code { '+' }
@@ -255,7 +255,7 @@ module Views
                       'nothing, check the testing guide troubleshooting section.'
               end
             end
-            render Views::Docs::Callout.new(:tip) do
+            DocsUI::Callout(:tip) do
               plain 'No full-page reload is the signal everything is wired: the engine endpoint is ' \
                     'mounted, the controller is registered eagerly, and Turbo morphs the component in place.'
             end
