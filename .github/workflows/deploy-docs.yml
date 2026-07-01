@@ -1,52 +1,17 @@
 name: Deploy docs
 
 # Deploys the docs site (docs/) to the oss-infrastructure server via Kamal when a
-# release is published, or on demand. See oss-infrastructure/docs/adding-a-new-gem.md.
+# release is published, or on demand. The build+deploy logic is shared across all
+# docs-kit sites — see mhenrixon/docs-kit/.github/workflows/deploy.yml.
 on:
   release:
     types: [published]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  packages: write
-
 jobs:
   deploy:
-    runs-on: ubuntu-latest
-    environment: docs
-    env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_DOMAIN: ${{ secrets.DEPLOY_DOMAIN }}
-      # No 1Password / OP_SERVICE_ACCOUNT_TOKEN: this demo has no managed secrets
-      # (SECRET_KEY_BASE + DB password are inline in config/deploy.yml).
-      KAMAL_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-    defaults:
-      run:
-        working-directory: docs
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.4"
-          bundler-cache: false
-
-      - name: Install Kamal
-        run: gem install kamal
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Add SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-
-      - name: Deploy with Kamal
-        run: kamal deploy
+    uses: mhenrixon/docs-kit/.github/workflows/deploy.yml@main
+    with:
+      image: mhenrixon/phlex-reactive-docs
+      service: phlex-reactive-docs
+    secrets: inherit

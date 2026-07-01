@@ -63,6 +63,13 @@ RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile
 # --- Final stage --------------------------------------------------------------
 FROM base
 
+# Kamal's validate_image greps the image's `service` label on a --skip-push
+# deploy (it never runs `kamal build`, so it can't inject the label itself); it
+# MUST equal `service:` in config/deploy.yml. The reusable deploy workflow also
+# stamps this via build-push-action, but keep it here so a plain `docker build`
+# produces a Kamal-deployable image too.
+LABEL service="phlex-reactive-docs"
+
 # curl for the healthcheck; libpq5 (Postgres client lib) is already in `base`.
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y curl && \

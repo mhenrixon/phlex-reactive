@@ -6,8 +6,9 @@ GIT
       phlex (~> 2.0, >= 2.0.0)
       zeitwerk (~> 2.6)
 
-PATH
-  remote: ../../docs-kit
+GIT
+  remote: https://github.com/mhenrixon/docs-kit.git
+  revision: d0a62c539d7dfbdadc1afa180b059ca775d77726
   specs:
     docs-kit (0.1.0)
       daisyui (>= 1.2)

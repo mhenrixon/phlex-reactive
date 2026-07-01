@@ -33,8 +33,10 @@ gem "daisyui", github: "mhenrixon/daisyui", require: "daisy_ui"
 
 # Shared docs-site chrome (Shell/Sidebar/Code/Page/...) — the single place the
 # layout/design lives, shared with the daisyUI docs site. Configured per-site via
-# DocsKit.configure (see config/initializers/docs_kit.rb).
-gem "docs-kit", path: "../../docs-kit"
+# DocsKit.configure (see config/initializers/docs_kit.rb). Referenced from GitHub
+# (not a local path) so the Docker build — whose context is THIS repo — can
+# resolve it; the gem lives in a sibling repo, outside the build context.
+gem "docs-kit", github: "mhenrixon/docs-kit", require: "docs_kit"
 
 # Icons — lucide via rails_icons (SVGs synced into app/assets/svg/icons).
 gem "rails_icons", "~> 1.1"
