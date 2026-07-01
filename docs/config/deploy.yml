@@ -1,8 +1,11 @@
 # Kamal deploy for the phlex-reactive docs site → the oss-infrastructure server.
 # Routing is via kamal-proxy behind a Cloudflare Tunnel (no Traefik; TLS is
 # terminated at the Cloudflare edge), per oss-infrastructure/docs/adding-a-new-gem.md.
-service: phlex-reactive-docs
-image: mhenrixon/phlex-reactive-docs
+service: phlex-reactive
+# Match the repo (ghcr.io/mhenrixon/phlex-reactive) so GitHub auto-links the
+# package to this repo and the Actions GITHUB_TOKEN can push to it. A package
+# named differently from the repo stays user-owned + unlinked → push 403s in CI.
+image: mhenrixon/phlex-reactive
 
 servers:
   web:
@@ -15,7 +18,7 @@ ssh:
 
 # Kamal puts the app AND accessories on the auto-created `kamal` Docker network,
 # so the app reaches the postgres accessory by its container name
-# (phlex-reactive-docs-postgres) with no manual network config — see DATABASE_URL.
+# (phlex-reactive-postgres) with no manual network config — see DATABASE_URL.
 
 # kamal-proxy routes by host; TLS is at the Cloudflare edge, so ssl: false.
 proxy:
@@ -52,7 +55,7 @@ env:
     # and the DB password are inline rather than managed secrets — no master key,
     # no 1Password needed. Rotate here if ever required.
     SECRET_KEY_BASE: "b9155e47dce1f0bb6c653eeef87d02fc8ce3b77210338903c74a82c17f8959e442c13d3072f56ac5c074aa498909e34236f0e22c38ccb6f529c97d90a5dc6049"
-    DATABASE_URL: "postgres://phlex_reactive:49aefea6368f231f568fc7efcdd1aa19c72f19314610983d@phlex-reactive-docs-postgres:5432/phlex_reactive_docs_production"
+    DATABASE_URL: "postgres://phlex_reactive:49aefea6368f231f568fc7efcdd1aa19c72f19314610983d@phlex-reactive-postgres:5432/phlex_reactive_docs_production"
 
 # Postgres 18 + PGMQ — the transport the deployed site dogfoods via pgbus.
 accessories:

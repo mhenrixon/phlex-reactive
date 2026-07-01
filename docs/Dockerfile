@@ -51,6 +51,12 @@ RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails tailwindcss:build && \
 # --- Final stage --------------------------------------------------------------
 FROM base
 
+# Kamal verifies this label on deploy (must match `service:` in deploy.yml). When
+# Kamal builds the image it injects `--label service=...` itself, but CI builds
+# the image with docker/build-push-action (so the package links to the repo), so
+# set the label here rather than relying on Kamal's injection.
+LABEL service="phlex-reactive"
+
 # curl for the healthcheck; libpq5 (Postgres client lib) is already in `base`.
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y curl && \
