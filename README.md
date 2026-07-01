@@ -395,6 +395,16 @@ action :save, params: {invoice: {date: :string, status: :string}}
 # client posts { "invoice[date]": "…", "invoice[status]": "…" }  → save(invoice: { date:, status: })
 ```
 
+> **A flat schema silently drops bracketed names (issue #67).** The schema must
+> mirror the field *names*, not the conceptual params. Because the endpoint
+> expands `invoice[date]` to `{ "invoice" => { "date" => … } }` **before**
+> matching the schema, a flat `params: { date: :string }` matches nothing — the
+> top-level key is now `invoice`, not `date`. There is no error: the action just
+> receives its keyword defaults (`date` never set). If your inputs are named
+> `invoice[…]` (any `Form(model:)`-style form), nest the schema under `invoice:`
+> to match. When in doubt, read a field's real `name` attribute and shape the
+> schema to it.
+
 **Nested reactive components compose.** A reactive component rendered inside
 another is its own root — field collection stops at nested
 `data-controller="reactive"` roots, so an outer action collects only *its own*
@@ -412,6 +422,31 @@ Omit `debounce:` for the immediate-dispatch default.
 # Recompute a total live as the user types, without hammering the endpoint.
 input(**mix(on(:update, event: "input", debounce: 300), name: "quantity", value: @item.quantity))
 ```
+
+**Auto-collected sibling fields — the read contract.** A reactive action doesn't
+just receive its own trigger's value: the client gathers **every named control**
+in the reactive root (`input[name]`, `select[name]`, `textarea[name]`, and named
+rich-text/`contenteditable` editors) and merges them under the action's params,
+so one action reads the whole form. Explicit `on(:act, x: …)` params win over a
+collected field of the same name; collection stops at nested reactive roots (see
+*Nested reactive components compose* above). Two things worth pinning down:
+
+- **Timing — params reflect the DOM at dispatch, not a pre-event snapshot
+  (issue #65).** Field values are read when the request is sent (after the
+  debounce quiet period, if any), so a `change`/`input` trigger sees **its own
+  field's new value and every peer's current value.** There is no capture of the
+  values as they were *before* the interaction — if your computation needs a
+  peer's prior value (e.g. a spill-back that folds an overflow into the edited
+  field), that peer's current DOM value *is* the prior value only because nothing
+  else has changed it yet. Read at dispatch time, trust the current DOM.
+- **Disabled fields ARE collected (issue #66) — deliberately different from a
+  native form.** A `<form>` submit omits `disabled` controls; reactive collection
+  does **not** check `disabled`, so a disabled field that carries a
+  computed/display value (a read-only `total` the client keeps in sync) reaches
+  the action. This is intentional — it's what makes "read a computed disabled
+  field" work. If you need form-submit parity (drop the disabled value), give the
+  control no `name`, or make it `readonly` instead of `disabled` when you *do*
+  want it collected by both paths.
 
 **Combining `on(...)` / `reactive_attrs` with your own attributes.** Both return
 a hash that includes a `data:` key. Spreading them *and* passing another `data:`
@@ -566,6 +601,40 @@ the rule: it deliberately skips the full-self replace (so your hand-built stream
 update only the targets you name) and refreshes the token via a tiny inert
 `reactive:token` stream instead — the token rolls forward without re-rendering
 (and clobbering) the component's live inputs.
+
+#### Record-authorized, transient-state actions (issue #64)
+
+A `reactive_record` component isn't obligated to persist or broadcast — the
+record can be there purely for **identity + authorization** while the action's
+real job is to recompute **live, unsaved form values** the user is mid-edit. The
+record is re-located and instantiated on each action (`from_identity`), never
+auto-saved and never auto-broadcast; persistence and cross-tab broadcast are both
+opt-in (you call `record.update!` / `broadcast_*_to` yourself). Pair that with
+`reply.streams` and you get a first-class "authorize via the row, compute over
+the params, stream a partial update, touch neither the DB nor peer tabs" action:
+
+```ruby
+class Invoice::PaymentFields < ApplicationComponent
+  include Phlex::Reactive::Streamable
+  include Phlex::Reactive::Component
+
+  reactive_record :invoice   # identity + authorization ONLY — not persisted here
+  action :rebalance, params: { invoice: { field_a: :integer, field_b: :integer,
+                                          field_c: :integer, total: :integer } }
+
+  def rebalance(invoice:)
+    authorize! @invoice, :update?          # the token proves identity, not permission
+    result = recompute(invoice)            # pure computation over the collected params
+    reply.streams(*set_value_streams(result))  # NO persist, NO broadcast
+  end
+end
+```
+
+This is deliberate, not a misuse: `reply.streams` is exactly the reply for "emit
+these targeted updates, roll the token forward, and leave everything else — the
+DB, the other tabs, the sibling inputs the user is typing in — untouched."
+Broadcasting is deliberately omitted so peer tabs with their own in-flight edits
+aren't clobbered. Authorize the record as always — identity is never permission.
 
 > **Under the hood.** `reply.<verb>` returns a `Phlex::Reactive::Response` — the
 > immutable value object the endpoint reads. You can build one directly

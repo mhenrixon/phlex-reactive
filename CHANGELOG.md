@@ -55,6 +55,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server coercion (request specs), the FormData wire shape (bun unit tests), and a
   real browser upload under Puma + Falcon (system spec).
 
+### Documentation
+
+- **The auto-collected-params contract, spelled out (#64, #65, #66, #67).** Four
+  gaps surfaced from building one model-scoped form (numeric fields that rebalance
+  live). No behavior changed — the README now documents what the code already
+  does:
+  - **#67** — a **flat** param schema silently drops **bracketed** field names.
+    Because the endpoint expands `invoice[date]` to `{ "invoice" => { … } }`
+    *before* matching the schema, a flat `{ date: … }` matches nothing and the
+    action gets keyword defaults with no error. The "Model-scoped form fields"
+    section now warns to nest the schema under the model key to match the names.
+  - **#65** — auto-collected sibling fields are read **at dispatch time**, not
+    from a pre-event snapshot: a `change`/`input` trigger sees its own new value
+    and every peer's current DOM value. Documented in a new "Auto-collected
+    sibling fields — the read contract" subsection.
+  - **#66** — reactive collection **includes `disabled` fields**, deliberately
+    unlike a native `<form>` submit, so a read-only computed field (a synced
+    `total`) reaches the action. Documented as intentional, with the `readonly`
+    vs `disabled` guidance for form-submit parity.
+  - **#64** — a `reactive_record` action can use the record for **identity +
+    authorization only** and compute over live, unsaved params, returning
+    `reply.streams(...)` to stream a partial update with **no persist and no
+    broadcast**. Documented as a first-class "record-authorized, transient-state
+    action" pattern in the `reply` section.
+
 ### Changed
 
 - **Linter: Standard → RuboCop.** The gem now lints with RuboCop (all new cops
