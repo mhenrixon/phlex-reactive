@@ -441,6 +441,146 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  # A record-backed component whose record is UNSAVED (new_record?) has no
+  # GlobalID to sign. reactive_token must not crash calling to_gid on it — it
+  # signs the declared state instead (the draft seed), so the client controller
+  # still mounts and a client-side compute (reactive_compute) can drive the
+  # unpersisted record in-browser. This is the "tokenless draft" seam.
+  describe "record-backed component holding an UNSAVED record (draft seed)" do
+    # A record double that is not persisted and raises on to_gid (mirroring
+    # ActiveRecord::Base#to_gid on a new_record — MissingModelIdError).
+    let(:unsaved_record) do
+      Class.new do
+        def persisted? = false
+        def to_gid = raise(URI::GID::MissingModelIdError, "no id")
+      end.new
+    end
+
+    let(:draft_klass) do
+      Class.new do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "DraftThing"
+
+        reactive_record :order
+        reactive_state :total, :allowance
+
+        def initialize(order:, total: 0, allowance: 0)
+          @order = order
+          @total = total
+          @allowance = allowance
+        end
+
+        attr_reader :order, :total, :allowance
+
+        def id = "draft-thing"
+      end
+    end
+
+    it "signs {c, s} WITHOUT a gid when the record is unsaved (no crash)" do
+      token = draft_klass.new(order: unsaved_record, total: 500, allowance: 100).send(:reactive_token)
+      payload = Phlex::Reactive.verify(token)
+
+      expect(payload["c"]).to eq("DraftThing")
+      expect(payload).not_to have_key("gid")
+      expect(payload["s"]).to eq({ "total" => 500, "allowance" => 100 })
+    end
+
+    it "still signs the gid when the record IS persisted" do
+      saved = Struct.new(:gid_string).new("gid://app/Order/7")
+      allow(saved).to receive_messages(persisted?: true, to_gid: instance_double(GlobalID, to_s: saved.gid_string))
+
+      token = draft_klass.new(order: saved, total: 500).send(:reactive_token)
+      payload = Phlex::Reactive.verify(token)
+
+      expect(payload["gid"]).to eq("gid://app/Order/7")
+    end
+  end
+
+  # reactive_compute declares a CLIENT-SIDE reducer: on `input`, the generic
+  # controller runs a registered JS function over the named input fields and
+  # writes the named output fields WITHOUT a round trip (the "instant" half of
+  # the new-record UX), then the debounced POST reconciles from the server reply.
+  # The Ruby side is pure hash-building — no view context, no DB — so it lives
+  # here alongside on/reactive_field.
+  describe "reactive_compute DSL (client-side data bindings)" do
+    let(:compute_klass) do
+      Class.new do
+        include Phlex::Reactive::Component
+
+        def self.name = "ComputeThing"
+
+        reactive_state :total
+        reactive_compute :payment_split,
+          inputs: %i[allowance cash leasing total],
+          outputs: %i[allowance cash leasing]
+
+        def initialize(total: 0) = @total = total
+      end
+    end
+
+    describe "declaration registry" do
+      it "registers a declared compute" do
+        expect(compute_klass.reactive_compute?(:payment_split)).to be(true)
+      end
+
+      it "does not register an undeclared name" do
+        expect(compute_klass.reactive_compute?(:wat)).to be(false)
+        expect(compute_klass.reactive_compute(:wat)).to be_nil
+      end
+
+      it "captures the inputs and outputs" do
+        definition = compute_klass.reactive_compute(:payment_split)
+        expect(definition.inputs).to eq(%i[allowance cash leasing total])
+        expect(definition.outputs).to eq(%i[allowance cash leasing])
+      end
+
+      it "defaults the reducer key to the compute name" do
+        expect(compute_klass.reactive_compute(:payment_split).reducer).to eq("payment_split")
+      end
+
+      it "honors an explicit reducer key" do
+        klass = Class.new do
+          include Phlex::Reactive::Component
+
+          def self.name = "CustomReducer"
+          reactive_compute :split, inputs: %i[a], outputs: %i[b], reducer: "shared_split"
+        end
+        expect(klass.reactive_compute(:split).reducer).to eq("shared_split")
+      end
+    end
+
+    describe "inheritance" do
+      it "inherits computes from a parent and adds its own without mutating the parent" do
+        child = Class.new(compute_klass) do
+          def self.name = "ComputeChild"
+          reactive_compute :totals, inputs: %i[price qty], outputs: %i[total]
+        end
+
+        expect(child.reactive_compute?(:payment_split)).to be(true) # inherited
+        expect(child.reactive_compute?(:totals)).to be(true)        # own
+        expect(compute_klass.reactive_compute?(:totals)).to be(false) # parent unaffected
+      end
+    end
+
+    describe "#reactive_compute_attrs (data attributes for the root)" do
+      subject(:instance) { compute_klass.new }
+
+      it "emits the reducer key and the input/output field names as data attrs" do
+        attrs = instance.send(:reactive_compute_attrs, :payment_split)
+        expect(attrs[:data][:reactive_compute_reducer_param]).to eq("payment_split")
+        expect(JSON.parse(attrs[:data][:reactive_compute_inputs_param])).to eq(%w[allowance cash leasing total])
+        expect(JSON.parse(attrs[:data][:reactive_compute_outputs_param])).to eq(%w[allowance cash leasing])
+      end
+
+      it "raises for an undeclared compute (fail fast, not a silent no-op)" do
+        expect { instance.send(:reactive_compute_attrs, :nope) }
+          .to raise_error(Phlex::Reactive::Error, /reactive_compute/)
+      end
+    end
+  end
+
   # Performance: reactive_token runs on EVERY render. It must produce a byte-
   # identical payload before/after caching the ivar symbols + class name. These
   # pin the payload SHAPE (decoded) so an allocation optimization can't silently

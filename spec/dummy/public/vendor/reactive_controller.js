@@ -10,6 +10,9 @@ import { Controller } from "@hotwired/stimulus"
 // bundlers/bun resolve it the same way they already resolve
 // "phlex/reactive/reactive_controller" (see tsconfig.json paths for the tests).
 import { confirmResolver } from "phlex/reactive/confirm"
+// Client-side computes (data bindings): the reducer registry behind
+// reactive_compute. Bare specifier for the same import-map reason as confirm.
+import { computeReducer } from "phlex/reactive/compute"
 
 // The ONE generic controller behind every reactive Phlex component. It
 // replaces the per-feature Stimulus controllers you'd otherwise hand-write
@@ -217,6 +220,68 @@ export default class extends Controller {
       .then((ok) => {
         if (ok) this.#proceed(target, action, params, debounce)
       })
+  }
+
+  // Client-side compute (data binding). Wired by reactive_compute: an `input`
+  // trigger (input->reactive#recompute) runs a REGISTERED JS reducer over the
+  // named input fields and writes the named output fields WITH NO ROUND TRIP —
+  // the "instant" half of the new/unpersisted-record UX. If the field ALSO
+  // carries on(...) (a persisted record, or a synced draft), that debounced POST
+  // still fires and the server reply reconciles; recompute just paints first.
+  //
+  // Reads inputs/outputs/reducer from the root's data-reactive-compute-* attrs
+  // (set once by reactive_compute_attrs). A missing/unregistered reducer is a
+  // no-op — a page must never break because a binding wasn't wired up.
+  recompute() {
+    const key = this.element.getAttribute("data-reactive-compute-reducer-param")
+    if (!key) return
+    const reduce = computeReducer(key)
+    if (!reduce) return
+
+    const inputs = this.#parseComputeList("data-reactive-compute-inputs-param")
+    const outputs = this.#parseComputeList("data-reactive-compute-outputs-param")
+
+    const values = {}
+    for (const name of inputs) values[name] = this.#numericFieldValue(name)
+
+    const result = reduce(values) || {}
+    for (const name of outputs) {
+      if (!(name in result)) continue
+      const field = this.#ownedField(name)
+      // Setting .value fires the field's own `input` listeners (a chained summary
+      // repaint), matching the server's set_value + dispatch("input") contract.
+      if (field) field.value = result[name]
+    }
+  }
+
+  // Parse a JSON string list from a root data attr; [] on absence/parse error so
+  // a malformed binding degrades to "no fields" rather than throwing on input.
+  #parseComputeList(attr) {
+    const raw = this.element.getAttribute(attr)
+    if (!raw) return []
+    try {
+      const list = JSON.parse(raw)
+      return Array.isArray(list) ? list : []
+    } catch {
+      return []
+    }
+  }
+
+  // The first named control owned by THIS root (skips nested reactive roots,
+  // issue #15) — used by recompute to read inputs and write outputs.
+  #ownedField(name) {
+    const nodes = this.element.querySelectorAll(`[name="${name}"]`)
+    for (const el of nodes) if (this.#ownsField(el)) return el
+    return null
+  }
+
+  // A field's value as a Number, treating blank/absent/NaN as 0 — mirroring the
+  // nanToZero coercion the hand-written calculators use, so a reducer never sees
+  // "" or NaN for an empty field.
+  #numericFieldValue(name) {
+    const field = this.#ownedField(name)
+    const n = Number(field?.value)
+    return Number.isFinite(n) ? n : 0
   }
 
   // Enqueue the action — debounced if a debounce window is set, else immediately.

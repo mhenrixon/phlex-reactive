@@ -22,6 +22,49 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   action per element still holds — bind Enter-save and Escape-cancel to separate
   elements. README documents it under "Keyboard triggers".
 
+- **`reactive_compute` — client-side data bindings (no round trip).** A component
+  can now declare a client-side computation that recomputes derived fields
+  IN-BROWSER on `input`, with NO server round trip — the "instant" half of a
+  new/unpersisted-record UX that previously required a hand-written Stimulus
+  controller (e.g. an order calculator that rebalances a payment split as you
+  type). Declare the binding in Ruby and register the matching reducer once in JS:
+
+  ```ruby
+  reactive_compute :payment_split,
+    inputs:  %i[allowance cash leasing total],   # fields the reducer reads
+    outputs: %i[allowance cash leasing]          # fields it writes (no POST)
+  # in the view: div(**mix(reactive_root, reactive_compute_attrs(:payment_split)))
+  # on the edited field: data-action="input->reactive#recompute"
+  ```
+
+  ```js
+  import { setComputeReducer } from "phlex/reactive/compute"
+  setComputeReducer("payment_split", ({ allowance, cash, leasing, total }) => ({
+    allowance, leasing, cash: total - allowance - leasing,
+  }))
+  ```
+
+  The generic controller runs the named reducer on `input`, writes only the
+  declared outputs (leaving the edited field + caret alone), and fires `input` on
+  each field it sets so a chained summary repaints — matching the server's
+  `set_value` + `dispatch("input")` contract. A missing/unregistered reducer is a
+  no-op (a page never breaks because a binding wasn't wired up). When the same
+  component ALSO carries `on(...)` (a persisted record, or a draft you sync), that
+  debounced POST still fires and the server reply reconciles — so `reactive_compute`
+  is the optimistic client paint, the server round trip is the source of truth.
+  One math contract, two execution sites. New client module
+  `phlex/reactive/compute` (auto-pinned by the engine like `confirm`).
+
+- **Draft (unpersisted-record) tokens — `reactive_record` no longer crashes on a
+  `new_record?`.** A record-backed component may now render an UNSAVED record (an
+  order the user is building before it's saved). `reactive_token` omits the `gid`
+  when the record isn't persisted (`to_gid` would raise `MissingModelIdError`) and
+  relies on the declared `reactive_state` as the draft seed, so the token still
+  signs cleanly and the client controller mounts. The draft is driven client-side
+  (`reactive_compute`) until it's saved; once persisted, a re-render signs the
+  `gid` as before. Combined with `reactive_compute`, this is the "persisted → server,
+  new → in-browser" split as a first-class capability instead of a hand-rolled one.
+
 - **Overridable / async confirm resolver — reuse your themed dialog (#55).**
   Follow-up to #52. The `confirm:` gate was hardcoded to the synchronous,
   browser-native `window.confirm`, so a reactive trigger was the one interaction

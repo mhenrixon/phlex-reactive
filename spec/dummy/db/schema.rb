@@ -15,6 +15,16 @@ ActiveRecord::Schema.define(version: 1) do
     t.timestamps
   end
 
+  # A mini sell-order for the reactive_compute / new-vs-persisted example: a
+  # three-way payment split (allowance + cash + leasing) that must sum to total.
+  create_table :orders, force: true do |t|
+    t.integer :total, null: false, default: 0
+    t.integer :allowance, null: false, default: 0
+    t.integer :cash, null: false, default: 0
+    t.integer :leasing, null: false, default: 0
+    t.timestamps
+  end
+
   create_table :chat_messages, force: true do |t|
     t.string :room, null: false, default: "lobby"
     t.string :author, null: false, default: "anon"
