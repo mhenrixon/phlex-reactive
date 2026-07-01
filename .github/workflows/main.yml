@@ -137,7 +137,7 @@ jobs:
       - name: Prepare database
         run: bin/rails db:test:prepare
       - name: Build daisyUI/Tailwind CSS
-        run: bin/rails tailwindcss:build
+        run: bun run build:css
       - name: RuboCop
         if: matrix.server == 'puma'
         run: bundle exec rake lint
