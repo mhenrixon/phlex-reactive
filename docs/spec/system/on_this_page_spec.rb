@@ -7,7 +7,7 @@ require 'system_helper'
 # configured placement (this site uses the default :panel), highlighting the
 # section you're reading via scroll-spy. Client-only — no server round-trip.
 RSpec.describe 'On this page (auto-TOC)', type: :system do
-  it 'auto-builds the panel TOC from the page sections' do
+  it 'auto-builds the panel TOC from the page sections', :desktop_only do
     visit '/docs/architecture'
 
     # The panel slot is filled by the controller with a link per section.
@@ -18,7 +18,7 @@ RSpec.describe 'On this page (auto-TOC)', type: :system do
     end
   end
 
-  it 'highlights the section link matching the anchor when navigated to' do
+  it 'highlights the section link matching the anchor when navigated to', :desktop_only do
     visit '/docs/architecture#the-layers'
 
     # Give the IntersectionObserver a beat to settle on the anchored section.

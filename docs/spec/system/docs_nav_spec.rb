@@ -6,7 +6,10 @@ require 'system_helper'
 # to localStorage (client-only UI state — no server round-trip) so the sidebar
 # stays how the reader left it across page navigations.
 RSpec.describe 'Docs sidebar collapse persistence', type: :system do
-  it 'remembers a collapsed sub-group across navigation' do
+  # Collapsing requires the sidebar visible; on a phone it's a hidden drawer, so
+  # this interaction is asserted at desktop widths (responsive_spec covers the
+  # drawer behavior on small screens).
+  it 'remembers a collapsed sub-group across navigation', :desktop_only do
     visit '/docs/installation'
 
     # The "Examples" sub-group is a <details open> with a menu-title summary.
