@@ -35,6 +35,21 @@ class Demo
       RUBY
     },
     {
+      slug: 'payment-split',
+      title: 'Payment split',
+      group: 'Forms',
+      blurb: 'Live sum-to-total rebalancer: nested bracketed params, a disabled ' \
+             'computed field, auto-collected siblings — the pattern behind #64–#67.',
+      component: 'PaymentSplitComponent',
+      build: -> { PaymentSplitComponent.new },
+      call_site: <<~RUBY
+        # Editing one amount rebalances the peers so they always sum to the
+        # total. The fields are model-scoped (split[allowance], …), so the
+        # action schema nests under `split:` to match them:
+        render PaymentSplitComponent.new(allowance: 700, cash: 200, leasing: 100, total: 1000)
+      RUBY
+    },
+    {
       slug: 'todos',
       title: 'Todo list',
       group: 'Records',

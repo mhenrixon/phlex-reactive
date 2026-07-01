@@ -68,9 +68,13 @@ module Views
                 def view_template
                   span(**reactive_root) do
                     if @editing
-                      input(name: "value", value: current_value, autocomplete: "off")
+                      # Enter saves; a dedicated Cancel button reverts on Escape.
+                      # key: emits Stimulus's keydown.enter / keydown.esc filter,
+                      # so each fires only on its key — no custom JavaScript.
+                      input(**mix(on(:save, key: "Enter"), name: "value",
+                                  value: current_value, autocomplete: "off"))
                       button(**on(:save)) { "Save" }
-                      button(**on(:cancel)) { "Cancel" }
+                      button(**on(:cancel, key: "Escape")) { "Cancel" }
                     else
                       span(**on(:edit), class: "editable") { current_value.presence || "—" }
                     end
@@ -131,12 +135,25 @@ module Views
                   plain ' mutates, so it authorizes.'
                 end
                 li do
+                  strong { 'Enter saves, Escape cancels.' }
+                  plain ' '
+                  code { 'on(:save, key: "Enter")' }
+                  plain ' and '
+                  code { 'on(:cancel, key: "Escape")' }
+                  plain ' bind each key to its own element — a key trigger emits Stimulus’s native '
+                  code { 'keydown.enter' }
+                  plain ' / '
+                  code { 'keydown.esc' }
+                  plain ' filter, so it fires only on that key. (One action per element: keep the '
+                  plain 'Enter-save on the input and the Escape-cancel on the Cancel button.)'
+                end
+                li do
                   strong { 'The display text is the click target.' }
                   plain ' '
                   code { 'span(**on(:edit))' }
                   plain ' turns the display text into the trigger. Add '
                   code { 'tabindex' }
-                  plain ' / keyboard handling if you need a11y on non-button triggers.'
+                  plain ' if you need a11y on non-button triggers.'
                 end
                 li do
                   strong { 'Rich-text fields work too.' }

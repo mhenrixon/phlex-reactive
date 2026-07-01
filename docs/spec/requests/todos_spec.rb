@@ -34,10 +34,11 @@ RSpec.describe 'Todo actions', type: :request do
       expect(todo.reload.done?).to be(true)
     end
 
-    it 'renames through the declared schema' do
+    it 'renames through the declared schema and morphs so the field keeps focus' do
       post_action(TodoItemComponent, payload: { 'gid' => todo.to_gid.to_s },
                                      act: 'rename', params: { title: 'oat milk' })
       expect(todo.reload.title).to eq('oat milk')
+      expect(response.body).to include('method="morph"')
     end
 
     it 'archives — destroys the record and removes the row' do

@@ -82,7 +82,9 @@ module Views
                 def view_template
                   li(**reactive_root(class: ("done" if @todo.done?))) do
                     button(**on(:toggle)) { @todo.done? ? "✓" : "○" }
-                    input(name: "title", value: @todo.title, **on(:rename, event: "change"))
+                    # Enter saves the rename (only Enter — key: emits Stimulus's
+                    # keydown.enter filter, not a fire-on-every-keystroke handler):
+                    input(name: "title", value: @todo.title, **on(:rename, key: "Enter"))
                     button(**on(:destroy)) { "✕" }
                   end
                 end
@@ -141,7 +143,10 @@ module Views
                     end
 
                     div do
-                      input(name: "title", placeholder: "New todo…", autocomplete: "off")
+                      # Enter in the field adds the todo — the same :add action
+                      # the button fires on click:
+                      input(name: "title", placeholder: "New todo…", autocomplete: "off",
+                            **on(:add, key: "Enter"))
                       button(**on(:add)) { "Add" }
                     end
                   end
@@ -156,11 +161,19 @@ module Views
             DocsUI::Prose() do
               ul do
                 li do
-                  plain 'Toggle, rename (on '
-                  code { 'change' }
-                  plain '), add, delete — all without a Stimulus controller or a '
+                  plain 'Toggle, rename, add, delete — all without a Stimulus controller or a '
                   code { '.turbo_stream.erb' }
                   plain '.'
+                end
+                li do
+                  strong { 'Enter-to-add and Enter-to-save' }
+                  plain ' via '
+                  code { 'on(:add, key: "Enter")' }
+                  plain ' — the '
+                  code { 'key:' }
+                  plain ' option emits Stimulus’s native '
+                  code { 'keydown.enter' }
+                  plain ' filter, so the action fires only on Enter (not every keystroke) with no custom JavaScript.'
                 end
                 li do
                   plain 'Every change broadcasts the affected '
