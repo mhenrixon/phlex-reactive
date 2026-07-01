@@ -275,8 +275,9 @@ The [inline edit example](https://phlex-reactive.zoolutions.llc/docs/example-inl
 | Example | What it shows |
 |---|---|
 | [Counter](https://phlex-reactive.zoolutions.llc/docs/example-counter) | State-backed, the smallest reactive component |
+| [Payment split](https://phlex-reactive.zoolutions.llc/docs/example-payment-split) | Live sum-to-total rebalancer — nested bracketed params, a disabled computed field, auto-collected siblings (#64–#67) |
 | [Cross-tab chat](https://phlex-reactive.zoolutions.llc/docs/example-chat) | Record-backed action **+ pgbus broadcast** → live sync across tabs/browsers |
-| [Live todo list](https://phlex-reactive.zoolutions.llc/docs/example-todo-list) | Per-row components, add/toggle/rename/delete, broadcast on change |
+| [Live todo list](https://phlex-reactive.zoolutions.llc/docs/example-todo-list) | Per-row components, add/toggle/rename/delete, Enter-to-add, broadcast on change |
 | [Inline edit](https://phlex-reactive.zoolutions.llc/docs/example-inline-edit) | Show ↔ edit mode toggle, replacing a Stimulus controller + 3 routes |
 | [Notifications / badges](https://phlex-reactive.zoolutions.llc/docs/example-notifications) | Pure broadcast (no client action) — a job pushes a re-render |
 
@@ -311,6 +312,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_attrs` | Marks an element reactive + carries the signed token (no `id`). Spread alongside `id:` on the **same** element: `div(id:, **reactive_attrs)`. Prefer `reactive_root`, which can't split them. |
 | `on(:action, event: "click", **params)` | Spread onto a trigger element. Adds `type=button` for clicks. |
 | `on(:action, event: "input", debounce: 300)` | Coalesce rapid events into one round trip after a quiet period (live-as-you-type). |
+| `on(:action, key: "Enter")` | Fire only on a specific key — Enter-to-submit / Escape-to-cancel. Emits Stimulus's native `keydown.enter` filter; defaults `event:` to `"keydown"`. See [Keyboard triggers](#keyboard-triggers-enter-to-submit--escape-to-cancel). |
 | `on(:action, confirm: "Sure?")` | Gate a destructive trigger behind a confirmation. Defaults to `window.confirm`; override the dialog with [`setConfirmResolver`](#custom-confirmation-dialogs-setconfirmresolver). |
 | `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
@@ -447,6 +449,37 @@ collected field of the same name; collection stops at nested reactive roots (see
   field" work. If you need form-submit parity (drop the disabled value), give the
   control no `name`, or make it `readonly` instead of `disabled` when you *do*
   want it collected by both paths.
+
+**Keyboard triggers (Enter-to-submit / Escape-to-cancel).** Pass `key:` to fire
+an action only when a specific key is pressed — the classic "Enter adds the row",
+"Escape cancels the edit" interactions. It emits Stimulus's **native keyboard
+filter** (`keydown.enter->reactive#dispatch`), so the action runs *only* on that
+key, not on every keypress — no client JavaScript, no `event.key` check of your
+own. `event:` defaults to `"keydown"` when a `key:` is given (pass `event:
+"keyup"` if you need the up-stroke instead):
+
+```ruby
+# Enter in the composer adds the todo (same action as the Add button).
+input(**mix(on(:add, key: "Enter"), name: "title", placeholder: "New todo…"))
+
+# Inline editor: Enter on the field saves; a separate control cancels on Escape.
+input(**mix(on(:save, key: "Enter"), name: "title", value: @todo.title))
+button(**on(:cancel, key: "Escape")) { "Cancel" }
+```
+
+Key names are the DOM `KeyboardEvent.key` spellings you'd expect — `"Enter"`,
+`"Escape"` (or the short `"Esc"`), a bare letter like `"s"` — normalized to
+Stimulus's filter aliases (`enter`, `esc`, `space`, …). `key:` composes with
+`debounce:`, `confirm:`, and explicit params, and never leaks into the action's
+param payload. Because a key trigger isn't a click, it does **not** get the
+`type="button"` a click trigger does.
+
+> **One action per element.** Each trigger element carries a single reactive
+> action (its `data-reactive-action-param`), so you can't put `on(:save, key:
+> "Enter")` *and* `on(:cancel, key: "Escape")` on the **same** input — the second
+> would overwrite the first's action name. Bind each key trigger to its own
+> element (the field saves on Enter; a Cancel button — or the field's own blur —
+> handles Escape), as above.
 
 **Combining `on(...)` / `reactive_attrs` with your own attributes.** Both return
 a hash that includes a `data:` key. Spreading them *and* passing another `data:`

@@ -401,6 +401,57 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  describe "#on key filter (Enter-to-submit / Escape-to-cancel)" do
+    subject(:instance) { state_klass.new }
+
+    it "emits a Stimulus keyboard filter for the pressed key" do
+      attrs = instance.send(:on, :add, event: "keydown", key: "Enter")
+      expect(attrs[:data][:action]).to eq("keydown.enter->reactive#dispatch")
+    end
+
+    it "aliases Escape to Stimulus's `esc` filter" do
+      attrs = instance.send(:on, :cancel, event: "keydown", key: "Escape")
+      expect(attrs[:data][:action]).to eq("keydown.esc->reactive#dispatch")
+    end
+
+    it "accepts the short `Esc` spelling too" do
+      attrs = instance.send(:on, :cancel, event: "keydown", key: "Esc")
+      expect(attrs[:data][:action]).to eq("keydown.esc->reactive#dispatch")
+    end
+
+    it "defaults the event to keydown when only key: is given" do
+      attrs = instance.send(:on, :add, key: "Enter")
+      expect(attrs[:data][:action]).to eq("keydown.enter->reactive#dispatch")
+    end
+
+    it "does not force type=button for a key-filtered trigger (it's not a click)" do
+      attrs = instance.send(:on, :add, key: "Enter")
+      expect(attrs).not_to have_key(:type)
+    end
+
+    it "keeps key out of the explicit params payload" do
+      attrs = instance.send(:on, :add, key: "Enter", title: "x")
+      expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({ "title" => "x" })
+    end
+
+    it "lowercases a plain letter/alias key" do
+      attrs = instance.send(:on, :save, event: "keydown", key: "s")
+      expect(attrs[:data][:action]).to eq("keydown.s->reactive#dispatch")
+    end
+
+    it "threads a key filter alongside debounce and explicit params" do
+      attrs = instance.send(:on, :add, key: "Enter", debounce: 200, title: "x")
+      expect(attrs[:data][:action]).to eq("keydown.enter->reactive#dispatch")
+      expect(attrs[:data][:reactive_debounce_param]).to eq(200)
+      expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({ "title" => "x" })
+    end
+
+    it "leaves the plain (non-key) event descriptor untouched" do
+      attrs = instance.send(:on, :toggle, event: "change")
+      expect(attrs[:data][:action]).to eq("change->reactive#dispatch")
+    end
+  end
+
   # Performance: reactive_token runs on EVERY render. It must produce a byte-
   # identical payload before/after caching the ivar symbols + class name. These
   # pin the payload SHAPE (decoded) so an allocation optimization can't silently

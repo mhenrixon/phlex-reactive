@@ -8,6 +8,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`key:` filter on `on(...)` — Enter-to-submit / Escape-to-cancel with no
+  client JavaScript.** A reactive trigger fired on `event: "keydown"` used to run
+  on *every* keypress — there was no way to say "only on Enter". `on(:add, key:
+  "Enter")` now emits Stimulus's **native** keyboard-filter descriptor
+  (`keydown.enter->reactive#dispatch`), so the action fires only on that key.
+  `event:` defaults to `"keydown"` when a `key:` is given; the DOM key spellings
+  you'd reach for (`"Enter"`, `"Escape"`/`"Esc"`, a bare letter) are normalized to
+  Stimulus's aliases (`enter`, `esc`, `space`, …). It composes with `debounce:`,
+  `confirm:`, and explicit params, never leaks into the action's param payload,
+  and — since a key trigger isn't a click — does not get the `type="button"` a
+  click trigger does. **Purely gem-side**: it translates to a Stimulus filter, so
+  there is no client change and no vendored-client re-sync. One action per element
+  still holds — bind Enter-save and Escape-cancel to separate elements. README
+  documents it under "Keyboard triggers".
+
 - **Overridable / async confirm resolver — reuse your themed dialog (#55).**
   Follow-up to #52. The `confirm:` gate was hardcoded to the synchronous,
   browser-native `window.confirm`, so a reactive trigger was the one interaction
@@ -79,6 +94,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `reply.streams(...)` to stream a partial update with **no persist and no
     broadcast**. Documented as a first-class "record-authorized, transient-state
     action" pattern in the `reply` section.
+
+  The demo app (`docs/`) gains a **live payment-split rebalancer** example — three
+  amounts that always sum to a total, editing one rebalances the peers — that
+  makes #64–#67 browsable (model-scoped bracketed params, a disabled computed
+  field the action still reads, siblings collected at dispatch, transient compute
+  with no persist/broadcast). The **todo** and **inline-edit** examples gain
+  Enter-to-add / Enter-to-save / Escape-to-cancel via the new `key:` filter,
+  covered by request specs and a real-browser (Playwright) Enter-keypress test.
+  Combobox keyboard navigation is tracked separately (#72) for the
+  minimal-client-seam work.
 
 ### Changed
 

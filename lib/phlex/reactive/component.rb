@@ -319,10 +319,27 @@ module Phlex
       # a per-render allocation while keeping the wire format byte-identical.
       EMPTY_PARAMS_JSON = "{}"
 
-      def on(action_name, event: "click", debounce: nil, confirm: nil, **params)
+      # Stimulus keyboard-filter aliases. Stimulus binds `keydown.enter` /
+      # `keydown.esc` etc. natively, so a `key:` filter needs no client code —
+      # `on` just appends the alias to the event descriptor. We normalize the
+      # DOM `KeyboardEvent.key` spellings a Rubyist would reach for ("Enter",
+      # "Escape") to Stimulus's alias names; anything else is lowercased (a bare
+      # letter/digit is already a valid Stimulus filter).
+      KEY_FILTER_ALIASES = { "escape" => "esc", " " => "space", "spacebar" => "space" }.freeze
+
+      # `key:` filters a keyboard trigger to a single key without any client-side
+      # key matching (issue #65 follow-up): `on(:add, key: "Enter")` emits
+      # `keydown.enter->reactive#dispatch`, so the action fires only on Enter —
+      # not on every keypress. Defaults `event:` to "keydown" when a key is
+      # given. Enables Enter-to-add / Escape-to-cancel with no Stimulus glue.
+      #   input(**on(:add, key: "Enter"))            # Enter submits
+      #   input(**on(:cancel, key: "Escape"))        # Escape cancels
+      def on(action_name, event: nil, key: nil, debounce: nil, confirm: nil, **params)
+        event ||= key ? "keydown" : "click"
+        descriptor = key ? "#{event}.#{stimulus_key_filter(key)}" : event
         attrs = {
           data: {
-            action: "#{event}->reactive#dispatch",
+            action: "#{descriptor}->reactive#dispatch",
             reactive_action_param: action_name.to_s,
             reactive_params_param: params.empty? ? EMPTY_PARAMS_JSON : params.to_json
           }
@@ -331,6 +348,14 @@ module Phlex
         attrs[:data][:reactive_confirm_param] = confirm if confirm
         attrs[:type] = "button" if event == "click"
         attrs
+      end
+
+      # Normalize a `KeyboardEvent.key` spelling to a Stimulus keyboard-filter
+      # token (issue: Enter-to-submit). "Enter" -> "enter", "Escape"/"Esc" ->
+      # "esc", " " -> "space"; a bare letter/digit passes through lowercased.
+      def stimulus_key_filter(key)
+        token = key.to_s.downcase
+        KEY_FILTER_ALIASES.fetch(token, token)
       end
 
       # Bind a form control's `name` to an action param so its value travels with
