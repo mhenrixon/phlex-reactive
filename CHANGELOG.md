@@ -8,6 +8,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Combobox keyboard navigation — `on(:search, …, listnav: "[role=option]")` (#72).**
+  A search/combobox trigger can now declare client-side list navigation: Arrow
+  Up/Down move a highlight among the option elements IN-BROWSER (no round trip),
+  Enter picks the highlighted option by clicking its own `on(:select)` trigger
+  (so the selection stays a normal signed reactive action), and Escape clears —
+  all without a bespoke Stimulus controller. `listnav:` appends Stimulus's native
+  keyboard filters (`keydown.down/up/enter/esc->reactive#listnav*`) to the input's
+  `data-action` and marks the option selector; the generic controller's `listnav*`
+  handlers own the ephemeral highlight (a `data-reactive-highlighted` attribute,
+  never shipped as trusted state), mirroring `#recompute`. Only the highlight is
+  client-side — selection is still a default-deny, signed action. No new client
+  module (the handlers live in the existing controller); covered by unit (JS),
+  request, and real-browser system specs green under Puma AND Falcon.
+
 - **`reactive_compute` — client-side data bindings (no round trip).** A component
   can now declare a client-side computation that recomputes derived fields
   IN-BROWSER on `input`, with NO server round trip — the "instant" half of a

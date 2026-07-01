@@ -14,6 +14,12 @@ class DemosController < ActionController::Base
     render_component TodoListComponent.new
   end
 
+  def combobox
+    # Seed the query so options render on load — the system spec drives keyboard
+    # nav without hammering the debounced search (which stresses Falcon's fibers).
+    render_component ComboboxComponent.new(query: params[:q].to_s)
+  end
+
   # A NEW (unsaved) order: the split recomputes in-browser via reactive_compute,
   # no round trip. total=500 seeds the three-way split.
   def new_order

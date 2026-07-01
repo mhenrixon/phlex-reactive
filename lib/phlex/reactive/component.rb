@@ -350,22 +350,44 @@ module Phlex
       # enqueue/debounce if the user declines (and prevents the native default so
       # a `submit` trigger can't navigate on cancel). Omit it for no prompt.
       #   button(**on(:destroy, confirm: "Really delete this item?")) { "Delete" }
+      #
+      # `listnav:` (a CSS selector for the option elements) adds keyboard list
+      # navigation to a search/combobox trigger (issue #72). It appends Stimulus
+      # keyboard filters to the SAME element's data-action so Arrow Up/Down move a
+      # client-side highlight among the options, Enter picks the highlighted one
+      # (clicking its own reactive trigger — so selection stays a signed action),
+      # and Escape clears — all with NO server round trip for the highlight (the
+      # controller's listnav* handlers, like #recompute). Omit it for no nav.
+      #   input(**on(:search, event: "input", debounce: 300, listnav: "[role=option]"))
       # The verbatim JSON for an empty explicit-params payload. The common
       # trigger (on(:increment), no params) hits this on EVERY render — skipping
       # params.to_json (which re-serializes {} to the same "{}" each time) avoids
       # a per-render allocation while keeping the wire format byte-identical.
       EMPTY_PARAMS_JSON = "{}"
 
-      def on(action_name, event: "click", debounce: nil, confirm: nil, **params)
+      # The keyboard filters appended to a listnav trigger's data-action. Each is
+      # a client-only handler (no POST) except Enter, which clicks the highlighted
+      # option's own reactive trigger. Stimulus binds these natively.
+      LISTNAV_ACTIONS = [
+        "keydown.down->reactive#listnavNext",
+        "keydown.up->reactive#listnavPrev",
+        "keydown.enter->reactive#listnavPick",
+        "keydown.esc->reactive#listnavClose"
+      ].freeze
+
+      def on(action_name, event: "click", debounce: nil, confirm: nil, listnav: nil, **params)
+        action = "#{event}->reactive#dispatch"
+        action = "#{action} #{LISTNAV_ACTIONS.join(" ")}" if listnav
         attrs = {
           data: {
-            action: "#{event}->reactive#dispatch",
+            action:,
             reactive_action_param: action_name.to_s,
             reactive_params_param: params.empty? ? EMPTY_PARAMS_JSON : params.to_json
           }
         }
         attrs[:data][:reactive_debounce_param] = debounce if debounce
         attrs[:data][:reactive_confirm_param] = confirm if confirm
+        attrs[:data][:reactive_listnav_option_param] = listnav if listnav
         attrs[:type] = "button" if event == "click"
         attrs
       end
