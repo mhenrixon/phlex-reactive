@@ -62,6 +62,13 @@ module Phlex
       # A declared, client-invokable action and its param schema.
       Action = Data.define(:name, :params)
 
+      # A declared client-side computation (data binding). `inputs`/`outputs` are
+      # the action-param names of the fields the reducer reads/writes; `reducer`
+      # is the key a JS function is registered under (Reactive.compute(key, fn)).
+      # The generic controller runs the reducer on `input` — writing outputs with
+      # NO round trip — then the debounced POST reconciles from the server reply.
+      ComputeDefinition = Data.define(:name, :inputs, :outputs, :reducer)
+
       # A declared add/remove-row collection (issue #35): the list contract tied
       # into one unit — the per-row item component, the container DOM id rows
       # live in, an optional companion count id, an optional empty-state
@@ -173,6 +180,36 @@ module Phlex
 
         def reactive_collection?(name)
           reactive_collections.key?(name.to_sym)
+        end
+
+        # Declare a client-side computation, OR (called with just a name) read
+        # one back. Dual-purpose so a component reads `reactive_compute :split,
+        # inputs: …, outputs: …` and the endpoint/helpers read
+        # `reactive_compute(:split)` — mirroring how `on`/`reactive_field` keep a
+        # tight surface. `reducer:` defaults to the compute name.
+        #
+        #   reactive_compute :payment_split,
+        #     inputs: %i[allowance cash leasing total],  # fields the JS reducer reads
+        #     outputs: %i[allowance cash leasing]        # fields it writes (no round trip)
+        #
+        # Register the matching JS once at boot:
+        #   import { setComputeReducer } from "phlex/reactive/compute"
+        #   setComputeReducer("payment_split", ({ allowance, cash, leasing, total }) => ({ … }))
+        def reactive_compute(name, inputs: nil, outputs: nil, reducer: nil)
+          return reactive_computes[name.to_sym] if inputs.nil? && outputs.nil?
+
+          reactive_computes[name.to_sym] = ComputeDefinition.new(
+            name: name.to_sym, inputs: Array(inputs).map(&:to_sym),
+            outputs: Array(outputs).map(&:to_sym), reducer: (reducer || name).to_s
+          )
+        end
+
+        def reactive_computes
+          @reactive_computes ||= superclass.respond_to?(:reactive_computes) ? superclass.reactive_computes.dup : {}
+        end
+
+        def reactive_compute?(name)
+          reactive_computes.key?(name.to_sym)
         end
 
         # The record's instance-variable symbol (e.g. :@todo), computed once.
@@ -353,6 +390,28 @@ module Phlex
         input(**reactive_field(param, **attrs))
       end
 
+      # Data attributes declaring a client-side compute for the root element.
+      # Spread ALONGSIDE reactive_root so the generic controller can find the
+      # reducer and the named input/output fields inside this root:
+      #   div(**mix(reactive_root, reactive_compute_attrs(:payment_split))) { … }
+      #
+      # It emits the reducer key plus the input/output field names as JSON so the
+      # client runs the reducer on `input`, writes the outputs with no round trip,
+      # then the debounced POST reconciles from the server reply. Raises for an
+      # undeclared compute — a silent no-op would leave the field wiring dead.
+      def reactive_compute_attrs(name)
+        definition = self.class.reactive_compute(name)
+        raise Error, "#{self.class} has no reactive_compute #{name.inspect}" unless definition
+
+        {
+          data: {
+            reactive_compute_reducer_param: definition.reducer,
+            reactive_compute_inputs_param: definition.inputs.map(&:to_s).to_json,
+            reactive_compute_outputs_param: definition.outputs.map(&:to_s).to_json
+          }
+        }
+      end
+
       # Render a <select> bound to an action param (issue #23). The options block
       # is the element's content, so the awkward FormBuilder positional split
       # (where name: lands after the options/html-options args) goes away:
@@ -403,12 +462,23 @@ module Phlex
       # (e.g. which column an inline_edit may write) tamper-proof alongside the
       # record. Record-only ({c, gid}) and state-only ({c, s}) shapes are
       # unchanged.
+      #
+      # A record that is NOT YET PERSISTED (new_record?) has no id → no GlobalID
+      # (to_gid raises MissingModelIdError). A record-backed component may render
+      # such a draft (an unsaved order the user is building): we OMIT gid and rely
+      # on the declared state (reactive_state) as the draft seed, so the token
+      # still signs cleanly and the client controller mounts. The draft is then
+      # driven client-side (reactive_compute) until it's saved; once persisted, a
+      # re-render signs the gid as usual. If the record is unsaved AND no state is
+      # declared, the token carries just {c} — enough to mount, but with no
+      # identity to round-trip, so declare reactive_state for a draft you sync.
       def reactive_token
         klass = self.class
         payload = { "c" => klass.name }
 
         if (record_ivar = klass.reactive_record_ivar)
-          payload["gid"] = instance_variable_get(record_ivar).to_gid.to_s
+          record = instance_variable_get(record_ivar)
+          payload["gid"] = record.to_gid.to_s unless record.respond_to?(:persisted?) && !record.persisted?
         end
 
         state_ivars = klass.reactive_state_ivars
