@@ -52,12 +52,12 @@ COPY . /app/
 RUN bundle config set frozen false && bundle install && \
     rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache
 
-# Install JS deps (Tailwind CLI + daisyUI), build the CSS (bin/build-css resolves
-# the daisyui + docs-kit gem @source globs from `bundle show`), then precompile
-# assets (propshaft fingerprints the built application.css) — no master key.
+# Install JS deps (Tailwind CLI + daisyUI). assets:precompile is enhanced by the
+# css:build rake task (lib/tasks/build_css.rake), so it runs `bun run build:css`
+# — which shells to bin/build-css, resolving the daisyui + docs-kit gem @source
+# globs from `bundle show` — before propshaft fingerprints application.css.
 RUN bun install --frozen-lockfile
-RUN SECRET_KEY_BASE_DUMMY=1 bun run build:css && \
-    SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile
+RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile
 
 
 # --- Final stage --------------------------------------------------------------
