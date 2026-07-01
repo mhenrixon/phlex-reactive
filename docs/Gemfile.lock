@@ -1,6 +1,6 @@
 GIT
   remote: https://github.com/mhenrixon/daisyui.git
-  revision: bdf47be1425b1ac8bd1b58dc6add450cd28e3d8d
+  revision: 1252a68aff97fc9cf9dd3349fbf66af9407021f6
   specs:
     daisyui (1.2.0)
       phlex (~> 2.0, >= 2.0.0)
@@ -8,7 +8,7 @@ GIT
 
 GIT
   remote: https://github.com/mhenrixon/docs-kit.git
-  revision: 19a983ad40574874f2682dc573ca5c1d4b65c05d
+  revision: f331b1541b85008f74d2df0cdafaafc9f9deb126
   specs:
     docs-kit (0.1.0)
       daisyui (>= 1.2)
