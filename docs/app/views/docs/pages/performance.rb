@@ -3,7 +3,7 @@
 module Views
   module Docs
     module Pages
-      class Performance < Views::Docs::Page
+      class Performance < ::Docs::Page
         title 'Performance'
         eyebrow 'Guide'
 
@@ -26,8 +26,8 @@ module Views
         private
 
         def overview
-          render Views::Docs::Section.new('What we optimize') do
-            render Views::Docs::Prose.new do
+          render ::Docs::Section.new('What we optimize') do
+            render ::Docs::Prose.new do
               p do
                 plain 'phlex-reactive aims to be fast in the places that run on every interaction: the '
                 plain 'component re-render, the identity-token signing, the param coercion, and the client '
@@ -48,8 +48,8 @@ module Views
         end
 
         def hot_paths
-          render Views::Docs::Section.new('The hot paths') do
-            render Views::Docs::Prose.new do
+          render ::Docs::Section.new('The hot paths') do
+            render ::Docs::Prose.new do
               ul do
                 li do
                   code { 'render_component' }
@@ -105,17 +105,17 @@ module Views
         end
 
         def measuring
-          render Views::Docs::Section.new('Measuring') do
-            render Views::Docs::Prose.new do
+          render ::Docs::Section.new('Measuring') do
+            render ::Docs::Prose.new do
               p { plain 'Everything is driven from rake:' }
             end
-            render Views::Code.new(<<~SHELL, lexer: :shell)
+            render ::Docs::Code.new(<<~SHELL, lexer: :shell)
               rake bench           # the micro-benchmark suite (alias for bench:micro)
               rake bench:micro     # render, reactive_token, coerce_params — isolates each method
               rake bench:request   # end-to-end POST /reactive/actions through the full Rack stack
               rake bench:one[render]  # a single micro-bench by name
             SHELL
-            render Views::Docs::Prose.new do
+            render ::Docs::Prose.new do
               ul do
                 li do
                   strong { 'Micro-benches' }
@@ -154,8 +154,8 @@ module Views
         end
 
         def before_change
-          render Views::Docs::Section.new('Measure BEFORE you change') do
-            render Views::Docs::Prose.new do
+          render ::Docs::Section.new('Measure BEFORE you change') do
+            render ::Docs::Prose.new do
               p do
                 plain 'The first rule: capture the baseline before touching code, or you cannot claim a '
                 plain 'delta. The cleanest way for a gem is an isolated worktree so '
@@ -163,7 +163,7 @@ module Views
                 plain ' and your branch run the same script on the same machine:'
               end
             end
-            render Views::Code.new(<<~SHELL, lexer: :shell)
+            render ::Docs::Code.new(<<~SHELL, lexer: :shell)
               git worktree add --detach /tmp/baseline main
               # Copy the harness AND the Rakefile/Gemfile so `rake bench` exists in the
               # pristine tree (main predates the bench task).
@@ -173,7 +173,7 @@ module Views
               diff /tmp/before.txt /tmp/after.txt
               git worktree remove --force /tmp/baseline
             SHELL
-            render Views::Docs::Prose.new do
+            render ::Docs::Prose.new do
               p do
                 plain 'If the branch added a bench that calls a method not on '
                 code { 'main' }
@@ -184,12 +184,12 @@ module Views
                 plain ' and run that in both trees.'
               end
             end
-            render Views::Docs::Callout.new(:note) do
+            render ::Docs::Callout.new(:note) do
               plain 'There is no committed baseline file — shared CI runners are too noisy for a hard ' \
                     'regression gate — which is exactly why the before/after has to be a deliberate ' \
                     'same-machine measurement, not a comparison against a number from another box.'
             end
-            render Views::Docs::Prose.new do
+            render ::Docs::Prose.new do
               p do
                 plain 'Toggling a single optimization in place (e.g. '
                 code { 'PHLEX_REACTIVE_NO_CACHE=1 ruby benchmark/micro/render.rb' }
@@ -201,8 +201,8 @@ module Views
         end
 
         def numbers
-          render Views::Docs::Section.new('Representative numbers') do
-            render Views::Docs::Prose.new do
+          render ::Docs::Section.new('Representative numbers') do
+            render ::Docs::Prose.new do
               p do
                 plain 'Measured on Ruby 3.4 +YJIT, Apple Silicon, the dummy app — the before column is '
                 plain 'pristine '
@@ -281,8 +281,8 @@ module Views
         end
 
         def ci
-          render Views::Docs::Section.new('CI') do
-            render Views::Docs::Prose.new do
+          render ::Docs::Section.new('CI') do
+            render ::Docs::Prose.new do
               p do
                 plain 'The '
                 code { 'bench' }
@@ -300,8 +300,8 @@ module Views
         end
 
         def every_change
-          render Views::Docs::Section.new('Performance is part of every change') do
-            render Views::Docs::Prose.new do
+          render ::Docs::Section.new('Performance is part of every change') do
+            render ::Docs::Prose.new do
               p do
                 plain 'See '
                 a(href: 'https://github.com/mhenrixon/phlex-reactive/blob/main/.claude/rules/performance.md') do
@@ -317,22 +317,22 @@ module Views
         end
 
         def adding_a_benchmark
-          render Views::Docs::Section.new('Adding a benchmark') do
-            render Views::Docs::Prose.new do
+          render ::Docs::Section.new('Adding a benchmark') do
+            render ::Docs::Prose.new do
               p do
                 plain 'A new hot path gets a new '
                 code { 'benchmark/micro/<name>.rb' }
                 plain '. Use the shared harness:'
               end
             end
-            render Views::Code.new(<<~RUBY, lexer: :ruby, filename: 'benchmark/micro/my_hot_path.rb')
+            render ::Docs::Code.new(<<~RUBY, lexer: :ruby, filename: 'benchmark/micro/my_hot_path.rb')
               require_relative "../support/boot"   # boots the dummy app + schema
 
               BenchSupport.header("my hot path")
               BenchSupport.ips { |x| x.report("thing") { thing_under_test } }
               BenchSupport.allocations("thing") { thing_under_test }
             RUBY
-            render Views::Docs::Prose.new do
+            render ::Docs::Prose.new do
               p do
                 code { 'rake bench:micro' }
                 plain ' picks it up automatically (it globs '

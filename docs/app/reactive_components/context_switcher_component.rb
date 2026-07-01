@@ -67,7 +67,7 @@ class ContextSwitcherComponent < Phlex::HTML
     opt = current
     div(class: 'mt-3', data: { testid: 'context-panel' }) do
       p(class: 'mb-2 text-sm text-base-content/70') { opt[:summary] } if opt[:summary]
-      render Views::Code.new(opt[:code], lexer: opt.fetch(:lexer, :ruby), filename: opt[:filename])
+      render ::Docs::Code.new(opt[:code], lexer: opt.fetch(:lexer, :ruby), filename: opt[:filename])
     end
   end
 end

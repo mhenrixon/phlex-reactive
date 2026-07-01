@@ -3,7 +3,7 @@
 module Views
   module Docs
     module Pages
-      class ExamplesOverview < Views::Docs::Page
+      class ExamplesOverview < ::Docs::Page
         title 'Examples'
         eyebrow 'Examples'
 
@@ -19,8 +19,8 @@ module Views
         private
 
         def examples
-          render Views::Docs::Section.new('The examples') do
-            render Views::Docs::Prose.new do
+          render ::Docs::Section.new('The examples') do
+            render ::Docs::Prose.new do
               p do
                 plain 'Each example below is a complete, working feature you can copy and paste. '
                 plain 'They build from the smallest reactive component up to record-backed actions, '

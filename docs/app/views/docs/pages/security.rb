@@ -3,7 +3,7 @@
 module Views
   module Docs
     module Pages
-      class Security < Views::Docs::Page
+      class Security < ::Docs::Page
         title 'Security & threat model'
         eyebrow 'Guide'
 
@@ -27,8 +27,8 @@ module Views
         private
 
         def signature_guarantees
-          render Views::Docs::Section.new("What the signature guarantees (and what it doesn't)") do
-            render Views::Docs::Prose.new do
+          render ::Docs::Section.new("What the signature guarantees (and what it doesn't)") do
+            render ::Docs::Prose.new do
               p do
                 plain 'The DOM token is a '
                 code { 'MessageVerifier' }
@@ -97,21 +97,21 @@ module Views
         end
 
         def authorize_rule
-          render Views::Docs::Section.new('Rule 1 — authorize inside every mutating action') do
-            render Views::Code.new(<<~RUBY, lexer: :ruby)
+          render ::Docs::Section.new('Rule 1 — authorize inside every mutating action') do
+            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
               def rename(title:)
                 authorize! @todo, :update?      # Pundit / ActionPolicy / your check
                 @todo.update!(title:)
               end
             RUBY
-            render Views::Docs::Prose.new do
+            render ::Docs::Prose.new do
               p { plain "Register your authorizer's exception so it renders as 403:" }
             end
-            render Views::Code.new(<<~RUBY, lexer: :ruby, filename: 'config/initializers/phlex_reactive.rb')
+            render ::Docs::Code.new(<<~RUBY, lexer: :ruby, filename: 'config/initializers/phlex_reactive.rb')
               Phlex::Reactive.authorization_errors = [Pundit::NotAuthorizedError]
               # or [ActionPolicy::Unauthorized]
             RUBY
-            render Views::Docs::Prose.new do
+            render ::Docs::Prose.new do
               p do
                 plain 'A useful discipline: '
                 strong { 'treat an action without an authorize! as a bug' }
@@ -125,8 +125,8 @@ module Views
         end
 
         def default_deny_rule
-          render Views::Docs::Section.new('Rule 2 — actions are default-deny, keep it that way') do
-            render Views::Docs::Prose.new do
+          render ::Docs::Section.new('Rule 2 — actions are default-deny, keep it that way') do
+            render ::Docs::Prose.new do
               p do
                 plain 'Only methods declared with '
                 code { 'action :name' }
@@ -139,12 +139,12 @@ module Views
         end
 
         def params_rule
-          render Views::Docs::Section.new('Rule 3 — params are schema-coerced, declare them') do
-            render Views::Code.new(<<~RUBY, lexer: :ruby)
+          render ::Docs::Section.new('Rule 3 — params are schema-coerced, declare them') do
+            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
               action :rename, params: { title: :string }
               def rename(title:) = @todo.update!(title:)   # only `title`, cast to String
             RUBY
-            render Views::Docs::Prose.new do
+            render ::Docs::Prose.new do
               p do
                 plain 'Anything not in the schema is dropped before reaching your method, so a malicious '
                 code { '{ admin: true, title: "x" }' }
@@ -153,7 +153,7 @@ module Views
                 plain ' — take explicit, declared params.'
               end
             end
-            render Views::Docs::Callout.new(:note, title: 'File params (:file / [:file])') do
+            render ::Docs::Callout.new(:note, title: 'File params (:file / [:file])') do
               plain 'A reactive action can accept an uploaded file (the client switches to multipart FormData when ' \
                     'a file input is present). The multipart request runs through the same gates as a JSON one — ' \
                     'the signed identity is still verified, the action is still default-deny, and the file is still ' \
@@ -166,8 +166,8 @@ module Views
         end
 
         def secrets_rule
-          render Views::Docs::Section.new("Rule 4 — don't put secrets in state-backed tokens") do
-            render Views::Docs::Prose.new do
+          render ::Docs::Section.new("Rule 4 — don't put secrets in state-backed tokens") do
+            render ::Docs::Prose.new do
               p do
                 plain 'State-backed tokens are '
                 strong { 'signed' }
@@ -184,8 +184,8 @@ module Views
         end
 
         def csrf_auth
-          render Views::Docs::Section.new('CSRF and authentication') do
-            render Views::Docs::Prose.new do
+          render ::Docs::Section.new('CSRF and authentication') do
+            render ::Docs::Prose.new do
               p do
                 plain 'The action endpoint inherits from '
                 code { 'Phlex::Reactive.base_controller_name' }
@@ -194,10 +194,10 @@ module Views
                 plain '). For a real app:'
               end
             end
-            render Views::Code.new(<<~RUBY, lexer: :ruby)
+            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
               Phlex::Reactive.base_controller_name = "ApplicationController"
             RUBY
-            render Views::Docs::Prose.new do
+            render ::Docs::Prose.new do
               p do
                 plain 'This gives you CSRF protection (the client sends '
                 code { 'X-CSRF-Token' }
@@ -222,8 +222,8 @@ module Views
         end
 
         def failure_modes
-          render Views::Docs::Section.new("The endpoint's failure modes") do
-            render Views::Docs::Prose.new do
+          render ::Docs::Section.new("The endpoint's failure modes") do
+            render ::Docs::Prose.new do
               ul do
                 li do
                   plain 'Tampered / forged / expired token → '
@@ -253,8 +253,8 @@ module Views
         end
 
         def token_lifetime
-          render Views::Docs::Section.new('Token lifetime & rotation') do
-            render Views::Docs::Prose.new do
+          render ::Docs::Section.new('Token lifetime & rotation') do
+            render ::Docs::Prose.new do
               p do
                 plain 'Tokens are signed with '
                 code { 'secret_key_base' }
@@ -271,8 +271,8 @@ module Views
         end
 
         def checklist
-          render Views::Docs::Section.new('Quick checklist') do
-            render Views::Docs::Prose.new do
+          render ::Docs::Section.new('Quick checklist') do
+            render ::Docs::Prose.new do
               ul do
                 li do
                   plain 'Every mutating action calls '

@@ -52,7 +52,7 @@ class ReactiveModalComponent < Phlex::HTML
       class: 'btn btn-sm btn-outline gap-2',
       data: { testid: "modal-open-#{@modal}" }
     )) do
-      render Views::Icon.new('maximize-2', class: 'size-4')
+      render ::Docs::Icon.new('maximize-2', class: 'size-4')
       plain @label
     end
   end
@@ -67,7 +67,7 @@ class ReactiveModalComponent < Phlex::HTML
           h3(class: 'text-lg font-semibold') { e&.fetch(:title, 'Details') }
           button(**mix(on(:close_modal), class: 'btn btn-sm btn-circle btn-ghost',
                                          data: { testid: "modal-close-#{@modal}" })) do
-            render Views::Icon.new('x', class: 'size-4')
+            render ::Docs::Icon.new('x', class: 'size-4')
           end
         end
         modal_body(e)
@@ -80,7 +80,7 @@ class ReactiveModalComponent < Phlex::HTML
     return div(class: 'opacity-60') { 'Not found.' } unless entry
 
     if entry[:code]
-      render Views::Code.new(entry[:code], lexer: entry.fetch(:lexer, :ruby), filename: entry[:filename])
+      render ::Docs::Code.new(entry[:code], lexer: entry.fetch(:lexer, :ruby), filename: entry[:filename])
     else
       p(class: 'text-base-content/80') { entry[:body] }
     end
