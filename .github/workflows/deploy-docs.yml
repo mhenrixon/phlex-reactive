@@ -13,6 +13,13 @@ on:
     types: [published]
   workflow_dispatch:
 
+# The caller must GRANT packages: write — a reusable workflow can only narrow the
+# permissions it's given, never escalate. With the repo default of read-only, the
+# build job's packages: write would exceed the grant → startup_failure.
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   deploy:
     uses: mhenrixon/docs-kit/.github/workflows/deploy.yml@main
