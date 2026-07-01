@@ -9,6 +9,12 @@
 #   bin/deploy setup    # -> kamal setup
 #   bin/deploy app logs # -> kamal app logs
 #
+# FIRST DEPLOY (once per host): run `bin/deploy setup` — it boots the postgres
+# accessory that config/deploy.yml declares. The release workflow only runs
+# `kamal deploy`, which does NOT boot accessories; on a host that has never been
+# set up, the app can't reach Postgres and docker-entrypoint's db:prepare aborts.
+# Steady-state `kamal deploy` (the workflow) is fine once setup has run once.
+#
 # DEPLOY_HOST / DEPLOY_DOMAIN / DEPLOY_SSH_USER can be overridden via the env;
 # they default to the oss-infrastructure target.
 set -euo pipefail
