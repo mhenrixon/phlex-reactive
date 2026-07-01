@@ -3,7 +3,7 @@
 module Views
   module Docs
     module Pages
-      class TransportPgbus < ::Docs::Page
+      class TransportPgbus < DocsUI::Page
         title 'Transport: pgbus vs Action Cable'
         eyebrow 'Guide'
 
@@ -20,8 +20,8 @@ module Views
         private
 
         def choices
-          render ::Docs::Section.new('Pick a transport') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Pick a transport') do
+            DocsUI::Prose() do
               p do
                 plain 'You have two choices. Toggle below to see the setup for ' \
                       'each — the toggle itself is a reactive component (dogfooding).'
@@ -33,8 +33,8 @@ module Views
         end
 
         def comparison
-          render ::Docs::Section.new('Why pgbus') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Why pgbus') do
+            DocsUI::Prose() do
               ul do
                 li do
                   plain 'Transactional broadcasts — deferred to after_commit; a rolled-back transaction emits nothing.'
@@ -43,7 +43,7 @@ module Views
                 li { plain 'No render→subscribe race — broadcasts are watermarked and replayed.' }
               end
             end
-            render ::Docs::Callout.new(:tip) do
+            DocsUI::Callout(:tip) do
               plain 'No Redis, no Action Cable. One Postgres — and your phlex-reactive code is identical.'
             end
           end

@@ -3,7 +3,7 @@
 module Views
   module Docs
     module Pages
-      class ExampleChat < ::Docs::Page
+      class ExampleChat < DocsUI::Page
         title 'Cross-tab chat (the showcase)'
         eyebrow 'Examples'
 
@@ -27,8 +27,8 @@ module Views
         private
 
         def intro
-          render ::Docs::Section.new('The example that proves the model') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('The example that proves the model') do
+            DocsUI::Prose() do
               p do
                 plain 'This is the example that proves the whole model: a client '
                 strong { 'action' }
@@ -42,8 +42,8 @@ module Views
         end
 
         def model
-          render ::Docs::Section.new('1. Model') do
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby, filename: 'app/models/chat_message.rb')
+          DocsUI::Section('1. Model') do
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/models/chat_message.rb')
               class ChatMessage < ApplicationRecord
                 validates :body, presence: true
                 scope :for_room, ->(room) { where(room:).order(:created_at, :id) }
@@ -52,7 +52,7 @@ module Views
                 def self.stream_key(room) = Pgbus.stream_key("chat", room)
               end
             RUBY
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby, filename: 'db/migrate/XXXX_create_chat_messages.rb')
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'db/migrate/XXXX_create_chat_messages.rb')
               create_table :chat_messages do |t|
                 t.string :room,   null: false, default: "lobby"
                 t.string :author, null: false, default: "anon"
@@ -65,8 +65,8 @@ module Views
         end
 
         def message
-          render ::Docs::Section.new('2. One message (record-backed, self-targeting)') do
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby, filename: 'app/components/chat/message.rb')
+          DocsUI::Section('2. One message (record-backed, self-targeting)') do
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/components/chat/message.rb')
               class Chat::Message < ApplicationComponent
                 include Phlex::Reactive::Streamable
 
@@ -87,8 +87,8 @@ module Views
         end
 
         def composer
-          render ::Docs::Section.new('3. The composer (a reactive action that creates + broadcasts)') do
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby, filename: 'app/components/chat/composer.rb')
+          DocsUI::Section('3. The composer (a reactive action that creates + broadcasts)') do
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/components/chat/composer.rb')
               class Chat::Composer < ApplicationComponent
                 include Phlex::Reactive::Streamable
                 include Phlex::Reactive::Component
@@ -129,7 +129,7 @@ module Views
                 end
               end
             RUBY
-            render ::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 plain 'The Stimulus runtime auto-collects the '
                 code { 'name="body"' }
@@ -146,8 +146,8 @@ module Views
         end
 
         def room
-          render ::Docs::Section.new('4. The room (subscribe + list + composer)') do
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby, filename: 'app/components/chat/room.rb')
+          DocsUI::Section('4. The room (subscribe + list + composer)') do
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/components/chat/room.rb')
               class Chat::Room < ApplicationComponent
                 def initialize(room: "lobby", messages: [])
                   @room = room
@@ -171,11 +171,11 @@ module Views
         end
 
         def controller
-          render ::Docs::Section.new('5. Controller + route (no auth, for the demo)') do
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby, filename: 'config/routes.rb')
+          DocsUI::Section('5. Controller + route (no auth, for the demo)') do
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'config/routes.rb')
               get "chat" => "chats#show"
             RUBY
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby, filename: 'app/controllers/chats_controller.rb')
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/controllers/chats_controller.rb')
               class ChatsController < ApplicationController
                 def show
                   room = params[:room].presence || "lobby"
@@ -187,8 +187,8 @@ module Views
         end
 
         def on_click
-          render ::Docs::Section.new('What happens when you click Send') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('What happens when you click Send') do
+            DocsUI::Prose() do
               ol do
                 li do
                   plain 'The '
@@ -229,8 +229,8 @@ module Views
         end
 
         def why_better
-          render ::Docs::Section.new('Why this is better than the Hotwire version') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Why this is better than the Hotwire version') do
+            DocsUI::Prose() do
               ul do
                 li do
                   strong { 'No Stimulus controller, no Action Cable channel, no Redis.' }
@@ -256,8 +256,8 @@ module Views
         end
 
         def going_further
-          render ::Docs::Section.new('Going further') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Going further') do
+            DocsUI::Prose() do
               ul do
                 li do
                   strong { 'Authenticated chat' }
@@ -283,7 +283,7 @@ module Views
                 end
               end
             end
-            render ::Docs::Callout.new(:tip) do
+            DocsUI::Callout(:tip) do
               plain 'No login, no Action Cable, no Redis, no JavaScript you write — and the new code is ' \
                     'less than the Stimulus controller alone would have been.'
             end

@@ -3,7 +3,7 @@
 module Views
   module Docs
     module Pages
-      class ExampleTodoList < ::Docs::Page
+      class ExampleTodoList < DocsUI::Page
         title 'Example: live todo list'
         eyebrow 'Examples'
 
@@ -23,15 +23,15 @@ module Views
         private
 
         def model
-          render ::Docs::Section.new('Model') do
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+          DocsUI::Section('Model') do
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               class Todo < ApplicationRecord
                 belongs_to :list
                 # Live cross-client sync over pgbus SSE — transactional, reconnect-safe.
                 broadcasts_to ->(t) { [t.list, :todos] }, durable: true
               end
             RUBY
-            render ::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 code { 'broadcasts_to' }
                 plain ' here only fires Turbo’s default per-record broadcasts. We drive the precise UI updates '
@@ -45,8 +45,8 @@ module Views
         end
 
         def row
-          render ::Docs::Section.new('One row (record-backed, all the actions)') do
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+          DocsUI::Section('One row (record-backed, all the actions)') do
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               class Todos::Item < ApplicationComponent
                 include Phlex::Reactive::Streamable
                 include Phlex::Reactive::Component
@@ -95,7 +95,7 @@ module Views
                 end
               end
             RUBY
-            render ::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 code { 'destroy' }
                 plain ' returns '
@@ -111,8 +111,8 @@ module Views
         end
 
         def list
-          render ::Docs::Section.new('The list + composer') do
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+          DocsUI::Section('The list + composer') do
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               class Todos::List < ApplicationComponent
                 include Phlex::Reactive::Streamable
                 include Phlex::Reactive::Component
@@ -152,8 +152,8 @@ module Views
         end
 
         def what_you_get
-          render ::Docs::Section.new('What you get') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('What you get') do
+            DocsUI::Prose() do
               ul do
                 li do
                   plain 'Toggle, rename (on '
@@ -178,8 +178,8 @@ module Views
         end
 
         def keyed_lists
-          render ::Docs::Section.new('Keyed lists & morphing') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Keyed lists & morphing') do
+            DocsUI::Prose() do
               p do
                 plain 'Give each row a stable '
                 code { 'id' }
@@ -189,7 +189,7 @@ module Views
                 plain 'and avoids re-creating unchanged rows.'
               end
             end
-            render ::Docs::Callout.new(:warning, title: 'Don’t render list items without a stable id') do
+            DocsUI::Callout(:warning, title: 'Don’t render list items without a stable id') do
               plain 'Without a stable per-row id, idiomorph can’t key the rows: focus is lost in the rename ' \
                     'input and unchanged rows are needlessly re-created.'
             end

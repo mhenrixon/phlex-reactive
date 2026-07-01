@@ -3,7 +3,7 @@
 module Views
   module Docs
     module Pages
-      class ExampleInlineEdit < ::Docs::Page
+      class ExampleInlineEdit < DocsUI::Page
         title 'Example: inline edit (show ↔ edit)'
         eyebrow 'Examples'
 
@@ -24,8 +24,8 @@ module Views
         private
 
         def the_component
-          render ::Docs::Section.new('The component') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('The component') do
+            DocsUI::Prose() do
               p do
                 plain 'In plain Hotwire this is a Stimulus controller plus three routes ('
                 code { 'inline_edit' }
@@ -36,7 +36,7 @@ module Views
                 plain ') and partials. Here it is one component with two actions.'
               end
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby, filename: 'app/components/fields/inline_edit.rb')
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/components/fields/inline_edit.rb')
               class Fields::InlineEdit < ApplicationComponent
                 include Phlex::Reactive::Streamable
                 include Phlex::Reactive::Component
@@ -86,8 +86,8 @@ module Views
         end
 
         def rendering
-          render ::Docs::Section.new('Render it for any field') do
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+          DocsUI::Section('Render it for any field') do
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               render Fields::InlineEdit.new(record: @user, attribute: :name)
               render Fields::InlineEdit.new(record: @user, attribute: :email)
             RUBY
@@ -95,8 +95,8 @@ module Views
         end
 
         def notes
-          render ::Docs::Section.new('Notes') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Notes') do
+            DocsUI::Prose() do
               ul do
                 li do
                   strong { 'Two pieces of identity' }
@@ -156,8 +156,8 @@ module Views
         end
 
         def validation_error
-          render ::Docs::Section.new('Surfacing a validation error') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Surfacing a validation error') do
+            DocsUI::Prose() do
               p do
                 code { 'save' }
                 plain ' above uses '
@@ -169,7 +169,7 @@ module Views
                 plain ' with a flash.'
               end
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               def save(value:)
                 authorize! @record, :update?
                 if @record.update(@attribute => value)
@@ -180,7 +180,7 @@ module Views
                 end
               end
             RUBY
-            render ::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 plain 'The flash '
                 code { 'content' }
@@ -197,8 +197,8 @@ module Views
         end
 
         def live_as_you_type
-          render ::Docs::Section.new('Live-as-you-type (a spreadsheet-like grid)') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Live-as-you-type (a spreadsheet-like grid)') do
+            DocsUI::Prose() do
               p do
                 plain 'For per-field editing where a '
                 strong { 'debounced save fires while the user is still typing or tabbing' }
@@ -214,7 +214,7 @@ module Views
                 plain 'and its caret survive the save.'
               end
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               action :update, params: { name: :string }
 
               def update(name:)
@@ -232,7 +232,7 @@ module Views
                 end
               end
             RUBY
-            render ::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 code { 'reply.replace(morph: true)' }
                 plain ' is the same thing via the opt-in flag; the morphed root still carries a '
@@ -243,11 +243,11 @@ module Views
         end
 
         def broadcasting
-          render ::Docs::Section.new('Want it to update other viewers too?') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Want it to update other viewers too?') do
+            DocsUI::Prose() do
               p { plain 'Broadcast on save.' }
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               def save(value:)
                 authorize! @record, :update?
                 @record.update!(@attribute => value)
@@ -257,7 +257,7 @@ module Views
                 )
               end
             RUBY
-            render ::Docs::Callout.new(:tip) do
+            DocsUI::Callout(:tip) do
               plain 'Now everyone viewing that record sees the new value land in place.'
             end
           end

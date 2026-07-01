@@ -3,7 +3,7 @@
 module Views
   module Docs
     module Pages
-      class Broadcasting < ::Docs::Page
+      class Broadcasting < DocsUI::Page
         title 'Broadcasting & live updates'
         eyebrow 'Guide'
 
@@ -27,8 +27,8 @@ module Views
         private
 
         def pattern
-          render ::Docs::Section.new('The pattern') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('The pattern') do
+            DocsUI::Prose() do
               p do
                 plain 'Reactive '
                 strong { 'actions' }
@@ -39,14 +39,14 @@ module Views
                 plain ', so they compose.'
               end
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               # Subscribe (in the view that should receive updates):
               turbo_stream_from @list, :todos
 
               # Broadcast (from a model callback, job, service, or a reactive action):
               Todos::Item.broadcast_replace_to(@list, :todos, model: @todo)
             RUBY
-            render ::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 plain 'The subscriber and broadcaster must agree on the '
                 strong { 'same stream key' }
@@ -63,8 +63,8 @@ module Views
         end
 
         def stream_keys
-          render ::Docs::Section.new('Stream keys: pass raw parts, not a built key') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Stream keys: pass raw parts, not a built key') do
+            DocsUI::Prose() do
               p do
                 code { 'broadcast_*_to(*streamables, ...)' }
                 plain ' builds the stream key itself. '
@@ -72,7 +72,7 @@ module Views
                 plain ' (a record and/or symbols), not an already-built key string:'
               end
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               # GOOD — raw parts
               Chat::Message.broadcast_append_to("chat", room, target: "...", model: msg)
               turbo_stream_from "chat", room
@@ -81,7 +81,7 @@ module Views
               key = ChatMessage.stream_key(room)             # => "chat:lobby"
               Chat::Message.broadcast_append_to(key, ...)    # ArgumentError under pgbus
             RUBY
-            render ::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 plain 'If you have a helper that returns a built key for the subscriber, pass the '
                 strong { 'same built string' }
@@ -97,8 +97,8 @@ module Views
         end
 
         def methods_table
-          render ::Docs::Section.new('The broadcast methods') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('The broadcast methods') do
+            DocsUI::Prose() do
               ul do
                 li do
                   code { '.broadcast_replace_to(*streamables, model:)' }
@@ -136,8 +136,8 @@ module Views
         end
 
         def model_mapping
-          render ::Docs::Section.new('How model: maps to the init keyword') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('How model: maps to the init keyword') do
+            DocsUI::Prose() do
               p do
                 plain 'The positional '
                 code { 'model:' }
@@ -155,7 +155,7 @@ module Views
                 plain ' satisfies both clicks and broadcasts:'
               end
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               class Todos::Item < ApplicationComponent
                 include Phlex::Reactive::Streamable
                 include Phlex::Reactive::Component
@@ -165,7 +165,7 @@ module Views
 
               Todos::Item.broadcast_replace_to(@list, :todos, model: @todo) # builds new(todo: @todo)
             RUBY
-            render ::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 plain 'For a '
                 strong { 'Streamable-only' }
@@ -177,7 +177,7 @@ module Views
                       'differs from that, override it:'
               end
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               class NotificationsBadge < ApplicationComponent
                 include Phlex::Reactive::Streamable
                 def initialize(user:) = @user = user
@@ -188,8 +188,8 @@ module Views
         end
 
         def from_action
-          render ::Docs::Section.new('Broadcasting from inside a reactive action') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Broadcasting from inside a reactive action') do
+            DocsUI::Prose() do
               p do
                 plain 'The acting user gets the action\'s HTTP response (a replace of the component by ' \
                       'default, or whatever '
@@ -209,7 +209,7 @@ module Views
                 plain ':'
               end
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               def add(title:)
                 authorize! @list, :update?
                 todo = @list.todos.create!(title:)
@@ -225,8 +225,8 @@ module Views
         end
 
         def actor_echo
-          render ::Docs::Section.new('Actor-echo suppression (exclude:)') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Actor-echo suppression (exclude:)') do
+            DocsUI::Prose() do
               p do
                 code { 'reactive_connection_id' }
                 plain " is the acting client's SSE connection id during the action (nil when the client " \
@@ -265,8 +265,8 @@ module Views
         end
 
         def transactional
-          render ::Docs::Section.new('Transactional broadcasts (with pgbus)') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Transactional broadcasts (with pgbus)') do
+            DocsUI::Prose() do
               p do
                 plain 'The action endpoint runs your action inside a transaction. With pgbus, broadcasts ' \
                       'defer to '
@@ -286,7 +286,7 @@ module Views
                 end
               end
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               ActiveRecord::Base.transaction do
                 @order.update!(status: "shipped")
                 Orders::Card.broadcast_replace_to(@order.account, model: @order)  # deferred
@@ -297,8 +297,8 @@ module Views
         end
 
         def removing_actor
-          render ::Docs::Section.new("Removing the actor's own element") do
-            render ::Docs::Prose.new do
+          DocsUI::Section("Removing the actor's own element") do
+            DocsUI::Prose() do
               p do
                 code { 'destroy' }
                 plain '-style actions are the one case where "replace the component by its id" doesn\'t ' \
@@ -311,7 +311,7 @@ module Views
                 plain '.'
               end
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               def destroy
                 authorize! @todo, :destroy?
                 list = @todo.list
@@ -321,7 +321,7 @@ module Views
                 reply.remove # this tab
               end
             RUBY
-            render ::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 plain 'For an "undo" affordance, replace with a tombstone state instead of removing. See the '
                 strong { 'reply' }
@@ -332,13 +332,13 @@ module Views
         end
 
         def presence
-          render ::Docs::Section.new('Presence (who\'s here / typing)') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Presence (who\'s here / typing)') do
+            DocsUI::Prose() do
               p do
                 plain 'pgbus ships presence tracking. Join on render, leave on disconnect, broadcast the change:'
               end
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               Pgbus.stream(@room).presence.join(
                 member_id: current_user.id,
                 metadata: { name: current_user.name }
@@ -349,7 +349,7 @@ module Views
               Pgbus.stream(@room).presence.members   # current list
               Pgbus.stream(@room).presence.count     # fast count for a "N online" badge
             RUBY
-            render ::Docs::Callout.new(:tip) do
+            DocsUI::Callout(:tip) do
               plain 'See the pgbus transport guide for the full presence and SSE story.'
             end
           end

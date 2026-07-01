@@ -3,7 +3,7 @@
 module Views
   module Docs
     module Pages
-      class ExamplesOverview < ::Docs::Page
+      class ExamplesOverview < DocsUI::Page
         title 'Examples'
         eyebrow 'Examples'
 
@@ -19,8 +19,8 @@ module Views
         private
 
         def examples
-          render ::Docs::Section.new('The examples') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('The examples') do
+            DocsUI::Prose() do
               p do
                 plain 'Each example below is a complete, working feature you can copy and paste. '
                 plain 'They build from the smallest reactive component up to record-backed actions, '

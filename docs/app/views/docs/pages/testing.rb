@@ -3,7 +3,7 @@
 module Views
   module Docs
     module Pages
-      class Testing < ::Docs::Page
+      class Testing < DocsUI::Page
         title 'Testing reactive components'
         eyebrow 'Guide'
 
@@ -24,11 +24,11 @@ module Views
         private
 
         def unit_actions
-          render ::Docs::Section.new('1. Unit: actions are just methods') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('1. Unit: actions are just methods') do
+            DocsUI::Prose() do
               p { plain 'Build the component, call the action, assert the state changed. No HTTP, no browser.' }
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               test "toggle flips done" do
                 todo = todos(:write_docs)         # done: false
                 component = Todos::Item.new(todo:)
@@ -40,11 +40,11 @@ module Views
         end
 
         def unit_identity
-          render ::Docs::Section.new('2. Unit: the identity token round-trips') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('2. Unit: the identity token round-trips') do
+            DocsUI::Prose() do
               p { plain 'Verify the signed token rebuilds the same component (and that tampering fails).' }
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               test "record-backed identity round-trips" do
                 todo = todos(:write_docs)
                 token = Todos::Item.new(todo:).send(:reactive_token)
@@ -65,15 +65,15 @@ module Views
         end
 
         def integration_endpoint
-          render ::Docs::Section.new('3. Integration: the action endpoint') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('3. Integration: the action endpoint') do
+            DocsUI::Prose() do
               p do
                 plain 'POST a signed token to '
                 code { '/reactive/actions' }
                 plain ' and assert the turbo-stream response. Mint the token the same way the component does.'
               end
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               test "increment action returns a turbo-stream replace" do
                 token = Counter.new(count: 1).send(:reactive_token)
 
@@ -95,7 +95,7 @@ module Views
                 assert_response :forbidden
               end
             RUBY
-            render ::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 plain 'For authorization, stub the current user / policy and assert '
                 code { ':forbidden' }
@@ -109,7 +109,7 @@ module Views
                 plain ', assert on the streams it produces:'
               end
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               test "failed update keeps the replace and appends a flash" do
                 # POST a save action with invalid input
                 assert_response :success
@@ -128,7 +128,7 @@ module Views
                 assert_match %r{<turbo-stream action="reactive:visit" data-url=".*/articles/}, response.body
               end
             RUBY
-            render ::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 code { 'reply.<verb>' }
                 plain ' is a plain value object — unit-test it with no HTTP: '
@@ -146,8 +146,8 @@ module Views
         end
 
         def system_browser
-          render ::Docs::Section.new('4. System / browser: the full loop & broadcasts') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('4. System / browser: the full loop & broadcasts') do
+            DocsUI::Prose() do
               p do
                 plain 'Use a system test (Capybara) or a browser-automation CLI for the end-to-end loop ' \
                       'and cross-tab broadcasts. The key assertions:'
@@ -163,7 +163,7 @@ module Views
                 li { plain 'A change in one session appears in another subscribed session.' }
               end
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby)
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
               # system test sketch
               test "counter increments without reload" do
                 visit counter_path
@@ -173,7 +173,7 @@ module Views
                 assert_equal "alive", page.evaluate_script("window.__marker")  # no reload
               end
             RUBY
-            render ::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 plain 'For cross-tab, open two sessions (two '
                 code { 'Capybara::Session' }
@@ -185,8 +185,8 @@ module Views
         end
 
         def client_unit
-          render ::Docs::Section.new('5. Client unit tests (bun)') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('5. Client unit tests (bun)') do
+            DocsUI::Prose() do
               p do
                 plain 'Some client-runtime contracts are timing-sensitive and a full browser can mask them — ' \
                       'e.g. a '
@@ -199,8 +199,8 @@ module Views
                       'Those are covered by fast bun unit tests against the controller in isolation:'
               end
             end
-            render ::Docs::Code.new('bun test spec/javascript     # or: bun run test', lexer: :shell)
-            render ::Docs::Prose.new do
+            DocsUI::Code('bun test spec/javascript     # or: bun run test', lexer: :shell)
+            DocsUI::Prose() do
               p do
                 plain 'They stub '
                 code { '@hotwired/stimulus' }
@@ -221,8 +221,8 @@ module Views
         end
 
         def troubleshooting
-          render ::Docs::Section.new('Troubleshooting') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Troubleshooting') do
+            DocsUI::Prose() do
               ul do
                 li do
                   strong { 'Click does nothing, count stays 0' }

@@ -3,7 +3,7 @@
 module Views
   module Docs
     module Pages
-      class ExampleCollections < ::Docs::Page
+      class ExampleCollections < DocsUI::Page
         title 'Reactive collections'
         eyebrow 'Examples'
 
@@ -26,8 +26,8 @@ module Views
         private
 
         def intro
-          render ::Docs::Section.new('Example: reactive collections (add/remove rows + count + empty-state)') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Example: reactive collections (add/remove rows + count + empty-state)') do
+            DocsUI::Prose() do
               p do
                 plain 'An add/remove-row list — line items, attachments, tags, comments, a notifications list — is '
                 plain 'one of the most common reactive surfaces. Each one re-implements the same orchestration by '
@@ -50,8 +50,8 @@ module Views
         end
 
         def declare_collection
-          render ::Docs::Section.new('Declare the collection on the container') do
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby, filename: 'app/components/notifications_list.rb')
+          DocsUI::Section('Declare the collection on the container') do
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/components/notifications_list.rb')
               class NotificationsList < ApplicationComponent
                 include Phlex::Reactive::Streamable
                 include Phlex::Reactive::Component
@@ -98,7 +98,7 @@ module Views
                 end
               end
             RUBY
-            render ::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 plain 'The same three things the helper streams in and out on each delta — the row, the count, the '
                 plain 'empty-state — are what '
@@ -110,8 +110,8 @@ module Views
         end
 
         def row_and_empty
-          render ::Docs::Section.new('The row and empty-state components') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('The row and empty-state components') do
+            DocsUI::Prose() do
               p do
                 plain 'The row is a plain '
                 code { 'Streamable' }
@@ -126,7 +126,7 @@ module Views
                 plain ' action via the generic reactive controller it sits inside (it carries no token of its own):'
               end
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby, filename: 'app/components/notification_row.rb')
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/components/notification_row.rb')
               class NotificationRow < ApplicationComponent
                 include Phlex::Reactive::Streamable
                 include Phlex::Reactive::Component   # only to use `on` for the dismiss trigger
@@ -154,8 +154,8 @@ module Views
         end
 
         def what_each_reply_emits
-          render ::Docs::Section.new('What each reply emits') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('What each reply emits') do
+            DocsUI::Prose() do
               ul do
                 li do
                   code { 'reply.append(name, model)' }
@@ -185,8 +185,8 @@ module Views
         end
 
         def why_count_right
-          render ::Docs::Section.new('Why the count is always right') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Why the count is always right') do
+            DocsUI::Prose() do
               p do
                 code { 'size:' }
                 plain ' is '
@@ -225,8 +225,8 @@ module Views
         end
 
         def repeated_add_remove
-          render ::Docs::Section.new("Repeated add/remove: the container's token rolls forward") do
-            render ::Docs::Prose.new do
+          DocsUI::Section("Repeated add/remove: the container's token rolls forward") do
+            DocsUI::Prose() do
               p do
                 code { 'reply.append' }
                 plain ' / '
@@ -283,8 +283,8 @@ module Views
         end
 
         def cross_tab
-          render ::Docs::Section.new('Cross-tab: keep broadcasting the row') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Cross-tab: keep broadcasting the row') do
+            DocsUI::Prose() do
               p do
                 code { 'reactive_collection' }
                 plain ' governs the '
@@ -295,7 +295,7 @@ module Views
                 plain 'actor (who already got the reply):'
               end
             end
-            render ::Docs::Code.new(<<~RUBY, lexer: :ruby, filename: 'app/components/notifications_list.rb')
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/components/notifications_list.rb')
               def add(title:)
                 todo = Todo.create!(title:)
                 NotificationRow.broadcast_append_to(
@@ -306,7 +306,7 @@ module Views
                 reply.append(:notifications, todo)
               end
             RUBY
-            render ::Docs::Prose.new do
+            DocsUI::Prose() do
               p do
                 code { 'reactive_collection' }
                 plain ' is the per-actor add/remove + count + empty-state wrapper; the broadcast is the cross-tab '
@@ -317,8 +317,8 @@ module Views
         end
 
         def related
-          render ::Docs::Section.new('Related') do
-            render ::Docs::Prose.new do
+          DocsUI::Section('Related') do
+            DocsUI::Prose() do
               ul do
                 li do
                   strong { 'Notifications / badges' }

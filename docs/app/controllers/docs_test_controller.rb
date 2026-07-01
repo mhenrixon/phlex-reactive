@@ -13,7 +13,7 @@ class DocsTestController < ApplicationController
   # language choice persists globally and syncs across groups.
   class CodeExampleFixture < Phlex::HTML
     def view_template
-      render ::Docs::Shell.new(title: 'Code example') do
+      DocsUI::Shell(title: 'Code example') do
         h1(id: 'top', class: 'text-2xl font-bold mb-4') { 'Multi-language examples' }
         group('a', 'Anthropic::Client.new', 'anthropic.Anthropic()')
         group('b', 'client.messages.create', 'client.messages.create()')
@@ -23,7 +23,7 @@ class DocsTestController < ApplicationController
     private
 
     def group(name, ruby, python)
-      render ::Docs::Example.new do |ex|
+      DocsUI::Example() do |ex|
         ex.code(:ruby, filename: "#{name}.rb") { ruby }
         ex.code(:python, filename: "#{name}.py") { python }
       end

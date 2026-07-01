@@ -8,7 +8,7 @@ GIT
 
 GIT
   remote: https://github.com/mhenrixon/docs-kit.git
-  revision: 70b335a51d4c5311956f75bef979ea96e7cf7c57
+  revision: 40f1138032336e943273436e09d21ca1b3b684b8
   specs:
     docs-kit (0.1.0)
       daisyui (>= 1.2)

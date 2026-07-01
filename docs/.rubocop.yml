@@ -5,6 +5,18 @@ plugins:
   - rubocop-capybara
   - rubocop-thread_safety
 
+# Local custom cop: enforce the DocsUI/DaisyUI Phlex kit form
+# (DocsUI::Code(...)) over `render DocsUI::Code.new(...)`.
+require:
+  - ./lib/rubocop/cop/docs_kit/render_component_preferred.rb
+
+DocsKit/RenderComponentPreferred:
+  Enabled: true
+  Include:
+    - app/**/*.rb
+  Exclude:
+    - lib/rubocop/cop/**/*.rb
+
 AllCops:
   TargetRubyVersion: 3.4
   NewCops: enable

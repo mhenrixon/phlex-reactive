@@ -31,7 +31,8 @@ RSpec.describe 'Responsive shell', type: :system do
       expect(page).to have_css('h1', text: 'Architecture')
 
       # tocRoot is present in the DOM but not visible at this width.
-      expect(page).to have_no_css('[data-docs-nav-target~="tocRoot"] a[data-docs-nav-target="tocLink"]', visible: :visible)
+      expect(page).to have_no_css('[data-docs-nav-target~="tocRoot"] a[data-docs-nav-target="tocLink"]',
+                                  visible: :visible)
     end
 
     it 'keeps the content readable without horizontal overflow' do
