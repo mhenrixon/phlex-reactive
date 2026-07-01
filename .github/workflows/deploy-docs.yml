@@ -3,6 +3,11 @@ name: Deploy docs
 # Deploys the docs site (docs/) to the oss-infrastructure server via Kamal when a
 # release is published, or on demand. The build+deploy logic is shared across all
 # docs-kit sites — see mhenrixon/docs-kit/.github/workflows/deploy.yml.
+#
+# `image`/`service` are the REPO name (phlex-reactive, not -docs) so the pushed
+# ghcr package auto-links to this repo and GITHUB_TOKEN can push + pull it (no
+# PAT). Must match `service:`/`image:` in docs/config/deploy.yml + the Dockerfile
+# LABEL.
 on:
   release:
     types: [published]
@@ -12,6 +17,6 @@ jobs:
   deploy:
     uses: mhenrixon/docs-kit/.github/workflows/deploy.yml@main
     with:
-      image: mhenrixon/phlex-reactive-docs
-      service: phlex-reactive-docs
+      image: mhenrixon/phlex-reactive
+      service: phlex-reactive
     secrets: inherit
