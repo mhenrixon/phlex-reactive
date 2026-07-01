@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+/* daisyUI. The curated theme list MUST match DocsKit.configuration.themes
+   (config/initializers/docs_kit.rb), or the theme switcher offers a theme the
+   compiled CSS doesn't ship. `dark` is the default; `light` follows the OS. */
+@plugin "daisyui" {
+  themes: dark --default, light --prefersdark, synthwave, retro, cyberpunk,
+    valentine, dracula, night, coffee, nord, sunset;
+}
+
+/* Tailwind must scan every source that emits class names: this app's views, the
+   daisyUI Phlex gem, AND the docs-kit gem (which owns the shared shell/sidebar/
+   code/page chrome). Without the gem globs, the shared components' classes are
+   tree-shaken away and the site renders unstyled. The gem @source paths are
+   resolved at build time (their install dir varies by environment) into the
+   generated file imported below — see bin/build-css. */
+@source "../../../app/views/**/*.{rb,erb,haml,html,slim}";
+@source "../../../app/reactive_components/**/*.rb";
+@source "../../../app/helpers/**/*.rb";
+@source "../../../app/javascript/**/*.js";
+@source "../../../public/*.html";
+@import "./tailwind.sources.css";
+
+/* The daisyUI Drawer emits some class names at render time (drawer/drawer-content/
+   drawer-side/...), so they never appear as literals in scanned .rb sources and
+   Tailwind would tree-shake their CSS away — leaving the app-shell unstyled.
+   Force-include the classes the shell relies on. */
+@source inline("drawer drawer-content drawer-side drawer-toggle drawer-overlay {lg:}drawer-open drawer-end");
+
+/* Responsive drawer-open — sidebar always visible on desktop. Highest
+   specificity, matching the daisyUI docs site so the two shells render
+   identically. */
+@media (width >= 1024px) {
+  .lg\:drawer-open {
+    display: grid !important;
+    grid-auto-columns: max-content auto !important;
+  }
+
+  .lg\:drawer-open > .drawer-toggle {
+    display: none !important;
+  }
+
+  .lg\:drawer-open > .drawer-toggle ~ .drawer-side,
+  .lg\:drawer-open > .drawer-side {
+    pointer-events: auto !important;
+    visibility: visible !important;
+    position: sticky !important;
+    top: 0 !important;
+    display: block !important;
+    width: auto !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    overscroll-behavior: auto !important;
+    opacity: 1 !important;
+    overflow-y: auto !important;
+  }
+
+  .lg\:drawer-open > .drawer-side > .drawer-overlay {
+    cursor: default !important;
+    background-color: transparent !important;
+  }
+}

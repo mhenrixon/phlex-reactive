@@ -30,7 +30,11 @@ gem "phlex-rails"
 # Docs UI: daisyUI Phlex components for chrome (sidebar, drawer, tabs, cards).
 # The reactive demo components themselves stay framework-agnostic.
 gem "daisyui", github: "mhenrixon/daisyui", require: "daisy_ui"
-gem "tailwindcss-rails"
+
+# Shared docs-site chrome (Shell/Sidebar/Code/Page/...) — the single place the
+# layout/design lives, shared with the daisyUI docs site. Configured per-site via
+# DocsKit.configure (see config/initializers/docs_kit.rb).
+gem "docs-kit", path: "../../docs-kit"
 
 # Icons — lucide via rails_icons (SVGs synced into app/assets/svg/icons).
 gem "rails_icons", "~> 1.1"

@@ -8,6 +8,10 @@
 ARG RUBY_VERSION=3.4.2
 FROM ruby:$RUBY_VERSION-slim AS base
 
+ARG BUN_VERSION=1.3.2
+ENV BUN_INSTALL="/usr/local/bun"
+ENV PATH="/usr/local/bun/bin:$PATH"
+
 WORKDIR /app/docs
 
 ENV BUNDLE_DEPLOYMENT="0" \
@@ -28,10 +32,15 @@ RUN gem update --system --no-document && gem install -N bundler
 FROM base AS build
 
 # build-essential + libpq-dev/libyaml-dev to compile native gems (pg, etc.);
-# git so the gem's gemspec (`git ls-files`) resolves the path dependency.
+# git so the gem's gemspec (`git ls-files`) resolves the path dependency;
+# unzip for the Bun installer.
 RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y \
-      build-essential curl git libpq-dev libyaml-dev pkg-config
+      build-essential curl git libpq-dev libyaml-dev pkg-config unzip
+
+# Bun runs the Tailwind CSS v4 CLI (bun run build:css) — the canonical CSS build
+# shared with the daisyUI docs site (no tailwindcss-rails).
+RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}"
 
 # Copy the WHOLE repo first (gem at /app, app at /app/docs) — the gem is a path
 # dependency whose gemspec runs `git ls-files`, so it needs the full checkout
@@ -43,8 +52,11 @@ COPY . /app/
 RUN bundle config set frozen false && bundle install && \
     rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache
 
-# Precompile assets (daisyUI/Tailwind build + propshaft) without the master key.
-RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails tailwindcss:build && \
+# Install JS deps (Tailwind CLI + daisyUI), build the CSS (bin/build-css resolves
+# the daisyui + docs-kit gem @source globs from `bundle show`), then precompile
+# assets (propshaft fingerprints the built application.css) — no master key.
+RUN bun install --frozen-lockfile
+RUN SECRET_KEY_BASE_DUMMY=1 bun run build:css && \
     SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile
 
 
