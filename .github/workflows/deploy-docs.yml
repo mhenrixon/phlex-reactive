@@ -20,15 +20,24 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Only the build job pushes to GHCR (docker/login-action + build-push-action).
+    permissions:
+      contents: read
+      packages: write
     outputs:
       image_tag: ${{ steps.tag.outputs.image_tag }}
     steps:
+      # persist-credentials: false — checkout is only for the short SHA + build
+      # context; no git push/pull follows. The build COPYs the repo root (incl .git,
+      # kept for the gemspec's `git ls-files`) into the image, which is pushed to a
+      # public ghcr package, so a persisted GITHUB_TOKEN in .git/config must not ride along.
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Determine image tag
         id: tag
@@ -72,11 +81,17 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment: docs
+    # Pull-only (kamal deploy --skip-push); no image push, so no packages: write.
+    permissions:
+      contents: read
+      packages: read
     defaults:
       run:
         working-directory: docs
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
