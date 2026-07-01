@@ -7,6 +7,8 @@ Rails.application.routes.draw do
   get "counter" => "demos#counter"
   get "chat" => "demos#chat"
   get "todos" => "demos#todos"
+  get "new_order" => "demos#new_order"
+  get "order/:id" => "demos#order"
   get "notifications" => "demos#notifications"
   get "reactive_rows" => "demos#reactive_rows"
   get "rich_editor/:id" => "demos#rich_editor"

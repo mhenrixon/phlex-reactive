@@ -27,6 +27,7 @@ module Phlex
           it.config.assets.precompile += %w[
             phlex/reactive/reactive_controller.js
             phlex/reactive/confirm.js
+            phlex/reactive/compute.js
           ]
         end
       end
@@ -52,6 +53,16 @@ module Phlex
           it.importmap.pin(
             "phlex/reactive/confirm",
             to: "phlex/reactive/confirm.js",
+            preload: true
+          )
+          # The client-side compute (data-binding) registry behind
+          # reactive_compute. reactive_controller.js imports it by this bare
+          # specifier (same import-map rationale as confirm above), and an app
+          # registers reducers via `import { setComputeReducer } from
+          # "phlex/reactive/compute"` — both resolve through this pin.
+          it.importmap.pin(
+            "phlex/reactive/compute",
+            to: "phlex/reactive/compute.js",
             preload: true
           )
         end

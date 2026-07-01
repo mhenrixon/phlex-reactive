@@ -14,6 +14,18 @@ class DemosController < ActionController::Base
     render_component TodoListComponent.new
   end
 
+  # A NEW (unsaved) order: the split recomputes in-browser via reactive_compute,
+  # no round trip. total=500 seeds the three-way split.
+  def new_order
+    render_component OrderComponent.new(order: Order.new(total: 500))
+  end
+
+  # A PERSISTED order: editing allowance fires the reactive rebalance action and
+  # the server reconciles cash through the same PaymentSplit twin.
+  def order
+    render_component OrderComponent.new(order: Order.find(params[:id]))
+  end
+
   def notifications
     render_component NotificationsListComponent.new
   end
