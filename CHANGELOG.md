@@ -31,6 +31,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `respond_to?` + two memoized reads, and only for components that didn't
   define `#id`.
 
+- **`Phlex::Reactive.verbose_errors` — diagnostic endpoint error bodies +
+  dropped-param logging (#82).** An endpoint failure used to be a bare
+  `head 400/403/404` and a silently-dropped param left no trace — debugging
+  "nothing happens" meant reading the gem source. Now every failure is
+  warn-logged as `[phlex-reactive] …` in EVERY environment, and with
+  `verbose_errors` on (default `Rails.env.local?` — development AND test; off
+  in production) the response also carries a plain-text diagnostic body the
+  client already prints via `console.error`: a tampered/stale token (400,
+  distinguishing signature-invalid from a token class that no longer resolves
+  from a class that isn't reactive — `InvalidToken` now carries a `diagnostic`),
+  an undeclared action (403, listing the declared actions), a registered
+  authorization error (403, naming the error class and the action), and a
+  missing record (404, naming the GlobalID). Param coercion additionally logs
+  every dropped key with its full bracketed path and reason
+  (`undeclared` / `uncoercible`), hinting when a flat name looks like the
+  bracketed twin of a declared nested key (the #16/#21 confusion). Statuses
+  never change with the flag, the client needs no changes, and the production
+  coercion path does zero extra work (nil collector, early-return guards) —
+  `rake bench:one[coerce_params]` before/after is unchanged within noise
+  (36.1k → 37.1k i/s; 218 → 207 objects/call, retained 0).
+
 - **Combobox keyboard navigation — `on(:search, …, listnav: "[role=option]")` (#72).**
   A search/combobox trigger can now declare client-side list navigation: Arrow
   Up/Down move a highlight among the option elements IN-BROWSER (no round trip),

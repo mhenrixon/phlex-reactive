@@ -10,6 +10,11 @@
 
 require_relative "../support/boot"
 
+# Measure the PRODUCTION path: verbose_errors defaults ON under RAILS_ENV=test
+# (Rails.env.local?), which would add the dropped-param collector to every
+# call. Production defaults OFF — bench what production runs.
+Phlex::Reactive.verbose_errors = false
+
 controller = Phlex::Reactive::ActionsController.new
 
 schema = {
