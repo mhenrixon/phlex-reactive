@@ -49,6 +49,10 @@ function makeField(name, value) {
     },
     addEventListener: (type, fn) => type === "input" && listeners.push(fn),
     dispatchEvent(event) {
+      // Real DOM: dispatchEvent sets event.target to the dispatching element —
+      // that's what lets a re-entrant recompute see WHICH field just changed.
+      // (defineProperty because Event#target is a read-only prototype getter.)
+      Object.defineProperty(event, "target", { value: this, configurable: true })
       if (event.type === "input") listeners.slice().forEach((fn) => fn(event))
       return true
     },
@@ -273,4 +277,153 @@ test("a chained listener on an output field fires via the dispatched event (summ
 
   controller.recompute({ target: fields.allowance })
   expect(summary).toBe("cash is 400") // the chained repaint saw the new value
+})
+
+// ---------------------------------------------------------------------------
+// Issue #75: the reducer's second argument — meta = { changed } — tells a
+// multi-way/mutual rebalance WHICH declared input the user just edited.
+// ---------------------------------------------------------------------------
+
+test("editing an owned declared input passes its name as meta.changed", () => {
+  const fields = {
+    allowance: makeField("allowance", 100),
+    total: makeField("total", 500),
+  }
+  let meta
+  computeModule.setComputeReducer("split", (_values, m) => {
+    meta = m
+    return {}
+  })
+
+  const controller = buildController(
+    makeRoot({ reducer: "split", inputs: ["allowance", "total"], outputs: [], fields }),
+  )
+  controller.recompute({ target: fields.allowance })
+
+  expect(meta).toEqual({ changed: "allowance" })
+})
+
+test("a direct recompute() call (no event) passes changed: null", () => {
+  const fields = { total: makeField("total", 500) }
+  let meta
+  computeModule.setComputeReducer("split", (_values, m) => {
+    meta = m
+    return {}
+  })
+
+  const controller = buildController(
+    makeRoot({ reducer: "split", inputs: ["total"], outputs: [], fields }),
+  )
+  controller.recompute()
+
+  expect(meta).toEqual({ changed: null })
+})
+
+test("an event from a field NOT among the declared inputs passes changed: null", () => {
+  const fields = { total: makeField("total", 500) }
+  const stray = makeField("note", "hello")
+  stray._root = fields.total._root // ownership isn't the problem here — the name is
+  let meta
+  computeModule.setComputeReducer("split", (_values, m) => {
+    meta = m
+    return {}
+  })
+
+  const controller = buildController(
+    makeRoot({ reducer: "split", inputs: ["total"], outputs: [], fields }),
+  )
+  stray._root = controller.element
+  controller.recompute({ target: stray })
+
+  expect(meta).toEqual({ changed: null })
+})
+
+test("an event from a field owned by a NESTED reactive root passes changed: null", () => {
+  const fields = { total: makeField("total", 500) }
+  let meta
+  computeModule.setComputeReducer("split", (_values, m) => {
+    meta = m
+    return {}
+  })
+
+  const controller = buildController(
+    makeRoot({ reducer: "split", inputs: ["total"], outputs: [], fields }),
+  )
+  // Same name as a declared input, but its nearest reactive root is a nested
+  // one (issue #15) — the outer compute must not treat it as its own edit.
+  const nested = makeField("total", 42)
+  nested._root = { id: "nested-root" }
+  controller.recompute({ target: nested })
+
+  expect(meta).toEqual({ changed: null })
+})
+
+// The issue's three-way rebalance: field_a + field_b + field_c must always sum
+// to total. Editing field_c makes field_a the derived field; editing anything
+// else derives field_c. One reducer, branching on meta.changed. The reducer is
+// CONVERGENT (see compute.js): the output write dispatches a real input event
+// (#76) which re-enters recompute with changed = the output's name — that pass
+// recomputes values already in the DOM, so the change guard settles the chain.
+test("three-way rebalance: one reducer branches on changed; both directions settle", () => {
+  const fields = {
+    field_a: makeField("field_a", 100),
+    field_b: makeField("field_b", 50),
+    field_c: makeField("field_c", 350),
+    total: makeField("total", 500),
+  }
+  let reducerCalls = 0
+  computeModule.setComputeReducer("three_way_split", ({ field_a, field_b, field_c, total }, { changed }) => {
+    reducerCalls++
+    if (changed === "field_c") return { field_a: total - field_c - field_b }
+    return { field_c: total - field_a - field_b }
+  })
+
+  const controller = buildController(
+    makeRoot({
+      reducer: "three_way_split",
+      inputs: ["field_a", "field_b", "field_c", "total"],
+      outputs: ["field_a", "field_c"],
+      fields,
+    }),
+  )
+  // Wire the outputs like the DOM would: the dispatched input event bubbles to
+  // the root and re-enters recompute (input->reactive#recompute).
+  for (const name of ["field_a", "field_b", "field_c"]) {
+    fields[name].addEventListener("input", (e) => controller.recompute(e))
+  }
+
+  // Edit field_a: 100 → 200. field_c is the derived field.
+  fields.field_a.value = 200
+  controller.recompute({ target: fields.field_a })
+  expect(fields.field_c.value).toBe("250") // 500 - 200 - 50
+  expect(fields.field_a.value).toBe("200")
+  // Initial pass + the re-entrant pass from field_c's dispatched input, which
+  // (changed === "field_c") recomputes field_a to its current value → settled.
+  expect(reducerCalls).toBe(2)
+  expect(Number(fields.field_a.value) + Number(fields.field_b.value) + Number(fields.field_c.value)).toBe(500)
+
+  // Edit field_c: 250 → 100. Now field_a is the derived field.
+  reducerCalls = 0
+  fields.field_c.value = 100
+  controller.recompute({ target: fields.field_c })
+  expect(fields.field_a.value).toBe("350") // 500 - 100 - 50
+  expect(fields.field_c.value).toBe("100")
+  expect(reducerCalls).toBe(2) // bounded: initial + one convergent re-entry
+  expect(Number(fields.field_a.value) + Number(fields.field_b.value) + Number(fields.field_c.value)).toBe(500)
+})
+
+test("existing one-arg reducers keep working (backward compatible)", () => {
+  const fields = {
+    allowance: makeField("allowance", 100),
+    cash: makeField("cash", 0),
+    total: makeField("total", 500),
+  }
+  // A pre-#75 reducer: declared with ONE parameter, ignores the meta arg.
+  computeModule.setComputeReducer("split", ({ allowance, total }) => ({ cash: total - allowance }))
+  const controller = buildController(
+    makeRoot({ reducer: "split", inputs: ["allowance", "total"], outputs: ["cash"], fields }),
+  )
+
+  controller.recompute({ target: fields.allowance })
+  expect(fields.cash.value).toBe("400")
 })

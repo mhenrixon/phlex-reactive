@@ -232,7 +232,15 @@ export default class extends Controller {
   // Reads inputs/outputs/reducer from the root's data-reactive-compute-* attrs
   // (set once by reactive_compute_attrs). A missing/unregistered reducer is a
   // no-op — a page must never break because a binding wasn't wired up.
-  recompute() {
+  //
+  // The reducer gets a second argument, meta = { changed } (issue #75): the
+  // name of the declared input the triggering event edited, or null for a
+  // direct call / an unowned or undeclared target. A multi-way rebalance
+  // branches on it (edit c → derive a; else → derive c). Note that a #76
+  // output write dispatches a real input event, so recompute RE-ENTERS with
+  // changed = that output's name — the reducer must be convergent (see
+  // compute.js) so the change guard settles the chain.
+  recompute(event) {
     const key = this.element.getAttribute("data-reactive-compute-reducer-param")
     if (!key) return
     const reduce = computeReducer(key)
@@ -244,7 +252,7 @@ export default class extends Controller {
     const values = {}
     for (const name of inputs) values[name] = this.#numericFieldValue(name)
 
-    const result = reduce(values) || {}
+    const result = reduce(values, { changed: this.#changedComputeField(event, inputs) }) || {}
     for (const name of outputs) {
       if (!(name in result)) continue
       const field = this.#ownedField(name)
@@ -337,6 +345,18 @@ export default class extends Controller {
     } catch {
       return []
     }
+  }
+
+  // The declared compute input the event just edited — the reducer's
+  // meta.changed (issue #75). The triggering field counts only when it is a
+  // named form control OWNED by this root (not a nested reactive root's, issue
+  // #15) AND its name is among the declared compute inputs; anything else
+  // (a direct call, an unowned/undeclared target) yields null.
+  #changedComputeField(event, inputs) {
+    const target = event?.target
+    if (!target?.name || typeof target.closest !== "function") return null
+    if (!inputs.includes(target.name)) return null
+    return this.#ownsField(target) ? target.name : null
   }
 
   // The first named control owned by THIS root (skips nested reactive roots,

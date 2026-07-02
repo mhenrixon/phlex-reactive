@@ -193,9 +193,20 @@ module Phlex
         #     inputs: %i[allowance cash leasing total],  # fields the JS reducer reads
         #     outputs: %i[allowance cash leasing]        # fields it writes (no round trip)
         #
-        # Register the matching JS once at boot:
+        # Register the matching JS once at boot. The reducer's signature is
+        # (values, meta) — values is { inputName: Number } over the declared
+        # inputs; meta is { changed }, the name of the declared input the
+        # triggering event edited (null on a direct call or an unowned/
+        # undeclared target). A one-argument reducer keeps working (it just
+        # ignores meta); `changed` is what lets ONE reducer express a
+        # multi-way/mutual rebalance (issue #75) — branch on the edited field.
+        # Because an output write dispatches a real `input` event (issue #76),
+        # a branching reducer must be CONVERGENT — the re-entrant pass must
+        # recompute the values already written so the change guard settles it
+        # (see the header of app/javascript/phlex/reactive/compute.js).
+        #
         #   import { setComputeReducer } from "phlex/reactive/compute"
-        #   setComputeReducer("payment_split", ({ allowance, cash, leasing, total }) => ({ … }))
+        #   setComputeReducer("payment_split", ({ allowance, cash, leasing, total }, { changed }) => ({ … }))
         def reactive_compute(name, inputs: nil, outputs: nil, reducer: nil)
           return reactive_computes[name.to_sym] if inputs.nil? && outputs.nil?
 
