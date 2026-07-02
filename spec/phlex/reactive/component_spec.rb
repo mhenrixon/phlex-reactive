@@ -472,6 +472,83 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  describe "#on event modifiers (issue #80 — window:, once:, outside:, throttle:)" do
+    subject(:instance) { state_klass.new }
+
+    # The hot-path pin: a bare on(:x) — the overwhelmingly common trigger — must
+    # emit EXACTLY today's hash. New modifiers may not perturb the no-modifier
+    # descriptor, params payload, or the forced type="button" by a single byte.
+    it "leaves the bare on(:x) emission byte-identical (no-modifier hot path)" do
+      expect(instance.send(:on, :increment)).to eq(
+        {
+          data: {
+            action: "click->reactive#dispatch",
+            reactive_action_param: "increment",
+            reactive_params_param: "{}"
+          },
+          type: "button"
+        }
+      )
+    end
+
+    it "window: true binds the descriptor to @window and flags the window param" do
+      attrs = instance.send(:on, :track, window: true)
+      expect(attrs[:data][:action]).to eq("click@window->reactive#dispatch")
+      expect(attrs[:data][:reactive_window_param]).to eq("true")
+    end
+
+    it "window: true skips type=button (the trigger isn't an in-form button)" do
+      attrs = instance.send(:on, :track, window: true)
+      expect(attrs).not_to have_key(:type)
+    end
+
+    it "once: true appends Stimulus's :once option to the descriptor" do
+      attrs = instance.send(:on, :dismiss, once: true)
+      expect(attrs[:data][:action]).to eq("click->reactive#dispatch:once")
+    end
+
+    it "composes window: and once: in descriptor order (@window before :once)" do
+      attrs = instance.send(:on, :dismiss, window: true, once: true)
+      expect(attrs[:data][:action]).to eq("click@window->reactive#dispatch:once")
+    end
+
+    it "outside: true implies the window binding" do
+      attrs = instance.send(:on, :close_menu, outside: true)
+      expect(attrs[:data][:action]).to eq("click@window->reactive#dispatch")
+      expect(attrs).not_to have_key(:type)
+    end
+
+    it "outside: true emits BOTH the outside and window Stimulus params" do
+      attrs = instance.send(:on, :close_menu, outside: true)
+      # The client decides preventDefault behavior from event.params (the window
+      # flag), never by sniffing the descriptor — so outside must set both.
+      expect(attrs[:data][:reactive_outside_param]).to eq("true")
+      expect(attrs[:data][:reactive_window_param]).to eq("true")
+    end
+
+    it "throttle: emits the throttle window as a Stimulus param" do
+      attrs = instance.send(:on, :track, event: "scroll", window: true, throttle: 250)
+      expect(attrs[:data][:reactive_throttle_param]).to eq(250)
+    end
+
+    it "raises ArgumentError when both debounce: and throttle: are given" do
+      expect { instance.send(:on, :track, debounce: 300, throttle: 250) }
+        .to raise_error(ArgumentError, /debounce.*throttle/m)
+    end
+
+    it "keeps the modifiers out of the explicit params payload" do
+      attrs = instance.send(:on, :close_menu, outside: true, once: true, throttle: 100, reason: "esc")
+      expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({ "reason" => "esc" })
+    end
+
+    it "omits every modifier param by default" do
+      attrs = instance.send(:on, :increment)
+      expect(attrs[:data]).not_to have_key(:reactive_window_param)
+      expect(attrs[:data]).not_to have_key(:reactive_outside_param)
+      expect(attrs[:data]).not_to have_key(:reactive_throttle_param)
+    end
+  end
+
   # A record-backed component whose record is UNSAVED (new_record?) has no
   # GlobalID to sign. reactive_token must not crash calling to_gid on it — it
   # signs the declared state instead (the draft seed), so the client controller

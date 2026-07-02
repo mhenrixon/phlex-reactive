@@ -143,6 +143,7 @@ export default class extends Controller {
 
   #tokenCache // freshest token, threaded synchronously across queued requests
   #debounceTimers = new Map() // trigger element -> { timer, flush } pending dispatch
+  #throttleTimers = new Map() // trigger element -> Map(action -> suppression timer)
   #actionPathCache // page-stable action path, resolved once per controller
 
   // Mark that a reactive controller actually connected, so the registration
@@ -171,8 +172,12 @@ export default class extends Controller {
   // (Turbo morph/navigation removes the element). Otherwise a timer that hasn't
   // fired yet would later call #enqueue on a disconnected controller — a round
   // trip against a detached element / stale token (issue #17 follow-up).
+  // Throttle suppression timers (issue #80) are torn down the same way — a
+  // leading-edge timer holds no pending POST, but leaving it running would leak
+  // it past the element's life.
   disconnect() {
     this.#clearAllDebounces()
+    this.#clearAllThrottles()
   }
 
   // Serialize requests per component. Each round trip rewrites the signed
@@ -182,8 +187,20 @@ export default class extends Controller {
   // a per-controller promise makes each dispatch wait for the previous one, so
   // it always uses the freshest token.
   dispatch(event) {
-    const { action, params, debounce, confirm } = event.params
+    // `window` (renamed: never shadow the global) and `outside` are the event-
+    // modifier params (issue #80). The client decides preventDefault behavior
+    // from event.params — set by the Ruby on() — never by sniffing the
+    // Stimulus descriptor.
+    const { action, params, debounce, throttle, confirm, outside, window: windowBound } = event.params
     if (!action) return
+
+    // Outside guard FIRST (issue #80): an outside: trigger only fires for
+    // events whose target is OUTSIDE this component's ROOT (containment against
+    // this.element — .contains includes the root itself). An event inside the
+    // root must be a COMPLETE no-op — before preventDefault (the page's native
+    // click behavior is untouched) and before the reactive:before-dispatch
+    // lifecycle event (nothing to announce, nothing to veto).
+    if (outside && this.element.contains(event.target)) return
 
     // Stop native behavior (button submit / FORM NAVIGATION) HERE, synchronously
     // within the event dispatch — BEFORE the (possibly async) confirm gate below.
@@ -194,14 +211,19 @@ export default class extends Controller {
     // for debounced triggers too — the round trip is deferred, but the native
     // default must still be prevented now. (Moved ahead of the confirm branch in
     // issue #55: an async resolver means we can't preventDefault after awaiting.)
-    event.preventDefault()
+    //
+    // ONLY for element-bound triggers: a window-bound trigger (window:/outside:,
+    // issue #80) hears EVERY matching event on the page — preventDefault-ing
+    // those would kill every link click while a dropdown is mounted. The page's
+    // native behavior proceeds alongside the reactive round trip.
+    if (!windowBound) event.preventDefault()
 
     // Capture the trigger element now; #proceed runs in a later microtask (after
     // the confirm resolver settles), by which point event.target may be reset.
     const target = event.target
 
     // No confirm message → proceed straight away (unchanged fast path).
-    if (!confirm) return this.#proceed(target, action, params, debounce)
+    if (!confirm) return this.#proceed(target, action, params, debounce, throttle)
 
     // Confirmation gate (issue #52, made overridable + async in #55). A reactive
     // trigger can't use Hotwire's data-turbo-confirm — this controller preempts
@@ -218,7 +240,7 @@ export default class extends Controller {
       .then(() => confirmResolver(confirm))
       .catch(() => false)
       .then((ok) => {
-        if (ok) this.#proceed(target, action, params, debounce)
+        if (ok) this.#proceed(target, action, params, debounce, throttle)
       })
   }
 
@@ -380,13 +402,14 @@ export default class extends Controller {
   // Split out of dispatch so both the no-confirm fast path and the post-confirm
   // microtask share one place (issue #55). `target` is captured up front because
   // this can run in a later microtask, after event.target has been reset.
-  #proceed(target, action, params, debounce) {
+  #proceed(target, action, params, debounce, throttle) {
     // Lifecycle veto point (issue #79): one cancelable reactive:before-dispatch
-    // per user gesture — post-preventDefault, post-confirm, PRE-debounce.
-    // event.preventDefault() skips the debounce AND the enqueue entirely
-    // (nothing is scheduled). retry() re-enters the queue directly, so this
-    // does NOT refire on a retry. detail.params are the trigger's explicit
-    // params; sibling fields are collected later, at send time.
+    // per user gesture — post-preventDefault, post-confirm, PRE-debounce (and
+    // PRE-throttle, the same timing). event.preventDefault() skips the
+    // debounce/throttle AND the enqueue entirely (nothing is scheduled).
+    // retry() re-enters the queue directly, so this does NOT refire on a retry.
+    // detail.params are the trigger's explicit params; sibling fields are
+    // collected later, at send time.
     const before = this.#emit("reactive:before-dispatch", {
       action,
       params: this.#parseParams(params),
@@ -399,6 +422,14 @@ export default class extends Controller {
     // one POST per keystroke (issue #17). A blur flushes a pending dispatch.
     const ms = Number(debounce) || 0
     if (ms > 0) return this.#debounceDispatch(target, ms, action, params)
+
+    // Throttled trigger (e.g. on(:track, event: "scroll", window: true,
+    // throttle: 250), issue #80): LEADING-EDGE rate limit — fire the first
+    // event immediately, drop the rest until the window elapses. debounce and
+    // throttle are mutually exclusive (the Ruby on() raises on both).
+    const throttleMs = Number(throttle) || 0
+    if (throttleMs > 0) return this.#throttleDispatch(target, throttleMs, action, params)
+
     return this.#enqueue(action, params)
   }
 
@@ -435,6 +466,34 @@ export default class extends Controller {
   // the keys first — #clearDebounce mutates the map as it goes.
   #clearAllDebounces() {
     for (const target of [...this.#debounceTimers.keys()]) this.#clearDebounce(target)
+  }
+
+  // Leading-edge throttle (issue #80), mirroring #debounceDispatch: the FIRST
+  // event fires immediately; a suppression timer then drops further events
+  // until the window elapses (no trailing fire — dropped, not queued). Timers
+  // are keyed on action + target, NOT target alone: window-bound scroll/resize
+  // events all share event.target === document, so two window-bound triggers
+  // on one component would otherwise collide on one timer.
+  #throttleDispatch(target, ms, action, params) {
+    const timers = this.#throttleTimers.get(target) ?? new Map()
+    if (timers.has(action)) return // inside the window — suppress
+
+    const timer = setTimeout(() => {
+      timers.delete(action)
+      if (timers.size === 0) this.#throttleTimers.delete(target)
+    }, ms)
+    timers.set(action, timer)
+    this.#throttleTimers.set(target, timers)
+    return this.#enqueue(action, params) // leading edge: fire NOW
+  }
+
+  // Clear every throttle suppression timer (used on disconnect, alongside
+  // #clearAllDebounces) so nothing outlives the element.
+  #clearAllThrottles() {
+    for (const timers of this.#throttleTimers.values()) {
+      for (const timer of timers.values()) clearTimeout(timer)
+    }
+    this.#throttleTimers.clear()
   }
 
   // Raw-dispatch a lifecycle CustomEvent (issue #79). Deliberately NOT

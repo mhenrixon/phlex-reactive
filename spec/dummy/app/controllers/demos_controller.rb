@@ -65,6 +65,22 @@ class DemosController < ActionController::Base
     render_component DebounceComponent.new
   end
 
+  # The outside-click dropdown (issue #80). The page carries content OUTSIDE the
+  # reactive root — a plain area to click and a real link — so the system spec
+  # can prove the outside close fires AND that the window-bound trigger never
+  # preventDefaults native navigation elsewhere on the page.
+  def dropdown
+    component = render_to_string(DropdownMenuComponent.new, layout: false)
+    outside = <<~HTML
+      <div data-testid="outside-area" style="padding: 4rem">outside the menu</div>
+      <a href="/nav_probe" data-testid="outside-link">elsewhere</a>
+    HTML
+    # render_to_string returns a SafeBuffer whose #to_s returns SELF, so a
+    # `component.to_s + outside` concat ESCAPES the raw fixture into visible
+    # text. Appending an html_safe right-hand side concatenates verbatim.
+    render html: component + outside.html_safe, layout: true
+  end
+
   def confirm
     render_component ConfirmComponent.new
   end

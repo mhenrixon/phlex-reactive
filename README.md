@@ -323,6 +323,9 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `on(:action, event: "keydown.enter")` | Fire only on a specific key — Enter-to-submit / Escape-to-cancel — via Stimulus's native keyboard filter (`event:` passes straight through). See [Keyboard triggers](#keyboard-triggers-enter-to-submit--escape-to-cancel). |
 | `on(:action, confirm: "Sure?")` | Gate a destructive trigger behind a confirmation. Defaults to `window.confirm`; override the dialog with [`setConfirmResolver`](#custom-confirmation-dialogs-setconfirmresolver). |
 | `on(:search, listnav: "[role=option]")` | Add combobox keyboard navigation — Arrow keys move a client-side highlight, Enter picks (clicks the option's own trigger), Escape clears. See [Combobox keyboard navigation](#combobox-keyboard-navigation-listnav). |
+| `on(:close_menu, outside: true)` | Fire only for events **outside** this component's root (close-a-dropdown-on-outside-click). Window-bound; never `preventDefault`s, so links elsewhere keep navigating. |
+| `on(:track, event: "scroll", window: true, throttle: 250)` | `window:` binds the trigger to the window (page-level scroll/resize); `throttle:` rate-limits leading-edge — first event fires, the rest drop until the window elapses. Mutually exclusive with `debounce:`. |
+| `on(:action, once: true)` | Fire at most once, then unbind (Stimulus's native `:once`). |
 | `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
@@ -433,6 +436,36 @@ Omit `debounce:` for the immediate-dispatch default.
 # Recompute a total live as the user types, without hammering the endpoint.
 input(**mix(on(:update, event: "input", debounce: 300), name: "quantity", value: @item.quantity))
 ```
+
+**Event modifiers — `outside:`, `window:`, `once:`, `throttle:`.** Four more
+`on(...)` options cover the page-level trigger patterns that otherwise need a
+hand-written Stimulus controller:
+
+- `outside: true` fires the action only for events whose target is **outside**
+  this component's root — the close-a-dropdown-on-outside-click pattern. An
+  event inside the root is a complete client-side no-op. Implies `window:`.
+- `window: true` binds the trigger to the window (Stimulus's native `@window`)
+  for page-level events like `scroll`/`resize`. Window-bound triggers are
+  **never `preventDefault`-ed** — a mounted dropdown must not kill link clicks
+  elsewhere on the page — and skip the forced `type="button"`.
+- `once: true` fires at most once, then unbinds (Stimulus's `:once`).
+- `throttle: 250` rate-limits **leading-edge**: the first event fires
+  immediately, further events are dropped until the window elapses. The mirror
+  of `debounce:` (trailing-edge) — passing both raises `ArgumentError`.
+
+```ruby
+# A dropdown that closes itself on any click outside — no Stimulus controller.
+div(**mix(reactive_root, on(:close_menu, outside: true))) do
+  button(**on(:toggle_menu)) { "Menu" }
+  ul { menu_items } if @open
+end
+
+# Throttled page-scroll tracking.
+div(**mix(reactive_root, on(:track, event: "scroll", window: true, throttle: 500)))
+```
+
+These four (like `debounce:`/`confirm:`/`listnav:`) are **reserved keyword
+names** on `on(...)` — no longer usable as free action params.
 
 **Auto-collected sibling fields — the read contract.** A reactive action doesn't
 just receive its own trigger's value: the client gathers **every named control**
