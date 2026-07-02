@@ -21,6 +21,7 @@ module Views
           actor_echo
           transactional
           removing_actor
+          js_ops
           presence
         end
 
@@ -129,6 +130,14 @@ module Views
                   plain ' — remove the element with id '
                   code { 'component.id' }
                   plain '.'
+                end
+                li do
+                  code { '.broadcast_js_to(*streamables, ops, target:)' }
+                  plain ' — push '
+                  strong { 'client DOM ops' }
+                  plain ' (class/attr toggles, '
+                  code { 'dispatch' }
+                  plain ') to every subscriber. Refuses focus ops (see below).'
                 end
               end
             end
@@ -326,6 +335,42 @@ module Views
                 strong { 'reply' }
                 plain ' API for the full set of reply controls.'
               end
+            end
+          end
+        end
+
+        def js_ops
+          DocsUI::Section('Pushing client DOM ops (broadcast_js_to)') do
+            DocsUI::Prose() do
+              p do
+                plain 'Sometimes a broadcast should nudge the UI rather than swap HTML — light up a bell, ' \
+                      'toggle a class, dispatch an app event. '
+                code { 'broadcast_js_to' }
+                plain ' pushes the same '
+                code { 'js' }
+                plain ' ops as '
+                code { 'reply.js' }
+                plain ' to every subscriber, over the same transport (Action Cable or pgbus):'
+              end
+            end
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
+              # Light up the bell in every viewer's tab, minus the actor's own connection.
+              Notifications::Badge.broadcast_js_to(user, :alerts,
+                js.add_class("#bell", "has-unread"), exclude: reactive_connection_id)
+            RUBY
+            DocsUI::Callout(:warning) do
+              plain 'Focus ops are refused. '
+              code { 'broadcast_js_to' }
+              plain ' raises '
+              code { 'ArgumentError' }
+              plain ' for '
+              code { 'focus' }
+              plain '/'
+              code { 'focus_first' }
+              plain " — broadcasting focus would steal it in every subscriber's tab. Focus is an " \
+                    'actor-reply concern (use '
+              code { 'reply.js' }
+              plain ').'
             end
           end
         end

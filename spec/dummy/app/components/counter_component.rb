@@ -17,6 +17,7 @@ class CounterComponent < ApplicationComponent
   action :bump_via_partial
   action :bump_with_sibling
   action :bump_with_self_stream
+  action :bump_with_js
 
   def initialize(count: 0)
     @count = count
@@ -84,6 +85,16 @@ class CounterComponent < ApplicationComponent
   def bump_with_self_stream
     @count += 1
     reply.streams(self.class.replace(count: @count))
+  end
+
+  # Reply: re-render self (morph) + push a server-side client DOM op (issue #97).
+  # The reactive:js stream must ride AFTER the render stream and must NOT count as
+  # a self-render (its action name is reactive:js, not replace/update) — so the
+  # morph's own token refresh is untouched. REQUEST-spec fixture; the end-to-end
+  # focus example is the system spec.
+  def bump_with_js
+    @count += 1
+    reply.morph.js(js.focus("@root").dispatch("app:bumped", detail: { count: @count }))
   end
 
   def view_template

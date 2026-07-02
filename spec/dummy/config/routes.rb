@@ -21,6 +21,7 @@ Rails.application.routes.draw do
   get "client_tabs" => "demos#client_tabs"
   get "confirm" => "demos#confirm"
   get "morph_grid/:id" => "demos#morph_grid"
+  get "js_focus/:id" => "demos#js_focus"
   get "partial_grid/:id" => "demos#partial_grid"
   get "document_upload/:id" => "demos#document_upload"
   # Nav probe: where a NON-intercepted form submit would land. Accept POST (and

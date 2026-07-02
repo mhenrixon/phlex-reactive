@@ -73,9 +73,44 @@ export function registerReactiveToken() {
   }
 }
 
+// Custom turbo-stream action: SERVER-PUSHED client DOM ops (issue #97). The
+// server-side sibling of on_client's runOps — a reply (reply.<verb>.js(ops)) or
+// a broadcast (Streamable.broadcast_js_to) emits
+//
+//   <turbo-stream action="reactive:js" target="<optional root id>"
+//                 data-reactive-ops="[[op, args], ...]"></turbo-stream>
+//
+// and Turbo invokes this handler with `this` bound to that <turbo-stream>
+// element. It runs the ops through the SAME frozen CLIENT_OPS whitelist as
+// runOps (client-side default-deny — an unknown op warns + is skipped), so a
+// forged/stale ops attr can never break the page or execute anything off the
+// vocabulary. NO token, NO fetch — a pure local DOM mutation.
+//
+// `target` (optional, an element id) scopes op resolution to that root: "@root"
+// resolves to the target element itself and a selector resolves WITHIN it.
+// Without a target, ops resolve document-wide (a broadcast op like
+// add_class("#bell", ...) that isn't anchored to one component). The op stream
+// is emitted AFTER all render streams in the reply (the endpoint appends it
+// last), so focus("[name=next]") sees the freshly morphed DOM — Turbo applies
+// streams in document order.
+export function registerReactiveJs() {
+  const actions = window.Turbo?.StreamActions
+  if (!actions || actions["reactive:js"]) return
+  actions["reactive:js"] = function () {
+    const list = parseOps(this.getAttribute("data-reactive-ops"))
+    if (!list.length) return
+    const targetId = this.getAttribute("target")
+    // With a target: scope to that element (missing → no-op). Without: document.
+    const root = targetId ? document.getElementById(targetId) : null
+    if (targetId && !root) return
+    applyOps(list, (args) => streamOpTargets(args, root))
+  }
+}
+
 export function registerReactiveActions() {
   registerReactiveVisit()
   registerReactiveToken()
+  registerReactiveJs()
 }
 
 // Escape a DOM id for safe interpolation into a RegExp (an id can legally contain
@@ -236,6 +271,60 @@ function guardAttr(name) {
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 function firstFocusable(el) {
   return el.querySelectorAll?.(FOCUSABLE)?.[0] ?? null
+}
+
+// Parse a [[name, args], ...] op list from a raw attr/param. An array passes
+// through; a JSON string is parsed; anything malformed degrades to [] — a bad
+// ops attr must NEVER break the page (client-side default-deny). Shared by the
+// controller's runOps and the reactive:js stream action (issue #97).
+function parseOps(raw) {
+  if (Array.isArray(raw)) return raw
+  if (typeof raw !== "string") return []
+  try {
+    const list = JSON.parse(raw)
+    return Array.isArray(list) ? list : []
+  } catch {
+    return []
+  }
+}
+
+// Interpret a [[name, args], ...] op list against the frozen CLIENT_OPS
+// whitelist (issues #95/#96/#97). `resolveTargets(args)` returns the element(s)
+// an op applies to — the controller scopes to its root (excluding nested
+// reactive roots); the reactive:js stream action scopes to its target root (or
+// the document). An unknown name warns and is SKIPPED while the rest of the
+// chain still applies — client-side default-deny, one bad op never takes down
+// its siblings. Object.hasOwn (not a bare read) so inherited Object members
+// ("constructor") can't masquerade as ops.
+function applyOps(list, resolveTargets) {
+  for (const entry of list) {
+    if (!Array.isArray(entry)) continue
+    const [name, args = {}] = entry
+    if (!Object.hasOwn(CLIENT_OPS, name)) {
+      console.warn(`[phlex-reactive] unknown client op ${JSON.stringify(name)} — skipped`)
+      continue
+    }
+    for (const el of resolveTargets(args)) CLIENT_OPS[name](el, args)
+  }
+}
+
+// Resolve a reactive:js op's targets against its `target` root (issue #97).
+// "@root" is the root element itself; a selector resolves WITHIN it; a bare
+// selector with no root (no `target` attr on the stream) resolves document-wide
+// — a broadcast op anchored by a global selector (#bell) rather than a
+// component. Unlike the controller path there is no nested-reactive-root
+// ownership filter: a server-pushed op names its own scope explicitly.
+function streamOpTargets(args, root) {
+  const to = args.to
+  if (root) {
+    if (to === "@root") return [root]
+    if (typeof to !== "string" || to === "") return []
+    return [...root.querySelectorAll(to)]
+  }
+  // No target root: document-scoped. "@root" is meaningless here (nothing to
+  // anchor to) → no-op; a selector matches document-wide.
+  if (typeof to !== "string" || to === "" || to === "@root") return []
+  return [...document.querySelectorAll(to)]
 }
 
 // Register this controller eagerly (not lazily) so a click immediately after
@@ -944,35 +1033,20 @@ export default class extends Controller {
   }
 
   // Stimulus typecasts a JSON param to the parsed array already; a raw string
-  // (hand-built attr, non-typecasting harness) is parsed here. Anything
-  // malformed degrades to [] — a bad ops attr must never break the page.
+  // (hand-built attr, non-typecasting harness) is parsed here. Delegates to the
+  // shared parseOps so the controller and the reactive:js stream action (issue
+  // #97) treat a malformed ops attr identically (→ [], never a throw).
   #parseOps(raw) {
-    if (Array.isArray(raw)) return raw
-    if (typeof raw !== "string") return []
-    try {
-      const list = JSON.parse(raw)
-      return Array.isArray(list) ? list : []
-    } catch {
-      return []
-    }
+    return parseOps(raw)
   }
 
-  // Interpret a [[name, args], ...] op list against this root (issue #95). The
-  // vocabulary is the frozen CLIENT_OPS whitelist; an unknown name warns and is
-  // SKIPPED while the rest of the chain still applies — client-side
-  // default-deny, and one bad op never takes down its siblings. Object.hasOwn
-  // (not a bare property read) so inherited Object members ("constructor")
-  // can't masquerade as ops.
+  // Interpret a [[name, args], ...] op list against this root (issue #95),
+  // scoping each op's targets to this controller's own root via #opTargets (the
+  // nested-reactive-root ownership filter, issue #15). The whitelist + skip
+  // logic lives in the shared applyOps so runOps and the reactive:js stream
+  // action interpret the SAME vocabulary the SAME way (client-side default-deny).
   #applyOps(list) {
-    for (const entry of list) {
-      if (!Array.isArray(entry)) continue
-      const [name, args = {}] = entry
-      if (!Object.hasOwn(CLIENT_OPS, name)) {
-        console.warn(`[phlex-reactive] unknown client op ${JSON.stringify(name)} — skipped`)
-        continue
-      }
-      for (const el of this.#opTargets(args)) CLIENT_OPS[name](el, args)
-    }
+    applyOps(list, (args) => this.#opTargets(args))
   }
 
   // Resolve an op's targets: "@root" is this element; a selector resolves

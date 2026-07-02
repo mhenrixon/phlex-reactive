@@ -64,6 +64,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `animationend` and the timeout fallback), and a system spec that opens a drawer
   with a real fade, sets `aria-expanded`, and focuses the first control under Puma
   AND Falcon. Refs #96.
+- **`reply.js(...)` + `broadcast_js_to` — server-pushed DOM ops over a
+  `reactive:js` stream action (#97).** The server can now tell the client to do
+  something other than swap HTML — focus the next field after a save, dispatch an
+  app event to a toast host, add an unread badge in every viewer's tab — WITHOUT
+  re-rendering to make it happen. `Response#js(ops)` (surfaced on the reply facade
+  as `reply.<verb>.js(ops)`) chains a `reactive:js` op stream onto ANY reply via
+  the immutable `stream()` plumbing, and `Streamable.broadcast_js_to(*streamables,
+  ops, exclude:, visible_to:, target:)` pushes the SAME ops to every subscriber of
+  a stream over `Turbo::StreamsChannel` (Action Cable AND pgbus — transport opts
+  pass through `broadcast_transport_opts` like every other broadcast). `ops` is a
+  `js` chain (or a raw `[[op, args]]` array), interpreted by the SAME frozen
+  `CLIENT_OPS` whitelist as `on_client` through a THIRD custom stream action
+  (`registerReactiveJs`, a sibling of `reactive:visit`/`reactive:token`): an
+  unknown op warns + is skipped (client-side default-deny). **The ordering contract
+  is correctness-critical**: the op stream is emitted AFTER all render streams, so
+  a `focus("[name=next]")` op sees the post-render/post-morph DOM (Turbo applies
+  streams in document order) — a system spec proves focus lands on a freshly
+  morphed field under Puma AND Falcon. **The broadcast builder REJECTS focus-class
+  ops** (`focus`/`focus_first` → `ArgumentError`): broadcasting focus would steal
+  it in every subscriber's tab, so focus is an actor-reply concern only. The ops
+  attribute is HTML-escaped exactly like `to_stream_token` (a raw interpolation
+  would be an injection vector), and `reactive:js` is NOT a self-render — it never
+  trips `#extractToken` or `carries_token_for?`, so the reply's token refresh is
+  untouched (pinned by a bun test and a request spec). Covered by Ruby specs
+  (immutable chaining; ops-last ordering; escaping; the broadcast focus rejection;
+  transport-opt pass-through with the pgbus-absent path unchanged), bun tests (the
+  handler applies ops via the shared interpreter; `target` root scoping; token
+  safety), a request spec (both streams in order with the token intact), and the
+  focus system spec. Refs #97.
 
 - **`on(...)` event modifiers — `window:`, `once:`, `outside:`, `throttle:`
   (#80).** Four trigger patterns that previously forced a hand-written Stimulus

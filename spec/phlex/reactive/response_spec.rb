@@ -300,4 +300,84 @@ RSpec.describe Phlex::Reactive::Response do
       expect(response.token_component).to eq(counter)
     end
   end
+
+  # Issue #97: Response#js(ops) chains a `reactive:js` op stream — server-pushed
+  # client DOM ops (focus, dispatch, class/attr toggles) — onto any reply. The
+  # ops attr is HTML-escaped (a raw interpolation would be an injection vector),
+  # emitted via the immutable stream() plumbing, and — crucially — LAST, so a
+  # focus op sees the post-render DOM (the endpoint guarantees ordering; here we
+  # assert the chain shape + escaping).
+  describe "js (issue #97 — server-pushed client DOM ops)" do
+    let(:ops) { CounterComponent.new(count: 0).js.focus("[name=next]").dispatch("app:saved") }
+
+    it "chains a reactive:js op stream onto a replace, immutably" do
+      base = described_class.replace(counter)
+      response = base.js(ops)
+
+      expect(response).not_to equal(base)
+      expect(base.streams.size).to eq(1) # original unchanged
+      expect(response.streams.size).to eq(2)
+      expect(response.streams.last).to include('action="reactive:js"')
+      expect(response.render_self?).to be(true)
+    end
+
+    it "emits the op stream LAST (after the render stream)" do
+      response = described_class.morph(counter).js(ops)
+
+      expect(response.streams.first).to include('action="replace"') # the morph render
+      expect(response.streams.last).to include('action="reactive:js"')
+    end
+
+    it "carries the ops as an HTML-escaped data-reactive-ops attribute" do
+      stream = described_class.with.js(ops).streams.first
+
+      # The wire format is the JSON op list, HTML-escaped (quotes → &quot;).
+      expect(stream).to include("data-reactive-ops=")
+      expect(stream).to include("&quot;focus&quot;")
+      expect(stream).to include("&quot;app:saved&quot;")
+      # The raw double-quotes of the JSON must NOT appear unescaped inside the attr.
+      expect(stream).not_to include('data-reactive-ops="[["focus"')
+    end
+
+    it "escapes a hostile op payload (no attribute break-out)" do
+      hostile = CounterComponent.new(count: 0).js.dispatch(%(x"><script>alert(1)</script>))
+      stream = described_class.with.js(hostile).streams.first
+
+      expect(stream).not_to include('"><script>')
+      expect(stream).to include("&quot;")
+    end
+
+    it "defaults the stream target to the bound component's id (self-scoped ops)" do
+      # replace/morph/update bind the component, so js ops scope to its root by
+      # default — reply.morph.js(js.focus("@root")) focuses the morphed root.
+      stream = described_class.replace(counter).js(ops).streams.last
+      expect(stream).to include('target="counter"')
+    end
+
+    it "accepts an explicit target: override" do
+      stream = described_class.with.js(ops, target: "sidebar").streams.first
+      expect(stream).to include('target="sidebar"')
+    end
+
+    it "omits target entirely for a subject-free reply with no explicit target (document-scoped)" do
+      stream = described_class.with.js(ops).streams.first
+      expect(stream).not_to include("target=")
+    end
+
+    it "accepts a raw op array as well as a JS chain" do
+      stream = described_class.with.js([["focus", { "to" => "@root" }]]).streams.first
+      expect(stream).to include("&quot;focus&quot;")
+    end
+
+    it "rejects an empty op chain (a dead reactive:js stream is a mistake)" do
+      empty = CounterComponent.new(count: 0).js
+      expect { described_class.with.js(empty) }.to raise_error(ArgumentError, /no ops/)
+    end
+
+    it "chains alongside flash (ops stay after the render, flash after that)" do
+      response = described_class.replace(counter).flash(:notice, "saved").js(ops)
+      expect(response.streams.size).to eq(3)
+      expect(response.streams.last).to include('action="reactive:js"')
+    end
+  end
 end
