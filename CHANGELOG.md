@@ -8,6 +8,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Single include + a default `#id` for record-backed components (#81).**
+  `include Phlex::Reactive::Component` now pulls in
+  `Phlex::Reactive::Streamable` automatically (ActiveSupport::Concern's
+  dependency mechanism includes Streamable into the base FIRST — exactly the
+  manual order the old two-include ceremony established), so one include is
+  enough; the legacy explicit double include remains a harmless no-op. And a
+  record-backed component (`reactive_record :todo`) gets `#id` for free:
+  `dom_id(record)` via the render-context-free `Streamable#dom_id` — the id
+  virtually every such component wrote by hand. An explicit `def id` always
+  wins (normal method lookup). Deliberately NO class-name default for
+  state-backed components — they're frequently multi-instance, so a class-name
+  id would silently collide; they (and bare Streamable classes) keep the loud
+  `NotImplementedError`, now with a message that says how to fix it. Caveat:
+  two different component classes rendering the SAME record on one page
+  collide on the default — give one a prefixed id
+  (`def id = dom_id(@todo, "rich")`). The component generator emits the new
+  short form. Same-machine `rake bench` before/after: allocations on the
+  render/token hot paths are byte-identical (192 obj per `to_stream_replace`,
+  100 per `render_component`, 47 per record-backed token, retained 0) and
+  throughput is unchanged within run-to-run noise — the default costs one
+  `respond_to?` + two memoized reads, and only for components that didn't
+  define `#id`.
+
 - **Combobox keyboard navigation — `on(:search, …, listnav: "[role=option]")` (#72).**
   A search/combobox trigger can now declare client-side list navigation: Arrow
   Up/Down move a highlight among the option elements IN-BROWSER (no round trip),

@@ -50,12 +50,11 @@ module Phlex
         end
 
         def show_post_install
-          say_status :info, "phlex-reactive installed. Include the mixins in a component:", :green
+          say_status :info, "phlex-reactive installed. Include the mixin in a component:", :green
           say <<~MSG
 
             class Counter < ApplicationComponent
-              include Phlex::Reactive::Streamable
-              include Phlex::Reactive::Component
+              include Phlex::Reactive::Component  # pulls in Streamable too
               # ... reactive_state / reactive_record, action :name, on(:name) ...
             end
 

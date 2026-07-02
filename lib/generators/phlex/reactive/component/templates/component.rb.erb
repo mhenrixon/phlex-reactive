@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 class <%= class_name %> < ApplicationComponent
-  include Phlex::Reactive::Streamable
   include Phlex::Reactive::Component
 
 <% if record_backed? -%>
@@ -14,7 +13,7 @@ class <%= class_name %> < ApplicationComponent
     @<%= record_name %> = <%= record_name %>
   end
 
-  def id = dom_id(@<%= record_name %>)
+  # No `def id` needed: reactive_record :<%= record_name %> defaults #id to dom_id(@<%= record_name %>).
 <% action_names.each do |a| -%>
 
   def <%= a %>

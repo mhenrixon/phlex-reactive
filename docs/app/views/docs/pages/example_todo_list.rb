@@ -48,7 +48,6 @@ module Views
           DocsUI::Section('One row (record-backed, all the actions)') do
             DocsUI::Code(<<~RUBY, lexer: :ruby)
               class Todos::Item < ApplicationComponent
-                include Phlex::Reactive::Streamable
                 include Phlex::Reactive::Component
 
                 reactive_record :todo
@@ -57,7 +56,7 @@ module Views
                 action :destroy
 
                 def initialize(todo:) = @todo = todo
-                def id = dom_id(@todo)
+                # no `def id` needed: reactive_record :todo defaults it to dom_id(@todo)
 
                 def toggle
                   authorize! @todo, :update?
@@ -108,6 +107,25 @@ module Views
                 code { 'broadcast_remove_to' }
                 plain ' removes it in every other tab.'
               end
+              p do
+                plain 'One include is enough: '
+                code { 'Phlex::Reactive::Component' }
+                plain ' pulls in '
+                code { 'Streamable' }
+                plain ' automatically (the old explicit two-include form still works). And '
+                code { 'reactive_record :todo' }
+                plain ' defaults '
+                code { '#id' }
+                plain ' to '
+                code { 'dom_id(@todo)' }
+                plain ' — write '
+                code { 'def id' }
+                plain ' only to override it. Caveat: two different component classes rendering the '
+                em { 'same' }
+                plain ' record on one page collide on the default — give one a prefixed id, e.g. '
+                code { 'def id = dom_id(@todo, "rich")' }
+                plain '.'
+              end
             end
           end
         end
@@ -116,7 +134,6 @@ module Views
           DocsUI::Section('The list + composer') do
             DocsUI::Code(<<~RUBY, lexer: :ruby)
               class Todos::List < ApplicationComponent
-                include Phlex::Reactive::Streamable
                 include Phlex::Reactive::Component
 
                 reactive_record :list

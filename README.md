@@ -12,8 +12,7 @@ hand-picking Turbo Stream targets.**
 
 ```ruby
 class Counter < ApplicationComponent
-  include Phlex::Reactive::Streamable
-  include Phlex::Reactive::Component
+  include Phlex::Reactive::Component   # pulls in Streamable too
 
   reactive_state :count
   action :increment
@@ -224,15 +223,13 @@ GlobalID; the server re-finds it on each action. **Always prefer this.**
 
 ```ruby
 class Todos::Item < ApplicationComponent
-  include Phlex::Reactive::Streamable
   include Phlex::Reactive::Component
 
-  reactive_record :todo
+  reactive_record :todo             # identity AND the default #id: dom_id(@todo)
   action :toggle
   action :rename, params: { title: :string }
 
   def initialize(todo:) = @todo = todo
-  def id = dom_id(@todo)            # stable per-record DOM id == Turbo target
 
   def toggle
     authorize! @todo, :update?      # YOU authorize — the token only proves identity
@@ -252,6 +249,17 @@ class Todos::Item < ApplicationComponent
   end
 end
 ```
+
+> **One include, default `#id` (issue #81).** `include Phlex::Reactive::Component`
+> pulls in `Streamable` automatically (the explicit two-include form still works
+> and is a harmless no-op). A record-backed component also gets `#id` for free —
+> `dom_id(record)`, exactly the id nearly every one wrote by hand — so `def id`
+> is only needed to override it, and an explicit `def id` always wins.
+> **Caveat:** two *different* component classes rendering the *same* record on
+> one page both default to the same `dom_id` and collide — give one an explicit
+> prefixed id: `def id = dom_id(@todo, "rich")`. State-backed components still
+> must define `#id` (they're frequently multi-instance, so a class-name default
+> would silently collide; the loud `NotImplementedError` stays).
 
 ### 2. State-backed (signed instance vars)
 
@@ -292,7 +300,7 @@ The cross-tab chat in ~60 lines of Ruby (and zero JS) is the showcase — see
 
 | Method | Use |
 |---|---|
-| `#id` (you implement) | Stable DOM id == Turbo Stream target. Must match the root element's `id`. |
+| `#id` | Stable DOM id == Turbo Stream target. Must match the root element's `id`. Record-backed components default to `dom_id(record)` (issue #81); everything else implements it (`def id`). An explicit `def id` always wins. |
 | `.replace(model = nil, morph: false, **opts)` | `<turbo-stream action=replace target=id>` of a freshly built component; `morph: true` adds `method="morph"` |
 | `.update` / `.append(target:)` / `.prepend(target:)` / `.remove` | The other Turbo Stream actions |
 | `.broadcast_replace_to(*streamables, model:, morph: false)` | Broadcast a replace over the stream transport (pgbus SSE / Action Cable); `morph: true` morphs in place |
@@ -305,7 +313,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 
 | Macro / helper | Use |
 |---|---|
-| `reactive_record :name` | Record-backed identity (GlobalID). State = the DB. |
+| `reactive_record :name` | Record-backed identity (GlobalID). State = the DB. Also defaults `#id` to `dom_id(record)`. |
 | `reactive_state :a, :b` | Signed instance-var identity. Standalone, or combined with `reactive_record` to sign transient UI state alongside the row. |
 | `action :name, params: { x: :integer }` | Declare a client-invokable action + its param schema. **Default-deny.** |
 | `reactive_root(**overrides)` | Spread onto the root element: emits the component `id` **and** `reactive_attrs` together, so the controller root always carries `#id`. Preferred over `id:` + `reactive_attrs`. `**overrides` (`class:`/`data:`) deep-merge. |
@@ -706,7 +714,6 @@ the params, stream a partial update, touch neither the DB nor peer tabs" action:
 
 ```ruby
 class Invoice::PaymentFields < ApplicationComponent
-  include Phlex::Reactive::Streamable
   include Phlex::Reactive::Component
 
   reactive_record :invoice   # identity + authorization ONLY — not persisted here
@@ -751,7 +758,6 @@ Declare the collection on the container component, then `reply.append` /
 
 ```ruby
 class NotificationsList < ApplicationComponent
-  include Phlex::Reactive::Streamable
   include Phlex::Reactive::Component
 
   reactive_collection :notifications,
@@ -910,15 +916,13 @@ end
 
 ```ruby
 class Counter < ApplicationComponent
-  include Phlex::Reactive::Streamable
   include Phlex::Reactive::Component
 
-  reactive_record :counter
+  reactive_record :counter   # also defaults #id to dom_id(@counter)
   action :increment
   action :decrement
 
   def initialize(counter:) = @counter = counter
-  def id = dom_id(@counter)
 
   def increment = @counter.increment!(:value)
   def decrement = @counter.decrement!(:value)

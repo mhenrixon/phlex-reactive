@@ -76,7 +76,6 @@ module Views
           <<~RUBY
             # app/components/counter.rb
             class Counter < ApplicationComponent
-              include Phlex::Reactive::Streamable
               include Phlex::Reactive::Component
 
               reactive_state :count                       # signed state (no DB row)

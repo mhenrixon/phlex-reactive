@@ -10,8 +10,10 @@ module Phlex
     # focused input — issue #28). No per-feature Stimulus controllers, no
     # hand-picked Turbo targets.
     #
-    # Include alongside Phlex::Reactive::Streamable (which provides #id and the
-    # re-render machinery).
+    # Including Component pulls in Phlex::Reactive::Streamable automatically
+    # (Concern dependency — Streamable lands on the base first, exactly the old
+    # manual order), so ONE include is enough. The legacy explicit double
+    # include remains a harmless no-op.
     #
     # === Security model (the decisive design choice) ===
     # We do NOT ship component STATE to the browser (no snapshot). The DOM
@@ -34,9 +36,8 @@ module Phlex
     # act — your action must still authorize the record. Action params pass
     # through a declared schema; nothing else reaches the method.
     #
-    # Usage (record-backed):
+    # Usage (record-backed — #id defaults to dom_id(@todo), issue #81):
     #   class Todos::Item < ApplicationComponent
-    #     include Phlex::Reactive::Streamable
     #     include Phlex::Reactive::Component
     #
     #     reactive_record :todo
@@ -44,7 +45,6 @@ module Phlex
     #     action :rename, params: { title: :string }
     #
     #     def initialize(todo:) = @todo = todo
-    #     def id = dom_id(@todo)
     #
     #     def toggle  = (authorize!(@todo, :update?); @todo.toggle!(:done))
     #     def rename(title:) = (authorize!(@todo, :update?); @todo.update!(title:))
@@ -58,6 +58,7 @@ module Phlex
     #   end
     module Component
       extend ActiveSupport::Concern
+      include Phlex::Reactive::Streamable
 
       # A declared, client-invokable action and its param schema.
       Action = Data.define(:name, :params)

@@ -11,4 +11,5 @@ Examples:
         State-backed, signing @count.
 
     bin/rails generate phlex:reactive:component Todos::Item toggle rename --record todo
-        Record-backed component; identity = todo.to_gid; #id = dom_id(@todo).
+        Record-backed component; identity = todo.to_gid; #id defaults to
+        dom_id(@todo) automatically.

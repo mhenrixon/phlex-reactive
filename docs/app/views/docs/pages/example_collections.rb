@@ -53,7 +53,6 @@ module Views
           DocsUI::Section('Declare the collection on the container') do
             DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/components/notifications_list.rb')
               class NotificationsList < ApplicationComponent
-                include Phlex::Reactive::Streamable
                 include Phlex::Reactive::Component
 
                 reactive_collection :notifications,
@@ -128,7 +127,6 @@ module Views
             end
             DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/components/notification_row.rb')
               class NotificationRow < ApplicationComponent
-                include Phlex::Reactive::Streamable
                 include Phlex::Reactive::Component   # only to use `on` for the dismiss trigger
 
                 def self.model_param_name = :todo

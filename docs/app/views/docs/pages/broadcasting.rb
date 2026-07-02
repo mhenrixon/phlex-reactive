@@ -157,7 +157,6 @@ module Views
             end
             DocsUI::Code(<<~RUBY, lexer: :ruby)
               class Todos::Item < ApplicationComponent
-                include Phlex::Reactive::Streamable
                 include Phlex::Reactive::Component
                 reactive_record :todo
                 def initialize(todo:) = @todo = todo   # the keyword must match `reactive_record :todo`

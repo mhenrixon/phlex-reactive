@@ -90,7 +90,6 @@ module Views
           DocsUI::Section('3. The composer (a reactive action that creates + broadcasts)') do
             DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/components/chat/composer.rb')
               class Chat::Composer < ApplicationComponent
-                include Phlex::Reactive::Streamable
                 include Phlex::Reactive::Component
 
                 reactive_state :room, :author          # record-less: signed state is the room/author

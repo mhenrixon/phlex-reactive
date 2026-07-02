@@ -276,10 +276,32 @@ module Phlex
         end
       end
 
-      # Required: the stable DOM id used as the Turbo Stream target. It MUST
-      # match the id set on the component's root element in `view_template`.
+      # The stable DOM id used as the Turbo Stream target. It MUST match the id
+      # set on the component's root element in `view_template`.
+      #
+      # Record-backed components (Component's `reactive_record :x`) get a
+      # default for free: dom_id(record) — the id virtually every such
+      # component wrote by hand (issue #81). An explicit `def id` always wins
+      # via normal method lookup. Everything else (state-backed, a bare
+      # Streamable) still raises: a class-name default would silently collide
+      # the moment two instances render on one page. Two DIFFERENT component
+      # classes rendering the SAME record on one page also collide on the
+      # default — give one a prefixed id: `def id = dom_id(@todo, "rich")`.
+      #
+      # Called on every render/stream build, so the default stays lean: a
+      # respond_to? (reactive_record_key is Component API — a bare Streamable
+      # keeps raising) plus ivar reads via the memoized reactive_record_ivar.
       def id
-        raise NotImplementedError, "#{self.class} must implement #id for Turbo Stream targeting"
+        klass = self.class
+        if klass.respond_to?(:reactive_record_key) && (record_ivar = klass.reactive_record_ivar) &&
+           (record = instance_variable_get(record_ivar))
+          return dom_id(record)
+        end
+
+        raise NotImplementedError,
+          "#{klass} must implement #id (the stable DOM id Turbo Streams target) — add e.g. " \
+          "`def id = \"my-thing\"`. Record-backed components (reactive_record :x) get " \
+          "`dom_id(record)` as the default automatically."
       end
 
       # Render-context-free dom_id, safe to use inside `#id`. The streamable

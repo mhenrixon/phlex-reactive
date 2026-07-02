@@ -181,7 +181,6 @@ module Views
           <<~RUBY
             # app/components/payment_split.rb
             class PaymentSplit < ApplicationComponent
-              include Phlex::Reactive::Streamable
               include Phlex::Reactive::Component
 
               FIELDS = %i[allowance cash leasing].freeze
