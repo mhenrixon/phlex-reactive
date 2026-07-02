@@ -58,9 +58,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ```
 
   The generic controller runs the named reducer on `input`, writes only the
-  declared outputs (leaving the edited field + caret alone), and fires `input` on
-  each field it sets so a chained summary repaints — matching the server's
-  `set_value` + `dispatch("input")` contract. A missing/unregistered reducer is a
+  declared outputs (leaving the edited field + caret alone), and — for each
+  output whose value actually changed — dispatches a bubbling `input` event on
+  the field so a chained summary repaints, matching the server's `set_value` +
+  `dispatch("input")` contract (see #76). A missing/unregistered reducer is a
   no-op (a page never breaks because a binding wasn't wired up). When the same
   component ALSO carries `on(...)` (a persisted record, or a draft you sync), that
   debounced POST still fires and the server reply reconciles — so `reactive_compute`
@@ -205,6 +206,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   drops 3.2 and 3.3. Stay on phlex-reactive 0.3.x if you need Ruby 3.2/3.3.
 
 ### Fixed
+
+- **`reactive_compute` output writes never fired real `input` events — chained
+  repaints were dead in production (#76).** The controller's `recompute()` wrote
+  each output with a bare `field.value = …` under a comment claiming the write
+  fires the field's `input` listeners. Only the bun-test fake's custom `value`
+  setter did that — real browsers never fire `input` on a programmatic `.value`
+  write — so anything listening on a computed field (a chained summary repaint,
+  a second compute) silently never ran outside the test suite. The controller now
+  dispatches a real bubbling `new Event("input")` after each output write, and
+  the write is **change-guarded**: a field is written (and the event dispatched)
+  ONLY when the reducer's value differs from the field's current value
+  (String-compared). The guard is load-bearing, not an optimization — the shipped
+  `payment_split` example declares overlapping inputs/outputs, so an
+  unconditional dispatch would re-enter `input->reactive#recompute` forever;
+  with the guard, chains settle deterministically (the re-entrant pass writes
+  nothing and stops). The bun-test fake now matches real DOM (no auto-fire on
+  `.value` assignment; listeners run only through the controller's explicit
+  `dispatchEvent`), with unit coverage for the unchanged-write no-op, the
+  single bubbling dispatch, loop termination on the payment_split shape, and a
+  chained listener firing via the dispatched event — plus a real-browser system
+  assertion that a derived field repaints after typing. The misleading comments
+  in `reactive_controller.js` and `compute.js` now describe the real contract.
 
 - **`reactive_controller.js` used a relative `./confirm.js` import that 404'd under
   importmap-rails + Propshaft — taking down every Stimulus controller on the page (#57).**

@@ -26,12 +26,24 @@ RSpec.describe "Order payment split (reactive_compute new vs persisted)", type: 
           return orig(url, opts)
         }
         window.__noReload = "alive"
+
+        // A chained/derived repaint hanging off the computed output (issue #76):
+        // real browsers do NOT fire `input` on a programmatic .value write, so
+        // this listener only runs if the controller dispatches the event itself.
+        const echo = document.createElement("output")
+        echo.id = "cash-echo"
+        document.body.appendChild(echo)
+        document.querySelector('[name="cash"]').addEventListener("input", (e) => {
+          echo.textContent = "cash is " + e.target.value
+        })
       JS
 
       # Type an allowance; the reducer runs on `input` and writes cash = 500 - 100.
       fill_in "allowance", with: "100"
 
       expect(page).to have_field("cash", with: "400") # instant, client-computed
+      # The chained listener repainted via the controller's dispatched input event.
+      expect(page).to have_css("#cash-echo", text: "cash is 400")
       expect(page.evaluate_script("window.__actionPosts")).to eq(0) # NO round trip
       expect(page.evaluate_script("window.__noReload")).to eq("alive") # no reload
 
