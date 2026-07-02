@@ -829,6 +829,10 @@ Phlex::Reactive.verifier = ActiveSupport::MessageVerifier.new(ENV["REACTIVE_KEY"
 
 # Change the endpoint path (default "/reactive/actions"):
 Phlex::Reactive.action_path = "/_r/actions"
+
+# Diagnostic error bodies + dropped-param logging (default: Rails.env.local? —
+# on in development AND test, off in production):
+Phlex::Reactive.verbose_errors = true
 ```
 
 If you set a custom `action_path`, expose it to the client:
@@ -861,6 +865,26 @@ real, so read this once.
   `base_controller_name`. Inherit `ApplicationController` to get CSRF and auth —
   but if you have *public* reactive components, ensure the action path isn't
   force-redirected to a login page for logged-out users.
+
+### Debugging endpoint failures (`verbose_errors`)
+
+Every endpoint failure is warn-logged as `[phlex-reactive] …` in **every**
+environment. With `Phlex::Reactive.verbose_errors` on (the default in
+development and test via `Rails.env.local?`; off in production), the failure
+response ALSO carries a plain-text diagnostic body — the client already prints
+it via `console.error` — and param coercion warn-logs every dropped key with
+its full bracketed path and reason (`undeclared` / `uncoercible`), including a
+hint when a flat name looks like the bracketed twin of a declared nested key
+(or vice versa). What each status means:
+
+- **400** — token signature invalid (stale token from before a deploy?
+  `secret_key_base` mismatch?), a token class that no longer resolves, or a
+  class that resolved but doesn't include `Phlex::Reactive::Component`
+- **403** — an undeclared action (the body lists the declared actions) or a
+  registered authorization error raised inside the action
+- **404** — the signed GlobalID no longer resolves (record deleted)
+
+The flag never changes a status — only the body and the coercion log.
 
 See [docs/security.md](https://phlex-reactive.zoolutions.llc/docs/security) for the threat model and a checklist.
 

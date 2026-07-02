@@ -31,23 +31,58 @@ module Phlex
         component_class = resolve_component(payload["c"])
         action_def = component_class.reactive_action(reactive_action_name)
 
-        return head(:forbidden) unless action_def # default-deny
+        # default-deny
+        return reactive_error(:forbidden, undeclared_action_message(component_class)) unless action_def
 
         component = component_class.from_identity(payload)
-        coerced = coerce_params(action_def.params)
+        coerced = coerce_params(action_def.params, component_class:, action_name: action_def.name)
 
         result = run_action(component, action_def, coerced)
 
         render turbo_stream: response_streams(result, component)
-      rescue Phlex::Reactive::InvalidToken
-        head :bad_request
+      rescue Phlex::Reactive::InvalidToken => e
+        reactive_error(:bad_request, e.message)
       rescue ActiveRecord::RecordNotFound
-        head :not_found
-      rescue *authorization_errors
-        head :forbidden
+        reactive_error(:not_found, record_not_found_message(payload))
+      rescue *authorization_errors => e
+        reactive_error(:forbidden, authorization_error_message(e, component_class, action_def))
       end
 
       private
+
+      # Reply to an endpoint failure. The status NEVER changes with the flag —
+      # only the body: verbose_errors renders the diagnostic as plain text (the
+      # client console.errors non-OK bodies), otherwise a bare head. The warn
+      # log fires in EVERY environment so a misbehaving client is debuggable
+      # from the server log alone.
+      def reactive_error(status, message)
+        ::Rails.logger&.warn("[phlex-reactive] #{message}") if defined?(::Rails) && ::Rails.respond_to?(:logger)
+
+        if Phlex::Reactive.verbose_errors
+          render plain: message, status: status
+        else
+          head status
+        end
+      end
+
+      def undeclared_action_message(component_class)
+        declared = component_class.reactive_actions.keys.join(", ")
+        "action :#{reactive_action_name} is not declared on #{component_class.name} — " \
+          "declared actions: #{declared}"
+      end
+
+      def record_not_found_message(payload)
+        gid = payload.is_a?(Hash) && payload["gid"]
+        return "record not found" unless gid
+
+        "record #{gid} not found — deleted while a page still showed it?"
+      end
+
+      def authorization_error_message(error, component_class, action_def)
+        where = [component_class&.name, action_def&.name].compact.join("#")
+        "#{error.class.name} raised in #{where} — the signature proves identity, not permission; " \
+          "authorize in the action"
+      end
 
       # Run the action inside a transaction so transactional broadcasts (pgbus
       # broadcasts_to ... durable:) defer to after_commit and never fire for a
@@ -170,7 +205,11 @@ module Phlex
 
       def verified_payload
         token = params.require(:token)
-        Phlex::Reactive.verify(token) || raise(Phlex::Reactive::InvalidToken)
+        Phlex::Reactive.verify(token) || raise(Phlex::Reactive::InvalidToken.new(
+          "token signature invalid — stale token from before a deploy? secret_key_base mismatch? " \
+          "a reply.with(...) stream that skipped the token refresh?",
+          diagnostic: :tampered
+        ))
       end
 
       # NB: must NOT be named `action_name` — that's reserved by
@@ -183,10 +222,18 @@ module Phlex
       # in the schema is dropped — no raw mass assignment reaches the component.
       # The top-level params arrive as an ActionController::Parameters; coerce
       # them against the action's hash schema (same recursion as nested hashes).
-      def coerce_params(schema)
+      #
+      # With verbose_errors on, every dropped key is collected (full bracketed
+      # path + reason) and warn-logged once per action. With the flag off the
+      # collector is nil and every diagnostic branch below early-returns —
+      # zero extra work on the production path.
+      def coerce_params(schema, component_class: nil, action_name: nil)
         return {} if schema.blank?
 
-        coerce_hash(params.fetch(:params, {}), schema)
+        dropped = Phlex::Reactive.verbose_errors ? [] : nil
+        coerced = coerce_hash(params.fetch(:params, {}), schema, dropped, nil)
+        log_dropped_params(dropped, schema, component_class, action_name)
+        coerced
       end
 
       # Sentinel: a declared key whose value can't be coerced to its type is
@@ -202,12 +249,12 @@ module Phlex
       #   * a one-element Array        ([:integer] / [{ ... }])  — array of that
       # Arrays accept both a real JSON array and a Rails-style index hash
       # ({ "0" => ..., "1" => ... }), so a fields_for collection works either way.
-      def coerce(value, type)
+      def coerce(value, type, dropped = nil, path = nil)
         case type
         when Array
-          coerce_array(value, type.first)
+          coerce_array(value, type.first, dropped, path)
         when Hash
-          coerce_hash(value, type)
+          coerce_hash(value, type, dropped, path)
         when :file
           coerce_file(value)
         else
@@ -243,12 +290,17 @@ module Phlex
       # explicit empty collection), but an array whose every element drops
       # returns DROP, so the keyword default applies rather than handing the
       # action a surprise [].
-      def coerce_array(value, element_type)
+      def coerce_array(value, element_type, dropped = nil, path = nil)
         values = array_values(value)
         return DROP if values.nil?
         return [] if values.empty?
 
-        coerced = values.map { coerce(it, element_type) }
+        coerced =
+          if dropped
+            values.map.with_index { |element, i| coerce(element, element_type, dropped, "#{path}[#{i}]") }
+          else
+            values.map { coerce(it, element_type) }
+          end
         coerced.reject! { it.equal?(DROP) }
         coerced.empty? ? DROP : coerced
       end
@@ -256,17 +308,105 @@ module Phlex
       # Keep declared keys only (drop undeclared — no mass assignment), recursing
       # for nested hash/array element types. Symbolizes keys to splat as kwargs.
       # A key whose value coerces to DROP is skipped (keyword default applies).
-      def coerce_hash(value, schema)
+      # `dropped`/`path` are the verbose_errors diagnostics collector — nil (and
+      # cost-free) unless the flag is on.
+      def coerce_hash(value, schema, dropped = nil, path = nil)
         hash = to_param_hash(value)
+        collect_undeclared(dropped, hash, schema, path) if dropped
         schema.each_with_object({}) do |(key, type), out|
-          next unless hash.key?(key.to_s)
+          key_name = key.to_s
+          next unless hash.key?(key_name)
 
-          coerced = coerce(hash[key.to_s], type)
-          next if coerced.equal?(DROP)
+          key_path = dropped && join_path(path, key_name)
+          coerced = coerce(hash[key_name], type, dropped, key_path)
+          if coerced.equal?(DROP)
+            dropped << [key_path, :uncoercible] if dropped
+            next
+          end
 
           out[key.to_sym] = coerced
         end
       end
+
+      # ---- verbose_errors dropped-param diagnostics ----------------------
+      # Everything below runs ONLY when the collector exists (flag on); the
+      # production path never reaches these methods.
+
+      def join_path(path, key)
+        path ? "#{path}[#{key}]" : key
+      end
+
+      # Record every input key this schema level doesn't declare. A hash value
+      # expands to its leaf paths so the log shows the full bracketed name the
+      # client posted (invoice[date], not just invoice).
+      def collect_undeclared(dropped, hash, schema, path)
+        declared = schema.keys.map(&:to_s)
+        hash.each do |key, value|
+          next if declared.include?(key)
+
+          record_undeclared(dropped, join_path(path, key), value)
+        end
+      end
+
+      def record_undeclared(dropped, path, value)
+        if value.is_a?(Hash) && value.any?
+          value.each { |key, child| record_undeclared(dropped, "#{path}[#{key}]", child) }
+        else
+          dropped << [path, :undeclared]
+        end
+      end
+
+      # ONE warn line per action naming every dropped param with its reason —
+      # plus, for the #16/#21 confusion, a hint when a dropped name looks like
+      # the flat/bracketed twin of a declared key.
+      def log_dropped_params(dropped, schema, component_class, action_name)
+        return if dropped.nil? || dropped.empty?
+        return unless defined?(::Rails) && ::Rails.respond_to?(:logger) && ::Rails.logger
+
+        entries = dropped.map { |path, reason| "#{path} (#{dropped_reason(path, reason, schema)})" }
+        where = [component_class, action_name].compact.join("#")
+        where = "#{where} " unless where.empty?
+        ::Rails.logger.warn("[phlex-reactive] #{where}dropped params: #{entries.join(", ")}")
+      end
+
+      def dropped_reason(path, reason, schema)
+        return reason.to_s unless reason == :undeclared
+
+        hint = shape_hint(path, schema)
+        hint ? "undeclared — #{hint}" : "undeclared"
+      end
+
+      # Fires only when a dropped segment matches a DECLARED key at a different
+      # nesting level — a bracketed name whose leaf the schema declares flat, or
+      # a flat name the schema declares one level down. Deliberately simple: it
+      # searches one nesting level (hash / array-of-hash), no deeper.
+      def shape_hint(path, schema)
+        segments = bracket_path(path)
+        if segments.length > 1
+          leaf = segments.last
+          return unless schema.key?(leaf.to_sym)
+
+          "schema declares :#{leaf} at top level; nested schemas look like " \
+            "{ #{segments.first}: { #{leaf}: :string } }"
+        else
+          parent = nested_declaration_of(segments.first, schema)
+          return unless parent
+
+          "schema declares :#{segments.first} nested under :#{parent}; " \
+            "post it as #{parent}[#{segments.first}]"
+        end
+      end
+
+      # The first schema key whose nested hash (or array-of-hash element
+      # schema) declares `name` one level down.
+      def nested_declaration_of(name, schema)
+        schema.find do |_key, type|
+          inner = type.is_a?(Array) ? type.first : type
+          inner.is_a?(Hash) && inner.key?(name.to_sym)
+        end&.first
+      end
+
+      # ---- end verbose_errors diagnostics --------------------------------
 
       def coerce_scalar(value, type)
         case type
@@ -362,11 +502,23 @@ module Phlex
       end
 
       # Only components that opt into Reactive may be resolved. The signature
-      # already gates this; defense in depth against constant injection.
+      # already gates this; defense in depth against constant injection. The
+      # two failure causes carry distinct diagnostics: a name that doesn't
+      # resolve at all vs a constant that resolved but isn't a reactive
+      # component.
       def resolve_component(name)
         klass = name.to_s.safe_constantize
+        unless klass
+          raise Phlex::Reactive::InvalidToken.new(
+            "token class #{name} does not resolve — component renamed/removed while a page was open?",
+            diagnostic: :unknown_class
+          )
+        end
         unless klass.respond_to?(:reactive_action?) && klass.include?(Phlex::Reactive::Component)
-          raise Phlex::Reactive::InvalidToken
+          raise Phlex::Reactive::InvalidToken.new(
+            "#{name} resolved but does not include Phlex::Reactive::Component",
+            diagnostic: :not_reactive_class
+          )
         end
 
         klass

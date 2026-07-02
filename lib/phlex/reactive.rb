@@ -29,8 +29,18 @@ module Phlex
     class Error < StandardError; end
 
     # Raised when a signed identity token fails verification (tampered, expired,
-    # or signed with a different key).
-    class InvalidToken < Error; end
+    # or signed with a different key) — or when a verified token names a class
+    # that doesn't resolve to a reactive component. `diagnostic` classifies the
+    # cause (:tampered, :unknown_class, :not_reactive_class) so the endpoint can
+    # render a verbose_errors body explaining WHICH failure this was.
+    class InvalidToken < Error
+      attr_reader :diagnostic
+
+      def initialize(msg = nil, diagnostic: nil)
+        @diagnostic = diagnostic
+        super(msg)
+      end
+    end
 
     # Purpose string bound into every identity token's signature so a token
     # minted for phlex-reactive can't be replayed against another verifier use.
@@ -68,6 +78,23 @@ module Phlex
 
       def action_path
         @action_path ||= "/reactive/actions"
+      end
+
+      # Diagnostic endpoint error bodies + dropped-param logging. When true, an
+      # endpoint failure (400/403/404) carries a plain-text explanation body
+      # (the client already console.errors it) and param coercion warn-logs
+      # every dropped key with its bracketed path and reason. Statuses never
+      # change with the flag, and the endpoint's warn log fires regardless.
+      #
+      # Defaults LAZILY to Rails.env.local? — that's development AND test — so
+      # production stays opaque unless you opt in. The `defined?` guard (not
+      # `||=`) makes an explicit `= false` stick even in dev/test.
+      attr_writer :verbose_errors
+
+      def verbose_errors
+        return @verbose_errors if defined?(@verbose_errors)
+
+        defined?(::Rails.env) && ::Rails.env.local?
       end
 
       def verifier
