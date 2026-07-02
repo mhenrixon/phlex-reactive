@@ -43,8 +43,14 @@ module Views
               ul do
                 li { plain 'Client runtime — one generic Stimulus controller.' }
                 li { plain 'Endpoint — verify token → run action → render the reply.' }
-                li { plain 'Component mixin — reactive_record/reactive_state, action, on.' }
-                li { plain 'Streamable mixin — #id, replace/append, broadcast_*_to.' }
+                li do
+                  plain 'Component mixin — reactive_record/reactive_state, action, on. ' \
+                        'Including it pulls in Streamable automatically (one include is enough).'
+                end
+                li do
+                  plain 'Streamable mixin — #id, replace/append, broadcast_*_to. ' \
+                        'Record-backed components default #id to dom_id(record).'
+                end
               end
             end
           end

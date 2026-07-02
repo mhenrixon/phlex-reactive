@@ -38,7 +38,6 @@ module Views
             end
             DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/components/fields/inline_edit.rb')
               class Fields::InlineEdit < ApplicationComponent
-                include Phlex::Reactive::Streamable
                 include Phlex::Reactive::Component
 
                 reactive_record :record

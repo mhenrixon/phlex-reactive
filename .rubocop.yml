@@ -193,6 +193,7 @@ RSpec/DescribeClass:
     # class — a string subject reads clearer than a forced constant.
     - spec/phlex/eager_load_spec.rb
     - spec/phlex/vendored_controller_sync_spec.rb
+    - spec/phlex/reactive/streamable_default_id_spec.rb
     - spec/phlex/reactive/streamable_morph_spec.rb
     - spec/phlex/reactive/streamable_token_spec.rb
     - spec/phlex/reactive/streamable_view_context_spec.rb

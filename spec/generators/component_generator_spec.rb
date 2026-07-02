@@ -24,8 +24,9 @@ RSpec.describe Phlex::Reactive::Generators::ComponentGenerator do
 
       src = component("counter.rb")
       expect(src).to include("class Counter < ApplicationComponent")
-      expect(src).to include("include Phlex::Reactive::Streamable")
+      # ONE include (issue #81): Component pulls in Streamable as a dependency.
       expect(src).to include("include Phlex::Reactive::Component")
+      expect(src).not_to include("include Phlex::Reactive::Streamable")
       expect(src).to include("reactive_state :value")
       expect(src).to include("action :increment")
       expect(src).to include("action :decrement")
@@ -41,14 +42,16 @@ RSpec.describe Phlex::Reactive::Generators::ComponentGenerator do
   end
 
   describe "record-backed (--record)" do
-    it "generates a component with GlobalID identity and dom_id" do
+    it "generates a component with GlobalID identity relying on the default #id" do
       generate(["Todos::Item", "toggle", "rename", "--record", "todo"])
 
       src = component("todos/item.rb")
       expect(src).to include("class Todos::Item < ApplicationComponent")
       expect(src).to include("reactive_record :todo")
       expect(src).to include("def initialize(todo:)")
-      expect(src).to include("def id = dom_id(@todo)")
+      # Issue #81: no hand-written id — reactive_record defaults #id to dom_id.
+      expect(src).not_to match(/^\s*def id\b/)
+      expect(src).to include("defaults #id to dom_id(@todo)")
       expect(src).to include("action :toggle")
       expect(src).to include("# authorize! @todo, :update?")
     end

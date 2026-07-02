@@ -2,8 +2,12 @@
 
 # Record-backed reactive row. Exercises reactive_record (GlobalID identity),
 # a param action (rename via change), and a toggle.
+#
+# Deliberately uses the issue #81 short form as living proof: ONE include
+# (Component pulls in Streamable) and NO `def id` (reactive_record :todo
+# defaults #id to dom_id(@todo)). The other dummy components keep the legacy
+# two-include + explicit-id form so it stays covered too.
 class TodoItemComponent < ApplicationComponent
-  include Phlex::Reactive::Streamable
   include Phlex::Reactive::Component
 
   reactive_record :todo
@@ -16,8 +20,7 @@ class TodoItemComponent < ApplicationComponent
     @todo = todo
   end
 
-  # Streamable#dom_id is render-context-free
-  def id = dom_id(@todo)
+  # No `def id` needed: reactive_record :todo defaults #id to dom_id(@todo).
   # No model_param_name override needed: reactive_record :todo makes the
   # broadcast path build with the same `todo:` keyword the action endpoint uses.
 
