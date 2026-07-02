@@ -396,8 +396,38 @@ module Phlex
         "keydown.esc->reactive#listnavClose"
       ].freeze
 
-      def on(action_name, event: "click", debounce: nil, confirm: nil, listnav: nil, **params)
-        action = "#{event}->reactive#dispatch"
+      # Event modifiers (issue #80) — window:, once:, outside:, throttle: are
+      # RESERVED keyword names on on() (no longer usable as free action params):
+      #
+      # `window: true` binds the trigger to the window (Stimulus's native
+      # `@window` descriptor suffix) — for page-level events like scroll/resize.
+      # `once: true` appends Stimulus's `:once` option, so the trigger fires at
+      # most one round trip and then unbinds. Both are pure descriptor
+      # composition. A window-bound trigger is NOT preventDefault-ed by the
+      # client (it would kill every native click/submit on the page), and it
+      # skips the forced type="button" (it isn't an in-form button trigger).
+      #
+      # `outside: true` fires the action only for events OUTSIDE this
+      # component's ROOT (containment against the reactive root element) — the
+      # close-a-dropdown-on-outside-click pattern. It implies `window: true`;
+      # an event inside the root is a complete client-side no-op:
+      #   div(**mix(reactive_root, on(:close_menu, outside: true))) { ... }
+      #
+      # `throttle:` (milliseconds) rate-limits a hot trigger LEADING-EDGE: the
+      # first event fires immediately, further events are suppressed until the
+      # window elapses (scroll/mousemove). Mutually exclusive with `debounce:`
+      # (trailing-edge) — passing both raises ArgumentError.
+      #   div(**mix(reactive_root, on(:track, event: "scroll", window: true, throttle: 250)))
+      def on(action_name, event: "click", debounce: nil, throttle: nil, confirm: nil, listnav: nil,
+             window: false, once: false, outside: false, **params)
+        if debounce && throttle
+          raise ArgumentError,
+            "on(#{action_name.inspect}) got both debounce: and throttle: — they are mutually " \
+            "exclusive (debounce is trailing-edge, throttle is leading-edge); pick one"
+        end
+
+        window_bound = window || outside
+        action = "#{event}#{"@window" if window_bound}->reactive#dispatch#{":once" if once}"
         action = "#{action} #{LISTNAV_ACTIONS.join(" ")}" if listnav
         attrs = {
           data: {
@@ -407,9 +437,18 @@ module Phlex
           }
         }
         attrs[:data][:reactive_debounce_param] = debounce if debounce
+        attrs[:data][:reactive_throttle_param] = throttle if throttle
         attrs[:data][:reactive_confirm_param] = confirm if confirm
         attrs[:data][:reactive_listnav_option_param] = listnav if listnav
-        attrs[:type] = "button" if event == "click"
+        # STRING "true", not boolean: Phlex renders a `true` attribute VALUELESS
+        # (data-reactive-outside-param), which Stimulus's param reader sees as ""
+        # — falsy in JS, so the guard silently never fires. The explicit ="true"
+        # typecasts to a real boolean on the client.
+        attrs[:data][:reactive_outside_param] = "true" if outside
+        # The client decides preventDefault behavior from event.params (never by
+        # sniffing the descriptor), so EVERY window binding flags the param.
+        attrs[:data][:reactive_window_param] = "true" if window_bound
+        attrs[:type] = "button" if event == "click" && !window_bound
         attrs
       end
 

@@ -8,6 +8,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`on(...)` event modifiers — `window:`, `once:`, `outside:`, `throttle:`
+  (#80).** Four trigger patterns that previously forced a hand-written Stimulus
+  controller are now declarable on `on(...)`. `outside: true` fires the action
+  only for events whose target is OUTSIDE the component's root — the
+  close-a-dropdown-on-outside-click pattern; an event inside the root is a
+  complete client-side no-op (bailing before `preventDefault` and before the
+  `reactive:before-dispatch` lifecycle event). It implies `window: true`, which
+  binds the trigger via Stimulus's native `@window` descriptor for page-level
+  events (`scroll`/`resize`). Window-bound triggers are NEVER
+  `preventDefault`-ed — a mounted dropdown must not kill native link clicks
+  elsewhere on the page — and skip the forced `type="button"`; the client
+  decides this from `data-reactive-window-param` (emitted as an explicit
+  `"true"` string — Phlex renders a boolean `true` attribute VALUELESS, which
+  Stimulus's param reader sees as `""`, falsy). `once: true` appends Stimulus's
+  `:once` action option (fire at most once, then unbind). `throttle:`
+  (milliseconds) rate-limits LEADING-EDGE — the first event fires immediately,
+  further events are dropped until the window elapses — the mirror of
+  `debounce:` (trailing-edge); passing both raises `ArgumentError`. Suppression
+  timers are keyed on action + target (window scroll events all share
+  `event.target === document`, so two window-bound triggers on one component
+  must not collide) and torn down on `disconnect()`. The bare `on(:x)` emission
+  is pinned byte-identical by spec — the four names become RESERVED `on(...)`
+  kwargs, no longer usable as free action params.
+
 - **Single include + a default `#id` for record-backed components (#81).**
   `include Phlex::Reactive::Component` now pulls in
   `Phlex::Reactive::Streamable` automatically (ActiveSupport::Concern's
