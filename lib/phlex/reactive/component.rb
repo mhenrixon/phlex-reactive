@@ -351,6 +351,15 @@ module Phlex
       # a `submit` trigger can't navigate on cancel). Omit it for no prompt.
       #   button(**on(:destroy, confirm: "Really delete this item?")) { "Delete" }
       #
+      # `event:` is interpolated verbatim into the Stimulus action descriptor
+      # (`#{event}->reactive#dispatch`), so any Stimulus event string works —
+      # including its native KEYBOARD FILTERS. Pass `event: "keydown.enter"` for
+      # Enter-to-submit or `event: "keydown.esc"` for Escape-to-cancel, and the
+      # action fires only on that key — no separate option, no client code, and
+      # `key` stays free as an ordinary action-param name (on(:switch, key: …)):
+      #   input(**on(:add, event: "keydown.enter"))      # Enter submits
+      #   button(**on(:cancel, event: "keydown.esc"))     # Escape cancels
+      #
       # `listnav:` (a CSS selector for the option elements) adds keyboard list
       # navigation to a search/combobox trigger (issue #72). It appends Stimulus
       # keyboard filters to the SAME element's data-action so Arrow Up/Down move a

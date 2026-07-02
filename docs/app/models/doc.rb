@@ -15,6 +15,8 @@ class Doc
     { slug: 'performance',           title: 'Performance',             group: 'Guide',    view: 'Performance' },
     { slug: 'examples',              title: 'Examples overview',       group: 'Examples', view: 'ExamplesOverview' },
     { slug: 'example-counter',       title: 'Counter',                 group: 'Examples', view: 'ExampleCounter' },
+    { slug: 'example-payment-split', title: 'Payment split',           group: 'Examples',
+      view: 'ExamplePaymentSplit' },
     { slug: 'example-todo-list',     title: 'Todo list',               group: 'Examples', view: 'ExampleTodoList' },
     { slug: 'example-inline-edit',   title: 'Inline edit',             group: 'Examples', view: 'ExampleInlineEdit' },
     { slug: 'example-collections',   title: 'Collections',             group: 'Examples', view: 'ExampleCollections' },

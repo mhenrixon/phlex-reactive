@@ -22,6 +22,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   module (the handlers live in the existing controller); covered by unit (JS),
   request, and real-browser system specs green under Puma AND Falcon.
 
+- **Keyboard triggers on `on(...)` via `event:` — Enter-to-submit /
+  Escape-to-cancel with no client JavaScript.** `event:` is interpolated straight
+  into the Stimulus action descriptor, so **Stimulus's native keyboard filters
+  just work**: `on(:add, event: "keydown.enter")` emits
+  `keydown.enter->reactive#dispatch` and the action fires only on Enter, not on
+  every keypress. `event: "keydown.esc"` gives Escape-to-cancel. No new option to
+  learn (it's Stimulus's own filter syntax), no client change, no vendored-client
+  re-sync — and, deliberately, **no reserved `key:` keyword**, so `key` stays a
+  normal action-param name (`on(:switch, key: "pgbus")` keeps passing `key`
+  through as a param — no backward-incompatibility). Because a keyboard trigger
+  isn't a click, it does not get the `type="button"` a click trigger does. One
+  action per element still holds — bind Enter-save and Escape-cancel to separate
+  elements. README documents it under "Keyboard triggers".
 - **`reactive_compute` — client-side data bindings (no round trip).** A component
   can now declare a client-side computation that recomputes derived fields
   IN-BROWSER on `input`, with NO server round trip — the "instant" half of a
@@ -111,6 +124,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   out to a bespoke controller + upload Stimulus controller. Covered end-to-end:
   server coercion (request specs), the FormData wire shape (bun unit tests), and a
   real browser upload under Puma + Falcon (system spec).
+
+### Documentation
+
+- **The auto-collected-params contract, spelled out (#64, #65, #66, #67).** Four
+  gaps surfaced from building one model-scoped form (numeric fields that rebalance
+  live). No behavior changed — the README now documents what the code already
+  does:
+  - **#67** — a **flat** param schema silently drops **bracketed** field names.
+    Because the endpoint expands `invoice[date]` to `{ "invoice" => { … } }`
+    *before* matching the schema, a flat `{ date: … }` matches nothing and the
+    action gets keyword defaults with no error. The "Model-scoped form fields"
+    section now warns to nest the schema under the model key to match the names.
+  - **#65** — auto-collected sibling fields are read **at dispatch time**, not
+    from a pre-event snapshot: a `change`/`input` trigger sees its own new value
+    and every peer's current DOM value. Documented in a new "Auto-collected
+    sibling fields — the read contract" subsection.
+  - **#66** — reactive collection **includes `disabled` fields**, deliberately
+    unlike a native `<form>` submit, so a read-only computed field (a synced
+    `total`) reaches the action. Documented as intentional, with the `readonly`
+    vs `disabled` guidance for form-submit parity.
+  - **#64** — a `reactive_record` action can use the record for **identity +
+    authorization only** and compute over live, unsaved params, returning
+    `reply.streams(...)` to stream a partial update with **no persist and no
+    broadcast**. Documented as a first-class "record-authorized, transient-state
+    action" pattern in the `reply` section.
+
+  The demo app (`docs/`) gains a **live payment-split rebalancer** example — three
+  amounts that always sum to a total, editing one rebalances the peers — that
+  makes #64–#67 browsable (model-scoped bracketed params, a disabled computed
+  field the action still reads, siblings collected at dispatch, transient compute
+  with no persist/broadcast). The **todo** and **inline-edit** examples gain
+  Enter-to-add / Enter-to-save / Escape-to-cancel via the new `key:` filter,
+  covered by request specs and a real-browser (Playwright) Enter-keypress test.
+  Combobox keyboard navigation is tracked separately (#72) for the
+  minimal-client-seam work.
 
 ### Changed
 
