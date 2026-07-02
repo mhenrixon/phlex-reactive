@@ -12,8 +12,8 @@ RSpec.describe 'Docs sidebar collapse persistence', type: :system do
   it 'remembers a collapsed sub-group across navigation', :desktop_only do
     visit '/docs/installation'
 
-    # The "Examples" sub-group is a <details open> with a menu-title summary.
-    examples = find('summary.menu-title', text: 'Examples')
+    # The "Examples" sub-group is a <details open> whose <summary> is the label.
+    examples = find('summary', text: 'Examples')
     examples_details = examples.find(:xpath, './..') # the <details>
 
     expect(examples_details['open']).to be_truthy
@@ -26,7 +26,7 @@ RSpec.describe 'Docs sidebar collapse persistence', type: :system do
     # section OPEN by default, but the controller restores the collapsed state.
     visit '/docs/architecture'
 
-    restored = find('summary.menu-title', text: 'Examples').find(:xpath, './..')
+    restored = find('summary', text: 'Examples').find(:xpath, './..')
     expect(restored['open']).to be_falsey
   end
 
