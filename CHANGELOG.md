@@ -31,6 +31,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `respond_to?` + two memoized reads, and only for components that didn't
   define `#id`.
 
+- **`reactive_compute` reducers are told which field changed — one reducer can
+  express a multi-way/mutual rebalance (#75).** A compute reducer now receives a
+  second argument, `meta = { changed }`: the name of the declared input the
+  triggering `input` event edited, or `null` (a direct `recompute()` call, or a
+  target this root doesn't own / didn't declare as an input — nested reactive
+  roots stay excluded per #15). That's exactly what the mutual-rebalance shape
+  ("three fields that must always sum to a total") needs — given the same value
+  snapshot, the reducer branches on WHICH field is the free/derived one:
+
+  ```js
+  setComputeReducer("three_way_split", ({ field_a, field_b, field_c, total }, { changed }) => {
+    if (changed === "field_c") return { field_a: total - field_c - field_b }
+    return { field_c: total - field_a - field_b }
+  })
+  ```
+
+  Fully backward compatible: a one-argument reducer just ignores `meta` — no
+  Ruby DSL change, no markup change. One contract to know: because an output
+  write dispatches a real change-guarded `input` event (#76), `recompute`
+  re-enters with `changed` = the OUTPUT field's name (when it's also a declared
+  input), so a branching reducer must be **convergent** — the re-entrant pass
+  must compute the values already in the DOM so the change guard settles the
+  chain (the example above does: deriving `field_a` back from the just-written
+  `field_c` reproduces its current value; no write, no event, settled in one
+  bounce). Documented in `compute.js`'s header and the `reactive_compute` docs;
+  covered by bun unit tests including the issue's three-way rebalance verbatim
+  with a bounded reducer-call count.
+
 - **`Phlex::Reactive.verbose_errors` — diagnostic endpoint error bodies +
   dropped-param logging (#82).** An endpoint failure used to be a bare
   `head 400/403/404` and a silently-dropped param left no trace — debugging
@@ -50,7 +78,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   never change with the flag, the client needs no changes, and the production
   coercion path does zero extra work (nil collector, early-return guards) —
   `rake bench:one[coerce_params]` before/after is unchanged within noise
-  (36.1k → 37.1k i/s; 218 → 207 objects/call, retained 0).
 
 - **Combobox keyboard navigation — `on(:search, …, listnav: "[role=option]")` (#72).**
   A search/combobox trigger can now declare client-side list navigation: Arrow
