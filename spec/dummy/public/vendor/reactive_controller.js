@@ -133,6 +133,28 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
   }
 }
 
+// The client-op whitelist behind on_client (issue #95). Mirrors
+// Phlex::Reactive::JS's vocabulary; an op name not in this map is
+// warn-and-skipped by #applyOps (client-side default-deny — a stale or newer
+// ops attr must never break the page). Each op is a pure, local DOM mutation:
+// nothing is read back, nothing is sent anywhere. Frozen so nothing can be
+// registered into it at runtime — extending the vocabulary is a gem change,
+// not an app hook.
+const CLIENT_OPS = Object.freeze({
+  show: (el) => {
+    el.hidden = false
+  },
+  hide: (el) => {
+    el.hidden = true
+  },
+  toggle: (el) => {
+    el.hidden = !el.hidden
+  },
+  add_class: (el, args) => el.classList.add(...(args.classes ?? [])),
+  remove_class: (el, args) => el.classList.remove(...(args.classes ?? [])),
+  toggle_class: (el, args) => (args.classes ?? []).forEach((c) => el.classList.toggle(c)),
+})
+
 // Register this controller eagerly (not lazily) so a click immediately after
 // page load is never missed. The phlex-reactive engine auto-pins it with
 // preload: true for importmap apps; see the README for esbuild/webpack.
@@ -242,6 +264,29 @@ export default class extends Controller {
       .then((ok) => {
         if (ok) this.#proceed(target, action, params, debounce, throttle)
       })
+  }
+
+  // CLIENT-ONLY trigger entry point (issue #95) — the zero-round-trip sibling
+  // of dispatch(). Wired by on_client: applies the declared op chain
+  // (data-reactive-ops-param, built by Phlex::Reactive::JS) locally. NO token,
+  // NO params, NO fetch, ever. Ops are ephemeral UI: any server re-render of
+  // the component resets whatever they toggled (by design — a signed action
+  // owns state that must survive re-renders).
+  runOps(event) {
+    const { ops, outside, window: windowBound } = event.params
+
+    // Outside guard FIRST — identical semantics to dispatch() (issue #80): an
+    // outside: trigger is a COMPLETE no-op for events inside this root, before
+    // preventDefault and before any op runs.
+    if (outside && this.element.contains(event.target)) return
+
+    // Element-bound triggers preventDefault (a bare button inside a <form>
+    // must not submit it); window-bound triggers (window:/outside:) never do —
+    // they hear every matching event on the page, and preventDefault-ing those
+    // would kill native clicks site-wide (issue #80 rationale).
+    if (!windowBound) event.preventDefault()
+
+    this.#applyOps(this.#parseOps(ops))
   }
 
   // Client-side compute (data binding). Wired by reactive_compute: an `input`
@@ -813,6 +858,50 @@ export default class extends Controller {
     } catch {
       return {}
     }
+  }
+
+  // Stimulus typecasts a JSON param to the parsed array already; a raw string
+  // (hand-built attr, non-typecasting harness) is parsed here. Anything
+  // malformed degrades to [] — a bad ops attr must never break the page.
+  #parseOps(raw) {
+    if (Array.isArray(raw)) return raw
+    if (typeof raw !== "string") return []
+    try {
+      const list = JSON.parse(raw)
+      return Array.isArray(list) ? list : []
+    } catch {
+      return []
+    }
+  }
+
+  // Interpret a [[name, args], ...] op list against this root (issue #95). The
+  // vocabulary is the frozen CLIENT_OPS whitelist; an unknown name warns and is
+  // SKIPPED while the rest of the chain still applies — client-side
+  // default-deny, and one bad op never takes down its siblings. Object.hasOwn
+  // (not a bare property read) so inherited Object members ("constructor")
+  // can't masquerade as ops.
+  #applyOps(list) {
+    for (const entry of list) {
+      if (!Array.isArray(entry)) continue
+      const [name, args = {}] = entry
+      if (!Object.hasOwn(CLIENT_OPS, name)) {
+        console.warn(`[phlex-reactive] unknown client op ${JSON.stringify(name)} — skipped`)
+        continue
+      }
+      for (const el of this.#opTargets(args)) CLIENT_OPS[name](el, args)
+    }
+  }
+
+  // Resolve an op's targets: "@root" is this element; a selector resolves
+  // WITHIN this root and excludes nested reactive roots' subtrees (issue #15
+  // semantics — the same nearest-root ownership check the field walk uses);
+  // global: true opts a single op out to document-wide.
+  #opTargets(args) {
+    const to = args.to
+    if (to === "@root") return [this.element]
+    if (typeof to !== "string" || to === "") return []
+    if (args.global) return [...document.querySelectorAll(to)]
+    return [...this.element.querySelectorAll(to)].filter((el) => this.#ownsField(el))
   }
 
   // The action path comes from a <meta> tag that is fixed for the page's life,

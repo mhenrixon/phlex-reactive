@@ -307,6 +307,14 @@ module Phlex
         Phlex::Reactive::Reply.new(self)
       end
 
+      # An empty client-side op chain (issue #95) — the starting point for
+      # on_client's DOM commands, mirroring how `reply` starts a Response chain:
+      #   button(**on_client(:click, js.toggle("#menu"))) { "Menu" }
+      # Immutable: each verb returns a new chain, so reuse never leaks ops.
+      def js
+        Phlex::Reactive::JS.new
+      end
+
       # Root-element attributes: marks the element reactive and carries the
       # signed identity token. Spread onto the root:
       #   div(id:, **reactive_attrs) { ... }
@@ -447,6 +455,53 @@ module Phlex
         attrs[:data][:reactive_outside_param] = "true" if outside
         # The client decides preventDefault behavior from event.params (never by
         # sniffing the descriptor), so EVERY window binding flags the param.
+        attrs[:data][:reactive_window_param] = "true" if window_bound
+        attrs[:type] = "button" if event == "click" && !window_bound
+        attrs
+      end
+
+      # Attributes for a CLIENT-ONLY trigger (issue #95): binds a DOM event to a
+      # chain of declarative DOM ops (Phlex::Reactive::JS) that the generic
+      # controller's runOps action applies in the browser — NO token, NO params,
+      # NO POST, ever. The zero-round-trip sibling of on():
+      #
+      #   button(**on_client(:click, js.toggle("#menu"))) { "Menu" }
+      #   # tabs, one line per tab, no Stimulus controller:
+      #   button(**on_client(:click, js.hide(".panel").show("#panel-2")))
+      #
+      # `window:`, `once:`, and `outside:` compose exactly like on()'s event
+      # modifiers (#80): outside-click-to-close a dropdown is
+      #   div(**mix(reactive_root, on_client(:click, js.hide("#menu"), outside: true)))
+      # Window-bound triggers are never preventDefault-ed by the client and skip
+      # the forced type="button".
+      #
+      # Ops are EPHEMERAL UI: any server re-render of the component (an action
+      # reply, a broadcast, a morph) rebuilds from server state and resets
+      # whatever they toggled — by design (the LiveView JS-commands caveat). Use
+      # a signed action for state that must survive re-renders.
+      #
+      # Validation is loud: only a non-empty Phlex::Reactive::JS chain is
+      # accepted — a dead trigger should fail at render, not no-op in the
+      # browser.
+      def on_client(event, ops, window: false, once: false, outside: false)
+        unless ops.is_a?(Phlex::Reactive::JS)
+          raise ArgumentError,
+            "on_client expects a Phlex::Reactive::JS chain (e.g. js.toggle(\"#menu\")), " \
+            "got #{ops.class}"
+        end
+        raise ArgumentError, "on_client(#{event.inspect}) got no ops — a dead trigger" if ops.empty?
+
+        event = event.to_s
+        window_bound = window || outside
+        attrs = {
+          data: {
+            action: "#{event}#{"@window" if window_bound}->reactive#runOps#{":once" if once}",
+            reactive_ops_param: ops.to_json
+          }
+        }
+        # STRING "true", not boolean — same Phlex valueless-attribute trap as
+        # on()'s flags above.
+        attrs[:data][:reactive_outside_param] = "true" if outside
         attrs[:data][:reactive_window_param] = "true" if window_bound
         attrs[:type] = "button" if event == "click" && !window_bound
         attrs

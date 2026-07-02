@@ -549,6 +549,56 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  describe "#on_client (issue #95 — client-only DOM ops, zero round trip)" do
+    subject(:instance) { state_klass.new }
+
+    let(:ops) { instance.js.toggle("#menu") }
+
+    it "exposes the js builder as an instance helper" do
+      expect(instance.js).to be_a(Phlex::Reactive::JS)
+    end
+
+    it "binds the event to runOps and carries ONLY the ops (no token, no action, no params)" do
+      attrs = instance.send(:on_client, :click, ops)
+
+      expect(attrs[:data][:action]).to eq("click->reactive#runOps")
+      expect(attrs[:data][:reactive_ops_param]).to eq('[["toggle",{"to":"#menu"}]]')
+      expect(attrs[:data]).not_to have_key(:reactive_action_param)
+      expect(attrs[:data]).not_to have_key(:reactive_params_param)
+      expect(attrs[:data]).not_to have_key(:reactive_token_value)
+    end
+
+    it "forces type=button for click triggers (a bare button in a form must not submit)" do
+      expect(instance.send(:on_client, :click, ops)[:type]).to eq("button")
+    end
+
+    it "composes window:/once: into the descriptor and skips type=button when window-bound" do
+      attrs = instance.send(:on_client, :click, ops, window: true, once: true)
+
+      expect(attrs[:data][:action]).to eq("click@window->reactive#runOps:once")
+      expect(attrs[:data][:reactive_window_param]).to eq("true")
+      expect(attrs).not_to have_key(:type)
+    end
+
+    it "outside: implies the window binding and emits BOTH flags as string params" do
+      attrs = instance.send(:on_client, :click, ops, outside: true)
+
+      expect(attrs[:data][:action]).to eq("click@window->reactive#runOps")
+      expect(attrs[:data][:reactive_outside_param]).to eq("true")
+      expect(attrs[:data][:reactive_window_param]).to eq("true")
+    end
+
+    it "rejects anything that is not a Phlex::Reactive::JS chain" do
+      expect { instance.send(:on_client, :click, [["toggle", { "to" => "#menu" }]]) }
+        .to raise_error(ArgumentError, /Phlex::Reactive::JS/)
+    end
+
+    it "rejects an empty op chain (a dead trigger must fail loudly at render)" do
+      expect { instance.send(:on_client, :click, instance.js) }
+        .to raise_error(ArgumentError, /no ops/)
+    end
+  end
+
   # A record-backed component whose record is UNSAVED (new_record?) has no
   # GlobalID to sign. reactive_token must not crash calling to_gid on it — it
   # signs the declared state instead (the draft seed), so the client controller

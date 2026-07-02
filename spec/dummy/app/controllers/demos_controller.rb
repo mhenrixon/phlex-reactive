@@ -81,6 +81,17 @@ class DemosController < ActionController::Base
     render html: component + outside.html_safe, layout: true
   end
 
+  # Pure client-side interactivity (issue #95): on_client + js ops. The page
+  # carries an outside area so the spec can prove the outside-close op — and a
+  # fetch spy proves NOTHING is ever posted.
+  def client_tabs
+    component = render_to_string(ClientTabsComponent.new, layout: false)
+    outside = <<~HTML
+      <div data-testid="outside-area" style="padding: 4rem">outside the tabs</div>
+    HTML
+    render html: component + outside.html_safe, layout: true
+  end
+
   def confirm
     render_component ConfirmComponent.new
   end

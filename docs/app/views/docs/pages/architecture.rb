@@ -44,7 +44,8 @@ module Views
                 li { plain 'Client runtime — one generic Stimulus controller.' }
                 li { plain 'Endpoint — verify token → run action → render the reply.' }
                 li do
-                  plain 'Component mixin — reactive_record/reactive_state, action, on. ' \
+                  plain 'Component mixin — reactive_record/reactive_state, action, on, and on_client ' \
+                        '(declared client-only DOM ops via the js builder — zero round trip). ' \
                         'Including it pulls in Streamable automatically (one include is enough).'
                 end
                 li do
