@@ -651,7 +651,7 @@ def update(quantity:, price:) = (@item.update!(quantity:, price:); reply.streams
 | `reply.morph` / `reply.replace(morph: true)` | re-render in place via Idiomorph (`method="morph"`) — preserves the focused `<input>` + caret; for per-field reactive editing (issue #28) |
 | `.also_update(target, html:)` | also re-render a companion element by DOM id; `html` is a plain string (escaped) or a Phlex component |
 | `.also_replace(component, morph: false)` | also re-render another Streamable component, targeting its own `#id`; `morph: true` morphs it in place |
-| `.flash(level, content, target: …)` | append a flash; `content` is a plain string (escaped) or a Phlex component (off-request — no Rails `flash`); target defaults to `Phlex::Reactive.flash_target` (`"flash"`) |
+| `.flash(level, content, target: …)` | append a flash; `content` is a plain string (escaped, wrapped in a level-carrying `<div>` — see [Flash levels](#flash-levels)) or a Phlex component (rendered verbatim; off-request — no Rails `flash`); target defaults to `Phlex::Reactive.flash_target` (`"flash"`) |
 | `reply.remove` | remove the element (backed by `Streamable#to_stream_remove`) |
 | `reply.redirect(url)` | client-side `Turbo.visit` (pass a `*_url`); rides a `reactive:visit` turbo-stream, not an HTTP 3xx |
 | `reply.streams(*streams)` | **partial update** — emit exactly these streams (no full-self replace) + a tiny token-only refresh, so live inputs survive; for per-field grid editing (issue #30) |
@@ -663,6 +663,35 @@ the rule: it deliberately skips the full-self replace (so your hand-built stream
 update only the targets you name) and refreshes the token via a tiny inert
 `reactive:token` stream instead — the token rolls forward without re-rendering
 (and clobbering) the component's live inputs.
+
+#### Flash levels
+
+The level reaches the wire (issue #77). **String** content is wrapped in a
+level-carrying `<div>`, so `:error` and `:notice` are styleable:
+
+```html
+<div class="reactive-flash reactive-flash--error" data-reactive-flash-level="error">
+  Save failed
+</div>
+```
+
+Style against `.reactive-flash--{level}` (the class) and hook scripts/tests on
+`data-reactive-flash-level` (the data attribute). The string keeps the same
+injection contract as before, applied inside the wrapper: a plain string is
+HTML-escaped (a model value can't inject markup); an `html_safe` string passes
+verbatim.
+
+Prefer your own markup? Two escape hatches:
+
+```ruby
+# 1. Pass a Phlex component as the content — rendered VERBATIM, no wrapper
+#    (you own the markup entirely, including the level styling):
+reply.replace.flash(:error, Alert.new(level: :error, message: msg))
+
+# 2. Or configure a flash component ONCE — string flashes render through it
+#    (instantiated new(level:, content:)); component content still bypasses it:
+Phlex::Reactive.flash_component = MyFlash   # default nil → the built-in wrapper
+```
 
 #### Record-authorized, transient-state actions (issue #64)
 

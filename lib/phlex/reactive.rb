@@ -110,6 +110,14 @@ module Phlex
 
       attr_writer :flash_target
 
+      # Component class used to render STRING flash content (issue #77).
+      # Instantiated as flash_component.new(level:, content:) and rendered
+      # through the existing render path, replacing the built-in
+      # <div class="reactive-flash reactive-flash--{level}"> wrapper. Default
+      # nil (the built-in wrapper). Phlex component content passed to
+      # reply.flash always renders verbatim and bypasses this.
+      attr_accessor :flash_component
+
       # Render a Phlex component to HTML with a full (off-request) view context.
       # Uses phlex-rails' #render_in against the memoized view context — a direct
       # component.call that skips ActionController's renderer.render machinery

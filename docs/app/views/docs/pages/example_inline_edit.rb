@@ -206,7 +206,14 @@ module Views
                 code { 'Phlex::Reactive.flash_target' }
                 plain ' (default '
                 code { '<div id="flash">' }
-                plain '); pass a Phlex component instead of a string for rich markup.'
+                plain '). A string is escaped and wrapped in a level-carrying '
+                code { '<div class="reactive-flash reactive-flash--error" data-reactive-flash-level="error">' }
+                plain ' so errors and notices style differently; pass a Phlex component instead for '
+                plain 'fully custom markup (rendered verbatim, no wrapper), or set '
+                code { 'Phlex::Reactive.flash_component' }
+                plain ' once to render every string flash through your own component ('
+                code { 'new(level:, content:)' }
+                plain ').'
               end
             end
           end
