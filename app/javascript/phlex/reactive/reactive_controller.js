@@ -133,7 +133,46 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
   }
 }
 
-// The client-op whitelist behind on_client (issue #95). Mirrors
+// The interpret-time attribute-name allowlist (issue #96) — the SECOND half of
+// the two-sided default-deny. The Ruby builder already refuses these at build
+// time; this guards a hand-built / forged ops attr from bypassing it. Refused:
+// event handlers (on*, XSS), URL-bearing names (a javascript: navigation
+// surface), and style (CSS injection). Case-insensitive, mirroring js.rb.
+const REFUSED_ATTR_URL = new Set(["href", "src", "srcdoc", "action", "formaction", "xlink:href", "style"])
+function attrRefused(name) {
+  const lower = String(name).toLowerCase()
+  return lower.startsWith("on") || REFUSED_ATTR_URL.has(lower)
+}
+
+// Run an animated visibility change (issue #96 `transition:`). `flip` performs
+// the actual hidden-flag change; `[during, from, to]` are class lists applied
+// AROUND it. Cleanup (removing during+to) is awaited via `animationend` OR a
+// setTimeout fallback — whichever comes first — so an element with NO animation
+// never leaves the helper classes stuck (the op chain itself is not blocked:
+// cleanup is fire-and-forget, later ops run immediately). The fallback and the
+// listener share a one-shot `done` guard so cleanup runs exactly once.
+function runTransition(el, transition, flip) {
+  const [during, from, to] = transition
+  el.classList.add(during, from)
+  flip()
+  requestAnimationFrame(() => {
+    el.classList.remove(from)
+    el.classList.add(to)
+  })
+
+  let done = false
+  const cleanup = () => {
+    if (done) return
+    done = true
+    el.classList.remove(during, to)
+  }
+  el.addEventListener("animationend", cleanup, { once: true })
+  // ~10% over a common 300ms transition; also the ONLY path for a non-animated
+  // element (animationend never fires there), so it must always be scheduled.
+  setTimeout(cleanup, 350)
+}
+
+// The client-op whitelist behind on_client (issue #95, extended in #96). Mirrors
 // Phlex::Reactive::JS's vocabulary; an op name not in this map is
 // warn-and-skipped by #applyOps (client-side default-deny — a stale or newer
 // ops attr must never break the page). Each op is a pure, local DOM mutation:
@@ -141,19 +180,63 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
 // registered into it at runtime — extending the vocabulary is a gem change,
 // not an app hook.
 const CLIENT_OPS = Object.freeze({
-  show: (el) => {
-    el.hidden = false
-  },
-  hide: (el) => {
-    el.hidden = true
-  },
-  toggle: (el) => {
-    el.hidden = !el.hidden
-  },
+  show: (el, args) => setHidden(el, false, args),
+  hide: (el, args) => setHidden(el, true, args),
+  toggle: (el, args) => setHidden(el, !el.hidden, args),
   add_class: (el, args) => el.classList.add(...(args.classes ?? [])),
   remove_class: (el, args) => el.classList.remove(...(args.classes ?? [])),
   toggle_class: (el, args) => (args.classes ?? []).forEach((c) => el.classList.toggle(c)),
+
+  // Attribute ops (issue #96), interpret-time allowlisted. set_attr writes the
+  // (already-stringified) value; toggle_attr adds a missing attr (value "") or
+  // removes a present one; remove_attr removes it. A refused name warns + skips.
+  set_attr: (el, args) => {
+    if (guardAttr(args.name)) el.setAttribute(args.name, args.value ?? "")
+  },
+  remove_attr: (el, args) => {
+    if (guardAttr(args.name)) el.removeAttribute(args.name)
+  },
+  toggle_attr: (el, args) => {
+    if (!guardAttr(args.name)) return
+    if (el.hasAttribute(args.name)) el.removeAttribute(args.name)
+    else el.setAttribute(args.name, "")
+  },
+
+  // Focus ops (issue #96). focus targets the match itself; focus_first targets
+  // its first focusable descendant (opened-menu → first menuitem).
+  focus: (el) => el.focus?.(),
+  focus_first: (el) => firstFocusable(el)?.focus?.(),
+
+  // Dispatch a bubbling CustomEvent (issue #96). RAW element.dispatchEvent — the
+  // controller SHADOWS Stimulus's this.dispatch helper, so it must not be used.
+  dispatch: (el, args) => {
+    el.dispatchEvent(new CustomEvent(args.name, { bubbles: true, composed: true, detail: args.detail ?? {} }))
+  },
 })
+
+// Apply a hidden-flag change, optionally animated by a [during, from, to]
+// transition (issue #96). Split out so show/hide/toggle share it.
+function setHidden(el, hidden, args) {
+  if (args?.transition) runTransition(el, args.transition, () => (el.hidden = hidden))
+  else el.hidden = hidden
+}
+
+// The interpret-time attribute guard: refuse (warn + skip) a name off the
+// allowlist. Returns true when the op may proceed.
+function guardAttr(name) {
+  if (!attrRefused(name)) return true
+  console.warn(`[phlex-reactive] refused client attr op on ${JSON.stringify(name)} — skipped`)
+  return false
+}
+
+// The first focusable descendant of `el`, in document order — the natural
+// keyboard target inside an opened menu/dialog. Covers the standard focusable
+// set; :not([tabindex="-1"]) drops explicitly-removed nodes. Returns null when
+// nothing inside is focusable (focus_first then no-ops).
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+function firstFocusable(el) {
+  return el.querySelectorAll?.(FOCUSABLE)?.[0] ?? null
+}
 
 // Register this controller eagerly (not lazily) so a click immediately after
 // page load is never missed. The phlex-reactive engine auto-pins it with

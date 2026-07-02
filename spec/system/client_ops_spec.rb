@@ -50,4 +50,26 @@ RSpec.describe "Client-only ops (issue #95 — on_client + js)", type: :system d
     expect(page.evaluate_script("window.__fetchCount")).to eq(0)
     expect(page.evaluate_script("window.__noReload")).to eq("alive")
   end
+
+  # Issue #96: the transition op reveals the drawer with an animated fade, the
+  # attr op flips aria-expanded on the root, and the focus op lands on the
+  # drawer's first control — all client-side, zero fetches.
+  it "opens a drawer with a transition, sets aria-expanded, and focuses the first control" do
+    visit "/client_tabs"
+    install_fetch_spy
+
+    expect(page).to have_css("[data-testid='drawer']", visible: :hidden)
+
+    find("[data-testid='drawer-open']").click
+
+    # The transition op flipped `hidden` and applied the end-state class; the
+    # drawer is now visible (Capybara waits through the 40ms fade).
+    expect(page).to have_css("[data-testid='drawer']")
+    # The attr op set aria-expanded="true" on the reactive root.
+    expect(page).to have_css("#client-tabs[aria-expanded='true']")
+    # The focus op landed on the drawer's first focusable control.
+    expect(page.evaluate_script("document.activeElement.dataset.testid")).to eq("drawer-first")
+
+    expect(page.evaluate_script("window.__fetchCount")).to eq(0)
+  end
 end

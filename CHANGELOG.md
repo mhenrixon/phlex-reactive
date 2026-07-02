@@ -34,6 +34,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Same-machine `rake bench` before/after: the token/render/coerce hot paths are
   untouched (state-backed token 201k → within noise; allocations byte-identical
   at 11/47 per token, 113 per render) — `on_client` is a new, separate path.
+- **`js` client ops: allowlisted attribute ops, focus, dispatch, and animated
+  transitions (#96).** The client-only vocabulary from #95 grows to cover the
+  interactions apps otherwise fall back to hand-written Stimulus for. New builder
+  verbs: `set_attr(to, name, value)` / `remove_attr(to, name)` /
+  `toggle_attr(to, name)` for attribute state (the value rides as a string, so a
+  boolean flag is a real `"true"`, never a valueless attribute); `focus(to)` and
+  `focus_first(to)` (the first focusable descendant of the match — the opened-menu
+  → first-menuitem case); and `dispatch(name, to: nil, detail: {})`, a **bubbling
+  `CustomEvent`** other components/controllers can react to (raw
+  `element.dispatchEvent` — the shared controller SHADOWS Stimulus's `this.dispatch`
+  helper). `show`/`hide`/`toggle` gain a `transition: [during, from, to]` keyword:
+  the class lists are applied around the visibility flip and cleaned up on
+  `animationend`, with a `setTimeout` fallback so a non-animated element never
+  leaves them stuck and never hangs the chain (later ops run immediately —
+  cleanup is fire-and-forget). The **attribute-name allowlist is the
+  security-critical part, enforced on BOTH sides (two-sided default-deny)**: at
+  build time in `js.rb` (an offending name raises `ArgumentError`) and again in the
+  client interpreter (a forged/hand-built op is `console.warn`-ed and skipped, so
+  it can't bypass the Ruby guard). Refused, case-insensitively: event handlers
+  (`/\Aon/i` → XSS), the URL-bearing set (`href`, `src`, `srcdoc`, `action`,
+  `formaction`, `xlink:href` → a `javascript:` navigation surface), and `style`
+  (CSS injection). The intended surface — class ops plus `hidden`, `disabled`,
+  `open`, `selected`, `aria-*`, `data-*` — is documented in the README. Covered by
+  Ruby specs (each verb's JSON shape; the allowlist raises for every refused name,
+  case-insensitively), bun tests (attr ops apply; the interpret-time allowlist
+  warns + skips a forged op; focus lands; `dispatch` emits a bubbling event with
+  detail; the transition swaps `from`→`to` on the next frame and cleans up on both
+  `animationend` and the timeout fallback), and a system spec that opens a drawer
+  with a real fade, sets `aria-expanded`, and focuses the first control under Puma
+  AND Falcon. Refs #96.
 
 - **`on(...)` event modifiers — `window:`, `once:`, `outside:`, `throttle:`
   (#80).** Four trigger patterns that previously forced a hand-written Stimulus

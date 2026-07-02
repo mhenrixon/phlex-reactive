@@ -327,7 +327,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `on(:track, event: "scroll", window: true, throttle: 250)` | `window:` binds the trigger to the window (page-level scroll/resize); `throttle:` rate-limits leading-edge — first event fires, the rest drop until the window elapses. Mutually exclusive with `debounce:`. |
 | `on(:action, once: true)` | Fire at most once, then unbind (Stimulus's native `:once`). |
 | `on_client(:click, js.toggle("#menu"))` | **Client-only** trigger: applies declared DOM ops with ZERO round trip — no token, no POST, ever. Takes the same `window:`/`once:`/`outside:` modifiers. See [Client-only ops](#client-only-ops-on_client--js--zero-round-trips). |
-| `js` | The immutable op builder behind `on_client`: `show`/`hide`/`toggle` (the `hidden` attribute) and `add_class`/`remove_class`/`toggle_class`, chainable. |
+| `js` | The immutable op builder behind `on_client`: `show`/`hide`/`toggle` (the `hidden` attribute, with an optional `transition:`), `add_class`/`remove_class`/`toggle_class`, `set_attr`/`remove_attr`/`toggle_attr` (allowlisted names), `focus`/`focus_first`, and `dispatch` — chainable. |
 | `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
@@ -500,6 +500,38 @@ root** (nested reactive components are never touched — same ownership rule as
 field collection); `:root` targets the root element itself; `global: true` on
 an op escapes to the whole document. An op name the client doesn't recognize
 logs a warning and is skipped — the rest of the chain still applies.
+
+**Attributes, focus, dispatch, and transitions.** Beyond visibility and classes,
+the same chain covers the rest of the client-only vocabulary:
+
+```ruby
+button(**on_client(:click, js
+  .toggle("#menu", transition: %w[transition-opacity opacity-0 opacity-100])
+  .toggle_attr(:root, "aria-expanded")   # accessible disclosure state
+  .focus_first("#menu")                   # move focus into the opened menu
+  .dispatch("app:menu-toggled", detail: { open: true }))) { "Menu" }
+```
+
+- **`set_attr(to, name, value)` / `remove_attr(to, name)` / `toggle_attr(to, name)`**
+  mutate an attribute. The **attribute name is allowlisted, enforced twice** — at
+  build time in Ruby (an offending name raises) and again in the client
+  interpreter (a hand-built op is warned and skipped). Refused: **event handlers**
+  (`on*` → XSS), **URL-bearing** names (`href`, `src`, `srcdoc`, `action`,
+  `formaction`, `xlink:href` → a `javascript:` navigation surface), and **`style`**
+  (CSS injection — use classes). The **intended surface** is class ops plus
+  `hidden`, `disabled`, `open`, `selected`, and any `aria-*` / `data-*` attribute.
+- **`focus(to)`** focuses the first match; **`focus_first(to)`** focuses the first
+  focusable descendant of the match (e.g. the first menuitem inside an opened
+  menu).
+- **`dispatch(name, to: nil, detail: {})`** emits a **bubbling `CustomEvent`** so
+  another component or a plain Stimulus controller can react to a client-only
+  interaction — `to:` picks the element (default: the component root), `detail:`
+  is the payload.
+- **`transition: [during, from, to]`** on `show`/`hide`/`toggle` animates the
+  visibility flip: `during`+`from` are applied, then `from`→`to` swaps on the next
+  frame, and the helper classes are cleaned up on `animationend` (with a timeout
+  fallback, so an element with no animation never leaves them stuck). The op chain
+  is never blocked — later ops (a `focus`, a `dispatch`) run immediately.
 
 `window:`, `once:`, and `outside:` compose exactly like `on(...)`'s event
 modifiers: the dropdown above closes on any click outside the component, and

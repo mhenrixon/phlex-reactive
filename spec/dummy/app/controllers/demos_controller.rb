@@ -81,15 +81,20 @@ class DemosController < ActionController::Base
     render html: component + outside.html_safe, layout: true
   end
 
-  # Pure client-side interactivity (issue #95): on_client + js ops. The page
-  # carries an outside area so the spec can prove the outside-close op — and a
-  # fetch spy proves NOTHING is ever posted.
+  # Pure client-side interactivity (issue #95, extended in #96): on_client + js
+  # ops. The page carries an outside area so the spec can prove the outside-close
+  # op, a fetch spy proves NOTHING is ever posted, and a real @keyframes fade
+  # (ct-fade-to) drives the #96 transition op so animationend actually fires.
   def client_tabs
     component = render_to_string(ClientTabsComponent.new, layout: false)
-    outside = <<~HTML
+    extras = <<~HTML
+      <style>
+        @keyframes ct-fade-in { from { opacity: 0 } to { opacity: 1 } }
+        .ct-fade-to { animation: ct-fade-in 40ms ease-out }
+      </style>
       <div data-testid="outside-area" style="padding: 4rem">outside the tabs</div>
     HTML
-    render html: component + outside.html_safe, layout: true
+    render html: component + extras.html_safe, layout: true
   end
 
   def confirm
