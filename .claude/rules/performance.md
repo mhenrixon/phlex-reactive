@@ -2,7 +2,8 @@
 
 phlex-reactive must be fast in the places that run on every interaction. These
 rules make performance a standing part of every change, not an afterthought.
-See `docs/performance.md` for the harness and the current numbers.
+See the performance page (`docs/app/views/docs/pages/performance.rb`) for the
+harness and the current numbers.
 
 ## The prime directive
 
@@ -39,7 +40,8 @@ A pure docs/test/refactor change with no hot-path edit does not need a bench.
    does NOT mean 2× faster requests (Rails stack + DB dominate); it means ~2× on
    broadcast fan-out and less GC pressure. Say which the number is.
 5. **Update the docs + CHANGELOG** — if representative numbers moved, update
-   `docs/performance.md`; note the change under a `perf:` CHANGELOG entry.
+   the performance page (`docs/app/views/docs/pages/performance.rb`); note the
+   change under a `perf:` CHANGELOG entry.
 6. **Re-sync the vendored client** — any `reactive_controller.js` edit re-copies
    to `spec/dummy/public/vendor/reactive_controller.js`; run `bun test
    spec/javascript`.
@@ -84,7 +86,7 @@ builder, the flash builder, token ivar symbols):
 - [ ] A bench exists for every hot path touched
 - [ ] Throughput + allocations reported; retained-per-render is 0
 - [ ] Method-level vs request-level framing is honest
-- [ ] `docs/performance.md` + CHANGELOG updated if numbers moved
+- [ ] Performance page (`docs/app/views/docs/pages/performance.rb`) + CHANGELOG updated if numbers moved
 - [ ] Vendored client re-synced + JS tests green (if the client changed)
 - [ ] `bundle exec rspec spec/phlex spec/requests` still green
 - [ ] No security/correctness invariant traded for speed

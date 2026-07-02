@@ -34,7 +34,7 @@ hand-picking Turbo Stream targets.
 5. **Capability-detect pgbus features at runtime** — probe the actual keyword (`broadcast.parameters` includes `:exclude`), never `defined?(Pgbus)` alone or a version string
 6. **Degrade gracefully** — every pgbus-only feature must no-op or fall back when pgbus is absent
 7. **Control the reply via the return value** — return a `Phlex::Reactive::Response` (`replace`/`update`/`remove`/`redirect`/`with`, chain `.flash(level, content)` / `.stream(...)`) to govern the actor's HTTP reply; returning anything else keeps the implicit single replace. See the README "Controlling the action's reply" section and `lib/phlex/reactive/response.rb`.
-8. **Measure performance, don't guess** — any hot-path change (render, token signing, param coercion, broadcast, client dispatch) ships with a same-machine before/after from `rake bench` (or `/perf`). No speedup claim without a measured baseline. Report throughput AND allocations; distinguish a method-level win from a request-level one. See `.claude/rules/performance.md` and `docs/performance.md`.
+8. **Measure performance, don't guess** — any hot-path change (render, token signing, param coercion, broadcast, client dispatch) ships with a same-machine before/after from `rake bench` (or `/perf`). No speedup claim without a measured baseline. Report throughput AND allocations; distinguish a method-level win from a request-level one. See `.claude/rules/performance.md` and the performance page (`docs/app/views/docs/pages/performance.rb`).
 
 ## Commands
 
@@ -135,16 +135,20 @@ token signing (`reactive_token`), and param coercion. Key facts:
   the allocations, byte-identical HTML. The off-request view context + Turbo
   `TagBuilder` are memoized per class and reset on Rails code reload
   (`config.to_prepare`).
-- **The render win matters most for broadcasts** (N subscribers = N renders, no
-  HTTP). At the full-request level the Rails stack + DB dominate — don't expect
-  a render optimization to move request throughput.
+- **The render win matters most for broadcasts** (no HTTP to amortize against).
+  A broadcast call renders ONCE and all subscribers of that stream share the
+  payload; the cost is per CALL — N-key fan-out = N renders (per-viewer
+  `visible_to:` content is the irreducible render-per-viewer case). At the
+  full-request level the Rails stack + DB dominate — don't expect a render
+  optimization to move request throughput.
 - **Measure before you change.** `rake bench` (micro) and `rake bench:request`
   (end-to-end); `/perf` captures a same-machine before/after against `main`. The
   CI `bench` job is run-and-report (artifact), never a hard fail.
 - **Cache correctness:** key any hot-path memo on what can change (renderer
   identity), reset on reload, never cache values that rotate (CSRF token, pgbus
   connection id are read live).
-- See `docs/performance.md` and `.claude/rules/performance.md`.
+- See the performance page (`docs/app/views/docs/pages/performance.rb`) and
+  `.claude/rules/performance.md`.
 
 ## More Documentation
 
