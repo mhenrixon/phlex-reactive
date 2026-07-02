@@ -303,15 +303,22 @@ module Views
                 li do
                   code { 'reactive:error' }
                   plain ' — fired in every failure branch with '
-                  code { '{ action, params, kind, status?, body?, retry }' }
+                  code { '{ action, params, kind, status?, body?, retry? }' }
                   plain '; '
                   code { 'kind' }
                   plain ' is one of '
                   code { 'redirected | http | content-type | network' }
-                  plain '. '
+                  plain ' (all retriable) or '
+                  code { 'apply' }
+                  plain ' — the server already completed the mutation but something AFTER the fetch threw ' \
+                        '(a malformed response, a Turbo render error, a throwing '
+                  code { 'reactive:applied' }
+                  plain ' listener); it carries NO '
+                  code { 'retry' }
+                  plain ', since retrying would re-POST an action that already succeeded. '
                   code { 'retry()' }
-                  plain ' re-enters the request queue with the freshest token and freshly collected fields ' \
-                        '(and no-ops once the component left the DOM).'
+                  plain ' (when present) re-enters the request queue with the freshest token and freshly ' \
+                        'collected fields (and no-ops once the component left the DOM).'
                 end
               end
             end

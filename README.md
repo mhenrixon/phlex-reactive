@@ -760,10 +760,11 @@ latency, veto a dispatch, or build retry UI **without forking the controller**:
 
 | `kind` | Meaning | Extra detail |
 |--------|---------|--------------|
-| `redirected` | the POST was redirected (an auth `before_action` / CSRF guard bounced it) | `status` |
-| `http` | non-2xx response (403 default-deny/authorization, 400 bad token, 404 record gone, 500 …) | `status`, `body` |
-| `content-type` | 200, but not a turbo-stream (an HTML error page, a misconfigured route) | `status` |
-| `network` | `fetch` itself rejected (offline, DNS, connection reset) | — |
+| `redirected` | the POST was redirected (an auth `before_action` / CSRF guard bounced it) | `status`, `retry` |
+| `http` | non-2xx response (403 default-deny/authorization, 400 bad token, 404 record gone, 500 …) | `status`, `body`, `retry` |
+| `content-type` | 200, but not a turbo-stream (an HTML error page, a misconfigured route) | `status`, `retry` |
+| `network` | `fetch` itself rejected (offline, DNS, connection reset) — the server never saw the request | `retry` |
+| `apply` | the server processed the action successfully, but something AFTER the fetch threw (a malformed response, a Turbo render error, a throwing `reactive:applied` listener) | no `retry` |
 
 `detail.retry()` re-enters the controller's request queue: it re-reads the
 **freshest** signed token and re-collects the component's fields at send time,
@@ -771,6 +772,11 @@ so nothing stale is replayed. It fires no second `reactive:before-dispatch`
 (one veto per user gesture), and it no-ops with a `console.warn` once the
 component has left the DOM. The existing `console.error` logging is unchanged —
 the events add hooks, they don't replace the log.
+
+**`kind: "apply"` carries no `retry()` at all** — by the time this fires the
+server has already completed the mutation, so retrying would re-POST an
+action that already succeeded (potentially a non-idempotent one). Only the
+four fetch/response-shaped kinds above are retriable.
 
 The events bubble from the component's root element (or from `document` when
 the root was detached by the failing round trip), so they compose with plain

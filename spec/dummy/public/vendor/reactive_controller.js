@@ -492,26 +492,41 @@ export default class extends Controller {
     this.element.setAttribute("aria-busy", "true")
 
     try {
-      const headers = {
-        Accept: "text/vnd.turbo-stream.html",
-        "X-CSRF-Token": this.#csrfToken(),
-      }
-      // For JSON we declare the content type; for multipart we must NOT — the
-      // browser sets `multipart/form-data; boundary=…` itself, and overriding it
-      // would strip the boundary and corrupt the body server-side.
-      if (!multipart) headers["Content-Type"] = "application/json"
-      // Send the pgbus SSE connection id (if subscribed) so the server can
-      // exclude this connection from its own broadcast echo — the actor
-      // already gets the action's HTTP response. Harmless without pgbus.
-      const connectionId = this.#connectionId()
-      if (connectionId) headers["X-Pgbus-Connection"] = connectionId
+      let response
+      try {
+        const headers = {
+          Accept: "text/vnd.turbo-stream.html",
+          "X-CSRF-Token": this.#csrfToken(),
+        }
+        // For JSON we declare the content type; for multipart we must NOT — the
+        // browser sets `multipart/form-data; boundary=…` itself, and overriding it
+        // would strip the boundary and corrupt the body server-side.
+        if (!multipart) headers["Content-Type"] = "application/json"
+        // Send the pgbus SSE connection id (if subscribed) so the server can
+        // exclude this connection from its own broadcast echo — the actor
+        // already gets the action's HTTP response. Harmless without pgbus.
+        const connectionId = this.#connectionId()
+        if (connectionId) headers["X-Pgbus-Connection"] = connectionId
 
-      const response = await fetch(this.#actionPath(), {
-        method: "POST",
-        headers,
-        body,
-        credentials: "same-origin",
-      })
+        // ONLY `fetch` itself is the network boundary — offline, DNS, a reset
+        // connection. Everything below this inner try (reading the body,
+        // extracting the token, handing streams to Turbo, the reactive:applied
+        // dispatch) runs AFTER the server already processed the mutation, so
+        // none of it belongs in the `kind: "network"` / retriable bucket
+        // (CodeRabbit review on #89): if renderStreamMessage or a
+        // reactive:applied listener throws, retry()ing would re-POST an
+        // action the server already completed — see the outer catch below.
+        response = await fetch(this.#actionPath(), {
+          method: "POST",
+          headers,
+          body,
+          credentials: "same-origin",
+        })
+      } catch (error) {
+        console.error("[phlex-reactive] action error", error)
+        this.#emitError(action, params, allParams, { kind: "network" })
+        return
+      }
 
       if (response.redirected) {
         console.error("[phlex-reactive] action was redirected (auth/CSRF?) — no update applied")
@@ -547,8 +562,13 @@ export default class extends Controller {
       // own events; this one is for "the action round trip succeeded".
       this.#emit("reactive:applied", { action, params: allParams, html })
     } catch (error) {
+      // The server already processed this action successfully (we're past the
+      // fetch) — a throw here is a CLIENT-side apply failure (a malformed
+      // response, a broken Turbo render, a throwing reactive:applied
+      // listener), not a transport failure. kind: "apply" carries NO retry() —
+      // retrying would re-POST an action the server already completed.
       console.error("[phlex-reactive] action error", error)
-      this.#emitError(action, params, allParams, { kind: "network" })
+      this.#emit("reactive:error", { action, params: allParams, kind: "apply" })
     } finally {
       this.element.removeAttribute("aria-busy")
     }

@@ -91,12 +91,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with `{ action, params, html }` after the fresh token was captured and the
   streams were handed to `Turbo.renderStreamMessage` (Turbo applies them
   asynchronously — listen to Turbo's own events for post-morph timing).
-  `reactive:error` fires in all four failure branches with
-  `{ action, params, kind, status?, body?, retry }` where `kind` is
-  `redirected | http | content-type | network`; `retry()` re-enters the request
-  queue — re-reading the freshest signed token and re-collecting the fields at
-  send time, refiring no second before-dispatch — and no-ops with a
-  `console.warn` once the component left the DOM. Events go out via raw
+  `reactive:error` fires in every failure branch with
+  `{ action, params, kind, status?, body?, retry? }` where `kind` is one of
+  `redirected | http | content-type | network` (all retriable) or `apply` —
+  the fetch itself succeeded and the server already completed the mutation,
+  but something AFTER it threw (a malformed response, a Turbo render error, a
+  throwing `reactive:applied` listener); `apply` carries NO `retry` at all,
+  since retrying would re-POST an action that already succeeded. `retry()`
+  (when present) re-enters the request queue — re-reading the freshest signed
+  token and re-collecting the fields at send time, refiring no second
+  before-dispatch — and no-ops with a `console.warn` once the component left
+  the DOM. Events go out via raw
   `dispatchEvent` (Stimulus's `this.dispatch` helper is shadowed by the
   controller's own `dispatch` action method) on the root element, falling back
   to `document` when a plain replace detached it; the existing `console.error`

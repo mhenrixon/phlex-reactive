@@ -214,6 +214,43 @@ test("a network failure fires reactive:error kind=network (console.error kept)",
   expect(errors.length).toBe(1)
 })
 
+// A throw AFTER a successful fetch (token extraction, Turbo rendering, or a
+// throwing reactive:applied listener) must NOT be labeled "network" — the
+// server already processed the mutation, so a retry() there would re-POST an
+// already-completed, potentially non-idempotent action (CodeRabbit review on
+// PR #89). It fires kind="apply" with NO retry() in the detail at all.
+test("a post-response render failure fires reactive:error kind=apply, NOT network, with no retry()", async () => {
+  const html = '<turbo-stream action="replace" target="counter"><template></template></turbo-stream>'
+  const root = makeRoot()
+  const { controller } = buildController([{ body: html }], { root })
+  globalThis.window.Turbo.renderStreamMessage = () => {
+    throw new Error("Turbo choked on the stream")
+  }
+
+  await click(controller)
+
+  const [event] = eventsNamed(root, "reactive:error")
+  expect(event.detail.kind).toBe("apply")
+  expect(event.detail.retry).toBeUndefined()
+})
+
+// A throwing reactive:applied LISTENER is the same class of bug: the action
+// already succeeded server-side, so this must not surface as retriable.
+test("a throwing reactive:applied listener fires reactive:error kind=apply, not network", async () => {
+  const html = '<turbo-stream action="replace" target="counter"><template></template></turbo-stream>'
+  const root = makeRoot()
+  root.dispatchEvent = (event) => {
+    root.events.push(event)
+    if (event.type === "reactive:applied") throw new Error("listener exploded")
+  }
+  const { controller } = buildController([{ body: html }], { root })
+
+  await click(controller)
+
+  const [event] = eventsNamed(root, "reactive:error")
+  expect(event.detail.kind).toBe("apply")
+})
+
 // --- retry() ----------------------------------------------------------------
 
 test("retry() re-enters the queue and does NOT refire before-dispatch", async () => {
