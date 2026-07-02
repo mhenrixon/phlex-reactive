@@ -40,10 +40,14 @@ function makeElement() {
 
 function buildController() {
   const controller = new ReactiveController()
+  // Set the element explicitly (not only via the mocked base-class constructor):
+  // bun runs every spec file in one process, so another file's Controller stub
+  // (with a bare constructor) can win the mock.module race.
+  controller.element = makeElement()
   controller.tokenValue = "tok"
   // Avoid a real network call in the deferred #perform: stub fetch to reject.
   globalThis.fetch = () => Promise.reject(new Error("no network in unit test"))
-  globalThis.document = { querySelector: () => null }
+  globalThis.document = { querySelector: () => null, dispatchEvent: () => {} }
   return controller
 }
 

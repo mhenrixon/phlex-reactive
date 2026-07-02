@@ -744,6 +744,79 @@ aren't clobbered. Authorize the record as always — identity is never permissio
 > rendered and auto-escaped through the renderer — or an `html_safe` string for
 > raw HTML you control.
 
+### Failure UX & lifecycle events
+
+The generic controller dispatches three bubbling, composed `CustomEvent`s
+around every action round trip, so an app can toast an error, instrument
+latency, veto a dispatch, or build retry UI **without forking the controller**:
+
+| Event | When | `event.detail` |
+|-------|------|----------------|
+| `reactive:before-dispatch` | after the trigger's `preventDefault`/`confirm:`, **before** debounce/enqueue | `{ action, params, element }` — cancelable: `event.preventDefault()` skips the round trip entirely (nothing is scheduled) |
+| `reactive:applied` | after the response's token was captured and the streams were handed to `Turbo.renderStreamMessage` | `{ action, params, html }` |
+| `reactive:error` | in every failure branch of the round trip | `{ action, params, kind, status?, body?, retry }` |
+
+`reactive:error`'s `kind` tells you **what** failed:
+
+| `kind` | Meaning | Extra detail |
+|--------|---------|--------------|
+| `redirected` | the POST was redirected (an auth `before_action` / CSRF guard bounced it) | `status`, `retry` |
+| `http` | non-2xx response (403 default-deny/authorization, 400 bad token, 404 record gone, 500 …) | `status`, `body`, `retry` |
+| `content-type` | 200, but not a turbo-stream (an HTML error page, a misconfigured route) | `status`, `retry` |
+| `network` | `fetch` itself rejected (offline, DNS, connection reset) — the server never saw the request | `retry` |
+| `apply` | the server processed the action successfully, but something AFTER the fetch threw (a malformed response, a Turbo render error) | no `retry` |
+
+`apply` covers a throw in the controller's own post-fetch code — not a
+throwing listener on `reactive:applied` itself. Per the DOM spec,
+`EventTarget#dispatchEvent` never propagates a listener's exception back to
+its caller (it's reported to the console instead), so a listener that throws
+can't surface as `reactive:error` at all — it just logs and the round trip is
+otherwise unaffected.
+
+`detail.retry()` re-enters the controller's request queue: it re-reads the
+**freshest** signed token and re-collects the component's fields at send time,
+so nothing stale is replayed. It fires no second `reactive:before-dispatch`
+(one veto per user gesture), and it no-ops with a `console.warn` once the
+component has left the DOM. The existing `console.error` logging is unchanged —
+the events add hooks, they don't replace the log.
+
+**`kind: "apply"` carries no `retry()` at all** — by the time this fires the
+server has already completed the mutation, so retrying would re-POST an
+action that already succeeded (potentially a non-idempotent one). Only the
+four fetch/response-shaped kinds above are retriable.
+
+The events bubble from the component's root element (or from `document` when
+the root was detached by the failing round trip), so they compose with plain
+Stimulus listening — a global toaster is one attribute on an ancestor:
+
+```html
+<body data-controller="toast" data-action="reactive:error->toast#show">
+```
+
+```js
+// toast_controller.js
+show(event) {
+  const { kind, status, retry } = event.detail
+  this.flash(`Action failed (${kind}${status ? ` ${status}` : ""})`, { onRetry: retry })
+}
+```
+
+Or veto/instrument at the document level:
+
+```js
+document.addEventListener("reactive:before-dispatch", (event) => {
+  if (offline) event.preventDefault()           // cancel: nothing is enqueued
+})
+document.addEventListener("reactive:applied", ({ detail }) => {
+  metrics.count(`reactive.${detail.action}.ok`)
+})
+```
+
+One honest caveat on timing: `reactive:applied` means the turbo-streams were
+**handed to Turbo** — `renderStreamMessage` applies them asynchronously, so the
+DOM mutation may complete a tick later. If you need post-morph timing, listen
+to Turbo's own events (`turbo:before-stream-render` and friends).
+
 ### Reactive collections (add/remove rows + count + empty-state)
 
 An add/remove-row list — line items, attachments, tags, comments, a

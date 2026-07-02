@@ -381,6 +381,19 @@ export default class extends Controller {
   // microtask share one place (issue #55). `target` is captured up front because
   // this can run in a later microtask, after event.target has been reset.
   #proceed(target, action, params, debounce) {
+    // Lifecycle veto point (issue #79): one cancelable reactive:before-dispatch
+    // per user gesture — post-preventDefault, post-confirm, PRE-debounce.
+    // event.preventDefault() skips the debounce AND the enqueue entirely
+    // (nothing is scheduled). retry() re-enters the queue directly, so this
+    // does NOT refire on a retry. detail.params are the trigger's explicit
+    // params; sibling fields are collected later, at send time.
+    const before = this.#emit("reactive:before-dispatch", {
+      action,
+      params: this.#parseParams(params),
+      element: this.element,
+    }, { cancelable: true })
+    if (before.defaultPrevented) return
+
     // Debounced trigger (e.g. on(:update, event: "input", debounce: 300)):
     // coalesce rapid events into ONE round trip after a quiet period, instead of
     // one POST per keystroke (issue #17). A blur flushes a pending dispatch.
@@ -424,6 +437,39 @@ export default class extends Controller {
     for (const target of [...this.#debounceTimers.keys()]) this.#clearDebounce(target)
   }
 
+  // Raw-dispatch a lifecycle CustomEvent (issue #79). Deliberately NOT
+  // Stimulus's this.dispatch() helper — that name is SHADOWED by this
+  // controller's own dispatch(event) action method. Bubbling + composed so a
+  // page-level listener (or `data-action="reactive:error->toast#show"` on an
+  // ancestor) hears it. After a plain (non-morph) replace this.element is a
+  // DETACHED node — a bubbling event on it never reaches document listeners —
+  // so fall back to dispatching on document itself.
+  #emit(name, detail, { cancelable = false } = {}) {
+    const event = new CustomEvent(name, { bubbles: true, composed: true, cancelable, detail })
+    const root = this.element.isConnected ? this.element : document
+    root.dispatchEvent(event)
+    return event
+  }
+
+  // reactive:error detail: { action, params, kind, status?, body?, retry }.
+  // `params` are the FULL params that were sent (collected fields + explicit
+  // trigger params). retry() re-enters the request queue with the ORIGINAL raw
+  // trigger params, so #perform re-reads the freshest token and RE-COLLECTS the
+  // sibling fields — nothing stale is replayed. It does not refire
+  // reactive:before-dispatch (one veto per user gesture), and it no-ops with a
+  // warning once the root has left the DOM (retrying against a detached
+  // element would post a stale token into nowhere).
+  #emitError(action, rawParams, sentParams, extra) {
+    const retry = () => {
+      if (!this.element.isConnected) {
+        console.warn("[phlex-reactive] retry() ignored — the reactive root left the DOM")
+        return
+      }
+      return this.#enqueue(action, rawParams)
+    }
+    this.#emit("reactive:error", { action, params: sentParams, ...extra, retry })
+  }
+
   async #perform(action, params) {
     // Auto-collect named field values inside this component so a button-
     // triggered action still receives sibling inputs (Livewire-style), plus any
@@ -446,39 +492,60 @@ export default class extends Controller {
     this.element.setAttribute("aria-busy", "true")
 
     try {
-      const headers = {
-        Accept: "text/vnd.turbo-stream.html",
-        "X-CSRF-Token": this.#csrfToken(),
-      }
-      // For JSON we declare the content type; for multipart we must NOT — the
-      // browser sets `multipart/form-data; boundary=…` itself, and overriding it
-      // would strip the boundary and corrupt the body server-side.
-      if (!multipart) headers["Content-Type"] = "application/json"
-      // Send the pgbus SSE connection id (if subscribed) so the server can
-      // exclude this connection from its own broadcast echo — the actor
-      // already gets the action's HTTP response. Harmless without pgbus.
-      const connectionId = this.#connectionId()
-      if (connectionId) headers["X-Pgbus-Connection"] = connectionId
+      let response
+      try {
+        const headers = {
+          Accept: "text/vnd.turbo-stream.html",
+          "X-CSRF-Token": this.#csrfToken(),
+        }
+        // For JSON we declare the content type; for multipart we must NOT — the
+        // browser sets `multipart/form-data; boundary=…` itself, and overriding it
+        // would strip the boundary and corrupt the body server-side.
+        if (!multipart) headers["Content-Type"] = "application/json"
+        // Send the pgbus SSE connection id (if subscribed) so the server can
+        // exclude this connection from its own broadcast echo — the actor
+        // already gets the action's HTTP response. Harmless without pgbus.
+        const connectionId = this.#connectionId()
+        if (connectionId) headers["X-Pgbus-Connection"] = connectionId
 
-      const response = await fetch(this.#actionPath(), {
-        method: "POST",
-        headers,
-        body,
-        credentials: "same-origin",
-      })
+        // ONLY `fetch` itself is the network boundary — offline, DNS, a reset
+        // connection. Everything below this inner try (reading the body,
+        // extracting the token, handing streams to Turbo) runs AFTER the
+        // server already processed the mutation, so none of it belongs in the
+        // `kind: "network"` / retriable bucket (CodeRabbit review on #89): if
+        // renderStreamMessage throws, retry()ing would re-POST an action the
+        // server already completed — see the outer catch below. (NOT a
+        // reactive:applied LISTENER throwing — per the DOM spec, dispatchEvent
+        // never propagates a listener's exception back to its caller, so that
+        // case can't reach this catch at all; verified in the JS test suite.)
+        response = await fetch(this.#actionPath(), {
+          method: "POST",
+          headers,
+          body,
+          credentials: "same-origin",
+        })
+      } catch (error) {
+        console.error("[phlex-reactive] action error", error)
+        this.#emitError(action, params, allParams, { kind: "network" })
+        return
+      }
 
       if (response.redirected) {
         console.error("[phlex-reactive] action was redirected (auth/CSRF?) — no update applied")
+        this.#emitError(action, params, allParams, { kind: "redirected", status: response.status })
         return
       }
       if (!response.ok) {
-        console.error(`[phlex-reactive] action failed: HTTP ${response.status}`, await response.text())
+        const errorBody = await response.text()
+        console.error(`[phlex-reactive] action failed: HTTP ${response.status}`, errorBody)
+        this.#emitError(action, params, allParams, { kind: "http", status: response.status, body: errorBody })
         return
       }
 
       const contentType = response.headers.get("Content-Type") || ""
       if (!contentType.includes("turbo-stream")) {
         console.error(`[phlex-reactive] expected a turbo-stream, got "${contentType}" — no update applied`)
+        this.#emitError(action, params, allParams, { kind: "content-type", status: response.status })
         return
       }
 
@@ -491,8 +558,20 @@ export default class extends Controller {
       // replace (Response.morph) or an update morphs in place, preserving the
       // focused input + caret on unchanged nodes — see issue #28.
       window.Turbo.renderStreamMessage(html)
+      // Lifecycle hook (issue #79): the streams were HANDED TO Turbo — a
+      // renderStreamMessage applies asynchronously, so the DOM mutation may
+      // complete a tick later. Apps needing post-morph timing listen to Turbo's
+      // own events; this one is for "the action round trip succeeded".
+      this.#emit("reactive:applied", { action, params: allParams, html })
     } catch (error) {
+      // The server already processed this action successfully (we're past the
+      // fetch) — a throw here is a CLIENT-side apply failure (a malformed
+      // response, a broken Turbo render — NOT a reactive:applied listener
+      // throw, which dispatchEvent never propagates here), not a transport
+      // failure. kind: "apply" carries NO retry() — retrying would re-POST an
+      // action the server already completed.
       console.error("[phlex-reactive] action error", error)
+      this.#emit("reactive:error", { action, params: allParams, kind: "apply" })
     } finally {
       this.element.removeAttribute("aria-busy")
     }
