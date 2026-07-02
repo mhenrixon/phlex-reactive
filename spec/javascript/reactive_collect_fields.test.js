@@ -126,7 +126,7 @@ test("outer root action collects only its own fields, not nested reactive roots'
       text: () => Promise.resolve(""),
     })
   }
-  globalThis.document = { querySelector: () => null }
+  globalThis.document = { querySelector: () => null, dispatchEvent: () => {} }
   globalThis.window = { Turbo: { renderStreamMessage: () => {} } }
 
   const controller = buildController(outer)
@@ -162,7 +162,7 @@ test("an action on the nested row still collects that row's own fields", async (
       text: () => Promise.resolve(""),
     })
   }
-  globalThis.document = { querySelector: () => null }
+  globalThis.document = { querySelector: () => null, dispatchEvent: () => {} }
   globalThis.window = { Turbo: { renderStreamMessage: () => {} } }
 
   // Dispatch on the INNER row's controller — it owns rowQty, not outerNotes.

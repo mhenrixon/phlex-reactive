@@ -20,6 +20,7 @@ module Views
           secrets_rule
           csrf_auth
           failure_modes
+          failure_ux
           token_lifetime
           checklist
         end
@@ -247,7 +248,11 @@ module Views
                   code { '400 Bad Request' }
                 end
               end
-              p { plain 'The client runtime logs non-OK responses and applies no DOM change.' }
+              p do
+                plain 'The client runtime logs non-OK responses, applies no DOM change, and dispatches a '
+                code { 'reactive:error' }
+                plain ' lifecycle event so your UI can react — see below.'
+              end
               p do
                 plain 'Every failure is warn-logged as '
                 code { '[phlex-reactive] …' }
@@ -265,6 +270,63 @@ module Views
                       'with a hint when a flat name looks like the bracketed twin of a declared nested key. ' \
                       'The flag never changes a status — only the body and the logs.'
               end
+            end
+          end
+        end
+
+        def failure_ux
+          DocsUI::Section('Failure UX — the lifecycle events') do
+            DocsUI::Prose() do
+              p do
+                plain 'The generic controller dispatches three bubbling, composed '
+                code { 'CustomEvent' }
+                plain 's around every action round trip, so an app can toast an error, veto a dispatch, ' \
+                      'instrument latency, or build retry UI without forking the controller:'
+              end
+              ul do
+                li do
+                  code { 'reactive:before-dispatch' }
+                  plain ' — cancelable, fired before debounce/enqueue with '
+                  code { '{ action, params, element }' }
+                  plain '. '
+                  code { 'event.preventDefault()' }
+                  plain ' skips the round trip entirely (nothing is scheduled).'
+                end
+                li do
+                  code { 'reactive:applied' }
+                  plain ' — fired with '
+                  code { '{ action, params, html }' }
+                  plain ' once the streams were handed to '
+                  code { 'Turbo.renderStreamMessage' }
+                  plain ' (Turbo applies them asynchronously — for post-morph timing listen to Turbo\'s own events).'
+                end
+                li do
+                  code { 'reactive:error' }
+                  plain ' — fired in every failure branch with '
+                  code { '{ action, params, kind, status?, body?, retry }' }
+                  plain '; '
+                  code { 'kind' }
+                  plain ' is one of '
+                  code { 'redirected | http | content-type | network' }
+                  plain '. '
+                  code { 'retry()' }
+                  plain ' re-enters the request queue with the freshest token and freshly collected fields ' \
+                        '(and no-ops once the component left the DOM).'
+                end
+              end
+            end
+            DocsUI::Code(<<~JAVASCRIPT, lexer: :javascript)
+              // A page-level toaster: one listener, or plain Stimulus composition —
+              // <body data-controller="toast" data-action="reactive:error->toast#show">
+              document.addEventListener("reactive:error", ({ detail }) => {
+                toast(`Action failed (${detail.kind}${detail.status ? ` ${detail.status}` : ""})`, {
+                  onRetry: detail.retry, // re-enqueues with the freshest signed token
+                })
+              })
+            JAVASCRIPT
+            DocsUI::Callout(:note, title: 'The events are hooks, not the security boundary') do
+              plain 'A 403 still denies the action server-side whether or not anything listens; the existing ' \
+                    'console.error logging is unchanged. The events only make the failure visible to your UI.'
             end
           end
         end

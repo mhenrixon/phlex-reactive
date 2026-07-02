@@ -109,6 +109,7 @@ function stubEnv() {
       if (sel.includes("csrf-token")) return { content: "csrf-abc" }
       return null
     },
+    dispatchEvent: () => {},
   }
   globalThis.window = { Turbo: { renderStreamMessage: () => {} } }
 }

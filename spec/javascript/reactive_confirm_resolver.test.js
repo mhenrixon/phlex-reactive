@@ -63,7 +63,7 @@ function buildController() {
       text: () => Promise.resolve(""),
     })
   }
-  globalThis.document = { querySelector: () => null }
+  globalThis.document = { querySelector: () => null, dispatchEvent: () => {} }
   globalThis.window = { Turbo: { renderStreamMessage: () => {} } }
   return { controller, calls: () => calls }
 }

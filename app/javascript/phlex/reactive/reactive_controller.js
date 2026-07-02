@@ -381,6 +381,19 @@ export default class extends Controller {
   // microtask share one place (issue #55). `target` is captured up front because
   // this can run in a later microtask, after event.target has been reset.
   #proceed(target, action, params, debounce) {
+    // Lifecycle veto point (issue #79): one cancelable reactive:before-dispatch
+    // per user gesture — post-preventDefault, post-confirm, PRE-debounce.
+    // event.preventDefault() skips the debounce AND the enqueue entirely
+    // (nothing is scheduled). retry() re-enters the queue directly, so this
+    // does NOT refire on a retry. detail.params are the trigger's explicit
+    // params; sibling fields are collected later, at send time.
+    const before = this.#emit("reactive:before-dispatch", {
+      action,
+      params: this.#parseParams(params),
+      element: this.element,
+    }, { cancelable: true })
+    if (before.defaultPrevented) return
+
     // Debounced trigger (e.g. on(:update, event: "input", debounce: 300)):
     // coalesce rapid events into ONE round trip after a quiet period, instead of
     // one POST per keystroke (issue #17). A blur flushes a pending dispatch.
@@ -422,6 +435,39 @@ export default class extends Controller {
   // the keys first — #clearDebounce mutates the map as it goes.
   #clearAllDebounces() {
     for (const target of [...this.#debounceTimers.keys()]) this.#clearDebounce(target)
+  }
+
+  // Raw-dispatch a lifecycle CustomEvent (issue #79). Deliberately NOT
+  // Stimulus's this.dispatch() helper — that name is SHADOWED by this
+  // controller's own dispatch(event) action method. Bubbling + composed so a
+  // page-level listener (or `data-action="reactive:error->toast#show"` on an
+  // ancestor) hears it. After a plain (non-morph) replace this.element is a
+  // DETACHED node — a bubbling event on it never reaches document listeners —
+  // so fall back to dispatching on document itself.
+  #emit(name, detail, { cancelable = false } = {}) {
+    const event = new CustomEvent(name, { bubbles: true, composed: true, cancelable, detail })
+    const root = this.element.isConnected ? this.element : document
+    root.dispatchEvent(event)
+    return event
+  }
+
+  // reactive:error detail: { action, params, kind, status?, body?, retry }.
+  // `params` are the FULL params that were sent (collected fields + explicit
+  // trigger params). retry() re-enters the request queue with the ORIGINAL raw
+  // trigger params, so #perform re-reads the freshest token and RE-COLLECTS the
+  // sibling fields — nothing stale is replayed. It does not refire
+  // reactive:before-dispatch (one veto per user gesture), and it no-ops with a
+  // warning once the root has left the DOM (retrying against a detached
+  // element would post a stale token into nowhere).
+  #emitError(action, rawParams, sentParams, extra) {
+    const retry = () => {
+      if (!this.element.isConnected) {
+        console.warn("[phlex-reactive] retry() ignored — the reactive root left the DOM")
+        return
+      }
+      return this.#enqueue(action, rawParams)
+    }
+    this.#emit("reactive:error", { action, params: sentParams, ...extra, retry })
   }
 
   async #perform(action, params) {
@@ -469,16 +515,20 @@ export default class extends Controller {
 
       if (response.redirected) {
         console.error("[phlex-reactive] action was redirected (auth/CSRF?) — no update applied")
+        this.#emitError(action, params, allParams, { kind: "redirected", status: response.status })
         return
       }
       if (!response.ok) {
-        console.error(`[phlex-reactive] action failed: HTTP ${response.status}`, await response.text())
+        const errorBody = await response.text()
+        console.error(`[phlex-reactive] action failed: HTTP ${response.status}`, errorBody)
+        this.#emitError(action, params, allParams, { kind: "http", status: response.status, body: errorBody })
         return
       }
 
       const contentType = response.headers.get("Content-Type") || ""
       if (!contentType.includes("turbo-stream")) {
         console.error(`[phlex-reactive] expected a turbo-stream, got "${contentType}" — no update applied`)
+        this.#emitError(action, params, allParams, { kind: "content-type", status: response.status })
         return
       }
 
@@ -491,8 +541,14 @@ export default class extends Controller {
       // replace (Response.morph) or an update morphs in place, preserving the
       // focused input + caret on unchanged nodes — see issue #28.
       window.Turbo.renderStreamMessage(html)
+      // Lifecycle hook (issue #79): the streams were HANDED TO Turbo — a
+      // renderStreamMessage applies asynchronously, so the DOM mutation may
+      // complete a tick later. Apps needing post-morph timing listen to Turbo's
+      // own events; this one is for "the action round trip succeeded".
+      this.#emit("reactive:applied", { action, params: allParams, html })
     } catch (error) {
       console.error("[phlex-reactive] action error", error)
+      this.#emitError(action, params, allParams, { kind: "network" })
     } finally {
       this.element.removeAttribute("aria-busy")
     }

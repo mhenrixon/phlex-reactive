@@ -79,6 +79,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   coercion path does zero extra work (nil collector, early-return guards) —
   `rake bench:one[coerce_params]` before/after is unchanged within noise
 
+- **Client lifecycle CustomEvents — `reactive:before-dispatch` /
+  `reactive:applied` / `reactive:error` with `retry()` (#79).** The generic
+  controller now dispatches three bubbling, composed events around every action
+  round trip, so an app can toast an error, veto a dispatch, instrument latency,
+  or build retry UI without forking the one controller.
+  `reactive:before-dispatch` is cancelable and fires once per user gesture —
+  post-`preventDefault`, post-`confirm:`, PRE-debounce — with
+  `{ action, params, element }`; `event.preventDefault()` skips the round trip
+  entirely (nothing is scheduled, debounced or not). `reactive:applied` fires
+  with `{ action, params, html }` after the fresh token was captured and the
+  streams were handed to `Turbo.renderStreamMessage` (Turbo applies them
+  asynchronously — listen to Turbo's own events for post-morph timing).
+  `reactive:error` fires in all four failure branches with
+  `{ action, params, kind, status?, body?, retry }` where `kind` is
+  `redirected | http | content-type | network`; `retry()` re-enters the request
+  queue — re-reading the freshest signed token and re-collecting the fields at
+  send time, refiring no second before-dispatch — and no-ops with a
+  `console.warn` once the component left the DOM. Events go out via raw
+  `dispatchEvent` (Stimulus's `this.dispatch` helper is shadowed by the
+  controller's own `dispatch` action method) on the root element, falling back
+  to `document` when a plain replace detached it; the existing `console.error`
+  logging is unchanged. Composes with plain Stimulus listening —
+  `data-action="reactive:error->toast#show"` on an ancestor. Covered by unit
+  (JS) and real-browser system specs; README "Failure UX & lifecycle events"
+  and the security docs page document the contract.
+
 - **Combobox keyboard navigation — `on(:search, …, listnav: "[role=option]")` (#72).**
   A search/combobox trigger can now declare client-side list navigation: Arrow
   Up/Down move a highlight among the option elements IN-BROWSER (no round trip),

@@ -94,6 +94,10 @@ class CounterComponent < ApplicationComponent
       button(**mix(on(:bump_via_update), data: { testid: "bump-update" })) { "+1 (update)" }
       button(**mix(on(:reset_with_flash), data: { testid: "reset" })) { "reset" }
       button(**mix(on(:go_home), data: { testid: "go-home" })) { "go home" }
+      # DELIBERATELY undeclared action (no `action :boom`): the endpoint
+      # default-denies it with a 403, which the lifecycle-events system spec
+      # uses to observe a real reactive:error (kind=http) in the browser (#79).
+      button(**mix(on(:boom), data: { testid: "boom" })) { "boom" }
     end
   end
 end
