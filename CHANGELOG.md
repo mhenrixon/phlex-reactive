@@ -128,6 +128,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Documentation
 
+- **Corrected the broadcast render-cost mental model — "N subscribers = N
+  renders" was wrong (#78).** A `broadcast_*_to` call renders the component
+  ONCE and passes the finished `html:` to `Turbo::StreamsChannel`, so every
+  subscriber of that stream shares one payload (the per-subscriber cost is
+  transport-side). The render cost is per CALL — broadcasting one change to K
+  different stream keys is K builds + K renders + K token signings of
+  byte-identical HTML — and per-viewer rendering (`visible_to:`-style content)
+  is the irreducible render-per-viewer case. Fixed in the performance docs
+  page, the render micro-bench comment, and CLAUDE.md; also repointed stale
+  `docs/performance.md` references to the docs app's performance page
+  (`docs/app/views/docs/pages/performance.rb`). No behavior changed.
+
 - **The auto-collected-params contract, spelled out (#64, #65, #66, #67).** Four
   gaps surfaced from building one model-scoped form (numeric fields that rebalance
   live). No behavior changed — the README now documents what the code already

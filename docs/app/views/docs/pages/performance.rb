@@ -39,9 +39,20 @@ module Views
                 plain 'hardest, but a full HTTP action is dominated by the Rails middleware stack and (for '
                 plain 'record-backed components) the database — so the render wins matter most for '
                 strong { 'broadcasts' }
-                plain ' (one change fanned out to N subscribers = N renders with no HTTP overhead to '
-                plain 'amortize against). Measure before you optimize; the harness below exists so you '
-                plain 'never have to guess.'
+                plain ', which have no HTTP overhead to amortize against. To be precise about the fan-out: '
+                plain 'a '
+                code { 'broadcast_*_to' }
+                plain ' call renders the component '
+                strong { 'once' }
+                plain ' and hands the finished HTML to the transport, so every subscriber of that stream '
+                plain 'shares one payload (the per-subscriber cost is transport-side, not a render). The '
+                plain 'render cost multiplies per '
+                strong { 'call' }
+                plain ': pushing one change to K different stream keys is K builds + K renders + K token '
+                plain 'signings of byte-identical HTML — and per-viewer content ('
+                code { 'visible_to:' }
+                plain '-style rendering) is the irreducible render-per-viewer case. Measure before you '
+                plain 'optimize; the harness below exists so you never have to guess.'
               end
             end
           end
@@ -267,8 +278,9 @@ module Views
                   plain 'The render path got ~2× faster and halved its allocations — but at the full request '
                   plain 'level that delta is within noise, because routing + middleware + token verify + '
                   plain 'transaction dominate. Do not expect a render optimization to move request '
-                  plain 'throughput; expect it to move broadcast fan-out (N renders, no HTTP) and to cut GC '
-                  plain 'pressure under load.'
+                  plain 'throughput; expect it to move broadcast-heavy code — one render per broadcast '
+                  plain 'call, so K stream keys (or per-viewer rendering) = K renders with no HTTP — and '
+                  plain 'to cut GC pressure under load.'
                 end
                 li do
                   plain 'Record-backed actions are ~1.4× slower than state-backed — that is the GlobalID '

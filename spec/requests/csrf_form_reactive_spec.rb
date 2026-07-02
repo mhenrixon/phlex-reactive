@@ -31,8 +31,8 @@ RSpec.describe "Reactive action re-rendering a CSRF form (issue #42)", type: :re
     expect(response.body).to include("data-reactive-token-value=")
   end
 
-  # The broadcast path is where the off-request render matters most (N
-  # subscribers = N renders, no HTTP request on the stack). A broadcast of a
+  # The broadcast path is where the off-request render matters most (renders
+  # once per broadcast call, no HTTP request on the stack). A broadcast of a
   # CSRF-form component must render through the request-bound context too.
   it "broadcasts the CSRF form component without crashing" do
     broadcasts = capture_turbo_stream_broadcasts(todo) do

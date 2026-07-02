@@ -10,7 +10,7 @@
 # Rack::MockRequest — the same call-the-app primitive derailed_benchmarks uses
 # internally — wrapped in benchmark-ips for throughput and memory_profiler for
 # per-request allocations. derailed_benchmarks is loaded so its memory/object
-# helpers are available for ad-hoc deep dives (see docs/performance.md).
+# helpers are available for ad-hoc deep dives (see the performance docs page, docs/app/views/docs/pages/performance.rb).
 #
 #   rake bench:request
 #   TEST_COUNT=500 rake bench:request

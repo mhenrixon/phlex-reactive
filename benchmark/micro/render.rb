@@ -34,8 +34,10 @@ end
 
 # render_component is the lightweight phlex-rails render_in path (vs the old
 # ActionController renderer.render). This isolates the pure render cost — the
-# win that matters MOST for broadcasts, where a single change fans out to N
-# subscribers as N renders with NO HTTP round trip to amortize against.
+# win that matters MOST for broadcasts, which have NO HTTP round trip to
+# amortize against. Each broadcast_*_to CALL renders once and all subscribers
+# of that stream share the payload; the cost multiplies per call (K stream
+# keys = K renders) and per viewer for visible_to:-style per-viewer content.
 BenchSupport.header("render_component (the broadcast/fan-out unit)")
 BenchSupport.ips do
   it.report("render_component") { CounterComponent.render_component(CounterComponent.new(count: 1)) }

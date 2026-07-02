@@ -7,7 +7,7 @@ argument-hint: "optional: a specific hot path or bench name (e.g. render)"
 
 Measure, don't guess. This command produces a **same-machine before/after** so
 any performance claim is backed by numbers, and keeps the perf docs/discipline
-in sync. See `docs/performance.md` for the hot paths and how the harness works.
+in sync. See the performance page (`docs/app/views/docs/pages/performance.rb`) for the hot paths and how the harness works.
 
 ## The non-negotiable rule
 
@@ -63,7 +63,7 @@ worktree variance entirely.
 - [ ] A bench exists for the changed hot path (`benchmark/micro/<name>.rb` or
       the request bench). Add one if missing — `rake bench:micro` globs them.
 - [ ] The before/after numbers are in the PR body.
-- [ ] `docs/performance.md` updated if the representative numbers moved.
+- [ ] The performance page (`docs/app/views/docs/pages/performance.rb`) updated if the representative numbers moved.
 - [ ] CHANGELOG notes the perf change (`perf:` scope).
 - [ ] If the client (`reactive_controller.js`) changed, the vendored copy
       (`spec/dummy/public/vendor/reactive_controller.js`) is re-synced and the
