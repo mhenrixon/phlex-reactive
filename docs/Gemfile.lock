@@ -1,6 +1,6 @@
 GIT
   remote: https://github.com/mhenrixon/daisyui.git
-  revision: 1eed05df50d386ecdd58a6e1b76252541b8e6ee2
+  revision: 292ee81fcc2238b068750986139461b167cf968a
   specs:
     daisyui (1.2.0)
       phlex (~> 2.0, >= 2.0.0)
@@ -8,7 +8,7 @@ GIT
 
 GIT
   remote: https://github.com/mhenrixon/docs-kit.git
-  revision: d75a50b8575b2a978c28ac9b1f7c1a3a4232247e
+  revision: 5a67bfa7e13d57160d335dfaac2cad2b796f7993
   specs:
     docs-kit (0.1.0)
       daisyui (>= 1.2)
@@ -20,7 +20,7 @@ GIT
 PATH
   remote: ..
   specs:
-    phlex-reactive (0.4.7)
+    phlex-reactive (0.4.8)
       globalid (~> 1.0)
       phlex-rails (>= 2.0, < 3)
       railties (>= 7.1, < 9.0)
@@ -637,7 +637,7 @@ CHECKSUMS
   pgmq-ruby (0.7.0) sha256=018a33e304b0c4513d3dc8cd06322ac767ebc0b475422738a71c198f066f2a76
   phlex (2.4.1) sha256=e596717fbfe38b5271840266758779ebe75092e02629f0c170287e6290a70b12
   phlex-rails (2.4.0) sha256=2bcddbd488681acb25753bab1887d3ac150e644244ff8ba307f2171a4d0195f5
-  phlex-reactive (0.4.7)
+  phlex-reactive (0.4.8)
   playwright-ruby-client (1.60.0) sha256=942242d6130e797b21213d9c49dc09d31235cab429a9edae73401ed112c94853
   pp (0.6.4) sha256=dfcb0fce700c41456265922884f9fe195d7fbb0674a3578e6c0f69588e82b570
   prettyprint (0.2.0) sha256=2bc9e15581a94742064a3cc8b0fb9d45aae3d03a1baa6ef80922627a0766f193
