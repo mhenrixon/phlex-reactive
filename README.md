@@ -314,6 +314,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `on(:action, event: "input", debounce: 300)` | Coalesce rapid events into one round trip after a quiet period (live-as-you-type). |
 | `on(:action, event: "keydown.enter")` | Fire only on a specific key — Enter-to-submit / Escape-to-cancel — via Stimulus's native keyboard filter (`event:` passes straight through). See [Keyboard triggers](#keyboard-triggers-enter-to-submit--escape-to-cancel). |
 | `on(:action, confirm: "Sure?")` | Gate a destructive trigger behind a confirmation. Defaults to `window.confirm`; override the dialog with [`setConfirmResolver`](#custom-confirmation-dialogs-setconfirmresolver). |
+| `on(:search, listnav: "[role=option]")` | Add combobox keyboard navigation — Arrow keys move a client-side highlight, Enter picks (clicks the option's own trigger), Escape clears. See [Combobox keyboard navigation](#combobox-keyboard-navigation-listnav). |
 | `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
@@ -480,6 +481,34 @@ free as an ordinary action-param name (`on(:switch, key: "pgbus")` still passes
 > input — the second would overwrite the first's action name. Bind each key
 > trigger to its own element (the field saves on Enter; a Cancel button — or the
 > field's own blur — handles Escape), as above.
+
+### Combobox keyboard navigation (`listnav:`)
+
+A searchable list needs Arrow keys to move a highlight, Enter to pick, Escape to
+close — interactions that are *ephemeral client UI state* (a highlight per
+keystroke would be absurd as a server round trip). Pass `listnav:` (a CSS
+selector for the option elements) to a search trigger and the generic controller
+handles all of it client-side, with no bespoke Stimulus controller:
+
+```ruby
+# The search input: debounced live search + keyboard list navigation.
+input(**mix(
+  on(:search, event: "input", debounce: 200, listnav: "[role=option]"),
+  name: "query", value: @query
+))
+
+# Each option is BOTH a listnav target (role=option) and its own reactive
+# select trigger — Enter just clicks the highlighted one.
+button(**mix(on(:select, name: opt), role: "option")) { opt }
+```
+
+`listnav:` appends Stimulus's native keyboard filters
+(`keydown.down/up/enter/esc`) to the input's `data-action`. Arrow Up/Down move a
+`data-reactive-highlighted` marker among the options **with no round trip**;
+Enter **clicks the highlighted option** — so selection runs through its normal
+`on(:select)` reactive action (signed, default-deny, authorized like any other);
+Escape clears the highlight. Only the highlight is client-side — the selection
+stays a real signed action, and the highlight is never shipped as trusted state.
 
 **Combining `on(...)` / `reactive_attrs` with your own attributes.** Both return
 a hash that includes a `data:` key. Spreading them *and* passing another `data:`

@@ -376,6 +376,37 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  describe "#on listnav (combobox keyboard navigation, issue #72)" do
+    subject(:instance) { state_klass.new }
+
+    it "appends the arrow/enter/escape listnav actions to the trigger's data-action" do
+      attrs = instance.send(:on, :search, event: "input", debounce: 300, listnav: "[role=option]")
+      expect(attrs[:data][:action]).to eq(
+        "input->reactive#dispatch " \
+        "keydown.down->reactive#listnavNext " \
+        "keydown.up->reactive#listnavPrev " \
+        "keydown.enter->reactive#listnavPick " \
+        "keydown.esc->reactive#listnavClose"
+      )
+    end
+
+    it "emits the option selector as a Stimulus param" do
+      attrs = instance.send(:on, :search, event: "input", listnav: "[role=option]")
+      expect(attrs[:data][:reactive_listnav_option_param]).to eq("[role=option]")
+    end
+
+    it "keeps listnav out of the explicit params payload" do
+      attrs = instance.send(:on, :search, event: "input", listnav: "[role=option]", query: "x")
+      expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({ "query" => "x" })
+    end
+
+    it "omits the listnav wiring entirely when not requested" do
+      attrs = instance.send(:on, :search, event: "input")
+      expect(attrs[:data][:action]).to eq("input->reactive#dispatch")
+      expect(attrs[:data]).not_to have_key(:reactive_listnav_option_param)
+    end
+  end
+
   describe "#on confirm gate (issue #52)" do
     subject(:instance) { state_klass.new }
 

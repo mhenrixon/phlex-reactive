@@ -7,6 +7,7 @@ Rails.application.routes.draw do
   get "counter" => "demos#counter"
   get "chat" => "demos#chat"
   get "todos" => "demos#todos"
+  get "combobox" => "demos#combobox"
   get "new_order" => "demos#new_order"
   get "order/:id" => "demos#order"
   get "notifications" => "demos#notifications"

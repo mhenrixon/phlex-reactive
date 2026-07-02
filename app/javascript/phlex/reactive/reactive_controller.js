@@ -254,6 +254,69 @@ export default class extends Controller {
     }
   }
 
+  // Client-side list navigation (combobox keyboard nav, issue #72). Wired by
+  // on(:search, …, listnav: "[role=option]"), which appends keyboard filters to
+  // the input's data-action (keydown.down/up/enter/esc->reactive#listnav*) and
+  // sets data-reactive-listnav-option-param. Arrow keys move a highlight among
+  // the options WITH NO ROUND TRIP; Enter picks the highlighted option by
+  // CLICKING IT (so its own on(:select) reactive trigger fires — selection stays
+  // a signed action); Escape clears. Ephemeral highlight state lives on the DOM
+  // (data-reactive-highlighted), never shipped to the client as trusted state.
+  listnavNext(event) {
+    this.#moveHighlight(event, +1)
+  }
+
+  listnavPrev(event) {
+    this.#moveHighlight(event, -1)
+  }
+
+  // Enter: activate the highlighted option (fires its reactive select). No-op if
+  // nothing is highlighted, and in that case DON'T preventDefault — Enter falls
+  // through (there's no selection to make).
+  listnavPick(event) {
+    const options = this.#listnavOptions(event)
+    const current = options.findIndex((el) => el.hasAttribute("data-reactive-highlighted"))
+    if (current < 0) return
+    event.preventDefault()
+    options[current].click()
+  }
+
+  listnavClose(event) {
+    for (const el of this.#listnavOptions(event)) el.removeAttribute("data-reactive-highlighted")
+  }
+
+  // Move the highlight by `step` (with wrap-around) among THIS root's options.
+  // preventDefault stops Arrow keys from moving the caret in the search input.
+  #moveHighlight(event, step) {
+    const options = this.#listnavOptions(event)
+    if (!options.length) return
+    event.preventDefault()
+
+    const current = options.findIndex((el) => el.hasAttribute("data-reactive-highlighted"))
+    // From nothing: Down highlights the first option, Up the last.
+    const next = current < 0 ? (step > 0 ? 0 : options.length - 1) : (current + step + options.length) % options.length
+
+    for (const el of options) el.removeAttribute("data-reactive-highlighted")
+    const chosen = options[next]
+    chosen.setAttribute("data-reactive-highlighted", "true")
+    chosen.scrollIntoView?.({ block: "nearest" })
+  }
+
+  // The option elements this root owns (skips nested reactive roots, issue #15),
+  // per the selector on data-reactive-listnav-option-param. The attr rides on the
+  // TRIGGER element (the search input on(...) is spread onto), read from the
+  // event; the options are still scoped to this controller's root. Empty when
+  // unset. Falls back to the root for a directly-invoked call (unit tests).
+  #listnavOptions(event) {
+    const trigger = event?.currentTarget ?? event?.target ?? this.element
+    const selector =
+      trigger.getAttribute?.("data-reactive-listnav-option-param") ??
+      this.element.getAttribute("data-reactive-listnav-option-param")
+    if (!selector) return []
+    const nodes = this.element.querySelectorAll(selector)
+    return Array.from(nodes).filter((el) => this.#ownsField(el))
+  }
+
   // Parse a JSON string list from a root data attr; [] on absence/parse error so
   // a malformed binding degrades to "no fields" rather than throwing on input.
   #parseComputeList(attr) {
