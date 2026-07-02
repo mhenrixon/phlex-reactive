@@ -764,7 +764,14 @@ latency, veto a dispatch, or build retry UI **without forking the controller**:
 | `http` | non-2xx response (403 default-deny/authorization, 400 bad token, 404 record gone, 500 …) | `status`, `body`, `retry` |
 | `content-type` | 200, but not a turbo-stream (an HTML error page, a misconfigured route) | `status`, `retry` |
 | `network` | `fetch` itself rejected (offline, DNS, connection reset) — the server never saw the request | `retry` |
-| `apply` | the server processed the action successfully, but something AFTER the fetch threw (a malformed response, a Turbo render error, a throwing `reactive:applied` listener) | no `retry` |
+| `apply` | the server processed the action successfully, but something AFTER the fetch threw (a malformed response, a Turbo render error) | no `retry` |
+
+`apply` covers a throw in the controller's own post-fetch code — not a
+throwing listener on `reactive:applied` itself. Per the DOM spec,
+`EventTarget#dispatchEvent` never propagates a listener's exception back to
+its caller (it's reported to the console instead), so a listener that throws
+can't surface as `reactive:error` at all — it just logs and the round trip is
+otherwise unaffected.
 
 `detail.retry()` re-enters the controller's request queue: it re-reads the
 **freshest** signed token and re-collects the component's fields at send time,

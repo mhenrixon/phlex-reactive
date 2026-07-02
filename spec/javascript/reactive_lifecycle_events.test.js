@@ -214,12 +214,23 @@ test("a network failure fires reactive:error kind=network (console.error kept)",
   expect(errors.length).toBe(1)
 })
 
-// A throw AFTER a successful fetch (token extraction, Turbo rendering, or a
-// throwing reactive:applied listener) must NOT be labeled "network" — the
-// server already processed the mutation, so a retry() there would re-POST an
-// already-completed, potentially non-idempotent action (CodeRabbit review on
-// PR #89). It fires kind="apply" with NO retry() in the detail at all.
-test("a post-response render failure fires reactive:error kind=apply, NOT network, with no retry()", async () => {
+// A throw AFTER a successful fetch (token extraction or Turbo rendering) must
+// NOT be labeled "network" — the server already processed the mutation, so a
+// retry() there would re-POST an already-completed, potentially
+// non-idempotent action (CodeRabbit review on PR #89). It fires kind="apply"
+// with NO retry() in the detail at all.
+//
+// NOTE ON SCOPE: per the WHATWG DOM spec, EventTarget#dispatchEvent does NOT
+// propagate a listener's thrown exception back to the caller — the exception
+// is reported to the global object, dispatchEvent returns normally, and
+// #perform's catch never sees it (verified against a real EventTarget, not
+// this file's mocked root — CodeRabbit review on PR #89, round 2). So a
+// throwing reactive:applied LISTENER can't actually reach kind: "apply" (or
+// any #perform catch) in a real browser; only synchronous code INSIDE
+// #perform's own post-fetch tail (Turbo.renderStreamMessage itself throwing,
+// or in principle #extractToken) can. This test models exactly that reachable
+// case — Turbo.renderStreamMessage throwing — not a listener throw.
+test("Turbo.renderStreamMessage throwing fires reactive:error kind=apply, NOT network, with no retry()", async () => {
   const html = '<turbo-stream action="replace" target="counter"><template></template></turbo-stream>'
   const root = makeRoot()
   const { controller } = buildController([{ body: html }], { root })
@@ -234,22 +245,21 @@ test("a post-response render failure fires reactive:error kind=apply, NOT networ
   expect(event.detail.retry).toBeUndefined()
 })
 
-// A throwing reactive:applied LISTENER is the same class of bug: the action
-// already succeeded server-side, so this must not surface as retriable.
-test("a throwing reactive:applied listener fires reactive:error kind=apply, not network", async () => {
-  const html = '<turbo-stream action="replace" target="counter"><template></template></turbo-stream>'
-  const root = makeRoot()
-  root.dispatchEvent = (event) => {
-    root.events.push(event)
-    if (event.type === "reactive:applied") throw new Error("listener exploded")
-  }
-  const { controller } = buildController([{ body: html }], { root })
-
-  await click(controller)
-
-  const [event] = eventsNamed(root, "reactive:error")
-  expect(event.detail.kind).toBe("apply")
-})
+// NOTE: NOT re-encoded as a bun:test test. `bun test`'s runner independently
+// reports any exception surfaced during a test body as a FAILURE of that
+// test — including one a listener throws during dispatchEvent — regardless
+// of whether the test's own try/catch observes it. That makes "prove
+// dispatchEvent's caller never sees a listener's throw" impossible to assert
+// cleanly inside this runner without suppressing Bun's own reporter, which
+// isn't worth doing for a spec-compliance sanity check. Verified manually
+// instead (bun -e, outside the test runner):
+//
+//   const target = new EventTarget()
+//   target.addEventListener("boom", () => { throw new Error("boom") })
+//   try { target.dispatchEvent(new CustomEvent("boom")); logged = "no throw" }
+//   catch { logged = "threw" }
+//   // -> "no throw": the exception is reported to the console by dispatchEvent
+//   // itself; the caller's try/catch never runs its catch block.
 
 // --- retry() ----------------------------------------------------------------
 

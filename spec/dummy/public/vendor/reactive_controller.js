@@ -510,12 +510,14 @@ export default class extends Controller {
 
         // ONLY `fetch` itself is the network boundary — offline, DNS, a reset
         // connection. Everything below this inner try (reading the body,
-        // extracting the token, handing streams to Turbo, the reactive:applied
-        // dispatch) runs AFTER the server already processed the mutation, so
-        // none of it belongs in the `kind: "network"` / retriable bucket
-        // (CodeRabbit review on #89): if renderStreamMessage or a
-        // reactive:applied listener throws, retry()ing would re-POST an
-        // action the server already completed — see the outer catch below.
+        // extracting the token, handing streams to Turbo) runs AFTER the
+        // server already processed the mutation, so none of it belongs in the
+        // `kind: "network"` / retriable bucket (CodeRabbit review on #89): if
+        // renderStreamMessage throws, retry()ing would re-POST an action the
+        // server already completed — see the outer catch below. (NOT a
+        // reactive:applied LISTENER throwing — per the DOM spec, dispatchEvent
+        // never propagates a listener's exception back to its caller, so that
+        // case can't reach this catch at all; verified in the JS test suite.)
         response = await fetch(this.#actionPath(), {
           method: "POST",
           headers,
@@ -564,9 +566,10 @@ export default class extends Controller {
     } catch (error) {
       // The server already processed this action successfully (we're past the
       // fetch) — a throw here is a CLIENT-side apply failure (a malformed
-      // response, a broken Turbo render, a throwing reactive:applied
-      // listener), not a transport failure. kind: "apply" carries NO retry() —
-      // retrying would re-POST an action the server already completed.
+      // response, a broken Turbo render — NOT a reactive:applied listener
+      // throw, which dispatchEvent never propagates here), not a transport
+      // failure. kind: "apply" carries NO retry() — retrying would re-POST an
+      // action the server already completed.
       console.error("[phlex-reactive] action error", error)
       this.#emit("reactive:error", { action, params: allParams, kind: "apply" })
     } finally {

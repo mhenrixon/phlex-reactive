@@ -95,9 +95,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `{ action, params, kind, status?, body?, retry? }` where `kind` is one of
   `redirected | http | content-type | network` (all retriable) or `apply` —
   the fetch itself succeeded and the server already completed the mutation,
-  but something AFTER it threw (a malformed response, a Turbo render error, a
-  throwing `reactive:applied` listener); `apply` carries NO `retry` at all,
-  since retrying would re-POST an action that already succeeded. `retry()`
+  but something AFTER it threw INSIDE THE CONTROLLER (a malformed response, a
+  Turbo render error — NOT a throwing `reactive:applied` listener, whose
+  exception `dispatchEvent` never propagates back per the DOM spec, so it
+  can't reach this catch); `apply` carries NO `retry` at all, since retrying
+  would re-POST an action that already succeeded. `retry()`
   (when present) re-enters the request queue — re-reading the freshest signed
   token and re-collecting the fields at send time, refiring no second
   before-dispatch — and no-ops with a `console.warn` once the component left

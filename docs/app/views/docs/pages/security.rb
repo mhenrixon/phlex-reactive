@@ -311,11 +311,17 @@ module Views
                   plain ' (all retriable) or '
                   code { 'apply' }
                   plain ' — the server already completed the mutation but something AFTER the fetch threw ' \
-                        '(a malformed response, a Turbo render error, a throwing '
-                  code { 'reactive:applied' }
-                  plain ' listener); it carries NO '
+                        'inside the controller itself (a malformed response, a Turbo render error); it ' \
+                        'carries NO '
                   code { 'retry' }
-                  plain ', since retrying would re-POST an action that already succeeded. '
+                  plain ', since retrying would re-POST an action that already succeeded. A throwing '
+                  code { 'reactive:applied' }
+                  plain ' LISTENER is different — the DOM spec never propagates a listener\'s exception ' \
+                        'back to '
+                  code { 'dispatchEvent' }
+                  plain '\'s caller, so it can\'t surface as '
+                  code { 'reactive:error' }
+                  plain ' at all; it just logs. '
                   code { 'retry()' }
                   plain ' (when present) re-enters the request queue with the freshest token and freshly ' \
                         'collected fields (and no-ops once the component left the DOM).'
