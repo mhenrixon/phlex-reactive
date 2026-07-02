@@ -482,12 +482,13 @@ free as an ordinary action-param name (`on(:switch, key: "pgbus")` still passes
 > trigger to its own element (the field saves on Enter; a Cancel button — or the
 > field's own blur — handles Escape), as above.
 
-**Combobox keyboard navigation (`listnav:`).** A searchable list needs Arrow
-keys to move a highlight, Enter to pick, Escape to close — interactions that are
-*ephemeral client UI state* (a highlight per keystroke would be absurd as a
-server round trip). Pass `listnav:` (a CSS selector for the option elements) to a
-search trigger and the generic controller handles all of it client-side, with no
-bespoke Stimulus controller:
+### Combobox keyboard navigation (`listnav:`)
+
+A searchable list needs Arrow keys to move a highlight, Enter to pick, Escape to
+close — interactions that are *ephemeral client UI state* (a highlight per
+keystroke would be absurd as a server round trip). Pass `listnav:` (a CSS
+selector for the option elements) to a search trigger and the generic controller
+handles all of it client-side, with no bespoke Stimulus controller:
 
 ```ruby
 # The search input: debounced live search + keyboard list navigation.
