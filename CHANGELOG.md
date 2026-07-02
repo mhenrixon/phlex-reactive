@@ -8,6 +8,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`on_client(event, ops)` + the `js` op builder — client-side DOM commands
+  with ZERO round trips (#95).** Purely-visual interactions (tabs, dropdowns,
+  accordions, class toggles) no longer cost a signed server round trip or a
+  hand-written Stimulus controller. `js` is an immutable, chainable builder of
+  declared DOM operations — `show`/`hide`/`toggle` (the `hidden` attribute) and
+  `add_class`/`remove_class`/`toggle_class` — and `on_client(:click, js.…)`
+  binds them to a DOM event the ONE generic controller applies locally via a
+  new `runOps` action: **no token, no params, no fetch, ever** (the system spec
+  wraps `window.fetch` with a counter and asserts zero). The op vocabulary is a
+  fixed whitelist mirrored client-side: an unknown op name warns and is skipped
+  while the rest of the chain still applies (client-side default-deny —
+  `Object.hasOwn`-guarded so inherited Object members can't masquerade as ops),
+  and malformed ops JSON degrades to a no-op. Targets are CSS selectors
+  resolved WITHIN the component's root — nested reactive roots are never
+  touched (the issue-#15 ownership rule) — with `:root` for the root element
+  itself and a per-op `global: true` document escape. `window:`/`once:`/
+  `outside:` compose exactly like `on(...)`'s #80 modifiers (outside-click
+  closes a dropdown; window-bound triggers never `preventDefault`). Builder
+  validation is loud at render time (a non-selector target or an empty class
+  list raises; `on_client` rejects a non-`Phlex::Reactive::JS` or empty chain)
+  rather than silent in the browser. Client ops are EPHEMERAL UI by design: any
+  server re-render resets them — the LiveView JS-commands caveat, documented in
+  the README — so state that must survive a re-render stays a signed `action`.
+  Same-machine `rake bench` before/after: the token/render/coerce hot paths are
+  untouched (state-backed token 201k → within noise; allocations byte-identical
+  at 11/47 per token, 113 per render) — `on_client` is a new, separate path.
+
 - **`on(...)` event modifiers — `window:`, `once:`, `outside:`, `throttle:`
   (#80).** Four trigger patterns that previously forced a hand-written Stimulus
   controller are now declarable on `on(...)`. `outside: true` fires the action

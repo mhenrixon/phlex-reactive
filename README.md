@@ -326,6 +326,8 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `on(:close_menu, outside: true)` | Fire only for events **outside** this component's root (close-a-dropdown-on-outside-click). Window-bound; never `preventDefault`s, so links elsewhere keep navigating. |
 | `on(:track, event: "scroll", window: true, throttle: 250)` | `window:` binds the trigger to the window (page-level scroll/resize); `throttle:` rate-limits leading-edge — first event fires, the rest drop until the window elapses. Mutually exclusive with `debounce:`. |
 | `on(:action, once: true)` | Fire at most once, then unbind (Stimulus's native `:once`). |
+| `on_client(:click, js.toggle("#menu"))` | **Client-only** trigger: applies declared DOM ops with ZERO round trip — no token, no POST, ever. Takes the same `window:`/`once:`/`outside:` modifiers. See [Client-only ops](#client-only-ops-on_client--js--zero-round-trips). |
+| `js` | The immutable op builder behind `on_client`: `show`/`hide`/`toggle` (the `hidden` attribute) and `add_class`/`remove_class`/`toggle_class`, chainable. |
 | `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
@@ -466,6 +468,50 @@ div(**mix(reactive_root, on(:track, event: "scroll", window: true, throttle: 500
 
 These four (like `debounce:`/`confirm:`/`listnav:`) are **reserved keyword
 names** on `on(...)` — no longer usable as free action params.
+
+### Client-only ops (`on_client` + `js`) — zero round trips
+
+Not every interaction needs the server. A tab switch, a dropdown, an accordion
+— purely visual state — used to mean either a wasteful signed round trip or the
+very Stimulus controller this gem exists to eliminate. `on_client` binds a DOM
+event to a chain of **declared DOM operations** that the one generic controller
+applies locally: **no token, no params, no POST, ever.**
+
+```ruby
+def view_template
+  div(**mix(reactive_root, on_client(:click, js.hide("#menu"), outside: true))) do
+    # Tabs: one op chain per tab — hide all panels, show one, restyle the tabs.
+    button(**on_client(:click, js.hide(".panel").show("#panel-2")
+      .remove_class(".tab", "active").add_class("#tab-2", "active"))) { "Tab 2" }
+
+    # A menu that opens client-side and closes on ANY outside click (the root
+    # carries the window-bound trigger above).
+    button(**on_client(:click, js.show("#menu"))) { "Menu" }
+    div(id: "menu", hidden: true) { menu_items }
+  end
+end
+```
+
+The `js` builder is immutable (each verb returns a new chain) and its
+vocabulary is a fixed whitelist mirrored by the client: `show`/`hide`/`toggle`
+flip the `hidden` attribute; `add_class`/`remove_class`/`toggle_class` take one
+or more classes. Targets are CSS selectors resolved **within the component's
+root** (nested reactive components are never touched — same ownership rule as
+field collection); `:root` targets the root element itself; `global: true` on
+an op escapes to the whole document. An op name the client doesn't recognize
+logs a warning and is skipped — the rest of the chain still applies.
+
+`window:`, `once:`, and `outside:` compose exactly like `on(...)`'s event
+modifiers: the dropdown above closes on any click outside the component, and
+window-bound triggers never `preventDefault`, so links elsewhere keep working.
+
+**Client ops are ephemeral UI — the one contract to internalize.** Any server
+re-render of the component (an action reply, a broadcast, a morph) rebuilds
+from server state and resets whatever the ops toggled: the menu closes, the tab
+snaps back. That is by design — the same caveat LiveView's JS commands carry.
+For state that must survive a re-render (an edit mode, a selection the server
+should know about), use a signed `action` instead; `on_client` is for state the
+server should never care about.
 
 **Auto-collected sibling fields — the read contract.** A reactive action doesn't
 just receive its own trigger's value: the client gathers **every named control**

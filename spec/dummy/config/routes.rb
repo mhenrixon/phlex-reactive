@@ -18,6 +18,7 @@ Rails.application.routes.draw do
   get "nested_params" => "demos#nested_params"
   get "debounce" => "demos#debounce"
   get "dropdown" => "demos#dropdown"
+  get "client_tabs" => "demos#client_tabs"
   get "confirm" => "demos#confirm"
   get "morph_grid/:id" => "demos#morph_grid"
   get "partial_grid/:id" => "demos#partial_grid"
