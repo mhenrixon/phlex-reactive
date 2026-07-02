@@ -228,9 +228,16 @@ module Phlex
       # collector is nil and every diagnostic branch below early-returns —
       # zero extra work on the production path.
       def coerce_params(schema, component_class: nil, action_name: nil)
-        return {} if schema.blank?
-
         dropped = Phlex::Reactive.verbose_errors ? [] : nil
+
+        # A schema-less action drops EVERYTHING the client posted. Still surface
+        # that in verbose mode — forgetting the `params:` declaration entirely is
+        # the loudest version of the silent drop.
+        if schema.blank?
+          log_schemaless_drops(dropped, component_class, action_name) if dropped
+          return {}
+        end
+
         coerced = coerce_hash(params.fetch(:params, {}), schema, dropped, nil)
         log_dropped_params(dropped, schema, component_class, action_name)
         coerced
@@ -297,7 +304,15 @@ module Phlex
 
         coerced =
           if dropped
-            values.map.with_index { |element, i| coerce(element, element_type, dropped, "#{path}[#{i}]") }
+            # Record each element that coerces to DROP (a forged non-file in a
+            # [:file] array) under its bracketed index — reject! below removes
+            # it from the result, so this is its only trace.
+            values.map.with_index do |element, i|
+              element_path = "#{path}[#{i}]"
+              result = coerce(element, element_type, dropped, element_path)
+              dropped << [element_path, :uncoercible] if result.equal?(DROP)
+              result
+            end
           else
             values.map { coerce(it, element_type) }
           end
@@ -371,9 +386,18 @@ module Phlex
 
       def dropped_reason(path, reason, schema)
         return reason.to_s unless reason == :undeclared
+        return "undeclared — the action declares no params" if schema.empty?
 
         hint = shape_hint(path, schema)
         hint ? "undeclared — #{hint}" : "undeclared"
+      end
+
+      # Collect + log for an action with NO declared schema: every posted key is
+      # undeclared by definition (CodeRabbit review on PR #87). Runs only when
+      # the verbose collector exists.
+      def log_schemaless_drops(dropped, component_class, action_name)
+        collect_undeclared(dropped, to_param_hash(params.fetch(:params, {})), {}, nil)
+        log_dropped_params(dropped, {}, component_class, action_name)
       end
 
       # Fires only when a dropped segment matches a DECLARED key at a different

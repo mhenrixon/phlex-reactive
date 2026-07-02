@@ -199,6 +199,37 @@ RSpec.describe "verbose_errors diagnostics (issue #82)", type: :request do
         .with(a_string_including("bank_account_ids (uncoercible)"))
     end
 
+    it "logs a dropped ARRAY ELEMENT with its bracketed index as uncoercible" do
+      # A forged non-file element in a [:file] array is rejected element-wise;
+      # the diagnostic must name the element (pages[0]), not just the key.
+      document = Document.create!(title: "untitled")
+
+      post_action(DocumentUploadComponent, payload: { "gid" => document.to_gid.to_s },
+        act: "upload_pages", params: { pages: ["not-a-file"] })
+
+      expect(response).to have_http_status(:ok)
+      expect(Rails.logger).to have_received(:warn)
+        .with(a_string_including("pages[0] (uncoercible)"))
+    end
+
+    it "logs params posted to an action that declares NO schema" do
+      # Forgetting `params:` on the declaration entirely is the loudest version
+      # of the silent drop — auto-collected fields vanish with no trace.
+      post_action(CounterComponent, payload: { "s" => { "count" => 1 } }, act: "increment",
+        params: { stray: "x" })
+
+      expect(response).to have_http_status(:ok)
+      expect(Rails.logger).to have_received(:warn)
+        .with(a_string_including("CounterComponent#increment dropped params:",
+          "stray (undeclared — the action declares no params)"))
+    end
+
+    it "logs nothing for a schema-less action when nothing was posted" do
+      post_action(CounterComponent, payload: { "s" => { "count" => 1 } }, act: "increment")
+
+      expect(Rails.logger).not_to have_received(:warn).with(a_string_including("dropped params"))
+    end
+
     it "hints when a bracketed name matches a key the schema declares at top level" do
       # The client posted invoice[date] but `save` declares :date FLAT — the
       # #16/#21 confusion this diagnostic exists for.
