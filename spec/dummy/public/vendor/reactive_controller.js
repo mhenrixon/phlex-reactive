@@ -248,9 +248,18 @@ export default class extends Controller {
     for (const name of outputs) {
       if (!(name in result)) continue
       const field = this.#ownedField(name)
-      // Setting .value fires the field's own `input` listeners (a chained summary
-      // repaint), matching the server's set_value + dispatch("input") contract.
-      if (field) field.value = result[name]
+      if (!field) continue
+      // Real browsers do NOT fire `input` on a programmatic .value write (issue
+      // #76), so after writing we dispatch a bubbling `input` ourselves — that's
+      // what drives a chained repaint (a summary listener, a second compute),
+      // matching the server's set_value + dispatch("input") contract. The write
+      // is CHANGE-GUARDED: an unchanged value is skipped entirely (no write, no
+      // event). The guard is what lets a reducer with overlapping inputs/outputs
+      // (the shipped payment_split shape) settle — an unconditional dispatch
+      // would re-enter input->reactive#recompute forever.
+      if (String(result[name]) === field.value) continue
+      field.value = result[name]
+      field.dispatchEvent(new Event("input", { bubbles: true }))
     }
   }
 

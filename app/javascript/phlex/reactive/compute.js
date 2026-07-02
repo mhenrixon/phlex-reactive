@@ -22,10 +22,15 @@
 //
 // The reducer receives a plain object of { inputName: Number } and returns a
 // plain object of { outputName: value } — only the outputs it names are written,
-// so it can leave the edited field (and its caret) untouched. Returning the SAME
-// value it read is a no-op write; the controller still fires `input` on any field
-// it sets so a chained summary repaints, matching the server's set_value +
-// dispatch("input") contract.
+// so it can leave the edited field (and its caret) untouched. Output writes are
+// CHANGE-GUARDED: the controller writes a field and dispatches a bubbling
+// `input` event on it ONLY when the new value differs from the field's current
+// value (real browsers never fire `input` on a programmatic .value write, so
+// the controller dispatches explicitly — that's what drives a chained summary
+// repaint, matching the server's set_value + dispatch("input") contract).
+// Returning the SAME value a field already holds is skipped entirely — no
+// write, no event — which is why a reducer with overlapping inputs/outputs
+// (like payment_split above) settles instead of re-entering itself forever.
 
 const reducers = new Map()
 

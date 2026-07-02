@@ -26,9 +26,10 @@ beforeAll(async () => {
   computeModule = await import("../../app/javascript/phlex/reactive/compute.js")
 })
 
-// A fake named form control: value is read/written like a real input, and
-// setting .value fires any registered "input" listeners so a chained summary
-// repaints (matches the browser: set_value + dispatch("input")). `closest`
+// A fake named form control matching REAL DOM semantics: a programmatic .value
+// write coerces to String and fires NOTHING (browsers never fire `input` on a
+// programmatic assignment — issue #76). Listeners only run through an explicit
+// dispatchEvent, which is what the controller must call itself. `closest`
 // returns the owning root so #ownsField (issue #15) treats it as owned.
 function makeField(name, value) {
   const listeners = []
@@ -41,14 +42,16 @@ function makeField(name, value) {
       return this._value
     },
     set value(v) {
-      this._value = String(v)
-      listeners.slice().forEach((fn) => fn({ target: this }))
+      this._value = String(v) // real DOM: coerce only, NO events
     },
     closest() {
       return this._root
     },
     addEventListener: (type, fn) => type === "input" && listeners.push(fn),
-    dispatchEvent: () => {},
+    dispatchEvent(event) {
+      if (event.type === "input") listeners.slice().forEach((fn) => fn(event))
+      return true
+    },
   }
 }
 
@@ -168,14 +171,14 @@ test("#recompute is a no-op when no reducer is registered for the key", () => {
   expect(fields.cash.value).toBe("999")
 })
 
-test("writing an output fires its input listeners (so a chained summary repaints)", () => {
+test("a changed output write dispatches exactly one bubbling input event on the field", () => {
   const fields = {
     allowance: makeField("allowance", 100),
     cash: makeField("cash", 0),
     total: makeField("total", 500),
   }
-  let summaryRepaints = 0
-  fields.cash.addEventListener("input", () => summaryRepaints++)
+  const events = []
+  fields.cash.addEventListener("input", (e) => events.push(e))
 
   computeModule.setComputeReducer("split", ({ allowance, total }) => ({ cash: total - allowance }))
   const controller = buildController(
@@ -184,5 +187,90 @@ test("writing an output fires its input listeners (so a chained summary repaints
 
   controller.recompute({ target: fields.allowance })
   expect(fields.cash.value).toBe("400")
-  expect(summaryRepaints).toBe(1) // the output write drove the summary, no round trip
+  // Real browsers do NOT fire input on a programmatic .value write (issue #76) —
+  // the controller must dispatch a real bubbling Event("input") itself.
+  expect(events.length).toBe(1)
+  expect(events[0].type).toBe("input")
+  expect(events[0].bubbles).toBe(true)
+})
+
+test("an UNCHANGED output write dispatches NO input event (the change guard)", () => {
+  const fields = {
+    allowance: makeField("allowance", 100),
+    cash: makeField("cash", 400),
+    total: makeField("total", 500),
+  }
+  let cashEvents = 0
+  fields.cash.addEventListener("input", () => cashEvents++)
+
+  // The reducer returns the value cash already holds → no write, no dispatch.
+  computeModule.setComputeReducer("split", ({ allowance, total }) => ({ cash: total - allowance }))
+  const controller = buildController(
+    makeRoot({ reducer: "split", inputs: ["allowance", "total"], outputs: ["cash"], fields }),
+  )
+
+  controller.recompute({ target: fields.allowance })
+  expect(fields.cash.value).toBe("400")
+  expect(cashEvents).toBe(0)
+})
+
+test("overlapping inputs/outputs (payment_split shape) settle — no infinite recompute loop", () => {
+  const fields = {
+    allowance: makeField("allowance", 100),
+    cash: makeField("cash", 0),
+    leasing: makeField("leasing", 0),
+    total: makeField("total", 500),
+  }
+  let reducerCalls = 0
+  // The SHIPPED payment_split reducer shape: reads fields it also writes.
+  computeModule.setComputeReducer("payment_split", ({ allowance, total }) => {
+    reducerCalls++
+    if (allowance >= total) return { allowance: total, cash: 0, leasing: 0 }
+    return { allowance, cash: total - allowance, leasing: 0 }
+  })
+
+  const controller = buildController(
+    makeRoot({
+      reducer: "payment_split",
+      inputs: ["allowance", "cash", "leasing", "total"],
+      outputs: ["allowance", "cash", "leasing"],
+      fields,
+    }),
+  )
+  // Wire every output like the DOM would: a dispatched input re-enters recompute
+  // (input->reactive#recompute bubbles to the root). Without the change guard
+  // this recurses forever; with it, the second pass writes nothing and stops.
+  for (const name of ["allowance", "cash", "leasing"]) {
+    fields[name].addEventListener("input", (e) => controller.recompute(e))
+  }
+
+  controller.recompute({ target: fields.allowance })
+
+  expect(fields.cash.value).toBe("400")
+  expect(fields.allowance.value).toBe("100")
+  expect(fields.leasing.value).toBe("0")
+  // Initial run + exactly one re-entry per changed output (cash) — then settled.
+  expect(reducerCalls).toBe(2)
+})
+
+test("a chained listener on an output field fires via the dispatched event (summary repaint)", () => {
+  const fields = {
+    allowance: makeField("allowance", 100),
+    cash: makeField("cash", 0),
+    total: makeField("total", 500),
+  }
+  // Simulates a summary repaint / a second compute hanging off the output field.
+  let summary = null
+  fields.cash.addEventListener("input", (e) => {
+    summary = `cash is ${fields.cash.value}`
+    expect(e.bubbles).toBe(true)
+  })
+
+  computeModule.setComputeReducer("split", ({ allowance, total }) => ({ cash: total - allowance }))
+  const controller = buildController(
+    makeRoot({ reducer: "split", inputs: ["allowance", "total"], outputs: ["cash"], fields }),
+  )
+
+  controller.recompute({ target: fields.allowance })
+  expect(summary).toBe("cash is 400") // the chained repaint saw the new value
 })
