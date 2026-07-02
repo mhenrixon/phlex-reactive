@@ -158,6 +158,101 @@ RSpec.describe Phlex::Reactive::Response do
     end
   end
 
+  # Issue #77: the flash level must reach the wire. String content gets a
+  # level-carrying wrapper (class + data attribute); Phlex component content
+  # renders VERBATIM (byte-identical to before — the caller owns the markup);
+  # Phlex::Reactive.flash_component swaps the default wrapper for the app's own
+  # flash component (string content only).
+  describe "flash levels (issue #77)" do
+    it ":error and :notice produce different streams" do
+      error = described_class.with.flash(:error, "boom").streams.first
+      notice = described_class.with.flash(:notice, "saved").streams.first
+
+      expect(error.to_s.gsub("boom", "MSG")).not_to eq(notice.to_s.gsub("saved", "MSG"))
+      expect(error).to include('class="reactive-flash reactive-flash--error"')
+      expect(error).to include('data-reactive-flash-level="error"')
+      expect(notice).to include('class="reactive-flash reactive-flash--notice"')
+      expect(notice).to include('data-reactive-flash-level="notice"')
+    end
+
+    it "keeps HTML-escaping plain string content (injection contract unchanged)" do
+      stream = described_class.with.flash(:notice, "<em>x</em> & y").streams.first
+
+      expect(stream).to include("&lt;em&gt;x&lt;/em&gt; &amp; y")
+      expect(stream).not_to include("<em>x</em>")
+      expect(stream).to include('class="reactive-flash reactive-flash--notice"')
+    end
+
+    it "passes an html_safe string verbatim INSIDE the wrapper (intentional raw HTML)" do
+      stream = described_class.with.flash(:notice, "<em>x</em>".html_safe).streams.first
+
+      expect(stream).to include('data-reactive-flash-level="notice"')
+      expect(stream).to include("<em>x</em>")
+    end
+
+    it "HTML-escapes the level (it lands in a class name and a data attribute)" do
+      stream = described_class.with.flash(%(err"or><script>), "x").streams.first
+
+      expect(stream).not_to include('err"or><script>')
+      expect(stream).to include("err&quot;or&gt;&lt;script&gt;")
+    end
+
+    it "renders Phlex component content VERBATIM — byte-identical to the raw builder append, no wrapper" do
+      klass = Class.new(Phlex::HTML) do
+        def self.name = "FlashPassthroughProbe"
+        def view_template = span { "rendered flash" }
+      end
+
+      via_flash = described_class.with.flash(:error, klass.new).streams.first
+      raw = Phlex::Reactive.flash_builder.append("flash", html: Phlex::Reactive.render(klass.new))
+
+      expect(via_flash.to_s).to eq(raw.to_s)
+      expect(via_flash).not_to include("reactive-flash")
+    end
+
+    describe "Phlex::Reactive.flash_component" do
+      let(:flash_component) do
+        Class.new(Phlex::HTML) do
+          def self.name = "AppFlashProbe"
+
+          def initialize(level:, content:)
+            @level = level
+            @content = content
+          end
+
+          def view_template = div(class: "toast toast--#{@level}") { @content }
+        end
+      end
+
+      around do
+        Phlex::Reactive.flash_component = flash_component
+        it.run
+      ensure
+        Phlex::Reactive.flash_component = nil
+      end
+
+      it "renders string content through the configured component (level + content)" do
+        stream = described_class.with.flash(:error, "Save failed").streams.first
+
+        expect(stream).to include('class="toast toast--error"')
+        expect(stream).to include("Save failed")
+        expect(stream).not_to include("reactive-flash")
+      end
+
+      it "component content still bypasses flash_component (renders verbatim)" do
+        klass = Class.new(Phlex::HTML) do
+          def self.name = "CustomFlashCard"
+          def view_template = span { "custom card" }
+        end
+
+        stream = described_class.with.flash(:error, klass.new).streams.first
+
+        expect(stream).to include("<span>custom card</span>")
+        expect(stream).not_to include("toast")
+      end
+    end
+  end
+
   it "flash accepts a Phlex component, rendered through the configured renderer" do
     klass = Class.new(Phlex::HTML) do
       # ActionView's render logger needs a name

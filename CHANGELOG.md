@@ -229,6 +229,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   assertion that a derived field repaints after typing. The misleading comments
   in `reactive_controller.js` and `compute.js` now describe the real contract.
 
+- **`reply.flash` discarded its level — `:error` and `:notice` emitted
+  byte-identical streams (#77).** `Response.flash_stream` declared the level as
+  `_level` and never used it, so an app could not style errors red without
+  abandoning the flash helper — while the public API and every README example
+  pass a level. String flash content is now wrapped in
+  `<div class="reactive-flash reactive-flash--{level}"
+  data-reactive-flash-level="{level}">…</div>`, so the level reaches the wire as
+  a style hook (class) and a script/test hook (data attribute); the level is
+  HTML-escaped before landing in either attribute. **This intentionally changes
+  the wire output for string flashes** (previously the bare string was appended
+  with no wrapper) — restyle against `.reactive-flash--{level}` if you targeted
+  the raw text node. The string itself keeps the exact pre-existing injection
+  contract, now applied inside the wrapper: a plain String is HTML-escaped, an
+  `html_safe` String passes verbatim. Phlex **component** content still renders
+  VERBATIM — byte-identical to before, no wrapper (the caller owns the markup;
+  a spec pins it). New config `Phlex::Reactive.flash_component = MyFlash`
+  (default nil) renders string flashes through your own component instead of
+  the default wrapper — instantiated `MyFlash.new(level:, content:)` and
+  rendered through the existing render path; component content bypasses it.
+
 - **`reactive_controller.js` used a relative `./confirm.js` import that 404'd under
   importmap-rails + Propshaft — taking down every Stimulus controller on the page (#57).**
   The #55 confirm resolver added `import { confirmResolver } from "./confirm.js"` to the

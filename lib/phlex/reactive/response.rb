@@ -167,11 +167,51 @@ module Phlex
 
         # Build a flash turbo-stream that appends `content` into a host-app
         # container. `content` is a Phlex component instance (rendered through
-        # the configured renderer so t()/url_for work) or a ready HTML string —
-        # supplied by the caller because the render context is off-request
-        # (there is no Rails `flash`).
-        def flash_stream(_level, content, target:)
-          Phlex::Reactive.flash_builder.append(target, html: render_html(content))
+        # the configured renderer so t()/url_for work) or a String — supplied
+        # by the caller because the render context is off-request (there is no
+        # Rails `flash`). The LEVEL reaches the wire (issue #77): string
+        # content gets a level-carrying wrapper (or the configured
+        # Phlex::Reactive.flash_component); component content renders VERBATIM
+        # — the caller owns the markup, no wrapper, no double-wrapping.
+        def flash_stream(level, content, target:)
+          Phlex::Reactive.flash_builder.append(target, html: flash_html(level, content))
+        end
+
+        # Resolve flash `content` to HTML, carrying the level (issue #77):
+        #   * a Phlex component instance — rendered verbatim, exactly as before
+        #     (byte-identical; it also bypasses flash_component).
+        #   * a String with Phlex::Reactive.flash_component configured — the
+        #     app's component is instantiated new(level:, content:) and
+        #     rendered through the existing render_html path.
+        #   * a String otherwise — the default level-carrying wrapper below.
+        def flash_html(level, content)
+          return render_html(content) if content.is_a?(::Phlex::SGML)
+
+          component_class = Phlex::Reactive.flash_component
+          return render_html(component_class.new(level:, content:)) if component_class
+
+          default_flash_html(level, content)
+        end
+
+        # The default string-flash wrapper:
+        #   <div class="reactive-flash reactive-flash--{level}"
+        #        data-reactive-flash-level="{level}">{content}</div>
+        # The level is unconditionally HTML-escaped (it lands in a class name
+        # and a data attribute). The content keeps the exact pre-#77 injection
+        # contract, now applied INSIDE the wrapper: ERB::Util.html_escape
+        # escapes a plain String but passes an html_safe String verbatim —
+        # the same behavior Turbo's TagBuilder gave the unwrapped string, so
+        # a model value still can't inject markup while intentional raw HTML
+        # (html_safe) still renders. The wrapper is html_safe by construction
+        # (both interpolations are escaped above), so the TagBuilder emits it
+        # as-is.
+        def default_flash_html(level, content)
+          level_attr = CGI.escapeHTML(level.to_s)
+          body = ERB::Util.html_escape(content.to_s)
+
+          # html_safe is safe by construction: both interpolated pieces are escaped above.
+          %(<div class="reactive-flash reactive-flash--#{level_attr}" \
+data-reactive-flash-level="#{level_attr}">#{body}</div>).html_safe
         end
 
         # Build a turbo-stream that updates an arbitrary target id with `content`
