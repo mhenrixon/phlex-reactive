@@ -248,6 +248,23 @@ module Views
                 end
               end
               p { plain 'The client runtime logs non-OK responses and applies no DOM change.' }
+              p do
+                plain 'Every failure is warn-logged as '
+                code { '[phlex-reactive] …' }
+                plain ' in every environment. With '
+                code { 'Phlex::Reactive.verbose_errors' }
+                plain ' on (the default in development and test via '
+                code { 'Rails.env.local?' }
+                plain '; off in production), the response also carries a plain-text diagnostic body — the ' \
+                      'client prints it via '
+                code { 'console.error' }
+                plain ' — saying which failure this was: a tampered/stale token, a token class that no longer ' \
+                      'resolves, an undeclared action (listing the declared ones), a registered authorization ' \
+                      'error, or a GlobalID that no longer finds its record. Param coercion additionally logs ' \
+                      'every dropped key with its full bracketed path and reason (undeclared / uncoercible), ' \
+                      'with a hint when a flat name looks like the bracketed twin of a declared nested key. ' \
+                      'The flag never changes a status — only the body and the logs.'
+              end
             end
           end
         end
