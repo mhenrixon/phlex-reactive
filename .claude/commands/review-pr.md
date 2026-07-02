@@ -1,4 +1,5 @@
 ---
+model: opus
 description: Review a GitHub pull request for code quality, patterns, and best practices
 argument-hint: "PR URL or number (e.g., 5 or https://github.com/mhenrixon/phlex-reactive/pull/5)"
 ---
