@@ -1,4 +1,5 @@
 ---
+model: opus
 description: "Coordinates a change across the phlex-reactive layers. Use when planning a feature that spans the component, the endpoint, and the client runtime."
 argument-hint: "feature or task to coordinate"
 ---

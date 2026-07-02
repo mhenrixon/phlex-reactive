@@ -1,4 +1,5 @@
 ---
+model: opus
 description: "Reviews code for security vulnerabilities. Use when auditing the action endpoint, the signed identity, authorization, params, CSRF, or the connection-id."
 argument-hint: "code, feature, or area to review for security"
 ---

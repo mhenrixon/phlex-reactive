@@ -1,4 +1,5 @@
 ---
+model: opus
 description: "Executes full autonomous engineering workflow with verification. Use when implementing complete features, tackling GitHub issues, or running end-to-end development cycles."
 argument-hint: "GitHub issue number/URL or feature description"
 allowed-tools: Bash(gh issue view:*), Bash(gh search:*), Bash(gh issue list:*), Bash(gh pr create:*), Bash(gh pr view:*), Bash(bundle exec:*), Bash(git:*), Read, Write, Edit, Glob, Grep, Agent

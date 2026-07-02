@@ -1,4 +1,5 @@
 ---
+model: opus
 description: "Benchmark the current branch against main and report a same-machine before/after. Use when a change touches a hot path (render, token signing, param coercion, broadcast, client dispatch) or when asked to measure performance."
 argument-hint: "optional: a specific hot path or bench name (e.g. render)"
 ---
