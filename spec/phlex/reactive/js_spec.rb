@@ -60,4 +60,145 @@ RSpec.describe Phlex::Reactive::JS do
       expect { js.add_class(".tab") }.to raise_error(ArgumentError, /at least one class/)
     end
   end
+
+  # --- Issue #96: attribute ops (the security-critical build-time allowlist) ---
+
+  describe "attribute ops (#set_attr / #remove_attr / #toggle_attr)" do
+    it "serializes set_attr with the name and stringified value" do
+      expect(JSON.parse(js.set_attr("#x", "aria-expanded", true).to_json))
+        .to eq([["set_attr", { "to" => "#x", "name" => "aria-expanded", "value" => "true" }]])
+    end
+
+    it "serializes remove_attr with just the name" do
+      expect(JSON.parse(js.remove_attr(:root, "disabled").to_json))
+        .to eq([["remove_attr", { "to" => "@root", "name" => "disabled" }]])
+    end
+
+    it "serializes toggle_attr with the name (no value needed)" do
+      expect(JSON.parse(js.toggle_attr("#x", "aria-expanded").to_json))
+        .to eq([["toggle_attr", { "to" => "#x", "name" => "aria-expanded" }]])
+    end
+
+    it "carries global: true through an attr op when asked" do
+      expect(JSON.parse(js.set_attr("#x", "data-open", "1", global: true).to_json).dig(0, 1))
+        .to include("global" => true)
+    end
+
+    it "coerces a symbol attribute name to a string" do
+      expect(JSON.parse(js.toggle_attr("#x", :hidden).to_json).dig(0, 1, "name")).to eq("hidden")
+    end
+  end
+
+  describe "the attribute-name allowlist (two-sided default-deny; build side raises)" do
+    it "rejects event-handler attributes (/\\Aon/i) — XSS vector" do
+      expect { js.set_attr("#x", "onclick", "alert(1)") }.to raise_error(ArgumentError, /onclick/)
+      expect { js.toggle_attr("#x", "onmouseover") }.to raise_error(ArgumentError, /onmouseover/)
+      expect { js.remove_attr("#x", "onload") }.to raise_error(ArgumentError, /onload/)
+    end
+
+    it "is case-insensitive about the on* prefix (OnClick, ONCLICK)" do
+      expect { js.set_attr("#x", "OnClick", "x") }.to raise_error(ArgumentError)
+      expect { js.set_attr("#x", "ONCLICK", "x") }.to raise_error(ArgumentError)
+    end
+
+    # Each block iterates attribute NAMES; the inner expect { } blocks reference
+    # that outer `name`, so the ItBlockParameter cop's implicit-`it` rewrite would
+    # shadow it (the same trap vendored_controller_sync_spec.rb documents).
+    # rubocop:disable Style/ItBlockParameter
+    it "rejects every URL-bearing attribute (javascript:-injection surface)" do
+      %w[href src srcdoc action formaction xlink:href].each do |name|
+        expect { js.set_attr("#x", name, "javascript:evil()") }
+          .to raise_error(ArgumentError, /#{Regexp.escape(name)}/),
+            "expected #{name} to be rejected"
+      end
+    end
+
+    it "is case-insensitive about URL-bearing names (HREF, Src)" do
+      expect { js.set_attr("#x", "HREF", "x") }.to raise_error(ArgumentError)
+      expect { js.remove_attr("#x", "Src") }.to raise_error(ArgumentError)
+    end
+
+    it "rejects style (CSS injection — use classes)" do
+      expect { js.set_attr("#x", "style", "color:red") }.to raise_error(ArgumentError, /style/)
+      expect { js.set_attr("#x", "STYLE", "x") }.to raise_error(ArgumentError)
+    end
+
+    it "allows the intended surface: hidden, disabled, open, selected, aria-*, data-*" do
+      %w[hidden disabled open selected aria-expanded aria-hidden data-state data-open].each do |name|
+        expect { js.set_attr("#x", name, "true") }.not_to raise_error
+        expect { js.toggle_attr("#x", name) }.not_to raise_error
+        expect { js.remove_attr("#x", name) }.not_to raise_error
+      end
+    end
+    # rubocop:enable Style/ItBlockParameter
+  end
+
+  # --- Issue #96: focus ops ---
+
+  describe "focus ops (#focus / #focus_first)" do
+    it "serializes focus with its target" do
+      expect(JSON.parse(js.focus("#menu [role=menuitem]").to_json))
+        .to eq([["focus", { "to" => "#menu [role=menuitem]" }]])
+    end
+
+    it "serializes focus_first with its target" do
+      expect(JSON.parse(js.focus_first("#menu").to_json))
+        .to eq([["focus_first", { "to" => "#menu" }]])
+    end
+
+    it "accepts :root and global: on focus ops" do
+      expect(JSON.parse(js.focus(:root).to_json).dig(0, 1, "to")).to eq("@root")
+      expect(JSON.parse(js.focus("#x", global: true).to_json).dig(0, 1)).to include("global" => true)
+    end
+  end
+
+  # --- Issue #96: dispatch a bubbling CustomEvent ---
+
+  describe "dispatch (#dispatch) — a bubbling CustomEvent" do
+    it "serializes name, detail, and a nil target as @root (dispatch on the root)" do
+      expect(JSON.parse(js.dispatch("app:menu-toggled", detail: { open: true }).to_json))
+        .to eq([["dispatch", { "name" => "app:menu-toggled", "to" => "@root", "detail" => { "open" => true } }]])
+    end
+
+    it "carries an explicit target when given" do
+      expect(JSON.parse(js.dispatch("app:x", to: "#panel").to_json).dig(0, 1))
+        .to include("name" => "app:x", "to" => "#panel")
+    end
+
+    it "defaults detail to an empty hash" do
+      expect(JSON.parse(js.dispatch("app:x").to_json).dig(0, 1, "detail")).to eq({})
+    end
+
+    it "accepts :root and global: on a targeted dispatch" do
+      expect(JSON.parse(js.dispatch("app:x", to: :root).to_json).dig(0, 1, "to")).to eq("@root")
+      expect(JSON.parse(js.dispatch("app:x", to: "#x", global: true).to_json).dig(0, 1))
+        .to include("global" => true)
+    end
+  end
+
+  # --- Issue #96: the transition: kwarg on show/hide/toggle ---
+
+  describe "transition: kwarg on show/hide/toggle" do
+    it "carries [during, from, to] class lists on the visibility op" do
+      ops = js.toggle("#menu", transition: %w[transition-opacity opacity-0 opacity-100]).to_json
+      expect(JSON.parse(ops).dig(0, 1, "transition"))
+        .to eq(%w[transition-opacity opacity-0 opacity-100])
+    end
+
+    it "works on show and hide too" do
+      expect(JSON.parse(js.show("#x", transition: %w[t f to]).to_json).dig(0, 1, "transition"))
+        .to eq(%w[t f to])
+      expect(JSON.parse(js.hide("#x", transition: %w[t f to]).to_json).dig(0, 1, "transition"))
+        .to eq(%w[t f to])
+    end
+
+    it "omits the transition key when not asked (lean default)" do
+      expect(JSON.parse(js.toggle("#x").to_json).dig(0, 1)).not_to have_key("transition")
+    end
+
+    it "rejects a transition list that is not exactly [during, from, to]" do
+      expect { js.toggle("#x", transition: %w[only two]) }
+        .to raise_error(ArgumentError, /during, from, to/)
+    end
+  end
 end

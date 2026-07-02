@@ -17,6 +17,7 @@ class ClientTabsComponent < ApplicationComponent
       tabs
       panels
       menu
+      drawer
     end
   end
 
@@ -49,5 +50,23 @@ class ClientTabsComponent < ApplicationComponent
   def menu
     button(**mix(on_client(:click, js.show("#ct-menu")), data: { testid: "menu-open" })) { "Menu" }
     div(id: "ct-menu", hidden: true, data: { testid: "menu" }) { span { "menu content" } }
+  end
+
+  # Issue #96: a drawer opened with a TRANSITION (animated fade), an
+  # aria-expanded attr op on the trigger, and a FOCUS op landing on the first
+  # focusable control inside the drawer — the exact "I had to write Stimulus"
+  # accessible-disclosure pattern, now one op chain.
+  def drawer
+    open = js
+      .toggle("#ct-drawer", transition: %w[ct-fade ct-fade-from ct-fade-to])
+      .set_attr(:root, "aria-expanded", "true")
+      .focus_first("#ct-drawer")
+
+    button(**mix(on_client(:click, open),
+      id: "ct-drawer-trigger", data: { testid: "drawer-open" })) { "Open drawer" }
+    div(id: "ct-drawer", hidden: true, data: { testid: "drawer" }) do
+      button(data: { testid: "drawer-first" }) { "First action" }
+      button(data: { testid: "drawer-second" }) { "Second action" }
+    end
   end
 end
