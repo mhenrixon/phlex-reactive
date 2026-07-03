@@ -385,7 +385,7 @@ export default class extends Controller {
     // modifier params (issue #80). The client decides preventDefault behavior
     // from event.params — set by the Ruby on() — never by sniffing the
     // Stimulus descriptor.
-    const { action, params, debounce, throttle, confirm, outside, window: windowBound } = event.params
+    const { action, params, debounce, throttle, confirm, outside, window: windowBound, optimistic } = event.params
     if (!action) return
 
     // Outside guard FIRST (issue #80): an outside: trigger only fires for
@@ -395,6 +395,10 @@ export default class extends Controller {
     // click behavior is untouched) and before the reactive:before-dispatch
     // lifecycle event (nothing to announce, nothing to veto).
     if (outside && this.element.contains(event.target)) return
+
+    // Capture the trigger element now; #proceed runs in a later microtask (after
+    // the confirm resolver settles), by which point event.target may be reset.
+    const target = event.target
 
     // Stop native behavior (button submit / FORM NAVIGATION) HERE, synchronously
     // within the event dispatch — BEFORE the (possibly async) confirm gate below.
@@ -410,14 +414,17 @@ export default class extends Controller {
     // issue #80) hears EVERY matching event on the page — preventDefault-ing
     // those would kill every link click while a dropdown is mounted. The page's
     // native behavior proceeds alongside the reactive round trip.
-    if (!windowBound) event.preventDefault()
-
-    // Capture the trigger element now; #proceed runs in a later microtask (after
-    // the confirm resolver settles), by which point event.target may be reset.
-    const target = event.target
+    //
+    // The `checked: :keep` optimistic hint (issue #98) OPTS OUT: for a click-bound
+    // checkbox/radio the unconditional preventDefault is exactly what stops the
+    // native flip from happening before the morph — so a bare checkbox click
+    // (which has no form-navigation default to lose) skips it and flips now, and
+    // the failure revert snaps it back. A `change`-bound trigger is unaffected —
+    // `change` isn't cancelable, so preventDefault was already a no-op there.
+    if (!windowBound && !this.#keepsNativeToggle(optimistic, target)) event.preventDefault()
 
     // No confirm message → proceed straight away (unchanged fast path).
-    if (!confirm) return this.#proceed(target, action, params, debounce, throttle)
+    if (!confirm) return this.#proceed(target, action, params, debounce, throttle, optimistic)
 
     // Confirmation gate (issue #52, made overridable + async in #55). A reactive
     // trigger can't use Hotwire's data-turbo-confirm — this controller preempts
@@ -434,7 +441,7 @@ export default class extends Controller {
       .then(() => confirmResolver(confirm))
       .catch(() => false)
       .then((ok) => {
-        if (ok) this.#proceed(target, action, params, debounce, throttle)
+        if (ok) this.#proceed(target, action, params, debounce, throttle, optimistic)
       })
   }
 
@@ -619,7 +626,7 @@ export default class extends Controller {
   // Split out of dispatch so both the no-confirm fast path and the post-confirm
   // microtask share one place (issue #55). `target` is captured up front because
   // this can run in a later microtask, after event.target has been reset.
-  #proceed(target, action, params, debounce, throttle) {
+  #proceed(target, action, params, debounce, throttle, optimistic) {
     // Lifecycle veto point (issue #79): one cancelable reactive:before-dispatch
     // per user gesture — post-preventDefault, post-confirm, PRE-debounce (and
     // PRE-throttle, the same timing). event.preventDefault() skips the
@@ -637,33 +644,41 @@ export default class extends Controller {
     // Debounced trigger (e.g. on(:update, event: "input", debounce: 300)):
     // coalesce rapid events into ONE round trip after a quiet period, instead of
     // one POST per keystroke (issue #17). A blur flushes a pending dispatch.
+    // The optimistic hint (issue #98) rides to the flush too, so it applies ONCE
+    // per enqueue — a debounced trigger must not flap toggle_class per keystroke.
     const ms = Number(debounce) || 0
-    if (ms > 0) return this.#debounceDispatch(target, ms, action, params)
+    if (ms > 0) return this.#debounceDispatch(target, ms, action, params, optimistic)
 
     // Throttled trigger (e.g. on(:track, event: "scroll", window: true,
     // throttle: 250), issue #80): LEADING-EDGE rate limit — fire the first
     // event immediately, drop the rest until the window elapses. debounce and
     // throttle are mutually exclusive (the Ruby on() raises on both).
     const throttleMs = Number(throttle) || 0
-    if (throttleMs > 0) return this.#throttleDispatch(target, throttleMs, action, params)
+    if (throttleMs > 0) return this.#throttleDispatch(target, throttleMs, action, params, optimistic)
 
-    return this.#enqueue(action, params)
+    return this.#enqueue(action, params, optimistic, target)
   }
 
-  #enqueue(action, params) {
-    this.queue = (this.queue ?? Promise.resolve()).then(() => this.#perform(action, params))
+  // Apply the optimistic hint ONCE (recording its inverse) and chain the round
+  // trip, threading that inverse onto THIS queued request so the serialized
+  // per-controller queue reverts the RIGHT request's hint on failure (issue
+  // #98). Applying here — the single flush/enqueue point every path funnels
+  // through — is what makes a hint apply once per enqueue, not per raw dispatch.
+  #enqueue(action, params, optimistic, target) {
+    const inverse = this.#applyOptimistic(optimistic, target)
+    this.queue = (this.queue ?? Promise.resolve()).then(() => this.#perform(action, params, inverse))
     return this.queue
   }
 
   // Reset a per-element timer; only enqueue the round trip after `ms` of quiet.
   // Also flush immediately on blur so leaving the field never drops the last
   // edit (a long debounce shouldn't swallow a value the user tabbed away from).
-  #debounceDispatch(target, ms, action, params) {
+  #debounceDispatch(target, ms, action, params, optimistic) {
     this.#clearDebounce(target)
 
     const flush = () => {
       this.#clearDebounce(target)
-      this.#enqueue(action, params)
+      this.#enqueue(action, params, optimistic, target)
     }
     const timer = setTimeout(flush, ms)
     target?.addEventListener?.("blur", flush, { once: true })
@@ -691,7 +706,7 @@ export default class extends Controller {
   // are keyed on action + target, NOT target alone: window-bound scroll/resize
   // events all share event.target === document, so two window-bound triggers
   // on one component would otherwise collide on one timer.
-  #throttleDispatch(target, ms, action, params) {
+  #throttleDispatch(target, ms, action, params, optimistic) {
     const timers = this.#throttleTimers.get(target) ?? new Map()
     if (timers.has(action)) return // inside the window — suppress
 
@@ -701,7 +716,7 @@ export default class extends Controller {
     }, ms)
     timers.set(action, timer)
     this.#throttleTimers.set(target, timers)
-    return this.#enqueue(action, params) // leading edge: fire NOW
+    return this.#enqueue(action, params, optimistic, target) // leading edge: fire NOW
   }
 
   // Clear every throttle suppression timer (used on disconnect, alongside
@@ -746,7 +761,7 @@ export default class extends Controller {
     this.#emit("reactive:error", { action, params: sentParams, ...extra, retry })
   }
 
-  async #perform(action, params) {
+  async #perform(action, params, inverse) {
     // Auto-collect named field values inside this component so a button-
     // triggered action still receives sibling inputs (Livewire-style), plus any
     // chosen file inputs in the SAME walk. Explicit params
@@ -802,18 +817,21 @@ export default class extends Controller {
         })
       } catch (error) {
         console.error("[phlex-reactive] action error", error)
+        this.#revertOptimistic(inverse)
         this.#emitError(action, params, allParams, { kind: "network" })
         return
       }
 
       if (response.redirected) {
         console.error("[phlex-reactive] action was redirected (auth/CSRF?) — no update applied")
+        this.#revertOptimistic(inverse)
         this.#emitError(action, params, allParams, { kind: "redirected", status: response.status })
         return
       }
       if (!response.ok) {
         const errorBody = await response.text()
         console.error(`[phlex-reactive] action failed: HTTP ${response.status}`, errorBody)
+        this.#revertOptimistic(inverse)
         this.#emitError(action, params, allParams, { kind: "http", status: response.status, body: errorBody })
         return
       }
@@ -821,6 +839,7 @@ export default class extends Controller {
       const contentType = response.headers.get("Content-Type") || ""
       if (!contentType.includes("turbo-stream")) {
         console.error(`[phlex-reactive] expected a turbo-stream, got "${contentType}" — no update applied`)
+        this.#revertOptimistic(inverse)
         this.#emitError(action, params, allParams, { kind: "content-type", status: response.status })
         return
       }
@@ -847,6 +866,7 @@ export default class extends Controller {
       // failure. kind: "apply" carries NO retry() — retrying would re-POST an
       // action the server already completed.
       console.error("[phlex-reactive] action error", error)
+      this.#revertOptimistic(inverse)
       this.#emit("reactive:error", { action, params: allParams, kind: "apply" })
     } finally {
       this.element.removeAttribute("aria-busy")
@@ -1059,6 +1079,80 @@ export default class extends Controller {
     if (typeof to !== "string" || to === "") return []
     if (args.global) return [...document.querySelectorAll(to)]
     return [...this.element.querySelectorAll(to)].filter((el) => this.#ownsField(el))
+  }
+
+  // Whether a click-bound checkbox/radio trigger should keep its NATIVE flip
+  // (issue #98). `checked: :keep` means "let the control flip now": the
+  // unconditional preventDefault is exactly what suppresses that flip until the
+  // morph, so we skip it — but ONLY for a checkbox/radio (a bare toggle click
+  // has no form-navigation default to lose). Any other element (a button) keeps
+  // preventDefault so an in-form submit can't navigate.
+  #keepsNativeToggle(optimistic, target) {
+    if (optimistic?.checked !== "keep") return false
+    const type = target?.type
+    return type === "checkbox" || type === "radio"
+  }
+
+  // Apply the optimistic hint (issue #98) to its targets NOW and return the
+  // INVERSE — the exact ops to replay on failure. Cosmetic only: class ops and
+  // hidden, applied to the trigger by default or to a `to:` selector scoped to
+  // the root. `checked: :keep` records the trigger's post-flip state so a
+  // failure snaps the native control back; it applies no DOM change itself (the
+  // browser already flipped it). Returns null when there is nothing to do, so
+  // the success/failure paths can cheaply skip.
+  #applyOptimistic(optimistic, trigger) {
+    if (!optimistic) return null
+
+    // Class + hidden ops share one target set (trigger, or the `to:` selector).
+    const targets = this.#optimisticTargets(optimistic, trigger)
+    const undo = []
+    for (const el of targets) {
+      if (optimistic.add_class) {
+        el.classList.add(...optimistic.add_class)
+        undo.push(() => el.classList.remove(...optimistic.add_class))
+      }
+      if (optimistic.remove_class) {
+        el.classList.remove(...optimistic.remove_class)
+        undo.push(() => el.classList.add(...optimistic.remove_class))
+      }
+      if (optimistic.toggle_class) {
+        optimistic.toggle_class.forEach((c) => el.classList.toggle(c))
+        undo.push(() => optimistic.toggle_class.forEach((c) => el.classList.toggle(c)))
+      }
+      if (optimistic.hide) {
+        el.hidden = true
+        undo.push(() => (el.hidden = false))
+      }
+    }
+
+    // checked: :keep — the native flip already happened on the trigger; record
+    // the inverse (flip it back) so a failure reverts the control's state.
+    if (optimistic.checked === "keep" && trigger && "checked" in trigger) {
+      const flipped = trigger.checked
+      undo.push(() => (trigger.checked = !flipped))
+    }
+
+    return undo.length ? undo : null
+  }
+
+  // Replay the recorded inverse ops on failure (issue #98), guarded by
+  // isConnected: a plain (non-morph) replace can detach this subtree before the
+  // failure lands, and reverting a stale/detached node is pointless (it's gone)
+  // — so a disconnected root skips the revert entirely. On success NOTHING calls
+  // this: the server re-render overwrites the hint, or (reply.remove /
+  // streams-only) the hint is deliberately left standing.
+  #revertOptimistic(inverse) {
+    if (!inverse) return
+    if (!this.element.isConnected) return
+    for (const undo of inverse) undo()
+  }
+
+  // The elements an optimistic class/hidden hint applies to: the `to:` selector
+  // (resolved like an op target — "@root" is the root, a selector is scoped to
+  // this root's owned matches) or, with no `to:`, the trigger itself.
+  #optimisticTargets(optimistic, trigger) {
+    if (optimistic.to == null) return trigger ? [trigger] : []
+    return this.#opTargets({ to: optimistic.to })
   }
 
   // The action path comes from a <meta> tag that is fixed for the page's life,

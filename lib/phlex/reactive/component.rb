@@ -426,8 +426,32 @@ module Phlex
       # window elapses (scroll/mousemove). Mutually exclusive with `debounce:`
       # (trailing-edge) — passing both raises ArgumentError.
       #   div(**mix(reactive_root, on(:track, event: "scroll", window: true, throttle: 250)))
+      #
+      # `optimistic:` (issue #98) — a small, ALWAYS-REVERSIBLE vocabulary of
+      # COSMETIC hints the client applies the instant the trigger fires and
+      # REVERTS if the round trip fails, so a click/toggle gives instant feedback
+      # instead of waiting a full round trip. Hints are visual only — never data,
+      # never computed values (that would be client state). Supported ops in the
+      # hint hash:
+      #   * toggle_class:/add_class:/remove_class: — a class string or array,
+      #     applied to the TRIGGER (default) or to a `to:` selector scoped to the
+      #     root (`to: :root` targets the root element itself).
+      #   * checked: :keep — for a click-bound checkbox/radio, the client SKIPS
+      #     its unconditional preventDefault so the native flip happens now
+      #     (today the morph never even lets it flip). On failure, the flip is
+      #     reverted.
+      #   * hide: true — hides the target immediately (the `hide: true` + a
+      #     `reply.remove` action is the instant delete-a-row recipe: the hint
+      #     hides it, the reply removes it; a failure snaps it back).
+      # Success does NO cleanup: a reply that re-renders the root overwrites the
+      # hint with server truth; a reply that does NOT re-render the root
+      # (reply.remove / streams-only) LEAVES the hint standing — that's the
+      # instant-delete working as intended.
+      #   input(type: "checkbox", checked: @todo.done,
+      #     **mix(on(:toggle, event: "change", optimistic: { checked: :keep }), name: "done"))
+      #   button(**on(:destroy, confirm: "Delete?", optimistic: { hide: true, to: :root })) { "Delete" }
       def on(action_name, event: "click", debounce: nil, throttle: nil, confirm: nil, listnav: nil,
-             window: false, once: false, outside: false, **params)
+             window: false, once: false, outside: false, optimistic: nil, **params)
         if debounce && throttle
           raise ArgumentError,
             "on(#{action_name.inspect}) got both debounce: and throttle: — they are mutually " \
@@ -448,6 +472,7 @@ module Phlex
         attrs[:data][:reactive_throttle_param] = throttle if throttle
         attrs[:data][:reactive_confirm_param] = confirm if confirm
         attrs[:data][:reactive_listnav_option_param] = listnav if listnav
+        attrs[:data][:reactive_optimistic_param] = optimistic_hint_json(optimistic, action_name) if optimistic
         # STRING "true", not boolean: Phlex renders a `true` attribute VALUELESS
         # (data-reactive-outside-param), which Stimulus's param reader sees as ""
         # — falsy in JS, so the guard silently never fires. The explicit ="true"
@@ -581,7 +606,52 @@ module Phlex
         reactive_record_for_nested.update!(**nested_attributes(association, attrs), **extra)
       end
 
+      # The declared optimistic-hint class ops (issue #98): the cosmetic class
+      # vocabulary the client applies instantly and reverts on failure. Enforced
+      # at build time in optimistic_hint_json (default-deny — a dead hint fails
+      # at render, not silently in the browser). Each carries a class string or
+      # array; hide/checked are flags with a fixed shape.
+      OPTIMISTIC_CLASS_OPS = %w[toggle_class add_class remove_class].freeze
+
       private
+
+      # Normalize + validate the optimistic hint hash, returning its JSON wire
+      # form (data-reactive-optimistic-param). `to: :root` becomes the same
+      # "@root" sentinel the js op builder uses so the client resolves it
+      # uniformly. Unknown keys, a bad `checked:` value, or a non-hash raise —
+      # a hint that can't apply must fail loudly at render.
+      def optimistic_hint_json(optimistic, action_name)
+        unless optimistic.is_a?(Hash)
+          raise ArgumentError,
+            "on(#{action_name.inspect}) optimistic: must be a Hash of visual hints " \
+            "(e.g. { checked: :keep } or { hide: true, to: :root }), got #{optimistic.class}"
+        end
+
+        hint = {}
+        optimistic.each do |key, value|
+          case key.to_s
+          when *OPTIMISTIC_CLASS_OPS
+            hint[key.to_s] = Array(value).map(&:to_s)
+          when "hide"
+            hint["hide"] = value ? true : false
+          when "checked"
+            unless value.to_s == "keep"
+              raise ArgumentError,
+                "on(#{action_name.inspect}) optimistic checked: only supports :keep " \
+                "(flip the native control, revert on failure), got #{value.inspect}"
+            end
+            hint["checked"] = "keep"
+          when "to"
+            hint["to"] = value == :root ? Phlex::Reactive::JS::ROOT_SENTINEL : value.to_s
+          else
+            raise ArgumentError,
+              "on(#{action_name.inspect}) got an unknown optimistic hint #{key.inspect} — " \
+              "supported: toggle_class/add_class/remove_class, checked: :keep, hide: true, to:"
+          end
+        end
+
+        hint.to_json
+      end
 
       # The component's record, for the nested-attributes helpers. Requires a
       # declared reactive_record (the nested helper only makes sense for a

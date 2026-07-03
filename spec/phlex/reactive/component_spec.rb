@@ -549,6 +549,83 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  describe "#on optimistic hints (issue #98 — declared, reversible visual hints)" do
+    subject(:instance) { state_klass.new }
+
+    it "omits the optimistic param by default (bare on() hot path untouched)" do
+      attrs = instance.send(:on, :increment)
+      expect(attrs[:data]).not_to have_key(:reactive_optimistic_param)
+    end
+
+    it "emits the optimistic hint hash as a JSON Stimulus param" do
+      attrs = instance.send(:on, :toggle, optimistic: { checked: :keep })
+      expect(JSON.parse(attrs[:data][:reactive_optimistic_param])).to eq({ "checked" => "keep" })
+    end
+
+    it "serializes a class op with a single class string" do
+      attrs = instance.send(:on, :toggle, optimistic: { toggle_class: "done" })
+      expect(JSON.parse(attrs[:data][:reactive_optimistic_param])).to eq({ "toggle_class" => ["done"] })
+    end
+
+    it "serializes a class op with an array of classes" do
+      attrs = instance.send(:on, :toggle, optimistic: { add_class: %w[busy dim] })
+      expect(JSON.parse(attrs[:data][:reactive_optimistic_param])).to eq({ "add_class" => %w[busy dim] })
+    end
+
+    it "serializes remove_class" do
+      attrs = instance.send(:on, :toggle, optimistic: { remove_class: "active" })
+      expect(JSON.parse(attrs[:data][:reactive_optimistic_param])).to eq({ "remove_class" => ["active"] })
+    end
+
+    it "serializes hide: true" do
+      attrs = instance.send(:on, :destroy, optimistic: { hide: true })
+      expect(JSON.parse(attrs[:data][:reactive_optimistic_param])).to eq({ "hide" => true })
+    end
+
+    it "normalizes to: :root to the @root sentinel" do
+      attrs = instance.send(:on, :destroy, optimistic: { hide: true, to: :root })
+      expect(JSON.parse(attrs[:data][:reactive_optimistic_param])).to eq({ "hide" => true, "to" => "@root" })
+    end
+
+    it "passes a to: CSS selector string through verbatim" do
+      attrs = instance.send(:on, :toggle, optimistic: { add_class: "on", to: ".badge" })
+      expect(JSON.parse(attrs[:data][:reactive_optimistic_param])).to eq({ "add_class" => ["on"], "to" => ".badge" })
+    end
+
+    it "combines several hint ops in one hash (checked + class)" do
+      attrs = instance.send(:on, :toggle, event: "change", optimistic: { checked: :keep, toggle_class: "done" })
+      expect(JSON.parse(attrs[:data][:reactive_optimistic_param]))
+        .to eq({ "checked" => "keep", "toggle_class" => ["done"] })
+    end
+
+    it "keeps the optimistic hint out of the explicit params payload" do
+      attrs = instance.send(:on, :toggle, optimistic: { hide: true }, reason: "gone")
+      expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({ "reason" => "gone" })
+    end
+
+    it "threads optimistic alongside confirm and debounce without collision" do
+      attrs = instance.send(:on, :destroy, confirm: "Sure?", debounce: 200, optimistic: { hide: true })
+      expect(attrs[:data][:reactive_confirm_param]).to eq("Sure?")
+      expect(attrs[:data][:reactive_debounce_param]).to eq(200)
+      expect(JSON.parse(attrs[:data][:reactive_optimistic_param])).to eq({ "hide" => true })
+    end
+
+    it "rejects an unknown hint op (default-deny — a dead hint must fail at build)" do
+      expect { instance.send(:on, :toggle, optimistic: { explode: true }) }
+        .to raise_error(ArgumentError, /explode/)
+    end
+
+    it "rejects a checked: value other than :keep" do
+      expect { instance.send(:on, :toggle, optimistic: { checked: :flip }) }
+        .to raise_error(ArgumentError, /checked/)
+    end
+
+    it "rejects a non-hash optimistic:" do
+      expect { instance.send(:on, :toggle, optimistic: [%w[toggle_class done]]) }
+        .to raise_error(ArgumentError, /optimistic/)
+    end
+  end
+
   describe "#on_client (issue #95 — client-only DOM ops, zero round trip)" do
     subject(:instance) { state_klass.new }
 

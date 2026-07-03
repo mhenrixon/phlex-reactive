@@ -325,6 +325,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `on(:search, listnav: "[role=option]")` | Add combobox keyboard navigation — Arrow keys move a client-side highlight, Enter picks (clicks the option's own trigger), Escape clears. See [Combobox keyboard navigation](#combobox-keyboard-navigation-listnav). |
 | `on(:close_menu, outside: true)` | Fire only for events **outside** this component's root (close-a-dropdown-on-outside-click). Window-bound; never `preventDefault`s, so links elsewhere keep navigating. |
 | `on(:track, event: "scroll", window: true, throttle: 250)` | `window:` binds the trigger to the window (page-level scroll/resize); `throttle:` rate-limits leading-edge — first event fires, the rest drop until the window elapses. Mutually exclusive with `debounce:`. |
+| `on(:toggle, optimistic: { checked: :keep })` | Apply a reversible **visual hint** the instant the trigger fires (before the round trip); revert it if the action fails. Cosmetic only. See [Optimistic hints](#optimistic-visual-hints-optimistic). |
 | `on(:action, once: true)` | Fire at most once, then unbind (Stimulus's native `:once`). |
 | `on_client(:click, js.toggle("#menu"))` | **Client-only** trigger: applies declared DOM ops with ZERO round trip — no token, no POST, ever. Takes the same `window:`/`once:`/`outside:` modifiers. See [Client-only ops](#client-only-ops-on_client--js--zero-round-trips). |
 | `js` | The immutable op builder behind `on_client`: `show`/`hide`/`toggle` (the `hidden` attribute, with an optional `transition:`), `add_class`/`remove_class`/`toggle_class`, `set_attr`/`remove_attr`/`toggle_attr` (allowlisted names), `focus`/`focus_first`, and `dispatch` — chainable. |
@@ -468,6 +469,55 @@ div(**mix(reactive_root, on(:track, event: "scroll", window: true, throttle: 500
 
 These four (like `debounce:`/`confirm:`/`listnav:`) are **reserved keyword
 names** on `on(...)` — no longer usable as free action params.
+
+### Optimistic visual hints (`optimistic:`)
+
+Every reactive action waits a full round trip for its visual change — and it's
+worse than neutral for a checkbox: the client `preventDefault`s the trigger, so
+an `on(:toggle)` checkbox never even **flips** until the morph arrives.
+`optimistic:` gives Livewire's "flip it client-side, let the morph correct" (and
+React's `useOptimistic`): a small, **always-reversible**, cosmetic vocabulary
+applied the instant the trigger fires and **reverted** if the round trip fails.
+
+Hints are visual **only** — never data, never a computed value (that would be
+client state the DOM can't be trusted to hold). Supported ops in the hint hash:
+
+- `toggle_class:` / `add_class:` / `remove_class:` — a class string or array,
+  applied to the **trigger** by default, or to a `to:` selector scoped to the
+  root (`to: :root` targets the root element itself).
+- `checked: :keep` — for a **click-bound** checkbox/radio, the client skips its
+  unconditional `preventDefault` so the **native flip happens now** (a bare
+  toggle click has no navigation default to lose). On a `change`-bound control
+  the flip is already native — `:keep` then only contributes the failure revert.
+- `hide: true` — hides the target immediately.
+
+```ruby
+# A checkbox that flips instantly; the label paints in the same gesture. The
+# morph reconciles from server truth; a failure snaps both back.
+input(type: "checkbox", checked: @todo.done,
+  **mix(on(:toggle, event: "change", optimistic: { checked: :keep, toggle_class: "is-done", to: ".status" }),
+    name: "done"))
+
+# Instant delete: hide the row NOW, remove it on the reply.
+button(**on(:destroy, confirm: "Delete?", optimistic: { hide: true, to: :root })) { "Delete" }
+```
+
+**The success/failure contract (load-bearing):**
+
+- **On failure** — any branch (`redirected` / `http` / `content-type` /
+  `network`, plus a client-side `apply` throw) — the client replays the exact
+  **inverse** ops, guarded by `isConnected` (a detached row is skipped, it's
+  gone anyway). The hint stored on the queued request, so the serialized
+  per-controller queue reverts the **right** request's hint.
+- **On success there is NO cleanup.** A reply that re-renders the root
+  **overwrites** the hint with server truth. A reply that does **not** re-render
+  the root (`reply.remove`, streams-only) **leaves the hint standing** — that's
+  the `hide: true` + `reply.remove` instant-delete recipe working as intended:
+  the row hides, then removes, and never flashes back.
+
+`optimistic:` (like `debounce:`/`confirm:`/`throttle:`) is a **reserved keyword
+name** on `on(...)`. An unknown hint op, a `checked:` value other than `:keep`,
+or a non-hash raises at render — a dead hint fails loudly, never silently.
 
 ### Client-only ops (`on_client` + `js`) — zero round trips
 
