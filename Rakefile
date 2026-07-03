@@ -132,7 +132,10 @@ namespace :build do
     # byte-identical to what's checked in. `git diff` compares the working tree
     # against the index/HEAD, so a fresh checkout that rebuilds cleanly passes;
     # a source edit without a rebuild-and-commit shows a diff and fails CI.
-    sh "git diff --exit-code -- #{min_glob}" do |ok, _res|
+    # The pathspec is QUOTED so git expands it against the index — not the shell
+    # against the working tree: an unquoted glob only sees files still on disk, so
+    # deleting a module (and its committed .min.js/.map) would slip past the guard.
+    sh "git diff --exit-code -- '#{min_glob}'" do |ok, _res|
       unless ok
         warn "\e[31mMinified client is stale — run `rake build:js` and commit the result.\e[0m"
         abort "Committed .min.js/.min.js.map do not match a fresh build."
