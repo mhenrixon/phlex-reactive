@@ -67,6 +67,21 @@ RSpec.describe Phlex::Reactive do
       expect(described_class.verify(future)).to be_nil
     end
 
+    it "fails closed on a signed token whose \"v\" is not an integer" do
+      # "v" lives inside the signed blob, so only our own signing key (or an
+      # operator error) could produce a non-integer "v". Rather than 500 on the
+      # `version > TOKEN_VERSION` comparison (String vs Integer), reject → 400.
+      malformed = raw_sign({ "c" => "X", "v" => "1" })
+      expect(described_class.verify(malformed)).to be_nil
+    end
+
+    it "fails closed on a signed token whose \"v\" is negative" do
+      # A negative "v" is not a shape we ever minted; treat it as unrecognized and
+      # reject rather than silently passing it through the legacy path.
+      malformed = raw_sign({ "c" => "X", "v" => -1 })
+      expect(described_class.verify(malformed)).to be_nil
+    end
+
     it "still returns nil for a genuinely invalid signature (versioning didn't change this)" do
       expect(described_class.verify("not-a-real-token")).to be_nil
     end

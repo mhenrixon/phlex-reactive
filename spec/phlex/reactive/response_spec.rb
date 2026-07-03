@@ -382,6 +382,11 @@ RSpec.describe Phlex::Reactive::Response do
       expect(stream).to include("&quot;focus&quot;")
     end
 
+    it "enforces the attr allowlist on a raw op array (escape hatch can't bypass it)" do
+      hostile = [["set_attr", { "to" => "#x", "name" => "onclick", "value" => "alert(1)" }]]
+      expect { described_class.with.js(hostile) }.to raise_error(ArgumentError, /onclick/)
+    end
+
     it "rejects an empty op chain (a dead reactive:js stream is a mistake)" do
       empty = CounterComponent.new(count: 0).js
       expect { described_class.with.js(empty) }.to raise_error(ArgumentError, /no ops/)
