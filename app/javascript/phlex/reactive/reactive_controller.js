@@ -503,6 +503,11 @@ export default class extends Controller {
   #busyActions = new Map() // action -> in-flight count (root's space-separated busy set + busy_on)
   #busyTokenCounts = new WeakMap() // element -> Map(action -> count): its data-reactive-busy token set
   #loadingSnapshots = new Map() // trigger element -> { count, disabled, text } refcounted snapshot
+  // Dirty tracking (issue #103): the bound re-scan (turbo:morph-element) and the
+  // navigate-away guard handlers, held so disconnect() can remove exactly them.
+  #boundScanDirty
+  #boundBeforeUnload
+  #boundBeforeVisit
 
   // Mark that a reactive controller actually connected, so the registration
   // guard above knows the controller was registered (issue #26 part 2).
@@ -524,6 +529,42 @@ export default class extends Controller {
           "or div(id:, **reactive_attrs). The id: must NOT be on a child. See the README."
       )
     }
+
+    // Dirty tracking (issue #103) — ONLY when this root opts in (track_dirty: or a
+    // reactive_field(dirty:)), so a component that never uses it pays nothing (no
+    // baseline scan, no morph listener on every broadcast). A plain (outerHTML)
+    // replace re-connects the controller, so seed the baseline scan here — the root
+    // reflects current-vs-default WITHOUT waiting for the first input. An in-place
+    // morph / broadcast morph keeps the element CONNECTED and fires no Stimulus
+    // lifecycle, so ALSO listen for turbo:morph-element on this.element to re-scan
+    // after the morph writes fresh default* attributes (reactive:applied is NOT a
+    // valid hook — it fires when streams are handed to Turbo, BEFORE the DOM
+    // mutation). Both listeners are torn down in disconnect().
+    if (this.#dirtyTrackingEnabled()) {
+      this.#boundScanDirty = () => this.#scanDirty()
+      this.element.addEventListener?.("turbo:morph-element", this.#boundScanDirty)
+      this.#scanDirty()
+
+      // warn_unsaved: arm a navigate-away guard gated on a LIVE dirty-count read
+      // (never a cached snapshot — the count is re-derived from the DOM each time).
+      // beforeunload covers a real browser unload; turbo:before-visit covers a
+      // Turbo in-app navigation (it does NOT fire on restoration visits — the
+      // documented gap). Registered on window only when the marker is present.
+      if (this.element.getAttribute?.("data-reactive-warn-unsaved") === "true") {
+        this.#armUnsavedGuard()
+      }
+    }
+  }
+
+  // Whether this root opts into dirty tracking (issue #103): track_dirty: puts the
+  // trackDirty descriptor on the ROOT's data-action; a per-field reactive_field(
+  // dirty:) puts it on a descendant field. Either turns tracking on. A quick
+  // attribute read + one scoped query, evaluated once per connect (a cold path).
+  #dirtyTrackingEnabled() {
+    if ((this.element.getAttribute?.("data-action") ?? "").includes("reactive#trackDirty")) return true
+    const nodes = this.element.querySelectorAll?.('[data-action*="reactive#trackDirty"]') ?? []
+    for (const el of nodes) if (this.#ownsField(el)) return true
+    return false
   }
 
   // Tear down any pending debounce timers when the controller leaves the DOM
@@ -536,6 +577,7 @@ export default class extends Controller {
   disconnect() {
     this.#clearAllDebounces()
     this.#clearAllThrottles()
+    this.#teardownDirtyTracking()
   }
 
   // Serialize requests per component. Each round trip rewrites the signed
@@ -636,6 +678,17 @@ export default class extends Controller {
     if (!windowBound) event.preventDefault()
 
     this.#applyOps(this.#parseOps(ops))
+  }
+
+  // Dirty tracking (issue #103). Wired by reactive_field(dirty: true) /
+  // reactive_root(track_dirty: true): an `input` on an owned field runs a FULL
+  // re-scan of every field this root owns. NO round trip, NO shipped state — the
+  // baseline is the DOM's own defaultValue/defaultChecked/defaultSelected (the
+  // last server render). A full pass (not a per-target toggle) is essential for
+  // radio groups: the deselected radio flips to checked=false and fires no input
+  // event, so only re-scanning everything keeps its flag honest.
+  trackDirty() {
+    this.#scanDirty()
   }
 
   // Client-side compute (data binding). Wired by reactive_compute: an `input`
@@ -1282,6 +1335,107 @@ export default class extends Controller {
         }
       })
     return { fields, files }
+  }
+
+  // Re-compute the dirty flag for EVERY field this root owns in one pass (issue
+  // #103), then reflect the total onto the root. Called on an owned field's input
+  // (trackDirty), on connect (baseline seed), and after a turbo:morph-element
+  // re-render (fresh default* attrs). dirty = current ≠ the DOM's own default:
+  //   checkbox/radio → checked  !== defaultChecked
+  //   select         → some option.selected !== option.defaultSelected
+  //   else           → value    !== defaultValue
+  // A full pass (not per-target) is REQUIRED: a radio group's previously-checked
+  // radio flips to checked=false with NO input event, so per-target toggling
+  // would leave its flag stale. File inputs are skipped — a file has no server
+  // default baseline. Per-dirty-field data-reactive-dirty="true" ("true" STRING,
+  // not a valueless boolean attr — mirrors the on() flag convention); the root
+  // carries data-reactive-dirty="<count>" and DROPS the attr at zero, so
+  // `[data-reactive-dirty]` styles the whole form and `[data-reactive-dirty]`
+  // on a field styles just the changed control — both pure CSS, zero JS.
+  #scanDirty() {
+    // Runs at bootstrap (the connect baseline seed) as well as on input/morph, so
+    // it must never throw — degrade to a no-op if the root can't be queried (a real
+    // reactive root always can; this guards minimal/test element stubs).
+    if (typeof this.element?.querySelectorAll !== "function") return
+
+    let count = 0
+    this.element.querySelectorAll("input[name], select[name], textarea[name]").forEach((field) => {
+      if (!this.#ownsField(field)) return // skip a nested reactive root's fields (issue #15)
+      if (field.type === "file") return // no server default baseline to diff against
+
+      if (this.#fieldDirty(field)) {
+        field.setAttribute("data-reactive-dirty", "true")
+        count++
+      } else {
+        field.removeAttribute("data-reactive-dirty")
+      }
+    })
+
+    if (count > 0) this.element.setAttribute("data-reactive-dirty", String(count))
+    else this.element.removeAttribute("data-reactive-dirty")
+  }
+
+  // Whether a single owned control differs from its server-rendered default.
+  #fieldDirty(field) {
+    if (field.type === "checkbox" || field.type === "radio") {
+      return field.checked !== field.defaultChecked
+    }
+    if (field.tag === "select" || field.options) {
+      // Any option whose selected state diverges from its defaultSelected. Guard
+      // for a stub/absent options list (degrade to clean).
+      return Array.from(field.options ?? []).some((o) => o.selected !== o.defaultSelected)
+    }
+    return field.value !== field.defaultValue
+  }
+
+  // The live dirty-field count, re-derived from the DOM (never a cached snapshot)
+  // — the source of truth for the warn_unsaved guard's gate.
+  #dirtyCount() {
+    const raw = this.element.getAttribute?.("data-reactive-dirty")
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? n : 0
+  }
+
+  // Arm the navigate-away guard (warn_unsaved: true, issue #103). beforeunload
+  // blocks a real browser unload; turbo:before-visit blocks a Turbo in-app
+  // navigation (it does NOT fire on restoration visits — the documented gap).
+  // Both read the LIVE dirty count, so a clean form never blocks. Handlers are
+  // stored so disconnect() removes exactly them.
+  #armUnsavedGuard() {
+    if (typeof window === "undefined" || typeof window.addEventListener !== "function") return
+
+    this.#boundBeforeUnload = (event) => {
+      if (this.#dirtyCount() === 0) return undefined
+      // The spec dance: preventDefault + a truthy returnValue triggers the native
+      // "leave site?" prompt. The string is legacy (modern browsers show their own
+      // copy) but must be non-empty/truthy to arm the dialog.
+      event.preventDefault()
+      event.returnValue = "You have unsaved changes."
+      return event.returnValue
+    }
+    this.#boundBeforeVisit = (event) => {
+      if (this.#dirtyCount() === 0) return
+      const ok = typeof window.confirm === "function" ? window.confirm("You have unsaved changes. Leave anyway?") : true
+      if (!ok) event.preventDefault?.()
+    }
+
+    window.addEventListener("beforeunload", this.#boundBeforeUnload)
+    window.addEventListener("turbo:before-visit", this.#boundBeforeVisit)
+  }
+
+  // Remove the dirty-tracking listeners on disconnect (Turbo morph/navigation) so
+  // a morph re-scan or a navigate-away guard never runs against a detached root.
+  #teardownDirtyTracking() {
+    if (this.#boundScanDirty) {
+      this.element.removeEventListener?.("turbo:morph-element", this.#boundScanDirty)
+      this.#boundScanDirty = undefined
+    }
+    if (typeof window !== "undefined" && typeof window.removeEventListener === "function") {
+      if (this.#boundBeforeUnload) window.removeEventListener("beforeunload", this.#boundBeforeUnload)
+      if (this.#boundBeforeVisit) window.removeEventListener("turbo:before-visit", this.#boundBeforeVisit)
+    }
+    this.#boundBeforeUnload = undefined
+    this.#boundBeforeVisit = undefined
   }
 
   // Build the multipart body (issue #34). `token`/`act` are flat fields the

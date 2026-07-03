@@ -17,6 +17,7 @@ Rails.application.routes.draw do
   get "reactive_rows" => "demos#reactive_rows"
   get "rich_editor/:id" => "demos#rich_editor"
   get "form_submit/:id" => "demos#form_submit"
+  get "dirty_form/:id" => "demos#dirty_form"
   get "nested_editor" => "demos#nested_editor"
   get "nested_params" => "demos#nested_params"
   get "debounce" => "demos#debounce"

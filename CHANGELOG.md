@@ -8,6 +8,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Dirty-field tracking + unsaved-changes guard (#103).** Show "unsaved
+  changes", enable **Save** only when something changed, or warn before navigating
+  away — Livewire's `wire:dirty` — **without shipping any client state**. The
+  browser already holds the last server-rendered value with zero extra bytes:
+  `input.defaultValue` / `defaultChecked` / `option.defaultSelected` **are** the
+  attributes from the last render, so **dirty = current ≠ default**, read straight
+  from the DOM.
+  - **`reactive_root(track_dirty: true)`** wires every input under the root to a
+    full re-scan on change; **`reactive_field(:title, dirty: true)`** opts a single
+    field in. On each change the client re-scans **every owned field in one pass**
+    (the ownership guard excludes nested reactive roots) and marks each changed
+    field `data-reactive-dirty="true"` and the root `data-reactive-dirty="<count>"`
+    (**absent at zero**). The full pass — not a per-field toggle — is required for
+    radio groups: the deselected radio fires no event, so only re-scanning
+    everything keeps its flag honest. File inputs and `contenteditable` editors
+    (no `default*` baseline) are out of scope in v1.
+  - **CSS vocabulary, zero Ruby.** `[data-reactive-dirty] .unsaved-badge { … }`
+    reveals a badge; `[data-reactive-dirty]` on a field outlines just the changed
+    control — the same pure-CSS pattern as `[data-reactive-busy]`.
+  - **Baselines reset on the server re-render.** A plain replace re-connects and
+    re-scans in `connect()`; an in-place morph keeps the element connected and
+    fires no Stimulus lifecycle, so a `turbo:morph-element` listener re-scans after
+    the morph writes fresh `default*` attributes — a `reply.morph` save clears the
+    markers with no reload. (`reactive:applied` fires *before* the DOM mutation, so
+    it is **not** a valid reset hook and is deliberately not used.)
+  - **`warn_unsaved: true`** arms a navigate-away guard gated on the **live** dirty
+    count — `beforeunload` and `turbo:before-visit`; a clean form never blocks.
+    Documented caveats: browsers show their own generic `beforeunload` copy, and
+    `turbo:before-visit` does not fire on restoration (Back/Forward) visits.
+  - Both `reactive_root` kwargs are **consumed before the `mix`** (otherwise an
+    unconsumed kwarg would render as a literal HTML attribute); `track_dirty` and
+    `dirty:` **token-join** their `input->reactive#trackDirty` descriptor onto any
+    existing `data-action` (they don't clobber it), so combining with your own
+    `data:`/`on(...)` still needs `mix(...)`.
+
 - **Latency simulator dev aid — `PhlexReactive.enableLatencySim(ms)` /
   `disableLatencySim()` (#102).** On localhost the click→morph round trip is
   ~5 ms, so the pending/loading/optimistic affordances added in #98/#99/#100

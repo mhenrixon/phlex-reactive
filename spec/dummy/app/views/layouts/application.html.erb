@@ -5,6 +5,14 @@
     <meta name="csrf-token" content="<%= form_authenticity_token %>">
     <%= csrf_meta_tags %>
 
+    <style>
+      /* Dirty tracking (issue #103): the badge is hidden until the reactive root
+         carries data-reactive-dirty (the count from #scanDirty) — pure CSS, no
+         Ruby toggles it. Mirrors how apps style [data-reactive-busy] spinners. */
+      .unsaved-badge { display: none; }
+      [data-reactive-dirty] .unsaved-badge { display: inline; }
+    </style>
+
     <script type="importmap">
       {
         "imports": {

@@ -342,9 +342,25 @@ module Phlex
       # controller/token data: (a bare data: would). The id is resolved separately
       # (an explicit override wins as a clean replace, not a `mix` string-concat —
       # mix would join two String ids into "default override").
+      #
+      # `track_dirty:`/`warn_unsaved:` (issue #103) are CONSUMED here — deleted
+      # from overrides BEFORE the mix — because reactive_root treats every leftover
+      # kwarg as a literal HTML attribute override (only :id is special-cased), so
+      # an unconsumed `track_dirty: true` would render a bogus `track-dirty="true"`
+      # attribute. track_dirty mixes the trackDirty descriptor onto the root's
+      # data-action (mix token-joins, so a caller's own data-action survives);
+      # warn_unsaved emits the marker the client reads to arm the navigate-away
+      # guard (STRING "true" — a boolean-true attr renders valueless, which the
+      # client's param reader sees as "" → falsy).
       def reactive_root(**overrides)
         root_id = overrides.delete(:id) || id
-        mix({ **reactive_attrs }, overrides, { id: root_id })
+        track_dirty = overrides.delete(:track_dirty)
+        warn_unsaved = overrides.delete(:warn_unsaved)
+
+        attrs = mix({ **reactive_attrs }, overrides, { id: root_id })
+        attrs = mix(attrs, { data: { action: "input->reactive#trackDirty" } }) if track_dirty
+        attrs = mix(attrs, { data: { reactive_warn_unsaved: "true" } }) if warn_unsaved
+        attrs
       end
 
       # Attributes for an element that triggers an action.
@@ -571,8 +587,21 @@ module Phlex
       # Extra attrs merge over the binding; an explicit name: still wins (escape
       # hatch). The trigger (on(:save)) stays on the button, not the field — so
       # focusing the input doesn't dispatch and collapse edit mode.
-      def reactive_field(param, **attrs)
-        { name: param.to_s, **attrs }
+      #
+      # `dirty: true` (issue #103) wires the field to the generic controller's
+      # trackDirty action, so a change re-scans this reactive root's owned fields
+      # and marks the changed ones `data-reactive-dirty` (and the root with a
+      # count). NO client state is shipped — the baseline is the DOM's own
+      # `defaultValue`/`defaultChecked`/`defaultSelected`, i.e. the attributes from
+      # the last server render; dirty = current ≠ default. It deep-merges the
+      # descriptor via mix, so a caller's own data-action is token-joined, not
+      # clobbered (CLAUDE.md Never-Do #8 — combining with other data:/on() still
+      # needs mix at the call site).
+      def reactive_field(param, dirty: false, **attrs)
+        binding_attrs = { name: param.to_s, **attrs }
+        return binding_attrs unless dirty
+
+        mix(binding_attrs, { data: { action: "input->reactive#trackDirty" } })
       end
 
       # Render an <input> already bound to an action param (issue #23). Sugar for

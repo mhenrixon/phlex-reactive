@@ -99,6 +99,14 @@ class DemosController < ActionController::Base
     render_component FormSubmitComponent.new(todo: Todo.find(params[:id]))
   end
 
+  # Dirty-field tracking (issue #103): a record-backed form whose title field is
+  # dirty-tracked against its own defaultValue. Typing reveals the "Unsaved" badge
+  # (pure CSS on [data-reactive-dirty]); saving morphs the field with the new value
+  # as its fresh default, so the post-morph re-scan clears the badge — no reload.
+  def dirty_form
+    render_component DirtyFormComponent.new(todo: Todo.find(params[:id]))
+  end
+
   def nested_editor
     render_component NestedEditorComponent.new
   end
