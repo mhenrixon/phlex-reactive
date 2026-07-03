@@ -89,6 +89,13 @@ module Phlex
         # the app enabled it. attach_to is idempotent-safe here because this runs
         # once per boot; the events fire for APMs regardless of this flag.
         Phlex::Reactive::LogSubscriber.attach_to(:phlex_reactive) if Phlex::Reactive.log_events
+
+        # Freeze the param-type registry (issue #109): custom types register in
+        # an initializer, which has run by now, so no further registration is
+        # accepted. A schema referencing a type is validated at declaration; the
+        # frozen registry makes runtime registration a loud error rather than a
+        # never-validated type. Idempotent.
+        Phlex::Reactive.freeze_param_types!
       end
     end
   end

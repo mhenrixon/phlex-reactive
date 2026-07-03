@@ -352,8 +352,34 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reply.replace` / `.morph` / `.update` / `.remove` / `.redirect(url)` / `.with(*)` / `.js(ops)` | Return from an action to control the reply (flash, remove, redirect, multi-stream, server-pushed client ops). See [Controlling the action's reply](#reply--controlling-the-actions-reply). |
 | `reply.append(name, model)` / `.prepend(...)` / `.remove(name, model)` | Add/remove a row in a declared `reactive_collection` (row + count + empty-state in one reply). |
 
-Param types: `:string` (default), `:integer`, `:float`, `:boolean`, `:file`.
-Anything not in the schema is dropped before reaching your method.
+Param types: `:string` (default), `:integer`, `:float`, `:boolean`, `:file`,
+`:date`, `:datetime`, `:decimal`. Anything not in the schema is dropped before
+reaching your method. `:date`/`:datetime` parse ISO8601 (a value that won't
+parse is dropped — the keyword default applies); `:decimal` parses through
+`BigDecimal` (dropped on a non-numeric value). The schema is **compiled once at
+declaration**: a typo'd type symbol (`params: { count: :interger }`) raises
+`Phlex::Reactive::UnknownParamType` at class load, not silently coercing to a
+string at click time.
+
+**Custom param types (`Phlex::Reactive.param_type`).** Register your own type in
+an initializer — the block receives the raw client value and returns the coerced
+value, or `Phlex::Reactive::ParamSchema::DROP` to reject it (the keyword default
+then applies, keeping the drop-don't-fabricate contract):
+
+```ruby
+# config/initializers/phlex_reactive.rb
+Phlex::Reactive.param_type(:money) do |value|
+  /\A\d+(\.\d{1,2})?\z/.match?(value.to_s) ? BigDecimal(value) : Phlex::Reactive::ParamSchema::DROP
+end
+
+# then, in any component:
+action :charge, params: { amount: :money }
+def charge(amount:) = @invoice.charge!(amount) # amount is a BigDecimal or unset
+```
+
+Register during boot only: the registry is **frozen after initialization**, so a
+runtime `param_type` call raises. A schema referencing a registered type is
+validated at declaration like any built-in.
 
 **File uploads (`:file`).** Declare `:file` (or `[:file]` for multiple) to accept
 an uploaded file in a reactive action — attach a document/receipt/image to the

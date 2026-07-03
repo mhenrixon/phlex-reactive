@@ -8,6 +8,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`Phlex::Reactive::ParamSchema` — declaration-time validation + app-registerable
+  param types (#109).** The ~200 lines of param coercion moved out of
+  `ActionsController` into a standalone `Phlex::Reactive::ParamSchema`, **compiled
+  once** when you declare an action (`ParamSchema.compile(params)`) instead of
+  interpreted on every request. Two adopter-facing wins:
+  - **Typos fail loud, at boot.** A schema naming an unknown type symbol
+    (`params: { count: :interger }`) now raises
+    **`Phlex::Reactive::UnknownParamType`** (an `ArgumentError` subclass) at class
+    load — validated recursively through nested-hash and array-of-hash element
+    types — instead of silently coercing the value to a `String` at click time.
+  - **New built-in types + custom registration.** `:date`/`:datetime` (ISO8601,
+    dropped on a parse failure) and `:decimal` (`BigDecimal`, dropped on a
+    non-numeric value) join the built-ins, so a date/decimal param no longer needs
+    `:string` + hand-parsing. Register your own with
+    **`Phlex::Reactive.param_type(:money) { |v| … }`** in an initializer — return
+    `Phlex::Reactive::ParamSchema::DROP` to reject a value (the keyword default
+    then applies, keeping the drop-don't-fabricate contract). The registry is
+    frozen after boot, so registration is initializer-only.
+
+  Behavior is otherwise **byte-for-byte identical**: every existing built-in keeps
+  its exact semantics (`"abc".to_i → 0`, not a drop; the `:file` duck-type drop;
+  the array/hash drop rules; the `#16`/`#21`/`#24`/`#39` bracket-expansion and
+  deep-merge matrix), and the `verbose_errors` dropped-param collector (`#82`/`#87`)
+  threads through unchanged — a `nil` collector is still the zero-cost production
+  path. Coercion is now unit-tested directly (`spec/phlex/reactive/param_schema_spec.rb`)
+  in addition to the request-spec integration cover. Bench (`rake bench:one[coerce_params]`),
+  same machine: ~35.5k → ~36.0k i/s, 207 → 202 obj/call (the memoized `Boolean`
+  type replaces a per-call instantiation), 0 retained — unchanged within noise.
+
 - **Client debug mode (devtools-lite) — `console.group` every dispatch (#108).**
   The `LogSubscriber` (#107) is the *server* lens; this is the *client* one. Set
   `Phlex::Reactive.debug = true` (default off; the initializer template suggests
@@ -71,6 +100,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ends by telling you to run `bin/rails phlex_reactive:doctor` to verify.
 
 ### Changed
+
+- **BREAKING (declaration-time): an unknown param type symbol now raises (#109).**
+  Before, a schema naming a type the coercer didn't recognize (a typo like
+  `params: { count: :interger }`, or a type never registered) fell through to a
+  silent `String` coercion. Now `Component.action` compiles the schema through
+  `Phlex::Reactive::ParamSchema.compile` and raises
+  **`Phlex::Reactive::UnknownParamType`** (an `ArgumentError` subclass) at class
+  load. The fix is to correct the typo or register the type
+  (`Phlex::Reactive.param_type(:name) { |v| … }` in an initializer). This only
+  affects schemas that were *already* silently mis-coercing; a valid schema is
+  unchanged.
 
 - **`on(:typo)` fails at render, not click (#105).** A misspelled or forgotten
   action used to render fine and only surface as an unexplained **403 on click**

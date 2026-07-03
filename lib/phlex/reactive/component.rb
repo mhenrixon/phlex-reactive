@@ -60,8 +60,12 @@ module Phlex
       extend ActiveSupport::Concern
       include Phlex::Reactive::Streamable
 
-      # A declared, client-invokable action and its param schema.
-      Action = Data.define(:name, :params)
+      # A declared, client-invokable action and its param schema. `params` keeps
+      # the RAW declared hash (the readable form callers/specs inspect); `schema`
+      # is the compiled Phlex::Reactive::ParamSchema (issue #109) the endpoint
+      # coerces through — built ONCE here at declaration so a typo'd type symbol
+      # raises Phlex::Reactive::UnknownParamType at class load, not at click time.
+      Action = Data.define(:name, :params, :schema)
 
       # A declared client-side computation (data binding). `inputs`/`outputs` are
       # the action-param names of the fields the reducer reads/writes; `reducer`
@@ -139,7 +143,8 @@ module Phlex
         # Array params accept BOTH a JSON array and a Rails-style index hash
         # ({ "0" => ..., "1" => ... }), so a fields_for collection works either way.
         def action(name, params: {})
-          reactive_actions[name.to_sym] = Action.new(name: name.to_sym, params: params)
+          reactive_actions[name.to_sym] =
+            Action.new(name: name.to_sym, params: params, schema: Phlex::Reactive::ParamSchema.compile(params))
         end
 
         def reactive_actions

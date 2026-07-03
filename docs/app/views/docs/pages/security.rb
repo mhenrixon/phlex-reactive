@@ -154,6 +154,18 @@ module Views
                 code { '@record.update!(params)' }
                 plain ' — take explicit, declared params.'
               end
+              p do
+                plain 'The schema is compiled once at declaration: a typo\'d type symbol raises '
+                code { 'Phlex::Reactive::UnknownParamType' }
+                plain ' at class load rather than silently coercing to a string at click time. A declared '
+                plain 'value that can\'t be coerced to its type (a bad '
+                code { ':date' }
+                plain '/'
+                code { ':decimal' }
+                plain ', a non-file for '
+                code { ':file' }
+                plain ') is dropped — never fabricated — so the action sees its keyword default, not a bogus value.'
+              end
             end
             DocsUI::Callout(:note, title: 'File params (:file / [:file])') do
               plain 'A reactive action can accept an uploaded file (the client switches to multipart FormData when ' \
