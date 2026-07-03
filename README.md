@@ -1599,6 +1599,29 @@ real, so read this once.
   but if you have *public* reactive components, ensure the action path isn't
   force-redirected to a login page for logged-out users.
 
+### Token payload versioning
+
+The signed identity payload carries a version (`"v"`,
+`Phlex::Reactive::TOKEN_VERSION`) so a future change to the token *shape* can
+**upgrade tokens already in flight** instead of breaking every open page at
+deploy. When you change the shape, bump `TOKEN_VERSION` and register an upgrader:
+
+```ruby
+# config/initializers/phlex_reactive.rb
+Phlex::Reactive.register_token_upgrader(0) do |payload|
+  payload.merge("gid" => rewrite_old_gid(payload["gid"]))
+end
+```
+
+On verify, the payload runs through the upgrader chain (oldest → current) before
+your component rebuilds from it. A pre-versioning token (no `"v"`) is read as-is
+— introducing versioning invalidated nothing. It **fails closed**: a token signed
+by a *newer* deploy than the running code (a rollback) verifies its signature but
+carries an unknown version, so `Phlex::Reactive.verify` returns `nil` and the
+endpoint answers 400 — never guessing a shape it doesn't understand. See
+[the security guide](https://phlex-reactive.zoolutions.llc/docs/security#token-lifetime-rotation)
+for depth.
+
 ### Debugging endpoint failures (`verbose_errors`)
 
 Every endpoint failure is warn-logged as `[phlex-reactive] …` in **every**
@@ -1863,6 +1886,7 @@ the full layer-by-layer walkthrough.
 
 - [Installation & bundler setups](https://phlex-reactive.zoolutions.llc/docs/installation)
 - [Mental model & architecture](https://phlex-reactive.zoolutions.llc/docs/architecture)
+- [Actions & events (the `on(...)` API)](https://phlex-reactive.zoolutions.llc/docs/actions-events)
 - [Security & threat model](https://phlex-reactive.zoolutions.llc/docs/security)
 - [Broadcasting & live updates](https://phlex-reactive.zoolutions.llc/docs/broadcasting)
 - [Transport: pgbus vs Action Cable](https://phlex-reactive.zoolutions.llc/docs/transport-pgbus)
@@ -1874,6 +1898,7 @@ the full layer-by-layer walkthrough.
   [inline edit](https://phlex-reactive.zoolutions.llc/docs/example-inline-edit) ·
   [notifications](https://phlex-reactive.zoolutions.llc/docs/example-notifications) ·
   [collections](https://phlex-reactive.zoolutions.llc/docs/example-collections) ·
+  [file uploads & custom types](https://phlex-reactive.zoolutions.llc/docs/example-uploads) ·
   [loading states](https://phlex-reactive.zoolutions.llc/docs/example-loading-states) ·
   [client-only ops](https://phlex-reactive.zoolutions.llc/docs/example-client-ops) ·
   [failure surface](https://phlex-reactive.zoolutions.llc/docs/example-failure) ·

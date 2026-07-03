@@ -8,6 +8,7 @@ class Doc
   REGISTRY = [
     { slug: 'installation',          title: 'Installation',            group: 'Guide',    view: 'Installation' },
     { slug: 'architecture',          title: 'Architecture',            group: 'Guide',    view: 'Architecture' },
+    { slug: 'actions-events',        title: 'Actions & events',        group: 'Guide',    view: 'ActionsEvents' },
     { slug: 'security',              title: 'Security & threat model', group: 'Guide',    view: 'Security' },
     { slug: 'broadcasting',          title: 'Broadcasting',            group: 'Guide',    view: 'Broadcasting' },
     { slug: 'transport-pgbus',       title: 'Transport: pgbus',        group: 'Guide',    view: 'TransportPgbus' },
@@ -20,6 +21,8 @@ class Doc
     { slug: 'example-todo-list',     title: 'Todo list',               group: 'Examples', view: 'ExampleTodoList' },
     { slug: 'example-inline-edit',   title: 'Inline edit',             group: 'Examples', view: 'ExampleInlineEdit' },
     { slug: 'example-collections',   title: 'Collections',             group: 'Examples', view: 'ExampleCollections' },
+    { slug: 'example-uploads',       title: 'File uploads & custom types', group: 'Examples',
+      view: 'ExampleUploads' },
     { slug: 'example-notifications', title: 'Notifications',           group: 'Examples',
       view: 'ExampleNotifications' },
     { slug: 'example-chat',          title: 'Cross-tab chat',          group: 'Examples', view: 'ExampleChat' },
