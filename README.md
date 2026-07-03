@@ -334,6 +334,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `js` | The immutable op builder behind `on_client`: `show`/`hide`/`toggle` (the `hidden` attribute, with an optional `transition:`), `add_class`/`remove_class`/`toggle_class`, `set_attr`/`remove_attr`/`toggle_attr` (allowlisted names), `focus`/`focus_first`, and `dispatch` — chainable. |
 | `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
+| `reactive_root(track_dirty: true, warn_unsaved: true)` / `reactive_field(:param, dirty: true)` | **Dirty tracking** against the DOM's own `defaultValue`/`defaultChecked`/`defaultSelected` — no client state. Marks changed fields + the root `data-reactive-dirty`; `warn_unsaved:` arms a `beforeunload`/`turbo:before-visit` guard. Style with `[data-reactive-dirty]`. See [Dirty-field tracking](#dirty-field-tracking-dirty--track_dirty--warn_unsaved). |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
 | `reactive_collection :name, item:, container:, count:, empty:, size:` | Declare an add/remove-row list once; actions call `reply.append`/`prepend`/`remove`. See [Reactive collections](#reactive-collections-addremove-rows--count--empty-state). |
 | `reply.replace` / `.morph` / `.update` / `.remove` / `.redirect(url)` / `.with(*)` / `.js(ops)` | Return from an action to control the reply (flash, remove, redirect, multi-stream, server-pushed client ops). See [Controlling the action's reply](#reply--controlling-the-actions-reply). |
@@ -599,6 +600,71 @@ quiet period — so a debounced `input` trigger (whose element *is* the text fie
 is not disabled mid-typing. On settle the text is restored only if it still
 matches what was swapped in; a morph that rendered a **new** server label is left
 alone.
+
+### Dirty-field tracking (`dirty:` / `track_dirty:` + `warn_unsaved:`)
+
+Show "unsaved changes", enable **Save** only when something changed, or warn
+before navigating away — Livewire's `wire:dirty` — **without shipping any client
+state**. The trick: the browser already holds the last server-rendered value with
+zero extra bytes. `input.defaultValue` / `defaultChecked` / `option.defaultSelected`
+**are** the attributes from the last render. So **dirty = current ≠ default**, and
+phlex-reactive reads that baseline straight from the DOM — nothing to snapshot,
+nothing to sign.
+
+```ruby
+div(**reactive_root(track_dirty: true, warn_unsaved: true)) do
+  input(**reactive_field(:title, value: @todo.title, dirty: true))
+  span(class: "unsaved-badge") { "Unsaved" }   # shown via [data-reactive-dirty] CSS
+  button(**on(:save, disable_with: "Saving…")) { "Save" }
+end
+```
+
+- **`track_dirty: true`** on the root wires every input under it to a full
+  re-scan on change. **`dirty: true`** on a single `reactive_field` opts that one
+  field in (use it when only some fields should count).
+- On each change the client re-scans **every field the root owns** in one pass and
+  marks:
+  - each changed field with **`data-reactive-dirty="true"`**, and
+  - the root with **`data-reactive-dirty="<count>"`** (the attribute is **absent
+    at zero** — so `[data-reactive-dirty]` matches iff the form is dirty).
+- The re-scan is a **full pass**, not a per-field toggle — required for radio
+  groups: deselecting a radio fires no event on the *deselected* one, so only
+  re-scanning everything keeps its flag honest.
+
+**The CSS vocabulary (you own the styling — phlex-reactive ships none):**
+
+```css
+/* Reveal an "unsaved" badge only while the form has changes. */
+.unsaved-badge { display: none; }
+[data-reactive-dirty] .unsaved-badge { display: inline; }
+
+/* Outline just the fields that changed. */
+[data-reactive-dirty] { outline: 2px solid gold; }
+
+/* Enable Save only when dirty (pair with a :disabled default). */
+[data-reactive-dirty] button[data-testid="save"] { pointer-events: auto; opacity: 1; }
+```
+
+**Baselines reset on the server's re-render.** A plain replace re-connects the
+controller (re-scan on `connect`); an in-place **morph** keeps the element
+connected and fires no Stimulus lifecycle, so the client also re-scans on
+`turbo:morph-element` after the morph writes fresh `default*` attributes. So a
+`reply.morph` save renders the field with the new value as its **new default**,
+and the badge clears with no reload. (Turbo 8 morph preserves a focused field's
+in-progress value while writing the fresh defaults — the post-morph re-scan is
+what keeps the root count honest in that state.)
+
+**`warn_unsaved: true`** arms a navigate-away guard gated on the **live** dirty
+count: `beforeunload` (a real browser unload) and `turbo:before-visit` (a Turbo
+in-app navigation). A clean form never blocks. **Caveats:** browsers show their
+own generic `beforeunload` copy (your message string is legacy and ignored), and
+`turbo:before-visit` **does not fire on restoration visits** (Back/Forward) — a
+documented Turbo gap, not a phlex-reactive one.
+
+**Out of scope (v1):** rich-text / `contenteditable` editors have no `default*`
+baseline and are **not** tracked. Combining `reactive_field(dirty:)` with your own
+`data:`/`on(...)` still needs `mix(...)` (a bare merge clobbers the `data-action`
+the descriptor rides on — the same rule as everywhere else).
 
 ### Client-only ops (`on_client` + `js`) — zero round trips
 
