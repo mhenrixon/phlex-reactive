@@ -1699,6 +1699,37 @@ The events fire whether or not you enable the LogSubscriber; the flag only
 controls the gem's own log lines. See
 [docs/performance.md](https://phlex-reactive.zoolutions.llc/docs/performance).
 
+### Client debug mode (devtools-lite)
+
+The `LogSubscriber` above is the **server** lens. The client lens is
+`console.error` on a failure plus the [lifecycle events](#failure-ux--lifecycle-events)
+— but on the *successful-but-wrong* path (which streams arrived? did a token
+refresh come?) there was nothing to see. `Phlex::Reactive.debug` fills that gap:
+
+```ruby
+# config/initializers/phlex_reactive.rb
+Phlex::Reactive.debug = Rails.env.development?
+```
+
+With it on, every reactive root carries `data-reactive-debug="true"` and the
+generic controller `console.group`s **every dispatch** in the browser:
+
+```
+▼ reactive #todo_42 rename → 200 (48ms)
+    params: [title] + collected: [title]
+    encoding: json
+    streams: replace → #todo_42
+    token: refreshed ✓
+```
+
+The trace carries **names and outcomes only** — the explicit param names and the
+collected sibling-field names (never their **values**, which may be sensitive),
+the request encoding (`json`/`multipart`), the HTTP status, the response's stream
+actions + targets, whether a token refresh arrived (**never the token value**),
+and the round-trip time. Off (the default) it does nothing — a single attribute
+check per dispatch, no string building — so it is safe to leave gated on
+`Rails.env.development?`.
+
 ---
 
 ## Documentation

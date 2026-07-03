@@ -1123,6 +1123,68 @@ export default class extends Controller {
     return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
+  // Client debug mode (issue #108) — the "devtools-lite" lens. On when the Ruby
+  // reactive_attrs stamped data-reactive-debug="true" (Phlex::Reactive.debug).
+  // Read live (a single getAttribute) so the whole feature is inert for any app
+  // that never opts in: OFF → this returns false and #perform builds no debug
+  // object, parses no response, and logs nothing (the "zero cost when off"
+  // invariant — one nil-check per dispatch). Guarded for a stub root with no
+  // getAttribute (unit harnesses) so it degrades to off, never throwing.
+  #debugEnabled() {
+    return this.element?.getAttribute?.("data-reactive-debug") === "true"
+  }
+
+  // A monotonic timestamp for the round-trip duration (ms). performance.now is
+  // monotonic (immune to a wall-clock adjustment mid-request); Date.now is the
+  // fallback for an exotic environment without it. ONLY called on the debug path,
+  // so it costs nothing when debug is off.
+  #debugNow() {
+    return typeof performance !== "undefined" && typeof performance.now === "function"
+      ? performance.now()
+      : Date.now()
+  }
+
+  // Parse a turbo-stream response's action + target pairs for the debug trace,
+  // from the body text #perform ALREADY read (never a re-fetch). NAMES only — the
+  // <template> contents (rendered HTML, the fresh token) are deliberately not
+  // touched. A non-turbo-stream / empty body yields [] (nothing to report).
+  #debugStreams(body) {
+    if (!body) return []
+    const streams = []
+    const re = /<turbo-stream\b([^>]*)>/g
+    let match
+    while ((match = re.exec(body)) !== null) {
+      const attrs = match[1]
+      const action = attrs.match(/\baction="([^"]*)"/)?.[1] ?? "?"
+      const target = attrs.match(/\btarget="([^"]*)"/)?.[1]
+      streams.push(target ? `${action} → #${target}` : action)
+    }
+    return streams
+  }
+
+  // console.group ONE dispatch (issue #108). Carries NAMES + outcomes ONLY — the
+  // signed token VALUE and every field/param VALUE are deliberately absent (they
+  // may be sensitive; the whole point is observability without leaking data). The
+  // caller passes the info it already holds so nothing is recomputed or re-fetched:
+  //   { action, paramNames, fieldNames, encoding, status, streams, tokenRefreshed, ms }
+  // `console.groupCollapsed` keeps the console tidy (one collapsed line per action).
+  #logDispatch(info) {
+    const { action, status, ms } = info
+    // The client can't name the component CLASS (it's inside the signed, opaque
+    // token — never decoded here), but the root's id is the stable client-side
+    // handle (e.g. #todo_42), so the header reads `reactive #todo_42 rename → …`.
+    const who = this.element?.id ? `#${this.element.id} ` : ""
+    const header = `reactive ${who}${action} → ${status ?? "—"} (${Math.round(ms)}ms)`
+    /* eslint-disable no-console */
+    console.groupCollapsed(header)
+    console.log(`params: [${info.paramNames.join(", ")}] + collected: [${info.fieldNames.join(", ")}]`)
+    console.log(`encoding: ${info.encoding}`)
+    if (info.streams.length) console.log(`streams: ${info.streams.join("   ")}`)
+    console.log(`token: ${info.tokenRefreshed ? "refreshed ✓" : "unchanged"}`)
+    console.groupEnd()
+    /* eslint-enable no-console */
+  }
+
   async #perform(action, params, inverse, settle) {
     // Auto-collect named field values inside this component so a button-
     // triggered action still receives sibling inputs (Livewire-style), plus any
@@ -1141,6 +1203,25 @@ export default class extends Controller {
     const body = multipart
       ? this.#buildFormData(token, action, allParams, files)
       : JSON.stringify({ token, act: action, params: allParams })
+
+    // Client debug mode (issue #108): build the trace object ONLY when debug is on
+    // (one nil-check otherwise — zero cost off). It carries NAMES only: the
+    // explicit trigger param names and the collected sibling field names, split so
+    // the group shows `params: [...] + collected: [...]`. status/streams/
+    // tokenRefreshed are filled in at the branch that knows them; the group is
+    // emitted once in the finally so EVERY exit (success or any failure) logs.
+    const debug = this.#debugEnabled()
+      ? {
+          action,
+          paramNames: Object.keys(this.#parseParams(params)),
+          fieldNames: Object.keys(fields),
+          encoding: multipart ? "multipart" : "json",
+          status: null,
+          streams: [],
+          tokenRefreshed: false,
+          started: this.#debugNow(),
+        }
+      : null
 
     // aria-busy on the root is now driven by the loading pending counter
     // (#applyLoading, applied at ENQUEUE so it covers the queue wait too), not
@@ -1232,6 +1313,12 @@ export default class extends Controller {
         return
       }
 
+      // Debug (issue #108): the server answered — record the status for the trace
+      // now, so every response branch below (redirected/http/content-type/ok) logs
+      // it. The transport-failure branches above return before here (they have no
+      // status); their group still fires from the finally with status null → "—".
+      if (debug) debug.status = response.status
+
       if (response.redirected) {
         console.error("[phlex-reactive] action was redirected (auth/CSRF?) — no update applied")
         this.#revertOptimistic(inverse)
@@ -1252,7 +1339,9 @@ export default class extends Controller {
         // retry-valid — do not "fix" that). A non-turbo-stream body is left to the
         // console.error above (an HTML error page must not be handed to Turbo).
         if ((response.headers.get("Content-Type") || "").includes("turbo-stream")) {
-          this.#currentToken = this.#extractToken(errorBody) ?? this.#currentToken
+          const fresh = this.#extractToken(errorBody)
+          this.#currentToken = fresh ?? this.#currentToken
+          if (debug) this.#debugRecordBody(debug, errorBody, fresh)
           window.Turbo.renderStreamMessage(errorBody)
         }
         this.#markError("http")
@@ -1272,7 +1361,12 @@ export default class extends Controller {
       const html = await response.text()
       // Capture the new token from the response synchronously, so the next
       // queued request uses it without waiting for the async DOM morph.
-      this.#currentToken = this.#extractToken(html) ?? this.#currentToken
+      const fresh = this.#extractToken(html)
+      this.#currentToken = fresh ?? this.#currentToken
+      // Debug (issue #108): record the stream actions/targets + whether a refresh
+      // arrived, from the body we JUST read (reuse — no second text() read). Never
+      // the token or template contents.
+      if (debug) this.#debugRecordBody(debug, html, fresh)
       // Turbo applies the <turbo-stream> ops by id. A plain replace is an
       // outerHTML swap (focus on the replaced subtree is lost); a method="morph"
       // replace (Response.morph) or an update morphs in place, preserving the
@@ -1302,7 +1396,21 @@ export default class extends Controller {
       // guarded so a morph-replaced trigger is never clobbered. Runs on EVERY
       // exit (success, every failure branch, or an apply throw).
       settle?.()
+      // Debug (issue #108): emit the group here so EVERY exit path logs exactly
+      // once — success, any transport/response failure, or an apply throw. Null
+      // when debug is off (zero cost). The round-trip ms is measured now, at the
+      // finally, so it spans the whole #perform (fetch + apply) regardless of exit.
+      if (debug) this.#logDispatch({ ...debug, ms: this.#debugNow() - debug.started })
     }
+  }
+
+  // Debug (issue #108): fold the response body #perform already read into the
+  // trace — the stream action/target pairs and whether a token refresh arrived
+  // (a boolean; the token VALUE is intentionally not stored). Shared by the
+  // success and the non-OK-turbo-stream branches so both log the same shape.
+  #debugRecordBody(debug, body, freshToken) {
+    debug.streams = this.#debugStreams(body)
+    debug.tokenRefreshed = freshToken != null
   }
 
   get #currentToken() {
