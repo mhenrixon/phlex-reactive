@@ -101,6 +101,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   keys — auto-discovered by `rake bench:micro`. It also benched `model_param_name`
   (the audit's measure-first candidate: 815k i/s, 8 obj/call — immaterial next to
   the ~37 μs build, so **measured and left alone**, no memoization).
+- **`benchmark/micro/verify.rb` — isolate token verify/sign cost; the
+  digest/serializer question is now measured and closed (#120).** `verify` runs
+  before anything else on every reactive request (a garbage-token flood pays it),
+  and `sign` runs once per rendered component (N× for an N-row collection) — yet
+  neither had ever been measured in isolation (`token.rb` covers sign-side
+  *assembly*, not the HMAC), and the default digest/serializer was never compared.
+  The new bench (auto-discovered by `rake bench:micro`, no harness change) reports
+  four verify cost classes — **valid** state/record (~136k/147k i/s, 20 obj), a
+  **tampered** token that pays the full constant-time HMAC compare (~203k i/s,
+  ~6× slower than garbage), and a **garbage** flood that bails at format parsing
+  (~1.2M i/s, 4 obj) — plus `sign` ×1 (~155k i/s, 12 obj) and the **collection
+  cost** `sign` ×100 (~1.6k i/s, 1200 obj, linear). It also compares the app
+  default (SHA1, json+marshal) against SHA256 and a strict JSON serializer for
+  both verify and sign: **every variant falls within measurement noise**, so
+  phlex-reactive **ships no runtime change and no opt-in recipe** — the setter
+  (`Phlex::Reactive.verifier = …`) is documented as the escape hatch if your own
+  profile ever shows verify hot, but the data says it will not. Verification
+  semantics, purpose scoping, and default-deny are untouched — this issue
+  *measures*. Numbers and the "measured, closed" verdict are on the performance
+  page. Pure tooling + docs; no production-code change.
+
 - **Client dispatch micro-bench harness — `rake bench:client` (#116).** The client
   hot path (`app/javascript/.../reactive_controller.js`) was named a hot path in
   `.claude/rules/performance.md` but had **no bench of any kind** — every claim

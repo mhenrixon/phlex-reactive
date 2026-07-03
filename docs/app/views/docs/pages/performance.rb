@@ -19,6 +19,7 @@ module Views
           measuring
           before_change
           numbers
+          verify_and_sign
           client_numbers
           ci
           every_change
@@ -328,7 +329,7 @@ module Views
             end
             DocsUI::Code(<<~SHELL, lexer: :shell)
               rake bench           # the micro-benchmark suite (alias for bench:micro)
-              rake bench:micro     # render, reactive_token, coerce_params — isolates each method
+              rake bench:micro     # render, reactive_token, verify/sign, coerce_params — isolates each method
               rake bench:request   # end-to-end POST /reactive/actions through the full Rack stack
               rake bench:client    # the client dispatch hot path (extractToken, collectFields, recompute) via bun
               rake bench:one[render]  # a single micro-bench by name
@@ -544,6 +545,97 @@ module Views
                   plain 're-find + DB write, which is the security model working as designed (state lives in '
                   plain 'the database), not overhead to remove.'
                 end
+              end
+            end
+          end
+        end
+
+        def verify_and_sign
+          DocsUI::Section('Verify & sign numbers') do
+            DocsUI::Prose() do
+              p do
+                plain 'The two MessageVerifier HMAC paths run on every interaction: '
+                code { 'Phlex::Reactive.verify' }
+                plain ' before anything else on every request ('
+                code { 'ActionsController#verified_payload' }
+                plain ' is the first line — a garbage-token flood pays it too), and '
+                code { 'Phlex::Reactive.sign' }
+                plain ' once per rendered component ('
+                code { 'reactive_token' }
+                plain ' — so N times for an N-row reactive collection). '
+                code { 'benchmark/micro/verify.rb' }
+                plain ' isolates both. Ruby 3.4 +YJIT, Apple Silicon, the dummy app:'
+              end
+              h3 { 'verify — four cost classes' }
+              ul do
+                li do
+                  strong { 'garbage' }
+                  plain ' ('
+                  code { '"x" * 64' }
+                  plain ', the flood cost): ~1.2M i/s (0.8 μs), 4 obj/call. A malformed token bails at '
+                  plain 'format parsing before the HMAC ever runs, so a bad-token flood is the '
+                  em { 'cheapest' }
+                  plain ' path — nothing to optimize.'
+                end
+                li do
+                  strong { 'tampered' }
+                  plain ' (valid shape, corrupted signature): ~203k i/s (4.9 μs), 9 obj/call — '
+                  strong { '6× slower than garbage' }
+                  plain '. A near-miss forgery pays the full constant-time HMAC compare of the whole '
+                  plain 'digest; garbage never gets there. That gap is the security model working as '
+                  plain 'designed (no early-exit oracle on the signature).'
+                end
+                li do
+                  strong { 'valid, state-backed' }
+                  plain ' ('
+                  code { '{c, s}' }
+                  plain '): ~136k i/s (7.4 μs), 20 obj/call.'
+                end
+                li do
+                  strong { 'valid, record-backed' }
+                  plain ' ('
+                  code { '{c, gid}' }
+                  plain '): ~147k i/s (6.8 μs), 20 obj/call. (The GlobalID re-find + DB load happens '
+                  plain 'downstream, in the action — not in verify.)'
+                end
+              end
+              h3 { 'sign — per component, and at collection scale' }
+              ul do
+                li do
+                  code { 'sign' }
+                  plain ' ×1 (state or record): ~155k i/s (6.5 μs), 12 obj/call.'
+                end
+                li do
+                  code { 'sign' }
+                  plain ' ×100 — '
+                  strong { 'the collection cost' }
+                  plain ' (rendering a 100-row reactive collection signs once per row): ~1.6k i/s '
+                  plain '(610 μs), 1200 obj/call. It scales linearly, as expected — the HMAC is '
+                  plain 'unavoidable and there is no shared work across rows to hoist.'
+                end
+              end
+              h3 { 'Digest / serializer: measured, and the question is closed' }
+              p do
+                plain 'The default verifier uses whatever '
+                code { 'Rails.application.message_verifier' }
+                plain ' hands back — SHA1 with the JSON-with-Marshal-fallback serializer. The bench '
+                plain 'compares that against explicitly-built verifiers on the same secret with SHA256 '
+                plain 'and/or a strict JSON serializer, for both verify and sign. '
+                strong { 'Every variant falls within measurement noise' }
+                plain ' — the differences reorder run-to-run and benchmark-ips reports them as '
+                em { '"difference falls within error"' }
+                plain '. The HMAC over a ~120-byte payload is not where the time goes, and the '
+                plain 'serializer choice does not move it either.'
+              end
+              DocsUI::Callout(:note) do
+                plain 'Verdict: verify is not a bottleneck (a garbage flood is ~1.2M i/s, and even a ' \
+                      'valid verify is ~7 μs against a full action that is ~600 μs), and no ' \
+                      'digest/serializer configuration wins measurably — so phlex-reactive ships no ' \
+                      'opt-in recipe and keeps the app default. If your own profile ever shows verify ' \
+                      'as hot, the setter is there — '
+                code { 'Phlex::Reactive.verifier = ActiveSupport::MessageVerifier.new(secret, digest: "SHA256")' }
+                plain ' — but the measurement says you will not need it. The question is closed until ' \
+                      'the numbers say otherwise.'
               end
             end
           end
