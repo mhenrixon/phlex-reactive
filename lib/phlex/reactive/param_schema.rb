@@ -165,7 +165,13 @@ module Phlex
           return {}
         end
 
-        coerce_hash(params, @schema, dropped, nil)
+        # The TOP-LEVEL params container is the request's `params[:params]` — a
+        # coerced-away malformed top level (a stray non-hash) is normalized back
+        # to {} here, never DROP: the whole point of the top level is to hold the
+        # coerced kwargs, so a bad container yields "no params", not a dropped
+        # action argument. Nested malformed hashes DO drop (see coerce_hash).
+        coerced = coerce_hash(params, @schema, dropped, nil)
+        coerced.equal?(DROP) ? {} : coerced
       end
 
       private
@@ -234,7 +240,16 @@ module Phlex
       # Keep declared keys only (drop undeclared — no mass assignment), recursing
       # for nested hash/array element types. Symbolizes keys to splat as kwargs.
       # A key whose value coerces to DROP is skipped (keyword default applies).
+      #
+      # A present-but-malformed value (a nested `invoice: null` / `invoice: "x"`
+      # for a hash schema) returns DROP rather than fabricating {} — the same
+      # drop-don't-fabricate rule coerce_array applies to a non-array, so a bad
+      # payload can't read as an explicit empty object on update!(nested:). The
+      # top-level entry (coerce) normalizes that DROP back to {}. A genuinely
+      # empty hash ({} / an empty index form) stays {}.
       def coerce_hash(value, schema, dropped, path)
+        return DROP unless hash_like?(value)
+
         hash = to_param_hash(value)
         collect_undeclared(dropped, hash, schema, path) if dropped
         schema.each_with_object({}) do |(key, type), out|
@@ -292,6 +307,15 @@ module Phlex
         return unless value.respond_to?(:to_unsafe_h) || value.is_a?(Hash)
 
         to_param_hash(value).sort_by { |k, _| k.to_i }.map(&:last)
+      end
+
+      # True when `value` is a Hash or an ActionController::Parameters — i.e. a
+      # value to_param_hash unwraps to real keys rather than {}. A nested hash
+      # schema fed anything else (nil, a scalar) is malformed and drops. The
+      # SAME acceptance test to_param_hash uses, kept as a guard so a malformed
+      # input is dropped BEFORE to_param_hash flattens it to a fabricated {}.
+      def hash_like?(value)
+        value.is_a?(Hash) || value.respond_to?(:to_unsafe_h)
       end
 
       # Unwrap ActionController::Parameters (or a plain Hash) to a string-keyed

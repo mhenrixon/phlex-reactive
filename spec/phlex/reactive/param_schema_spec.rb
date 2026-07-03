@@ -152,6 +152,26 @@ RSpec.describe Phlex::Reactive::ParamSchema do
       expect(coerce(schema, params)).to eq(invoice: { date: "2026-01-02", status: "open" })
     end
 
+    it "drops a malformed (non-hash) nested param rather than fabricating {}" do
+      # The hash analog of the malformed-array rule: a nested `invoice: null` or a
+      # stray scalar must NOT become an empty {} (which update!(invoice:) would
+      # read as an explicit no-op object). Drop it so the keyword default applies.
+      schema = { invoice: { date: :string, status: :string } }
+      expect(coerce(schema, { "invoice" => nil })).to eq({})
+      expect(coerce(schema, { "invoice" => "oops" })).to eq({})
+    end
+
+    it "keeps a genuinely empty nested hash as {} (explicit empty object)" do
+      schema = { invoice: { date: :string, status: :string } }
+      expect(coerce(schema, { "invoice" => {} })).to eq(invoice: {})
+    end
+
+    it "records a malformed nested hash as uncoercible for the collector" do
+      dropped = []
+      coerce({ invoice: { date: :string } }, { "invoice" => nil }, dropped)
+      expect(dropped).to include(["invoice", :uncoercible])
+    end
+
     it "coerces the array-of-hash Rails bracket form (the bench payload shape)" do
       schema = {
         date: :string,
