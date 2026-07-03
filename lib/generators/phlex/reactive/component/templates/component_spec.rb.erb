@@ -2,6 +2,13 @@
 
 require "rails_helper"
 
+# Uses the public Phlex::Reactive::TestHelpers (reactive_token_for, run_reactive,
+# and the have_reactive_* matchers). Mix them in once in your rails_helper:
+#
+#   RSpec.configure do |c|
+#     c.include Phlex::Reactive::TestHelpers
+#     c.include Phlex::Reactive::TestHelpers, type: :request
+#   end
 RSpec.describe <%= class_name %> do
   describe "reactive declarations" do
 <% action_names.each do |a| -%>
@@ -15,9 +22,19 @@ RSpec.describe <%= class_name %> do
   describe "identity" do
     it "signs the record's GlobalID into a verifiable token" do
       # record = <%= record_name %>_fixture_or_factory
-      # token = described_class.new(<%= record_name %>: record).send(:reactive_token)
+      # token = reactive_token_for(described_class.new(<%= record_name %>: record))
       # expect(Phlex::Reactive.verify(token)["gid"]).to eq(record.to_gid.to_s)
       skip "provide a <%= record_name %> record to assert identity round-trip"
+    end
+  end
+
+  describe "an action (no HTTP)" do
+    it "runs :<%= action_names.first %> through the security contract" do
+      # run_reactive goes THROUGH default-deny + signed identity round-trip (the
+      # record is re-found) + schema coercion, then returns a Result:
+      #   result = run_reactive(described_class.new(<%= record_name %>: record), :<%= action_names.first %>)
+      #   expect(result).to have_reactive_replace(described_class.new(<%= record_name %>: record))
+      skip "provide a <%= record_name %> record to drive the action"
     end
   end
 <% else -%>
@@ -25,9 +42,23 @@ RSpec.describe <%= class_name %> do
   describe "identity" do
     it "signs state into a verifiable token and rebuilds it" do
       component = described_class.new(<%= state_keys.map { |k| "#{k}: #{k == state_keys.first ? "1" : "nil"}" }.join(", ") %>)
-      payload = Phlex::Reactive.verify(component.send(:reactive_token))
+      payload = Phlex::Reactive.verify(reactive_token_for(component))
       expect(payload["c"]).to eq("<%= class_name %>")
       expect(described_class.from_identity(payload)).to be_a(described_class)
+    end
+  end
+
+  describe "an action (no HTTP)" do
+    it "runs :<%= action_names.first %> through the security contract" do
+      # run_reactive goes THROUGH default-deny + the signed identity round-trip +
+      # schema coercion, then returns a Result you assert on. Read the rebuilt
+      # component (result.component) for state changes:
+      result = run_reactive(
+        described_class.new(<%= state_keys.map { |k| "#{k}: #{k == state_keys.first ? "1" : "nil"}" }.join(", ") %>),
+        :<%= action_names.first %>
+      )
+
+      expect(result).to have_reactive_replace(described_class.new(<%= state_keys.map { |k| "#{k}: #{k == state_keys.first ? "1" : "nil"}" }.join(", ") %>))
     end
   end
 <% end -%>

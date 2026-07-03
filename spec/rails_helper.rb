@@ -23,7 +23,16 @@ RSpec.configure do
   it.file_fixture_path = File.expand_path("fixtures/files", __dir__)
   it.include ActionDispatch::TestProcess::FixtureFile
 
-  # Shared request helpers (token_for / post_action) — issue #40.
+  # The public test helpers (issue #110): the no-HTTP run_reactive driver, token
+  # minting, and the have_reactive_* matchers, mixed in exactly as a downstream
+  # app would (this IS the shipped setup). The HTTP helpers
+  # (post_reactive_action / post_reactive_multipart) need integration `post`, so
+  # they belong to request examples.
+  it.include Phlex::Reactive::TestHelpers
+  it.include Phlex::Reactive::TestHelpers, type: :request
+
+  # The gem's legacy request helpers (token_for / post_action, issue #40) now
+  # delegate to the public module — dogfooding the shipped API.
   it.include ActionRequestHelpers, type: :request
 
   # In the dummy app the verifier comes from secret_key_base; align the test

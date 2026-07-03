@@ -13,7 +13,9 @@ module Views
         end
 
         def content
+          setup
           unit_actions
+          unit_driver
           unit_identity
           integration_endpoint
           system_browser
@@ -22,6 +24,46 @@ module Views
         end
 
         private
+
+        def setup
+          DocsUI::Section('Setup: the public test helpers') do
+            DocsUI::Prose() do
+              p do
+                plain 'Mix in '
+                code { 'Phlex::Reactive::TestHelpers' }
+                plain ' once. It ships token minting ('
+                code { 'reactive_token_for' }
+                plain '), the no-HTTP action driver ('
+                code { 'run_reactive' }
+                plain '), request helpers ('
+                code { 'post_reactive_action' }
+                plain '/'
+                code { 'post_reactive_multipart' }
+                plain '), and the '
+                code { 'have_reactive_*' }
+                plain ' matchers — so you never reach for a private method or hand-roll a POST.'
+              end
+            end
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
+              # spec/rails_helper.rb (RSpec)
+              RSpec.configure do |c|
+                c.include Phlex::Reactive::TestHelpers                  # driver + matchers everywhere
+                c.include Phlex::Reactive::TestHelpers, type: :request  # + the HTTP helpers
+              end
+            RUBY
+            DocsUI::Prose() do
+              p do
+                strong { 'Note' }
+                plain ' — '
+                code { 'verbose_errors' }
+                plain ' defaults ON in test (it only changes an error BODY, never a status). If you '
+                plain 'assert an empty failure body, set '
+                code { 'Phlex::Reactive.verbose_errors = false' }
+                plain ' in your setup.'
+              end
+            end
+          end
+        end
 
         def unit_actions
           DocsUI::Section('1. Unit: actions are just methods') do
@@ -39,15 +81,85 @@ module Views
           end
         end
 
-        def unit_identity
-          DocsUI::Section('2. Unit: the identity token round-trips') do
+        def unit_driver
+          DocsUI::Section('2. Unit: run_reactive drives the action through the security contract') do
             DocsUI::Prose() do
-              p { plain 'Verify the signed token rebuilds the same component (and that tampering fails).' }
+              p do
+                plain 'Calling the method directly (above) skips what the real endpoint enforces. '
+                code { 'run_reactive' }
+                plain ' runs the action through the SAME contract — default-deny, the signed identity '
+                plain 'round-trip (the record is re-found), schema coercion — with no HTTP, and returns a '
+                code { 'Result' }
+                plain ' you assert on. So a unit test can\'t pass on a component that would fail a real click.'
+              end
+            end
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
+              test "set coerces the :integer param and replaces the component" do
+                # The client sends strings; the schema declares count: :integer.
+                result = run_reactive(Counter.new(count: 0), :set, count: "42")
+
+                expect(result).to have_reactive_replace("counter")
+                expect(result.component.instance_variable_get(:@count)).to eq(42) # cast, not "42"
+              end
+
+              test "an undeclared action is denied (default-deny)" do
+                expect { run_reactive(Counter.new(count: 0), :drop_table) }
+                  .to raise_error(Phlex::Reactive::TestHelpers::UndeclaredReactiveAction)
+              end
+
+              test "a deleted record surfaces as RecordNotFound (the endpoint's 404)" do
+                item = Todos::Item.new(todo:)
+                todo.destroy!
+                expect { run_reactive(item, :toggle) }.to raise_error(ActiveRecord::RecordNotFound)
+              end
+
+              test "archive removes the row (and carries no replace)" do
+                result = run_reactive(Todos::Item.new(todo:), :archive)
+                expect(result).to have_reactive_remove(Todos::Item.new(todo:))
+              end
+            RUBY
+            DocsUI::Prose() do
+              p do
+                plain 'The '
+                code { 'Result' }
+                plain ' exposes '
+                code { 'replace?' }
+                plain '/'
+                code { 'remove?' }
+                plain '/'
+                code { 'redirect?' }
+                plain '/'
+                code { 'redirect_url' }
+                plain '/'
+                code { 'streams' }
+                plain '/'
+                code { 'response' }
+                plain ', plus '
+                code { 'component' }
+                plain ' — the instance REBUILT from identity, the one the action actually ran against. '
+                plain 'A registered authorization error RAISES (the endpoint maps it to 403); assert with '
+                code { 'raise_error' }
+                plain '.'
+              end
+            end
+          end
+        end
+
+        def unit_identity
+          DocsUI::Section('3. Unit: the identity token round-trips') do
+            DocsUI::Prose() do
+              p do
+                plain 'Verify the signed token rebuilds the same component (and that tampering fails). '
+                code { 'reactive_token_for' }
+                plain ' mints the token the component would — no private '
+                code { 'send' }
+                plain '.'
+              end
             end
             DocsUI::Code(<<~RUBY, lexer: :ruby)
               test "record-backed identity round-trips" do
                 todo = todos(:write_docs)
-                token = Todos::Item.new(todo:).send(:reactive_token)
+                token = reactive_token_for(Todos::Item.new(todo:))
 
                 payload = Phlex::Reactive.verify(token)
                 assert_equal "Todos::Item", payload["c"]
@@ -57,7 +169,7 @@ module Views
               end
 
               test "tampered token is rejected" do
-                token = Counter.new(count: 1).send(:reactive_token)
+                token = reactive_token_for(Counter.new(count: 1))
                 assert_nil Phlex::Reactive.verify(token + "x")
               end
             RUBY
@@ -65,22 +177,21 @@ module Views
         end
 
         def integration_endpoint
-          DocsUI::Section('3. Integration: the action endpoint') do
+          DocsUI::Section('4. Integration: the action endpoint') do
             DocsUI::Prose() do
               p do
-                plain 'POST a signed token to '
-                code { '/reactive/actions' }
-                plain ' and assert the turbo-stream response. Mint the token the same way the component does.'
+                plain 'When you want the FULL HTTP round trip (routing, CSRF, the real status codes), '
+                code { 'post_reactive_action' }
+                plain ' posts a signed token to '
+                code { 'Phlex::Reactive.action_path' }
+                plain ' the way the client does — pass a component instance (or a class + '
+                code { 'payload:' }
+                plain ') and assert the turbo-stream response.'
               end
             end
             DocsUI::Code(<<~RUBY, lexer: :ruby)
               test "increment action returns a turbo-stream replace" do
-                token = Counter.new(count: 1).send(:reactive_token)
-
-                post "/reactive/actions",
-                  params: { token:, act: "increment" }.to_json,
-                  headers: { "Content-Type" => "application/json",
-                             "Accept" => "text/vnd.turbo-stream.html" }
+                post_reactive_action(Counter.new(count: 1), :increment)
 
                 assert_response :success
                 assert_match %r{<turbo-stream action="replace" target="counter">}, response.body
@@ -88,10 +199,7 @@ module Views
               end
 
               test "undeclared action is forbidden" do
-                token = Counter.new(count: 1).send(:reactive_token)
-                post "/reactive/actions",
-                  params: { token:, act: "drop_table" }.to_json,
-                  headers: { "Content-Type" => "application/json" }
+                post_reactive_action(Counter.new(count: 1), :drop_table)
                 assert_response :forbidden
               end
             RUBY
@@ -146,7 +254,7 @@ module Views
         end
 
         def system_browser
-          DocsUI::Section('4. System / browser: the full loop & broadcasts') do
+          DocsUI::Section('5. System / browser: the full loop & broadcasts') do
             DocsUI::Prose() do
               p do
                 plain 'Use a system test (Capybara) or a browser-automation CLI for the end-to-end loop ' \
@@ -185,7 +293,7 @@ module Views
         end
 
         def client_unit
-          DocsUI::Section('5. Client unit tests (bun)') do
+          DocsUI::Section('6. Client unit tests (bun)') do
             DocsUI::Prose() do
               p do
                 plain 'Some client-runtime contracts are timing-sensitive and a full browser can mask them — ' \

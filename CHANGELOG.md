@@ -8,6 +8,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Public `Phlex::Reactive::TestHelpers` + a no-HTTP `run_reactive` action
+  driver (#110).** The gem now ships the test surface it used to keep private.
+  Mix it in (`config.include Phlex::Reactive::TestHelpers`) for:
+  - **`run_reactive(component, :act, **params)`** — the no-HTTP unit driver. It
+    runs the action through the SAME security contract the endpoint enforces —
+    **default-deny** (an undeclared action raises
+    `Phlex::Reactive::TestHelpers::UndeclaredReactiveAction`), the **signed
+    identity round-trip** (a record-backed component's row is re-found; a deleted
+    record raises `ActiveRecord::RecordNotFound`, the endpoint's 404), **schema
+    coercion** (#109), and the same **transaction wrapper** — with no HTTP, and
+    returns a `Result`. A registered authorization error RAISES (the endpoint
+    maps it to 403). So a unit test can no longer pass on a component that would
+    fail a real click.
+  - **`Result`** — wraps the action's return: `replace?` / `remove?` /
+    `redirect?` / `redirect_url` / `streams` / `response`, plus `component` (the
+    instance rebuilt from identity — the one the action ran against). A legacy
+    action returning an arbitrary value reads as an implicit replace.
+  - **`reactive_token_for(component_or_class, payload = {})`** — mint a token the
+    way a component does (class form via the public `Phlex::Reactive.sign`;
+    instance form wraps the private `reactive_token`). No more
+    `component.send(:reactive_token)`.
+  - **`post_reactive_action` / `post_reactive_multipart`** — POST a signed token
+    to **`Phlex::Reactive.action_path`** (never a hardcoded `/reactive/actions`,
+    so a remounted path is honored) exactly as the client encodes it.
+  - **Matchers** `have_reactive_replace`, `have_reactive_remove`,
+    `have_reactive_token_for` (RSpec; loaded only when RSpec is present, so a
+    Minitest app asserts on `Result` predicates directly). The token matcher pins
+    the #44/#46 refresh regression class for adopters.
+
+  The gem's own request suite now runs THROUGH the public module (dogfooding),
+  and the component-generator spec template + the testing docs teach the public
+  API — every `send(:reactive_token)` instruction is gone.
+
 - **`Phlex::Reactive::ParamSchema` — declaration-time validation + app-registerable
   param types (#109).** The ~200 lines of param coercion moved out of
   `ActionsController` into a standalone `Phlex::Reactive::ParamSchema`, **compiled
