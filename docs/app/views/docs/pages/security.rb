@@ -19,6 +19,7 @@ module Views
           params_rule
           secrets_rule
           csrf_auth
+          two_seams
           failure_modes
           failure_ux
           error_flash_ux
@@ -179,6 +180,60 @@ module Views
 
               - `skip_before_action :authenticate` for the action endpoint (subclass it), or
               - keep public components state-backed and authorize per-action where it matters.
+            MD
+          end
+        end
+
+        def two_seams
+          DocsUI::Section('Two seams: HTTP-layer vs component-layer') do
+            md <<~MD
+              There are **two** places to wrap a reactive action, and they see different things.
+              Reach for the one that matches your concern:
+
+              | | Base controller (`base_controller_name`) | `Phlex::Reactive.around_action` |
+              |---|---|---|
+              | **Layer** | HTTP request | the resolved component action |
+              | **Sees** | headers, session, `request` | the component instance, action name, **coerced** params, `request` |
+              | **Runs** | full Rails filter chain | inside `with_connection_id`, **outside** the transaction |
+              | **Use for** | auth, CSRF, coarse per-IP rate limiting | audit logging, component-aware rate limiting, assertions |
+
+              Plain Rails `around_action` / `rate_limit` on a dedicated base controller already
+              covers attributes, authentication, and coarse per-IP throttling. What that layer
+              **cannot** see is the resolved component, the declared action name, or the coerced
+              params — and it can't position itself *inside* the connection-id scope but *outside*
+              the action's transaction. `Phlex::Reactive.around_action` is that component-aware seam:
+            MD
+            DocsUI::Code(<<~'RUBY', lexer: :ruby)
+              # config/initializers/phlex_reactive.rb
+              Phlex::Reactive.around_action do |ctx, &action|
+                Rails.logger.tagged("reactive", "#{ctx.component.class}##{ctx.action_name}") do
+                  # A rate-limit rejection here NEVER opens a transaction (this seam
+                  # sits outside transaction_wrapper). Raise a registered error -> 403.
+                  RateLimiter.check!(ctx.request.remote_ip, ctx.action_name)
+
+                  result = action.call
+                  AuditLog.record!(actor: Current.user, action: ctx.action_name)
+                  result   # <- REQUIRED: return the continuation's value (see below)
+                end
+              end
+            RUBY
+            md <<~MD
+              `ctx` is a frozen `Phlex::Reactive::ActionContext` — `component`, `action_name`,
+              `params` (already **schema-coerced**; dropped keys are gone), and `request`. The
+              fold sits **after** token verify, component resolution, default-deny, and param
+              coercion, so a wrapper can never widen what's invokable.
+
+              **The one contract that bites: each wrapper MUST return `action.call`'s value.** The
+              endpoint type-checks the action's return for a `Phlex::Reactive::Response`
+              (`replace` / `remove` / `redirect` / …); a wrapper that ends on its logger's return
+              value instead silently downgrades **every** reply to the implicit self-replace. Name
+              the result and return it, as above.
+
+              A wrapper raising an error registered in `Phlex::Reactive.authorization_errors`
+              renders as **403** (with the same diagnostics as an in-action `authorize!`);
+              an unregistered raise is a **500**, exactly as today. Multiple wrappers nest in
+              registration order — the last-registered runs outermost. Tests reset the stack with
+              `Phlex::Reactive.reset_around_actions!`.
             MD
           end
         end
