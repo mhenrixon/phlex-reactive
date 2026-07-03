@@ -103,25 +103,29 @@ module Phlex
         # rebuilt from. The signed token carries its GlobalID; the server
         # re-finds it on each action. State lives in the DB.
         def reactive_record(name)
-          @reactive_record_key = name.to_sym
-          remove_instance_variable(:@reactive_record_ivar) if defined?(@reactive_record_ivar)
+          Registry.write_scalar(self, :record_key, name.to_sym)
         end
 
+        # The nearest declared record key up the ancestry, or nil. Resolved
+        # through Registry (issue #115) — the same always-fresh semantics the
+        # pre-#115 live superclass walk had, now memoized against the registry
+        # generation like every other registry.
         def reactive_record_key
-          return @reactive_record_key if defined?(@reactive_record_key)
-
-          superclass.respond_to?(:reactive_record_key) ? superclass.reactive_record_key : nil
+          Registry.resolve_scalar(self, :record_key, :reactive_record_key)
         end
 
         # Opt into signed STATE for record-less components only.
         #   reactive_state :count, :open
         def reactive_state(*names)
-          reactive_state_keys.concat(names.map(&:to_sym))
-          @reactive_state_ivars = nil # rebuild the cached [key, ivar] pairs
+          Registry.append(self, :state_keys, names.map(&:to_sym))
         end
 
+        # Ancestors' keys first, own appended — declaration order. Resolved
+        # through Registry at read time (issue #115), so a parent's later
+        # reactive_state is visible here and in the identity fast path (the
+        # write sweeps the memoized ivar pairs family-wide).
         def reactive_state_keys
-          @reactive_state_keys ||= (superclass.respond_to?(:reactive_state_keys) ? superclass.reactive_state_keys.dup : [])
+          Registry.resolve_list(self, :state_keys, :reactive_state_keys)
         end
 
         # Declare a client-invokable action with an optional param schema.
@@ -143,12 +147,19 @@ module Phlex
         # Array params accept BOTH a JSON array and a Rails-style index hash
         # ({ "0" => ..., "1" => ... }), so a fields_for collection works either way.
         def action(name, params: {})
-          reactive_actions[name.to_sym] =
+          Registry.write_entry(
+            self, :actions, name.to_sym,
             Action.new(name: name.to_sym, params: params, schema: Phlex::Reactive::ParamSchema.compile(params))
+          )
         end
 
+        # The full declared-action registry, ancestors included — the
+        # default-deny source of truth the endpoint dispatches against.
+        # Resolved through Registry at read time (issue #115): a parent action
+        # declared after a subclass was first read is no longer silently
+        # invisible to the subclass (the pre-#115 snapshot-dup divergence).
         def reactive_actions
-          @reactive_actions ||= (superclass.respond_to?(:reactive_actions) ? superclass.reactive_actions.dup : {})
+          Registry.resolve_hash(self, :actions, :reactive_actions)
         end
 
         def reactive_action(name)
@@ -178,12 +189,14 @@ module Phlex
         # corresponding stream isn't emitted. See Phlex::Reactive::Reply and the
         # README "Reactive collections" section.
         def reactive_collection(name, item:, container:, count: nil, empty: nil, size: nil)
-          reactive_collections[name.to_sym] =
+          Registry.write_entry(
+            self, :collections, name.to_sym,
             CollectionDefinition.new(name: name.to_sym, item:, container:, count:, empty:, size:)
+          )
         end
 
         def reactive_collections
-          @reactive_collections ||= superclass.respond_to?(:reactive_collections) ? superclass.reactive_collections.dup : {}
+          Registry.resolve_hash(self, :collections, :reactive_collections)
         end
 
         def reactive_collection_def(name)
@@ -231,17 +244,28 @@ module Phlex
         #   import { setComputeReducer } from "phlex/reactive/compute"
         #   setComputeReducer("payment_split", ({ allowance, cash, leasing, total }, { changed }) => ({ … }))
         def reactive_compute(name, inputs: nil, outputs: nil, reducer: nil)
-          return reactive_computes[name.to_sym] if inputs.nil? && outputs.nil?
+          return reactive_compute_def(name) if inputs.nil? && outputs.nil?
 
           input_names, input_types = normalize_compute_inputs(inputs)
-          reactive_computes[name.to_sym] = ComputeDefinition.new(
-            name: name.to_sym, inputs: input_names, input_types:,
-            outputs: Array(outputs).map(&:to_sym), reducer: (reducer || name).to_s
+          Registry.write_entry(
+            self, :computes, name.to_sym,
+            ComputeDefinition.new(
+              name: name.to_sym, inputs: input_names, input_types:,
+              outputs: Array(outputs).map(&:to_sym), reducer: (reducer || name).to_s
+            )
           )
         end
 
         def reactive_computes
-          @reactive_computes ||= superclass.respond_to?(:reactive_computes) ? superclass.reactive_computes.dup : {}
+          Registry.resolve_hash(self, :computes, :reactive_computes)
+        end
+
+        # Fetch one compute definition — the reader form matching
+        # reactive_collection_def (issue #115). The bare reactive_compute(name)
+        # getter above is a PERMANENT documented alias (it shipped in the same
+        # minor series, #73); both stay, no deprecation.
+        def reactive_compute_def(name)
+          reactive_computes[name.to_sym]
         end
 
         def reactive_compute?(name)
@@ -266,8 +290,13 @@ module Phlex
 
         # The record's instance-variable symbol (e.g. :@todo), computed once.
         # reactive_token reads it on every render; interpolating :"@#{key}" each
-        # time would allocate a symbol per render. Nil when record-less. Memoized
-        # per class; reset alongside reactive_record so it can't go stale.
+        # time would allocate a symbol per render. Nil when record-less.
+        #
+        # A bare defined? fast path ON PURPOSE — the token hot path never pays
+        # a per-read generation compare (issue #115 invariant). Registry.bump!
+        # sweeps this memo off the declaring class AND all its descendants on
+        # any registry write, so it can't go stale even when an ancestor
+        # re-declares reactive_record after this class memoized.
         def reactive_record_ivar
           return @reactive_record_ivar if defined?(@reactive_record_ivar)
 
@@ -276,8 +305,10 @@ module Phlex
 
         # [string_key, ivar_symbol] pairs for the signed state, computed once.
         # reactive_token walks these every render; precomputing the "count"/:@count
-        # forms avoids a String + Symbol allocation per key per render. Memoized
-        # per class; reset when reactive_state adds a key.
+        # forms avoids a String + Symbol allocation per key per render. A bare
+        # ||= fast path ON PURPOSE (issue #115 invariant — no per-read
+        # generation compare on the token hot path); swept family-wide by
+        # Registry.bump! when any registry write lands.
         def reactive_state_ivars
           @reactive_state_ivars ||= reactive_state_keys.map { [it.to_s, :"@#{it}"] }
         end
@@ -722,7 +753,7 @@ module Phlex
       # then the debounced POST reconciles from the server reply. Raises for an
       # undeclared compute — a silent no-op would leave the field wiring dead.
       def reactive_compute_attrs(name)
-        definition = self.class.reactive_compute(name)
+        definition = self.class.reactive_compute_def(name)
         raise Error, "#{self.class} has no reactive_compute #{name.inspect}" unless definition
 
         {

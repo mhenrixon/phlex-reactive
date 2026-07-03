@@ -6,23 +6,19 @@ require "spec_helper"
 # reactive_state_keys, reactive_collections, reactive_computes, and
 # reactive_record_key — are the source of truth for default-deny dispatch,
 # identity signing, and the collection/compute wiring. This suite locks their
-# INHERITANCE contract (issue #115, step 1): parent-declared-before-child-read,
+# INHERITANCE contract (issue #115): parent-declared-before-child-read,
 # subclass override, no upward leak, three-level chains, write-through on self,
 # and class redefinition (the dev-reload shape).
 #
-# Where the five hand-rolled implementations DIVERGE today, the example is
-# marked `DIVERGENCE (pre-#115)` and asserts the SHIPPED behavior:
-#
-#   * the four collection registries snapshot-`dup` the parent on FIRST access,
-#     so a parent declaration made after a child read is silently invisible;
-#   * reactive_record_key walks the superclass LIVE on every read, so the same
-#     late declaration IS visible;
-#   * the hot-path memos (reactive_record_ivar / reactive_state_ivars) go
-#     STALE on a late parent declaration — split-brain against the live key.
-#
-# The #115 Registry unification flips exactly the marked examples (late parent
-# declarations become visible everywhere, the memos stay coherent) and nothing
-# else. Every unmarked example must stay green byte-for-byte across the swap.
+# All five resolve through Component::Registry with ONE semantic: resolve
+# through the superclass at read time, memoized per class against a
+# process-wide generation counter bumped on any registry write. Pre-#115 the
+# implementations DIVERGED (the four collection registries snapshot-dup'd the
+# parent on first access, so a late parent declaration was silently invisible;
+# reactive_record_key walked live; the hot-path memos went stale split-brain).
+# The examples marked `UNIFIED (#115)` are the ones that flipped in the
+# unification — the one deliberate behavior change of the refactor. Every
+# unmarked example is green byte-for-byte on both sides of the swap.
 RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
   # A fresh component class (optionally subclassing `parent`), with the DSL
   # declarations given in the block. Anonymous on purpose: registries must
@@ -77,17 +73,18 @@ RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
       expect(klass.reactive_action?(:late)).to be(true)
     end
 
-    # DIVERGENCE (pre-#115): reactive_actions snapshot-`dup`s the parent on the
-    # child's FIRST read, so a parent action declared after that read is
-    # silently invisible to the child — while remaining visible on the parent.
-    it "does NOT see a parent action declared after the child registry was read (snapshot-dup)" do
+    # UNIFIED (#115): pre-#115 this was the snapshot-dup divergence — the
+    # child's first read froze the parent's registry, so a late parent action
+    # was silently invisible to the child (while visible on the parent). The
+    # Registry resolves at read time, so the declaration is visible everywhere.
+    it "sees a parent action declared after the child registry was read (resolve-at-read)" do
       parent = reactive_class
       child = reactive_class(parent)
-      child.reactive_actions # snapshot the parent's (empty) registry now
+      child.reactive_actions # a prior read no longer freezes the parent's registry
       parent.class_eval { action :late }
 
       expect(parent.reactive_action?(:late)).to be(true)
-      expect(child.reactive_action?(:late)).to be(false)
+      expect(child.reactive_action?(:late)).to be(true)
     end
   end
 
@@ -116,15 +113,16 @@ RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
       expect(klass.reactive_state_keys).to eq(%i[a late])
     end
 
-    # DIVERGENCE (pre-#115): same snapshot-dup as reactive_actions.
-    it "does NOT see a parent key added after the child registry was read (snapshot-dup)" do
+    # UNIFIED (#115): pre-#115 the child's first read snapshot the parent's
+    # key list, so a late parent key never reached the child.
+    it "sees a parent key added after the child registry was read (resolve-at-read)" do
       parent = reactive_class { reactive_state :a }
       child = reactive_class(parent)
-      expect(child.reactive_state_keys).to eq(%i[a]) # snapshot now
+      expect(child.reactive_state_keys).to eq(%i[a]) # a prior read doesn't freeze anything
       parent.class_eval { reactive_state :late }
 
       expect(parent.reactive_state_keys).to eq(%i[a late])
-      expect(child.reactive_state_keys).to eq(%i[a])
+      expect(child.reactive_state_keys).to eq(%i[a late])
     end
   end
 
@@ -151,16 +149,17 @@ RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
       expect(parent.reactive_collection_def(:items).container).to eq("items")
     end
 
-    # DIVERGENCE (pre-#115): same snapshot-dup as reactive_actions.
-    it "does NOT see a parent collection declared after the child registry was read (snapshot-dup)" do
+    # UNIFIED (#115): pre-#115 this was the same snapshot-dup divergence as
+    # reactive_actions.
+    it "sees a parent collection declared after the child registry was read (resolve-at-read)" do
       row = row_component
       parent = reactive_class
       child = reactive_class(parent)
-      child.reactive_collections # snapshot now
+      child.reactive_collections # a prior read no longer freezes the parent's registry
       parent.class_eval { reactive_collection :late, item: row, container: "late" }
 
       expect(parent.reactive_collection?(:late)).to be(true)
-      expect(child.reactive_collection?(:late)).to be(false)
+      expect(child.reactive_collection?(:late)).to be(true)
     end
   end
 
@@ -183,15 +182,25 @@ RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
       expect(parent.reactive_compute(:split).inputs).to eq(%i[a])
     end
 
-    # DIVERGENCE (pre-#115): same snapshot-dup as reactive_actions.
-    it "does NOT see a parent compute declared after the child registry was read (snapshot-dup)" do
+    it "exposes reactive_compute_def (issue #115) alongside the permanent reactive_compute getter alias" do
+      parent = reactive_class { reactive_compute :split, inputs: %i[a], outputs: %i[b] }
+      child = reactive_class(parent)
+
+      expect(child.reactive_compute_def(:split)).to eq(child.reactive_compute(:split))
+      expect(child.reactive_compute_def(:split).outputs).to eq(%i[b])
+      expect(child.reactive_compute_def(:nope)).to be_nil
+    end
+
+    # UNIFIED (#115): pre-#115 this was the same snapshot-dup divergence as
+    # reactive_actions.
+    it "sees a parent compute declared after the child registry was read (resolve-at-read)" do
       parent = reactive_class
       child = reactive_class(parent)
-      child.reactive_computes # snapshot now
+      child.reactive_computes # a prior read no longer freezes the parent's registry
       parent.class_eval { reactive_compute :late, inputs: %i[a], outputs: %i[b] }
 
       expect(parent.reactive_compute?(:late)).to be(true)
-      expect(child.reactive_compute?(:late)).to be(false)
+      expect(child.reactive_compute?(:late)).to be(true)
     end
   end
 
@@ -219,12 +228,10 @@ RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
       expect(child.reactive_record_key).to eq(:middle)
     end
 
-    # CONTRAST (pre-#115): unlike the four snapshot registries above,
-    # reactive_record_key walks the superclass LIVE on every read — the SAME
-    # late-parent-declaration scenario that is invisible via action semantics
-    # is visible via record-key semantics. This is the semantic the #115
-    # Registry unification adopts for all five.
-    it "DOES see a parent reactive_record declared after the child was read (live walk)" do
+    # This live-walk behavior is the semantic the #115 Registry unification
+    # adopted for all five registries — reactive_record_key behaved this way
+    # BEFORE the swap too (the reference semantics; green on both sides).
+    it "DOES see a parent reactive_record declared after the child was read (resolve-at-read)" do
       parent = reactive_class
       child = reactive_class(parent)
       expect(child.reactive_record_key).to be_nil
@@ -269,32 +276,33 @@ RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
       expect(klass.reactive_state_ivars).to eq([["a", :@a], ["b", :@b]])
     end
 
-    # DIVERGENCE (pre-#115): the child memoized nil before the parent declared,
-    # and nothing clears a SUBCLASS's memo — so the live reactive_record_key
-    # and the memoized reactive_record_ivar disagree (split-brain). A
-    # reactive_token render on the child would sign NO gid despite
-    # reactive_record_key naming one.
-    it "serves a STALE record ivar after a late parent reactive_record (split-brain with the live key)" do
+    # UNIFIED (#115): pre-#115 the child memoized nil and nothing cleared a
+    # SUBCLASS's memo, so the live reactive_record_key and the memoized
+    # reactive_record_ivar disagreed (split-brain) — a reactive_token render
+    # on the child signed NO gid despite reactive_record_key naming one. The
+    # write-time family sweep (Registry.bump!) keeps them coherent while the
+    # read stays a bare defined? fast path.
+    it "keeps the record ivar coherent with the live key after a late parent reactive_record" do
       parent = reactive_class
       child = reactive_class(parent)
       expect(child.reactive_record_ivar).to be_nil # memoize nil now
       parent.class_eval { reactive_record :thing }
 
-      expect(child.reactive_record_key).to eq(:thing) # the live walk sees it
-      expect(child.reactive_record_ivar).to be_nil    # the defined? memo does not
+      expect(child.reactive_record_key).to eq(:thing)
+      expect(child.reactive_record_ivar).to eq(:@thing) # swept + recomputed, no split-brain
     end
 
-    # DIVERGENCE (pre-#115): reactive_state on the parent resets only the
-    # PARENT's ivar memo; the child's snapshot (keys and pairs) stays stale.
-    it "serves STALE state ivars after a late parent reactive_state" do
+    # UNIFIED (#115): pre-#115 reactive_state on the parent reset only the
+    # PARENT's ivar memo; the child's snapshot (keys and pairs) stayed stale.
+    it "refreshes state ivars after a late parent reactive_state (family-wide sweep)" do
       parent = reactive_class { reactive_state :a }
       child = reactive_class(parent)
       expect(child.reactive_state_ivars).to eq([["a", :@a]]) # memoize now
       parent.class_eval { reactive_state :late }
 
       expect(parent.reactive_state_ivars).to eq([["a", :@a], ["late", :@late]])
-      expect(child.reactive_state_keys).to eq(%i[a])
-      expect(child.reactive_state_ivars).to eq([["a", :@a]])
+      expect(child.reactive_state_keys).to eq(%i[a late])
+      expect(child.reactive_state_ivars).to eq([["a", :@a], ["late", :@late]])
     end
   end
 
