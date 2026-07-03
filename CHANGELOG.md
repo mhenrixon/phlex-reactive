@@ -29,6 +29,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   aggregator over `component/{registry,dsl,identity,helpers}.rb` — pure code
   motion, constant paths unchanged.
 
+### Performance
+
+- **`#extractToken` per-id regex memoization (#118).** The client's
+  `#extractToken` (`reactive_controller.js`) compiled its two self-matching
+  `RegExp` objects — the `reactive:token` matcher and the self replace/update
+  matcher — on **every** response, even though the root's `id` is page-stable.
+  They are now memoized on the instance keyed on `this.element.id`, rebuilt only
+  when the id changes (a re-render that re-identifies the root must scan for the
+  new target, never a stale one — covered by a new id-change bun test). The regex
+  **patterns are byte-identical**; only their allocation moved, so token
+  self-matching semantics are unchanged (the #44/#46/#47 pins stay green).
+  **Measured, not assumed** (`rake bench:client`, bun 1.3 / M2 Max): before/after
+  is within run-to-run noise (~4.4 µs on a 2 KB body, ~9–11 µs on a 500 KB 200-row
+  collection, both sides), because `#extractToken` is already **~0.25% of the
+  `DOMParser` ceiling** (~4 ms on that 500 KB body) — removing two allocations per
+  call sits below the timing floor of the dispatch-driven bench. It is a
+  correctness/cleanliness win on a hot path, **not** a throughput change; per the
+  issue's decision rule, recorded as "measured — not worth further optimization"
+  and closed.
+
 ### Added
 
 - **Client dispatch micro-bench harness — `rake bench:client` (#116).** The client

@@ -231,6 +231,61 @@ test("matches an id containing regex metacharacters (escapeRegExp)", async () =>
   expect(captured[1].token).toBe("DOTTED-FRESH")
 })
 
+test("re-render under a NEW id self-matches the new id — memoized regexes never serve stale (issue #118)", async () => {
+  // #extractToken compiles two per-id RegExps (the reactive:token and the self
+  // replace/update matchers). They're memoized on the instance keyed on
+  // this.element.id (issue #118) — so a stable id compiles them ONCE across many
+  // responses. The correctness guard: if the root's id CHANGES (a re-render that
+  // re-identifies the element), the memo MUST rebuild for the new id, or the next
+  // extraction would scan for the OLD target and miss the new self-token,
+  // freezing the token forever. A memo keyed on nothing (regex cached once,
+  // ignoring the id) makes this test RED: the beta dispatch keeps ALPHA's token.
+  const root = fakeRoot("alpha")
+  const controller = buildController(root, "TOKEN-INITIAL")
+  stubEnv()
+
+  // A mutable body holder so each dispatch can return a body targeting the id in
+  // force at that moment (the file's stubFetchReturning captures a fixed body).
+  let body = ""
+  const captured = []
+  globalThis.fetch = (path, opts) => {
+    captured.push(JSON.parse(opts.body))
+    return Promise.resolve({
+      redirected: false,
+      ok: true,
+      headers: { get: () => "text/vnd.turbo-stream.html" },
+      text: () => Promise.resolve(body),
+    })
+  }
+
+  // First response re-renders id="alpha" and rolls its token to ALPHA-FRESH.
+  // This compiles (and memoizes) the alpha-keyed regexes.
+  body =
+    `<turbo-stream action="replace" target="alpha">` +
+    `<template><div id="alpha" data-controller="reactive" data-reactive-token-value="ALPHA-FRESH">a</div></template>` +
+    `</turbo-stream>`
+  await controller.dispatch({ params: { action: "go", params: "{}" }, preventDefault: () => {} })
+  expect(captured[0].token).toBe("TOKEN-INITIAL")
+
+  // The root is re-identified to "beta" (a new id lands on this.element). The next
+  // response re-renders id="beta" — so #extractToken must scan for target="beta".
+  // The second POST carries the FIRST response's fresh token (ALPHA-FRESH); its
+  // response then rolls the token to BETA-FRESH — but ONLY if the memo rebuilt for
+  // the new id. A stale (alpha-keyed) regex misses the beta-targeted stream and
+  // returns undefined, freezing the token at ALPHA-FRESH.
+  root.id = "beta"
+  body =
+    `<turbo-stream action="replace" target="beta">` +
+    `<template><div id="beta" data-controller="reactive" data-reactive-token-value="BETA-FRESH">b</div></template>` +
+    `</turbo-stream>`
+  await controller.dispatch({ params: { action: "go", params: "{}" }, preventDefault: () => {} })
+  expect(captured[1].token).toBe("ALPHA-FRESH") // second POST used the first response's fresh token
+
+  // The THIRD POST must carry BETA-FRESH — proof the memo rebuilt for the new id.
+  await controller.dispatch({ params: { action: "go", params: "{}" }, preventDefault: () => {} })
+  expect(captured[2].token).toBe("BETA-FRESH")
+})
+
 test("escapeRegExp escapes regex metacharacters", () => {
   expect(escapeRegExp("a.b:c")).toBe("a\\.b:c")
   expect(escapeRegExp("x+y*z")).toBe("x\\+y\\*z")
