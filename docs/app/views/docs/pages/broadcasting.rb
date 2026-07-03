@@ -132,7 +132,7 @@ module Views
                   plain '.'
                 end
                 li do
-                  code { '.broadcast_js_to(*streamables, ops, target:)' }
+                  code { '.broadcast_js_to(*streamables, ops, exclude:, visible_to:, target:)' }
                   plain ' — push '
                   strong { 'client DOM ops' }
                   plain ' (class/attr toggles, '
