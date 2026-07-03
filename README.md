@@ -317,6 +317,7 @@ The cross-tab chat in ~60 lines of Ruby (and zero JS) is the showcase — see
 | `.broadcast_replace_to(*streamables, model:, morph: false)` | Broadcast a replace over the stream transport (pgbus SSE / Action Cable); `morph: true` morphs in place |
 | `.broadcast_update_to(*streamables, model:, morph: false)` | Broadcast an inner-HTML update; `morph: true` morphs in place, so a peer editing the component keeps its focus/caret (issue #113) |
 | `.broadcast_append_to(*streamables, target:, model:)` / `_prepend_` / `_remove_` | The other broadcast variants |
+| `.broadcast_replace_to_each(stream_keys, model:, morph: false, exclude:, visible_to:)` / `_update_` / `_append_` / `_prepend_` / `_remove_` | **Render once, fan out** the *same* payload to K different stream keys — a per-tenant loop. K renders + K HMACs collapse to 1 + K cheap channel calls (~9.5× at K=10). Each key is a `[record, :symbol]` pair (or a bare string). Transport opts + `morph:` forward per key. Per-viewer `visible_to:` content stays render-per-call. See [Broadcasting](https://phlex-reactive.zoolutions.llc/docs/broadcasting). |
 | `#to_stream_replace` / `#to_stream_morph` / `#to_stream_remove` | Stream the *already-built* instance (used internally after an action / by `reply`); `#to_stream_morph` morphs in place |
 | `#to_stream_update(morph: false)` | Inner-HTML update of the *already-built* instance; `morph: true` morphs in place (issue #113) |
 

@@ -50,11 +50,18 @@ module Views
                 plain 'shares one payload (the per-subscriber cost is transport-side, not a render). The '
                 plain 'render cost multiplies per '
                 strong { 'call' }
-                plain ': pushing one change to K different stream keys is K builds + K renders + K token '
-                plain 'signings of byte-identical HTML — and per-viewer content ('
+                plain ': pushing one change to K different stream keys with a hand-written loop over '
+                code { 'broadcast_*_to' }
+                plain ' is K builds + K renders + K token signings of byte-identical HTML. For that same-payload, '
+                plain 'many-key fan-out, '
+                code { 'broadcast_*_to_each' }
+                plain ' (issue #119) renders '
+                strong { 'once' }
+                plain ' and loops only the cheap channel call — measured at ~9.5× throughput and ~8× fewer '
+                plain 'allocations at K=10 (see the fan-out table below). Per-viewer content ('
                 code { 'visible_to:' }
-                plain '-style rendering) is the irreducible render-per-viewer case. Measure before you '
-                plain 'optimize; the harness below exists so you never have to guess.'
+                plain '-style rendering, DIFFERENT HTML per viewer) stays the irreducible render-per-viewer case. '
+                plain 'Measure before you optimize; the harness below exists so you never have to guess.'
               end
             end
           end
@@ -475,6 +482,35 @@ module Views
                 li do
                   code { 'on(:action)' }
                   plain ' (no params) allocations: 6 obj → 5 obj — −17%.'
+                end
+              end
+              h3 { 'Multi-key broadcast fan-out (issue #119)' }
+              p do
+                plain 'The '
+                code { 'broadcast' }
+                plain ' bench doubles the transport out to a no-op, so what is measured is the server-side '
+                plain 'build + render + identity-HMAC cost a broadcast pays before the wire. Fanning one '
+                plain 'component out to K=10 stream keys, a hand-written loop over '
+                code { 'broadcast_replace_to' }
+                plain ' vs '
+                code { 'broadcast_replace_to_each' }
+                plain ':'
+              end
+              ul do
+                li do
+                  plain 'Throughput: 2.88k i/s (347 μs) → 27.3k i/s (37 μs) — '
+                  strong { '9.5× faster' }
+                  plain ' (and within ~4% of a single 1-key broadcast: K renders + K HMACs collapse to 1 + 1).'
+                end
+                li do
+                  plain 'Allocations: 1250 obj / 186 KB → 151 obj / 22 KB — '
+                  strong { '−88%' }
+                  plain ' objects, 0 retained.'
+                end
+                li do
+                  code { 'model_param_name' }
+                  plain ' (the measure-first candidate): 815k i/s, 8 obj/call — immaterial next to the '
+                  plain '~37 μs build, so it was measured and left alone (no memoization).'
                 end
               end
               h3 { 'Full-stack request numbers' }

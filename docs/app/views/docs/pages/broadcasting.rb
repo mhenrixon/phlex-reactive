@@ -18,6 +18,7 @@ module Views
           stream_keys
           methods_table
           model_mapping
+          multi_key_fanout
           from_action
           actor_echo
           visible_to
@@ -155,6 +156,46 @@ module Views
                 def self.model_param_name = :user   # class name would be :notifications_badge
               end
               ```
+            MD
+          end
+        end
+
+        def multi_key_fanout
+          DocsUI::Section('Render once, fan out to many keys (broadcast_*_to_each)') do
+            md <<~MD
+              `broadcast_*_to` concatenates its `*streamables` into **one** key. To push
+              the *same* component to K **different** stream keys — a per-tenant loop,
+              "the list page stream AND the dashboard stream" — a hand-written loop over
+              `broadcast_replace_to` pays K builds + K renders + K identity HMACs for
+              **byte-identical HTML**. `broadcast_*_to_each` renders **once** and loops
+              only the cheap channel call:
+
+              ```ruby
+              # K renders + K HMACs — the cliff
+              accounts.each { |a| Counter.broadcast_replace_to(a, :counters, model: counter) }
+
+              # 1 render + 1 HMAC + K channel calls — ~9.5× faster at K=10, ~88% fewer allocations
+              Counter.broadcast_replace_to_each(
+                accounts.map { [it, :counters] }, model: counter,
+                exclude: reactive_connection_id
+              )
+              ```
+
+              - **`stream_keys`** is an enumerable of keys; each key is passed to the
+                transport as its raw parts (a `[record, :symbol]` pair, or a bare
+                string — both work). Same raw-parts rule as `broadcast_*_to`.
+              - Every verb has an `_each`: `broadcast_replace_to_each`,
+                `broadcast_update_to_each`, `broadcast_append_to_each` /
+                `broadcast_prepend_to_each` (both take `target:`), and
+                `broadcast_remove_to_each`.
+              - **Transport opts + `morph:` forward per key** — `exclude:` /
+                `visible_to:` are threaded to every stream exactly as the single-key
+                verbs do, so the pgbus path suppresses the actor's echo on every stream
+                and the Action Cable path is unchanged (the no-opts call passes no
+                unknown keyword — the pgbus-optionality invariant holds).
+              - **The irreducible exception is per-VIEWER content.** `visible_to:` that
+                renders **different** HTML per viewer can't share a payload — that stays
+                a render-per-call. `_to_each` is for the *same* payload to many keys.
             MD
           end
         end
