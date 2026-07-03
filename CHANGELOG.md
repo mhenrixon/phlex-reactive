@@ -6,6 +6,58 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-03
+
+Consolidates everything since 0.2.6; tags 0.2.7–0.4.8 shipped without changelog
+sections, so this section spans the whole run to 0.9.0. The jump from 0.4.8 to
+0.9.0 signals the Tier-2 API wave (#79–#120) and the run-up to 1.0, leaving 0.9.x
+room for dogfood fixes.
+
+### Upgrading from 0.4.x
+
+- **BREAKING — an unknown param-type symbol now raises at boot, not at click
+  time (#109).** A `params:` schema declared with a type the library doesn't know
+  (a typo like `:strng`, or a type you meant to register) raises
+  `Phlex::Reactive::UnknownParamType` when the component class loads — the schema
+  is compiled once at declaration. Fix the typo or register the type. Previously a
+  bad type symbol slipped through to the request and failed obscurely per click.
+- **Minimum Ruby is now 3.4** (was 3.2). Enabling the `it` block parameter
+  requires 3.4, so `required_ruby_version` is `>= 3.4.0`. Stay on the 0.3.x line
+  if you need Ruby 3.2/3.3.
+- **`optimistic:` / `loading:` / `disable_with:` are now RESERVED `on(...)`
+  keywords** (#98, #99), joining `window:` / `once:` / `outside:` / `throttle:`
+  from #80. If an action of yours took a free param literally named `optimistic`,
+  `loading`, or `disable_with`, rename it — those names now configure the
+  client-side hint/loading behavior instead of passing through as an action param.
+- **`flash_builder` → `stream_builder` rename (#113) — no action needed.** The
+  builder does far more than flashes, so it was renamed;
+  `Phlex::Reactive.flash_builder` and `reset_flash_builder!` remain **permanent
+  aliases** (no deprecation). Listed only for grep-ability if you referenced the
+  old names.
+- **The client runtime now ships pre-minified (#148) — zero change for importmap
+  consumers.** The engine pins the `.min.js` build (106 KB → 22 KB, ~7.7 KB
+  gzipped) with a linked sourcemap, so devtools still shows readable source. If
+  you vendor the client file by hand, re-vendor from the minified build (the
+  dummy app's `spec/dummy/public/vendor/reactive_controller.js` is that build).
+
+### Security
+
+- **The signed-token version (`v`) now fails closed on a malformed value.**
+  `upgrade_token` type-guards `v` before comparing it: a non-integer or negative
+  `v` (only producible with the signing key, or by operator error — `v` lives
+  inside the signed blob) now returns `nil` → `400` through the endpoint's
+  `|| raise(InvalidToken)`, instead of a 500 on the `v > TOKEN_VERSION`
+  comparison or silently treating a negative `v` as a legacy passthrough. The
+  fail-closed-on-rollback contract (a `v` newer than this code understands → 400)
+  is unchanged.
+- **The raw-array `js([...])` / `broadcast_js_to([...])` escape hatch now
+  re-applies the attribute-name allowlist server-side.** The `JS` builder rejects
+  event-handler (`on*`), URL-bearing, and `style` attribute names at build time;
+  the raw `[[op, args], …]` form skipped that Ruby-side check and relied on the
+  client interpreter alone. `Phlex::Reactive::JS.assert_ops_allowed!` restores
+  full server-side parity (defense in depth — the client still enforces it too),
+  so a hand-built ops array can't emit an `onclick`/`href`/`style` attr op.
+
 ### Changed
 
 - **One inheritance-aware registry behind the Component DSL; `component.rb` split
@@ -1552,7 +1604,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   scaffolds a reactive component (and an RSpec spec when the app uses RSpec),
   state-backed by default or record-backed with `--record`.
 
-[Unreleased]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/mhenrixon/phlex-reactive/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.6...v0.9.0
+[0.2.6]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.5...v0.2.6
+[0.2.5]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/mhenrixon/phlex-reactive/compare/v0.2.1...v0.2.2
