@@ -194,6 +194,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Structured `Phlex::Reactive::Stream` value object — the endpoint stops
+  regex-sniffing its own generated turbo-stream HTML (#114).** The action endpoint
+  used to reverse-engineer stream *semantics* out of *markup*: it substring-scanned
+  every stream for `data-reactive-token-value` and regexed the opening
+  `<turbo-stream>` tag's `action="…"` against a self-render allowlist to decide
+  whether a stream already refreshed the component's signed token. The gem was
+  parsing strings it had just built, and every new stream shape needed a new patch
+  to the heuristics. Now every `to_stream_*` instance primitive and every
+  `Streamable` class builder (`replace`/`update`/`append`/`prepend`/`remove`)
+  returns a `Phlex::Reactive::Stream` — an `ActiveSupport::SafeBuffer` subclass
+  that IS an html_safe String (so it drops into `render turbo_stream:`, ERB/Phlex
+  interpolation, and Turbo test-helper substring asserts unchanged) but also
+  carries `rx_action` / `rx_target` / `rx_renders_root?` set **structurally at
+  construction** plus `rx_carries_token?` computed **once from ground truth** (a
+  build-time scan of the actual bytes, never inferred from the builder kind — the
+  cosmos#1939 guard). The endpoint reads those fields instead of regexing markup;
+  `renders_root: false` on `append`/`prepend` encodes the #44 lesson (a child row's
+  own token in an append `<template>` can never count as the container's refresh)
+  in the *type*, not a regex. Raw strings (`reply.with(…)`, interpolated or
+  `gsub`'d streams) keep the pre-#114 regex path as a permanent fallback, gated on
+  `stream.is_a?(Stream)`. **The wire format is byte-identical** — same
+  token-refresh decisions (#30/#44/#46/#50 pins all green), different mechanism.
+  This is an architecture/correctness win, not a speedup: `rake bench:request`
+  before/after moves within measurement noise (allocations +1 obj/req state-backed,
+  +5 obj/req record-backed; throughput swings inside the ±15–28% error bars).
+
 - **`Phlex::Reactive.flash_builder` → `stream_builder` (and `reset_flash_builder!`
   → `reset_stream_builder!`) (#113).** The memoized `Turbo::Streams::TagBuilder`
   is used well beyond flashes — `reactive_collection` row removal, count-companion
