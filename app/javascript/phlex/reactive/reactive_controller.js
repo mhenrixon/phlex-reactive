@@ -1191,7 +1191,14 @@ export default class extends Controller {
     // chosen file inputs in the SAME walk. Explicit params
     // (data-reactive-params-param) win over collected fields.
     const { fields, files } = this.#collectFields()
-    const allParams = { ...fields, ...this.#parseParams(params) }
+    // Parse the explicit trigger params ONCE — reused below for allParams and, on
+    // the debug path, for the params-only name list (so the trace can show
+    // `params: [...]` distinct from the collected `+ collected: [...]`). #parseParams
+    // is pure (a fresh object from a JSON string, or the same object by reference
+    // when already parsed); allParams spreads a COPY and nothing mutates parsedParams
+    // downstream (JSON.stringify / #buildFormData read allParams, a new object).
+    const parsedParams = this.#parseParams(params)
+    const allParams = { ...fields, ...parsedParams }
     const token = this.#currentToken
 
     // File/multipart path (issue #34): if THIS root has a populated
@@ -1213,7 +1220,7 @@ export default class extends Controller {
     const debug = this.#debugEnabled()
       ? {
           action,
-          paramNames: Object.keys(this.#parseParams(params)),
+          paramNames: Object.keys(parsedParams),
           fieldNames: Object.keys(fields),
           encoding: multipart ? "multipart" : "json",
           status: null,
