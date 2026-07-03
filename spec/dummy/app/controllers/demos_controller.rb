@@ -101,6 +101,15 @@ class DemosController < ActionController::Base
     render_component ConfirmComponent.new
   end
 
+  # Optimistic visual hints (issue #98): a checkbox that flips natively before
+  # the (deliberately slow) morph, a failing action whose hint reverts, and a
+  # hide-then-remove delete. A fresh, unfinished Todo each visit.
+  def optimistic
+    todo = Todo.create!(title: "optimistic", done: false)
+    component = render_to_string(OptimisticRowComponent.new(todo:), layout: false)
+    render html: %(<ul>#{component}</ul>).html_safe, layout: true
+  end
+
   def morph_grid
     render_component MorphGridComponent.new(account: Account.find(params[:id]))
   end

@@ -8,6 +8,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`optimistic:` on `on(...)` — declared, reversible visual hints (#98).**
+  Reactive interactions no longer wait a full round trip for their first visual
+  change — and a checkbox no longer fails to flip at all (the client's
+  unconditional `preventDefault` used to suppress the native flip until the
+  morph). `optimistic:` applies a small, always-reversible, **cosmetic**
+  vocabulary the instant the trigger fires and **reverts** it if the action
+  fails — Livewire's "flip it client-side, let the morph correct". Supported
+  hints: `toggle_class:`/`add_class:`/`remove_class:` (on the trigger, or a `to:`
+  selector scoped to the root), `checked: :keep` (a click-bound checkbox/radio
+  skips `preventDefault` so it flips natively now), and `hide: true`. Hints are
+  visual only (never data, never client state), applied **once per flushed
+  enqueue** (a debounced trigger can't flap per keystroke), and reverted from
+  every failure branch (redirected/http/content-type/network + client apply),
+  guarded by `isConnected`. On **success there is no cleanup**: a root re-render
+  overwrites the hint with server truth, while a reply that does not re-render
+  the root (`reply.remove`, streams-only) leaves it standing — that's the
+  `hide: true` + `reply.remove` instant-delete recipe. Emitted as
+  `data-reactive-optimistic-param` (JSON) following the guarded-append pattern of
+  `debounce:`/`confirm:`/`throttle:`, so the bare-`on()` hot path stays
+  byte-identical. **`optimistic:` is now a RESERVED keyword name on `on(...)`** —
+  like `debounce:`/`confirm:`/`throttle:`/`listnav:`, it can no longer be used as
+  a free action param.
 - **`on_client(event, ops)` + the `js` op builder — client-side DOM commands
   with ZERO round trips (#95).** Purely-visual interactions (tabs, dropdowns,
   accordions, class toggles) no longer cost a signed server round trip or a

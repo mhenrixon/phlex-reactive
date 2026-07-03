@@ -20,6 +20,7 @@ Rails.application.routes.draw do
   get "dropdown" => "demos#dropdown"
   get "client_tabs" => "demos#client_tabs"
   get "confirm" => "demos#confirm"
+  get "optimistic" => "demos#optimistic"
   get "morph_grid/:id" => "demos#morph_grid"
   get "js_focus/:id" => "demos#js_focus"
   get "partial_grid/:id" => "demos#partial_grid"
