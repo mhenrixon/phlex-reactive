@@ -42,6 +42,20 @@ module Phlex
       end
     end
 
+    # Raised at DECLARATION time (Component.action -> ParamSchema.compile) when a
+    # param schema names a type symbol that isn't in the registry — a typo like
+    # `params: { count: :interger }`. A stdlib ArgumentError subclass (NOT a
+    # NameError): the mistake is a bad ARGUMENT to `action`, and callers rescue
+    # ArgumentError, not NameError, for a bad-input contract. Loud at class load
+    # (eager loading in production; first constant reference under Zeitwerk dev)
+    # instead of a silent `to_s` at request time.
+    #
+    # Superclass is fully qualified `::ArgumentError`: the phlex gem defines
+    # Phlex::ArgumentError, and a bare `ArgumentError` here resolves LEXICALLY to
+    # that (Phlex::Reactive -> Phlex), coupling us to a Phlex error rather than
+    # the stdlib one an app catches.
+    class UnknownParamType < ::ArgumentError; end
+
     # Purpose string bound into every identity token's signature so a token
     # minted for phlex-reactive can't be replayed against another verifier use.
     IDENTITY_PURPOSE = "phlex-reactive/identity"
@@ -133,6 +147,63 @@ module Phlex
         return @debug if defined?(@debug)
 
         false
+      end
+
+      # Register an app-defined param type (issue #109). The block receives the
+      # raw client value and returns the coerced value — or Phlex::Reactive::
+      # ParamSchema::DROP to reject it (the keyword default then applies, keeping
+      # the drop-don't-fabricate contract). Register in an INITIALIZER: the
+      # registry is frozen after boot (freeze_param_types!), so a runtime
+      # registration raises, and a schema referencing the type is validated at
+      # declaration.
+      #
+      #   # config/initializers/phlex_reactive.rb
+      #   Phlex::Reactive.param_type(:money) do |v|
+      #     /\A\d+(\.\d{1,2})?\z/.match?(v.to_s) ? BigDecimal(v) : Phlex::Reactive::ParamSchema::DROP
+      #   end
+      #   # then: action :charge, params: { amount: :money }
+      def param_type(name, &block)
+        raise ::ArgumentError, "Phlex::Reactive.param_type requires a block" unless block
+
+        if param_types_frozen?
+          raise Error, "Phlex::Reactive.param_type(#{name.inspect}) called after boot — the param-type " \
+                       "registry is frozen once the app is initialized. Register custom param types in an " \
+                       "initializer (config/initializers/phlex_reactive.rb)."
+        end
+
+        param_types[name.to_sym] = block
+      end
+
+      # The param-type registry: Symbol => callable(value) -> coerced | DROP.
+      # Seeded lazily with the built-ins; ParamSchema.compile validates every
+      # declared type symbol against it, and #coerce dispatches through it.
+      def param_types
+        @param_types ||= Phlex::Reactive::ParamSchema.built_in_types.dup
+      end
+
+      # A declared type symbol is known iff it's a registry key. ParamSchema
+      # asks this at compile so an unknown symbol raises loudly at declaration.
+      def param_type?(name)
+        param_types.key?(name.to_sym)
+      end
+
+      # Freeze the registry so no further param_type registration is accepted —
+      # the initializer-only contract. Called by the engine's after_initialize.
+      # Idempotent.
+      def freeze_param_types!
+        param_types.freeze
+        @param_types_frozen = true
+      end
+
+      def param_types_frozen?
+        @param_types_frozen ||= false
+      end
+
+      # Drop the registry back to the built-ins and unfreeze it. For tests that
+      # register a temporary type; never called in production.
+      def reset_param_types!
+        @param_types = Phlex::Reactive::ParamSchema.built_in_types.dup
+        @param_types_frozen = false
       end
 
       # Emit an `<event>.phlex_reactive` ActiveSupport::Notifications event around

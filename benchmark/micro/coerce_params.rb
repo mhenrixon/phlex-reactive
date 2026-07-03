@@ -1,10 +1,13 @@
 # frozen_string_literal: true
 
-# Micro-bench: server-side param coercion (ActionsController#coerce_params). It
-# runs on every action that declares a param schema, recursing through nested
-# hashes/arrays and expanding Rails bracket keys. This isolates the coercion of
-# a realistic nested payload (a Rails Form(model:) with an array of nested
-# attributes) so allocation/throughput regressions in the recursion show up.
+# Micro-bench: server-side param coercion. Since issue #109 the coerce family
+# lives in Phlex::Reactive::ParamSchema, COMPILED ONCE at declaration and run per
+# request (the controller's coerce_params is now a thin logging wrapper around
+# schema.coerce). This isolates the per-request work — coercing a realistic
+# nested payload (a Rails Form(model:) with an array of nested attributes)
+# against a pre-compiled schema — so allocation/throughput regressions in the
+# recursion + bracket expansion show up. Baselined pre-#109 at ~35.5k i/s /
+# 207 obj/call / 0 retained; the extraction must hold within noise.
 #
 #   ruby benchmark/micro/coerce_params.rb
 
@@ -12,16 +15,16 @@ require_relative "../support/boot"
 
 # Measure the PRODUCTION path: verbose_errors defaults ON under RAILS_ENV=test
 # (Rails.env.local?), which would add the dropped-param collector to every
-# call. Production defaults OFF — bench what production runs.
+# call. Production defaults OFF — the nil collector is the zero-cost path.
 Phlex::Reactive.verbose_errors = false
 
-controller = Phlex::Reactive::ActionsController.new
-
-schema = {
+# Compiled ONCE at declaration, exactly as Component.action does. The per-request
+# hot path is #coerce, not .compile — so compile outside the measured block.
+schema = Phlex::Reactive::ParamSchema.compile(
   date: :string,
   bank_account_ids: [:integer],
   invoice_items_attributes: [{ id: :integer, quantity: :float, price: :float, _destroy: :boolean }]
-}
+)
 
 # A flat, bracketed payload (what the client's #collectFields posts for a
 # Rails-style nested form) as an ActionController::Parameters, the real input.
@@ -38,9 +41,8 @@ raw = ActionController::Parameters.new(
   "invoice_items_attributes[1][_destroy]" => "true"
 )
 
-# coerce_params reads params.fetch(:params, {}); set it on the controller.
-controller.params = ActionController::Parameters.new(params: raw)
-run = -> { controller.send(:coerce_params, schema) }
+# The production per-request call: coerce the raw params (nil collector).
+run = -> { schema.coerce(raw, nil) }
 
 BenchSupport.header("coerce_params: nested array-of-hash (Rails bracket form)")
 BenchSupport.ips { it.report("coerce_params") { run.call } }

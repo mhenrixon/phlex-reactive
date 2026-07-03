@@ -58,7 +58,7 @@ module Phlex
         end
 
         component = component_class.from_identity(payload)
-        coerced = coerce_params(action_def.params, component_class:, action_name: action_def.name)
+        coerced = coerce_params(action_def, component_class:, action_name: action_def.name)
 
         result = run_action(component, action_def, coerced)
 
@@ -268,162 +268,32 @@ module Phlex
         params.require(:act).to_sym
       end
 
-      # Coerce client params against the action's declared schema. Anything not
+      # Coerce client params against the action's compiled schema (issue #109 —
+      # the coerce family now lives in Phlex::Reactive::ParamSchema). Anything not
       # in the schema is dropped — no raw mass assignment reaches the component.
-      # The top-level params arrive as an ActionController::Parameters; coerce
-      # them against the action's hash schema (same recursion as nested hashes).
       #
-      # With verbose_errors on, every dropped key is collected (full bracketed
-      # path + reason) and warn-logged once per action. With the flag off the
-      # collector is nil and every diagnostic branch below early-returns —
-      # zero extra work on the production path.
-      def coerce_params(schema, component_class: nil, action_name: nil)
+      # With verbose_errors on, ParamSchema fills a collector with every dropped
+      # key (full bracketed path + reason) and we warn-log it once per action.
+      # With the flag off the collector is nil and every diagnostic branch is
+      # skipped — zero extra work on the production path.
+      def coerce_params(action_def, component_class: nil, action_name: nil)
         dropped = Phlex::Reactive.verbose_errors ? [] : nil
+        raw = params.fetch(:params, {})
 
-        # A schema-less action drops EVERYTHING the client posted. Still surface
-        # that in verbose mode — forgetting the `params:` declaration entirely is
-        # the loudest version of the silent drop.
-        if schema.blank?
-          log_schemaless_drops(dropped, component_class, action_name) if dropped
-          return {}
-        end
-
-        coerced = coerce_hash(params.fetch(:params, {}), schema, dropped, nil)
-        log_dropped_params(dropped, schema, component_class, action_name)
+        coerced = action_def.schema.coerce(raw, dropped)
+        log_dropped_params(dropped, action_def.params, component_class, action_name)
         coerced
       end
 
-      # Sentinel: a declared key whose value can't be coerced to its type is
-      # DROPPED (not assigned), so the method's keyword default applies — exactly
-      # as if the client had omitted the key. Distinct from a coerced nil/[].
-      DROP = Object.new
-      private_constant :DROP
-
-      # Coerce a value against a declared type. A type is one of:
-      #   * a scalar symbol            (:string/:integer/:float/:boolean)
-      #   * :file                      — a multipart upload (issue #34)
-      #   * a Hash schema              ({ id: :integer, ... })   — nested object
-      #   * a one-element Array        ([:integer] / [{ ... }])  — array of that
-      # Arrays accept both a real JSON array and a Rails-style index hash
-      # ({ "0" => ..., "1" => ... }), so a fields_for collection works either way.
-      def coerce(value, type, dropped = nil, path = nil)
-        case type
-        when Array
-          coerce_array(value, type.first, dropped, path)
-        when Hash
-          coerce_hash(value, type, dropped, path)
-        when :file
-          coerce_file(value)
-        else
-          coerce_scalar(value, type)
-        end
-      end
-
-      # An uploaded file (issue #34) passes through UNTOUCHED — never .to_s'd,
-      # which would corrupt it into a string the action can't attach. Anything
-      # that isn't an uploaded file (a forged/malformed scalar, an empty input)
-      # returns DROP, so the method's keyword default applies — consistent with
-      # the #16 rule that a value that can't be coerced to its type is dropped,
-      # not fabricated. Duck-types on UploadedFile's interface (original_filename
-      # + a readable IO) rather than naming a class, so a Rack::Test upload, an
-      # ActionDispatch upload, and a Falcon multipart body all qualify.
-      def coerce_file(value)
-        uploaded_file?(value) ? value : DROP
-      end
-
-      def uploaded_file?(value)
-        value.respond_to?(:original_filename) && value.respond_to?(:read)
-      end
-
-      # A real array (or Rails index hash) coerces element-wise. A malformed
-      # present-but-non-array value returns DROP rather than [] — coercing a stray
-      # scalar to an empty array would let a bad payload read as an explicit
-      # "clear everything" on update!(declared_array:).
-      #
-      # An ELEMENT that coerces to DROP (e.g. a non-file in a [:file] array, a
-      # forged/mixed payload) is rejected from the result — the same rule
-      # coerce_hash applies to a dropped value, so the internal DROP sentinel
-      # never leaks into the action. A genuinely empty input array stays [] (an
-      # explicit empty collection), but an array whose every element drops
-      # returns DROP, so the keyword default applies rather than handing the
-      # action a surprise [].
-      def coerce_array(value, element_type, dropped = nil, path = nil)
-        values = array_values(value)
-        return DROP if values.nil?
-        return [] if values.empty?
-
-        coerced =
-          if dropped
-            # Record each element that coerces to DROP (a forged non-file in a
-            # [:file] array) under its bracketed index — reject! below removes
-            # it from the result, so this is its only trace.
-            values.map.with_index do |element, i|
-              element_path = "#{path}[#{i}]"
-              result = coerce(element, element_type, dropped, element_path)
-              dropped << [element_path, :uncoercible] if result.equal?(DROP)
-              result
-            end
-          else
-            values.map { coerce(it, element_type) }
-          end
-        coerced.reject! { it.equal?(DROP) }
-        coerced.empty? ? DROP : coerced
-      end
-
-      # Keep declared keys only (drop undeclared — no mass assignment), recursing
-      # for nested hash/array element types. Symbolizes keys to splat as kwargs.
-      # A key whose value coerces to DROP is skipped (keyword default applies).
-      # `dropped`/`path` are the verbose_errors diagnostics collector — nil (and
-      # cost-free) unless the flag is on.
-      def coerce_hash(value, schema, dropped = nil, path = nil)
-        hash = to_param_hash(value)
-        collect_undeclared(dropped, hash, schema, path) if dropped
-        schema.each_with_object({}) do |(key, type), out|
-          key_name = key.to_s
-          next unless hash.key?(key_name)
-
-          key_path = dropped && join_path(path, key_name)
-          coerced = coerce(hash[key_name], type, dropped, key_path)
-          if coerced.equal?(DROP)
-            dropped << [key_path, :uncoercible] if dropped
-            next
-          end
-
-          out[key.to_sym] = coerced
-        end
-      end
-
-      # ---- verbose_errors dropped-param diagnostics ----------------------
-      # Everything below runs ONLY when the collector exists (flag on); the
-      # production path never reaches these methods.
-
-      def join_path(path, key)
-        path ? "#{path}[#{key}]" : key
-      end
-
-      # Record every input key this schema level doesn't declare. A hash value
-      # expands to its leaf paths so the log shows the full bracketed name the
-      # client posted (invoice[date], not just invoice).
-      def collect_undeclared(dropped, hash, schema, path)
-        declared = schema.keys.map(&:to_s)
-        hash.each do |key, value|
-          next if declared.include?(key)
-
-          record_undeclared(dropped, join_path(path, key), value)
-        end
-      end
-
-      def record_undeclared(dropped, path, value)
-        if value.is_a?(Hash) && value.any?
-          value.each { |key, child| record_undeclared(dropped, "#{path}[#{key}]", child) }
-        else
-          dropped << [path, :undeclared]
-        end
-      end
+      # ---- verbose_errors dropped-param logging --------------------------
+      # ParamSchema collects the dropped entries; the controller formats the ONE
+      # warn line (with the #16/#21 shape hints). Everything below runs ONLY when
+      # the collector exists (flag on); the production path never reaches it.
 
       # ONE warn line per action naming every dropped param with its reason —
       # plus, for the #16/#21 confusion, a hint when a dropped name looks like
-      # the flat/bracketed twin of a declared key.
+      # the flat/bracketed twin of a declared key. `schema` is the RAW declared
+      # hash (action_def.params), read only for the shape hints.
       def log_dropped_params(dropped, schema, component_class, action_name)
         return if dropped.nil? || dropped.empty?
         return unless defined?(::Rails) && ::Rails.respond_to?(:logger) && ::Rails.logger
@@ -440,14 +310,6 @@ module Phlex
 
         hint = shape_hint(path, schema)
         hint ? "undeclared — #{hint}" : "undeclared"
-      end
-
-      # Collect + log for an action with NO declared schema: every posted key is
-      # undeclared by definition (CodeRabbit review on PR #87). Runs only when
-      # the verbose collector exists.
-      def log_schemaless_drops(dropped, component_class, action_name)
-        collect_undeclared(dropped, to_param_hash(params.fetch(:params, {})), {}, nil)
-        log_dropped_params(dropped, {}, component_class, action_name)
       end
 
       # Fires only when a dropped segment matches a DECLARED key at a different
@@ -480,71 +342,14 @@ module Phlex
         end&.first
       end
 
-      # ---- end verbose_errors diagnostics --------------------------------
-
-      def coerce_scalar(value, type)
-        case type
-        when :integer then value.to_i
-        when :float then value.to_f
-        when :boolean then ActiveModel::Type::Boolean.new.cast(value)
-        else value.to_s
-        end
-      end
-
-      # Normalize an array param: a real array passes through; a Rails index hash
-      # ({ "0" => ..., "1" => ... }) becomes its values in index order. Anything
-      # else (a stray scalar, nil) is malformed → nil, so the caller drops the
-      # param rather than fabricating an empty array.
-      def array_values(value)
-        return value.to_a if value.is_a?(Array)
-
-        return unless value.respond_to?(:to_unsafe_h) || value.is_a?(Hash)
-
-        to_param_hash(value).sort_by { |k, _| k.to_i }.map(&:last)
-      end
-
-      # Unwrap ActionController::Parameters (or a plain Hash) to a string-keyed
-      # Hash so coercion can index it uniformly, then expand bracket notation so
-      # a model-scoped Rails form's flat keys nest (issue #21).
-      def to_param_hash(value)
-        flat =
-          if value.respond_to?(:to_unsafe_h)
-            value.to_unsafe_h.stringify_keys
-          elsif value.is_a?(Hash)
-            value.stringify_keys
-          else
-            return {}
-          end
-
-        expand_bracket_keys(flat)
-      end
-
-      # The client's #collectFields keeps a form input's name verbatim, so a
-      # Rails Form(model: @invoice) posts FLAT bracketed keys like
-      # "invoice[date]". Coercion does exact-key matching, so without this a
-      # nested schema (params: { invoice: { date: … } }) never finds "invoice"
-      # and drops everything. Expand "invoice[date]" => "2026-01-02" into
-      # { "invoice" => { "date" => "2026-01-02" } } — and "items[0][qty]" into
-      # the Rails index-hash form coerce_array already understands — deep-merging
-      # so sibling keys (invoice[date], invoice[status]) coalesce. Keys WITHOUT
-      # brackets and already-nested values pass through untouched, so a
-      # pre-nested object (issue #16) and plain scalars still work. Value types
-      # (a checkbox boolean, an explicit array) are preserved verbatim — unlike a
-      # round-trip through parse_nested_query, which only handles strings.
-      def expand_bracket_keys(flat)
-        flat.each_with_object({}) do |(key, value), out|
-          deep_assign(out, bracket_path(key), value)
-        end
-      end
-
       # Matches each bracket segment in "items_attributes][0][qty]" — the part
-      # after the first "[". Hoisted to a frozen constant so coercing a bracketed
-      # key doesn't recompile the pattern per key on every request.
+      # after the first "[". Hoisted to a frozen constant so the shape-hint path
+      # (verbose only) doesn't recompile the pattern per call.
       BRACKET_SEGMENT = /[^\[\]]+/
       private_constant :BRACKET_SEGMENT
 
-      # "invoice[items_attributes][0][qty]" => ["invoice", "items_attributes",
-      # "0", "qty"]. A key with no brackets is a single-element path.
+      # "invoice[date]" => ["invoice", "date"]. A key with no brackets is a
+      # single-element path. Used only to shape the dropped-param hint.
       def bracket_path(key)
         return [key] unless key.include?("[")
 
@@ -552,28 +357,7 @@ module Phlex
         [head, *rest.scan(BRACKET_SEGMENT)]
       end
 
-      # Walk/create nested hashes along `path`, then merge `value` at the leaf so
-      # a bracket key and a sibling pre-nested object coalesce regardless of which
-      # arrives first ({ "invoice[date]" => …, invoice: { status: … } } keeps
-      # both). #merge_value deep-merges hash/hash collisions and otherwise lets
-      # the later value win (a bracket key colliding with a flat scalar).
-      def deep_assign(hash, path, value)
-        *parents, leaf = path
-        node = parents.reduce(hash) do |acc, segment|
-          acc[segment] = {} unless acc[segment].is_a?(Hash)
-          acc[segment]
-        end
-        node[leaf] = merge_value(node[leaf], value)
-      end
-
-      # Combine an existing leaf value with a new one. Two hashes deep-merge (so
-      # bracket-expanded fields and a pre-nested object for the same key both
-      # survive); any other collision takes the new value.
-      def merge_value(existing, value)
-        return value unless existing.is_a?(Hash) && value.is_a?(Hash)
-
-        existing.merge(value.stringify_keys) { |_k, old, new| merge_value(old, new) }
-      end
+      # ---- end verbose_errors logging ------------------------------------
 
       # Only components that opt into Reactive may be resolved. The signature
       # already gates this; defense in depth against constant injection. The

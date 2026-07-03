@@ -42,6 +42,20 @@ RSpec.describe Phlex::Reactive::Component do
       expect(state_klass.reactive_action?(:wat)).to be(false)
       expect(state_klass.reactive_action(:wat)).to be_nil
     end
+
+    it "compiles the param schema at declaration (issue #109)" do
+      expect(state_klass.reactive_action(:set).schema).to be_a(Phlex::Reactive::ParamSchema)
+    end
+
+    it "raises UnknownParamType at CLASS LOAD for a typo'd type symbol (issue #109)" do
+      expect do
+        Class.new do
+          include Phlex::Reactive::Component
+
+          action :set, params: { count: :interger }
+        end
+      end.to raise_error(Phlex::Reactive::UnknownParamType, /interger/)
+    end
   end
 
   describe "state-backed identity" do
