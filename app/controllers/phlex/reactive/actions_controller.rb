@@ -228,10 +228,27 @@ module Phlex
         # replace when a hand-built `with(...)` stream omits it. Idempotent: a
         # Response.replace(self)/update(self) already carries the token, so we
         # don't double the self-render.
-        if result.render_self? && streams.none? { it.include?("data-reactive-token-value") }
+        #
+        # GUARD 2 (issue #114): GLOBAL, un-scoped — "does ANY stream carry a
+        # token?", NOT target-scoped. A Stream answers from its precomputed
+        # ground-truth flag (rx_carries_token?), a raw string from a substring
+        # scan. Deliberately NOT rx_refreshes_token_for? (target-scoped): scoping
+        # this guard would regress update/morph of self on an aliased id.
+        if result.render_self? && streams.none? { stream_carries_token?(it) }
           streams = [component.to_stream_replace, *streams]
         end
         streams
+      end
+
+      # GUARD 2 predicate. A Stream with intact metadata answers structurally
+      # (O(1) flag read); a raw string / metadata-degraded object falls back to
+      # the substring scan the endpoint always used.
+      def stream_carries_token?(stream)
+        if stream.is_a?(Phlex::Reactive::Stream) && stream.rx_action
+          stream.rx_carries_token?
+        else
+          stream.include?(Phlex::Reactive::Stream::TOKEN_ATTR)
+        end
       end
 
       # Actions that RE-RENDER the component's own root (so the root's fresh
@@ -240,37 +257,60 @@ module Phlex
       # component, and a reactive child carries its OWN token — that child token is
       # not the component's (issue #44). reactive:token is our inert token-only
       # refresh; replace/update re-render the root.
+      #
+      # Issue #114: a Phlex::Reactive::Stream now knows its own action structurally
+      # (Stream::SELF_RENDER_ACTIONS), so this allowlist survives ONLY for the
+      # LEGACY regex fallback below — the path raw strings (reply.with,
+      # interpolated/degraded streams) take. The primary path is structural.
       SELF_RENDER_ACTIONS = %w[replace update reactive:token].freeze
       private_constant :SELF_RENDER_ACTIONS
 
-      # True when one of `streams` already carries a fresh token by RE-RENDERING
-      # this component itself — i.e. the caller hand-built the actor's own
-      # token-bearing stream, so appending to_stream_token would double it.
+      # GUARD 1 (issue #114): true when one of `streams` already carries a fresh
+      # token by RE-RENDERING this component itself — so appending to_stream_token
+      # would double it. Target+root scoped (distinct from GUARD 2's global scan).
       #
-      # The match requires BOTH (a) the stream's action re-renders the component's
-      # ROOT (replace/update/reactive:token — never append/prepend, which insert
-      # children) AND (b) it targets the component's id AND (c) it actually carries
-      # a token. This is stricter than a same-string substring check on purpose:
-      #   * A sibling component's replace targets a DIFFERENT id → (b) fails, so we
+      # A Phlex::Reactive::Stream answers STRUCTURALLY (rx_refreshes_token_for? —
+      # the three-way test carries_token AND renders_root AND same target, no
+      # regex). A raw string / metadata-degraded object falls back to the legacy
+      # opening-tag regex, which encodes the same rule:
+      #   * A sibling component's replace targets a DIFFERENT id → no match, so we
       #     still refresh ours (issue #30).
       #   * A reactive child row appended/prepended INTO the component carries its
-      #     own token at the component's target, but the action is append/prepend →
-      #     (a) fails, so we still refresh the CONTAINER's token (issue #44). Before
-      #     this, the child's token at the container target suppressed the
-      #     container's refresh and the list was add-once-only.
+      #     own token at the component's target, but append/prepend do NOT
+      #     re-render the root → no match, so we still refresh the CONTAINER's
+      #     token (issue #44). Before this, the child's token at the container
+      #     target suppressed the container's refresh and the list was
+      #     add-once-only.
       def carries_token_for?(streams, component)
-        target = %(target="#{ERB::Util.html_escape(component.id)}")
-        streams.any? do
-          it.include?("data-reactive-token-value") &&
-            it.include?(target) &&
-            self_render_stream_for?(it, target)
+        streams.any? { stream_refreshes_token_for?(it, component.id) }
+      end
+
+      # Per-stream GUARD 1 predicate: a Stream with intact metadata answers
+      # structurally (rx_refreshes_token_for?); a raw string / metadata-degraded
+      # object falls back to the legacy opening-tag regex.
+      def stream_refreshes_token_for?(stream, component_id)
+        if stream.is_a?(Phlex::Reactive::Stream) && stream.rx_action
+          stream.rx_refreshes_token_for?(component_id)
+        else
+          legacy_self_render_token?(stream, component_id)
         end
+      end
+
+      # LEGACY fallback for raw strings (reply.with) and metadata-degraded
+      # streams: the pre-#114 substring + opening-tag regex, kept verbatim as the
+      # floor beneath the structural path.
+      def legacy_self_render_token?(stream, component_id)
+        target = %(target="#{ERB::Util.html_escape(component_id)}")
+        stream.include?("data-reactive-token-value") &&
+          stream.include?(target) &&
+          self_render_stream_for?(stream, target)
       end
 
       # Does this turbo-stream's OPENING tag re-render `target` itself? Matches a
       # `<turbo-stream action="<self-render>" ... target="<id>">` opening tag — the
       # action and target on the SAME tag — so a child row's token embedded in an
       # append/prepend `<template>` can never count as the container's own refresh.
+      # LEGACY: only the raw-string fallback reaches this now.
       def self_render_stream_for?(stream, target)
         open_tag = stream[/<turbo-stream\b[^>]*>/]
         return false unless open_tag&.include?(target)

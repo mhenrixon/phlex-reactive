@@ -167,9 +167,16 @@ module Phlex
         # Turbo 8's bundled Idiomorph morphs the subtree in place — preserving a
         # focused <input> + caret — instead of an outerHTML swap (issue #28).
         # Default (morph: false) is the unchanged plain replace.
+        # Wrapped in a Phlex::Reactive::Stream (issue #114) so the endpoint reads
+        # action/target/token-ness structurally. renders_root: true — a replace
+        # re-renders the component's own root (carrying its fresh token); wire
+        # bytes are byte-identical.
         def replace(model = nil, morph: false, **options)
           component = build(model, options)
-          turbo_stream_builder.replace(component.id, html: render_component(component), **morph_method(morph))
+          Phlex::Reactive::Stream.wrap(
+            turbo_stream_builder.replace(component.id, html: render_component(component), **morph_method(morph)),
+            action: "replace", target: component.id, renders_root: true
+          )
         end
 
         # `morph: true` emits `<turbo-stream action="update" method="morph">` so
@@ -178,22 +185,37 @@ module Phlex
         # Default (morph: false) is the unchanged plain update.
         def update(model = nil, morph: false, **options)
           component = build(model, options)
-          turbo_stream_builder.update(component.id, html: render_component(component), **morph_method(morph))
+          Phlex::Reactive::Stream.wrap(
+            turbo_stream_builder.update(component.id, html: render_component(component), **morph_method(morph)),
+            action: "update", target: component.id, renders_root: true
+          )
         end
 
+        # renders_root: false — append inserts a CHILD into `target`; even when
+        # the appended component carries its OWN token, that must never count as
+        # the container's own refresh (issue #44).
         def append(target:, model: nil, **options)
           component = build(model, options)
-          turbo_stream_builder.append(target, html: render_component(component))
+          Phlex::Reactive::Stream.wrap(
+            turbo_stream_builder.append(target, html: render_component(component)),
+            action: "append", target: target, renders_root: false
+          )
         end
 
         def prepend(target:, model: nil, **options)
           component = build(model, options)
-          turbo_stream_builder.prepend(target, html: render_component(component))
+          Phlex::Reactive::Stream.wrap(
+            turbo_stream_builder.prepend(target, html: render_component(component)),
+            action: "prepend", target: target, renders_root: false
+          )
         end
 
         def remove(model = nil, **options)
           component = build(model, options)
-          turbo_stream_builder.remove(component.id)
+          Phlex::Reactive::Stream.wrap(
+            turbo_stream_builder.remove(component.id),
+            action: "remove", target: component.id, renders_root: false
+          )
         end
 
         # --- Broadcasts (server -> client over the stream transport) ---
@@ -426,9 +448,15 @@ module Phlex
       end
 
       # Render THIS already-built instance as a replace stream (used by the
-      # reactive action endpoint after an action mutated state).
+      # reactive action endpoint after an action mutated state). Wrapped in a
+      # Phlex::Reactive::Stream (issue #114) so the endpoint reads the action /
+      # target / token-ness structurally instead of regexing the markup; the wire
+      # bytes are byte-identical.
       def to_stream_replace
-        self.class.turbo_stream_builder.replace(id, html: self.class.render_component(self))
+        Phlex::Reactive::Stream.wrap(
+          self.class.turbo_stream_builder.replace(id, html: self.class.render_component(self)),
+          action: "replace", target: id, renders_root: true
+        )
       end
 
       # Render THIS instance as a MORPHING replace (issue #28):
@@ -438,7 +466,10 @@ module Phlex
       # data-reactive-token-value (so the signed token refreshes). Used by
       # Response.morph / Response.replace(self, morph: true).
       def to_stream_morph
-        self.class.turbo_stream_builder.replace(id, html: self.class.render_component(self), method: :morph)
+        Phlex::Reactive::Stream.wrap(
+          self.class.turbo_stream_builder.replace(id, html: self.class.render_component(self), method: :morph),
+          action: "replace", target: id, renders_root: true
+        )
       end
 
       # `morph: true` emits `<turbo-stream action="update" method="morph">`
@@ -450,7 +481,8 @@ module Phlex
       def to_stream_update(morph: false)
         builder = self.class.turbo_stream_builder
         html = self.class.render_component(self)
-        morph ? builder.update(id, html:, method: :morph) : builder.update(id, html:)
+        rendered = morph ? builder.update(id, html:, method: :morph) : builder.update(id, html:)
+        Phlex::Reactive::Stream.wrap(rendered, action: "update", target: id, renders_root: true)
       end
 
       # Render a TOKEN-ONLY refresh stream (issue #30): a tiny
@@ -476,14 +508,22 @@ module Phlex
       # has no reactive_token method at all, so it still returns false correctly.
       def to_stream_token
         token = respond_to?(:reactive_token, true) ? reactive_token : nil
-        %(<turbo-stream action="reactive:token" target="#{ERB::Util.html_escape(id)}" data-reactive-token-value="#{ERB::Util.html_escape(token)}"></turbo-stream>)
+        html = %(<turbo-stream action="reactive:token" target="#{ERB::Util.html_escape(id)}" data-reactive-token-value="#{ERB::Util.html_escape(token)}"></turbo-stream>)
+        # Both interpolations are ERB::Util.html_escape'd, so .html_safe is a
+        # byte-identical relabel. renders_root: true — reactive:token IS a
+        # self-render for token purposes (it's in SELF_RENDER_ACTIONS) — unifies
+        # the actor's own token stream onto the structural path (issue #114).
+        Phlex::Reactive::Stream.wrap(html.html_safe, action: "reactive:token", target: id, renders_root: true)
       end
 
       # Render THIS instance as a remove stream. The component already knows its
       # own #id, so no record/class reconstruction is needed (works for record-
       # and state-backed components alike). Used by Response.remove.
       def to_stream_remove
-        self.class.turbo_stream_builder.remove(id)
+        Phlex::Reactive::Stream.wrap(
+          self.class.turbo_stream_builder.remove(id),
+          action: "remove", target: id, renders_root: false
+        )
       end
     end
   end
