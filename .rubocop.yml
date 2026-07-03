@@ -83,11 +83,12 @@ Lint/UnusedMethodArgument:
 #     once at boot in an initializer and read-only thereafter. The lazy `||=`
 #     defaults are idempotent (a first-call race assigns an equivalent constant
 #     value); action_path + base_controller are warmed at boot/class-load.
-#   * lib/phlex/reactive/component.rb — class-definition-time DSL registries
-#     (@reactive_actions/@reactive_state_keys/@reactive_collections/
-#     @reactive_record_key), written by the action/reactive_* macros in a class
-#     body and inherited from the superclass — the standard Ruby class-macro
-#     pattern, not request-path state.
+#   * lib/phlex/reactive/component.rb + lib/phlex/reactive/component/** — the
+#     class-definition-time DSL registries (Component::Registry's own-storage
+#     ivars, resolution caches, and the mutex-guarded generation counter, issue
+#     #115), written by the action/reactive_* macros in a class body and
+#     resolved through the superclass — the standard Ruby class-macro pattern,
+#     not request-path state.
 #   * lib/phlex/reactive/streamable.rb — the per-thread view-context cache's
 #     integer generation counter; the actual context is thread-keyed, and the
 #     bump is a benign `@n = n + 1` invalidation (reset on Rails reload).
@@ -96,6 +97,7 @@ ThreadSafety/ClassInstanceVariable:
   Exclude:
     - lib/phlex/reactive.rb
     - lib/phlex/reactive/component.rb
+    - lib/phlex/reactive/component/**/*.rb
     - lib/phlex/reactive/streamable.rb
 
 ThreadSafety/ClassAndModuleAttributes:

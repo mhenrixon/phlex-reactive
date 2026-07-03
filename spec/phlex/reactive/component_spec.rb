@@ -1110,6 +1110,16 @@ RSpec.describe Phlex::Reactive::Component do
 
       expect(payload["gid"]).to eq("gid://app/Order/7")
     end
+
+    it "signs {c, s} WITHOUT a gid when the record ivar is nil (no nil.to_gid crash)" do
+      # A record-backed component constructed with no record: the ivar guard
+      # must short-circuit before to_gid so the token still signs the state.
+      token = draft_klass.new(order: nil, total: 500, allowance: 100).send(:reactive_token)
+      payload = Phlex::Reactive.verify(token)
+
+      expect(payload).not_to have_key("gid")
+      expect(payload["s"]).to eq({ "total" => 500, "allowance" => 100 })
+    end
   end
 
   # reactive_compute declares a CLIENT-SIDE reducer: on `input`, the generic
