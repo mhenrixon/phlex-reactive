@@ -5,6 +5,11 @@ require "phlex" # for the render-context-free `mix` helper used by reactive_root
 
 RSpec.describe Phlex::Reactive::Component do
   # A minimal state-backed component (no Rails/Phlex render needed for these).
+  # It declares every action the #on specs exercise: on() now consults the
+  # actions registry under verbose_errors (issue #105 — undeclared names raise at
+  # render), which is ON whenever Rails is loaded (the combined fast suite), so a
+  # trigger for an undeclared name would raise here. Declaring them keeps every
+  # #on wire-format example green regardless of the flag's default.
   let(:state_klass) do
     Class.new do
       include Phlex::Reactive::Component
@@ -14,6 +19,10 @@ RSpec.describe Phlex::Reactive::Component do
       reactive_state :count
       action :increment
       action :set, params: { count: :integer }
+      # Action names the #on option specs (debounce/listnav/confirm/keyboard/
+      # modifiers/optimistic/loading) build triggers for — declared so the
+      # render-time undeclared-action guard (issue #105) passes them through.
+      %i[search destroy add cancel switch toggle track dismiss close_menu save].each { action(it) }
 
       def initialize(count: 0) = @count = count
       attr_reader :count
@@ -494,6 +503,77 @@ RSpec.describe Phlex::Reactive::Component do
     it "still serializes explicit params" do
       attrs = instance.send(:on, :set, count: 9)
       expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({ "count" => 9 })
+    end
+  end
+
+  # Issue #105: on(:typo) — an undeclared action name (a typo, or an action you
+  # forgot to declare) renders fine today and only surfaces as an unexplained
+  # 403 at CLICK time (the endpoint's default-deny). With verbose_errors on
+  # (dev + test), on() consults the actions registry and raises at RENDER time,
+  # listing the declared actions — the same loud-failure precedent as
+  # reactive_compute_attrs. Production (flag off) keeps today's permissive emit
+  # so a stale page after a deploy that removed an action doesn't 500 on render.
+  describe "#on undeclared-action guard (issue #105)" do
+    subject(:instance) { state_klass.new }
+
+    # This unit spec runs WITHOUT Rails (spec_helper), so verbose_errors defaults
+    # to false — the raising path is flag-gated, so force it ON here (in a Rails
+    # app it defaults ON in dev + test via Rails.env.local?). Restore the lazy
+    # default after each example — remove the ivar entirely so the explicit value
+    # never leaks into the next one.
+    around do
+      Phlex::Reactive.verbose_errors = true
+      it.run
+    ensure
+      if Phlex::Reactive.instance_variable_defined?(:@verbose_errors)
+        Phlex::Reactive.remove_instance_variable(:@verbose_errors)
+      end
+    end
+
+    it "passes through for a declared action" do
+      expect { instance.send(:on, :increment) }.not_to raise_error
+      expect(instance.send(:on, :increment)[:data][:reactive_action_param]).to eq("increment")
+    end
+
+    it "raises for an undeclared action (a typo), naming it and listing the declared ones" do
+      # (An anonymous test class stringifies as #<Class:0x…>, not its .name, so
+      # we assert on the typo + the declared list — the parts a real component's
+      # class name is embedded alongside.)
+      expect { instance.send(:on, :incremnt) }
+        .to raise_error(Phlex::Reactive::Error) {
+          expect(it.message).to include("has no declared action :incremnt")
+          expect(it.message).to include("declared: [").and include(":increment").and include(":set")
+        }
+    end
+
+    it "does not raise when verbose_errors is off (production keeps the permissive emit)" do
+      Phlex::Reactive.verbose_errors = false
+      expect { instance.send(:on, :incremnt) }.not_to raise_error
+      expect(instance.send(:on, :incremnt)[:data][:reactive_action_param]).to eq("incremnt")
+    end
+
+    it "runs the check BEFORE the debounce/throttle guard (a typo raises the action error first)" do
+      # Both a typo AND the mutually-exclusive debounce+throttle are wrong; the
+      # undeclared-action check is placed first, so it wins.
+      expect { instance.send(:on, :incremnt, debounce: 100, throttle: 100) }
+        .to raise_error(Phlex::Reactive::Error, /no declared action :incremnt/)
+    end
+
+    # A component that declares NO actions of its own is a cross-component
+    # dispatch helper — a child row rendering a trigger for its CONTAINER's
+    # action, sending the container's token (e.g. a notification row → the list's
+    # :dismiss). It can't self-validate against a registry it doesn't own, so the
+    # guard skips the empty case entirely rather than false-positive.
+    it "skips the check for a component that declares no actions (cross-component dispatch)" do
+      dispatch_helper = Class.new do
+        include Phlex::Reactive::Component
+
+        def self.name = "DispatchHelper"
+      end
+      instance = dispatch_helper.new
+
+      expect { instance.send(:on, :dismiss, id: 7) }.not_to raise_error
+      expect(instance.send(:on, :dismiss, id: 7)[:data][:reactive_action_param]).to eq("dismiss")
     end
   end
 

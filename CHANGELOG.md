@@ -6,6 +6,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **`on(:typo)` fails at render, not click (#105).** A misspelled or forgotten
+  action used to render fine and only surface as an unexplained **403 on click**
+  (the endpoint's default-deny). Now, when **`Phlex::Reactive.verbose_errors`** is
+  on (the default in development and test via `Rails.env.local?`), **`on(:name)`
+  raises `Phlex::Reactive::Error`** at **render** time if `:name` isn't declared
+  on that component — the message lists the declared actions, the same loud-
+  failure courtesy `reactive_compute_attrs` already gives an undeclared compute.
+  You catch the typo the moment you load the page instead of hunting a mystery
+  403.
+  - **Production is unchanged.** With `verbose_errors` off (the production
+    default) `on()` keeps today's permissive emit, so a stale page after a deploy
+    that removed an action **never 500s on render**.
+  - **Cross-component dispatch still works.** A component that declares **no
+    actions of its own** — a child row rendering a trigger for its container's
+    action and sending the container's token (e.g. a notification row → the list's
+    `:dismiss`) — is skipped: it can't self-validate against a registry it doesn't
+    own. `on_client` triggers are never checked (they aren't declared actions).
+  - **Not the security boundary.** This is a dev-time aid; the server's
+    default-deny stays the enforcement. The check is one flag-gated hash lookup
+    with **zero added allocations** on the `on()`/render/token hot paths (measured:
+    `on(:increment)` and `to_stream_replace` allocate byte-identically before and
+    after; the prod path short-circuits on the flag before the lookup).
+
 ### Added
 
 - **`reactive_text` mirrors + typed compute inputs (#104).** Mirror a form field

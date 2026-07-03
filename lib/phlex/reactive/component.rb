@@ -525,6 +525,34 @@ module Phlex
       def on(action_name, event: "click", debounce: nil, throttle: nil, confirm: nil, listnav: nil,
              window: false, once: false, outside: false, optimistic: nil, loading: nil, disable_with: nil,
              **params)
+        # A typo'd or forgotten action renders fine and only surfaces as an
+        # opaque 403 at CLICK time (the endpoint's default-deny). Under
+        # verbose_errors (dev + test), fail loudly at RENDER time instead —
+        # listing the declared actions — the same courtesy reactive_compute_attrs
+        # gives an undeclared compute (issue #105). Placed FIRST, before any attr
+        # building. Production (flag off) keeps the permissive emit: a stale page
+        # after a deploy that removed an action must not 500 on render. This is a
+        # dev-time aid, NOT the security boundary — default-deny stays the
+        # SERVER's enforcement. on_client triggers are not declared actions (no
+        # registry), so they are never checked here.
+        #
+        # The check applies ONLY to a component that declares actions of its own.
+        # A component with an EMPTY registry is a cross-component dispatch helper
+        # — a child row that renders a trigger for its CONTAINER's action and
+        # sends the container's token (e.g. NotificationRowComponent → the list's
+        # :dismiss). It can't self-validate against a registry it doesn't own, so
+        # the guard would false-positive; skipping the empty case keeps the
+        # pattern working while still catching a typo in a component that DOES
+        # declare actions (the issue's target — on(:togle) where :toggle exists).
+        # verbose_errors is checked FIRST so production (flag off) short-circuits
+        # before touching the registry — zero added cost on the hot path.
+        if Phlex::Reactive.verbose_errors &&
+           (actions = self.class.reactive_actions).any? && !actions.key?(action_name.to_sym)
+          raise Phlex::Reactive::Error,
+            "#{self.class} has no declared action #{action_name.to_sym.inspect} " \
+            "(declared: #{actions.keys.inspect})"
+        end
+
         if debounce && throttle
           raise ArgumentError,
             "on(#{action_name.inspect}) got both debounce: and throttle: — they are mutually " \
