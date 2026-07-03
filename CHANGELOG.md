@@ -6,6 +6,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **One inheritance-aware registry behind the Component DSL; `component.rb` split
+  into cohesive concerns (#115).** All five class-level registries
+  (`reactive_actions`, `reactive_state_keys`, `reactive_collections`,
+  `reactive_computes`, `reactive_record_key`) now resolve through
+  `Phlex::Reactive::Component::Registry` with ONE semantic:
+  resolve-through-superclass at read time, memoized per class against a
+  generation counter bumped on any registry write. **The one visible behavior
+  change** (previously divergent): a parent class declaring an action/state
+  key/collection/compute AFTER a subclass had been read is now visible to that
+  subclass — pre-#115 the four collection registries snapshot-dup'd the parent
+  on first access (the late declaration was silently invisible), while
+  `reactive_record_key` walked live; the hot-path identity memos could go stale
+  split-brain against the live key. All covered by the new registry-inheritance
+  contract suite. Zero public API change: every reader keeps its exact
+  signature, `reactive_compute_def(name)` is added as the reader form matching
+  `reactive_collection_def` (the `reactive_compute(name)` getter stays a
+  permanent alias), and the token hot path is measured byte-identical
+  (unchanged i/s within noise; identical allocations). `component.rb` is now an
+  aggregator over `component/{registry,dsl,identity,helpers}.rb` — pure code
+  motion, constant paths unchanged.
+
 ### Added
 
 - **`morph:` on the update verbs (#113).** The `update` family now takes the same
