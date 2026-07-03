@@ -43,6 +43,20 @@ RSpec.describe 'Responsive shell', type: :system do
       overflow = page.evaluate_script(
         'document.documentElement.scrollWidth - document.documentElement.clientWidth'
       )
+      if overflow > 1
+        offenders = page.evaluate_script(<<~JS)
+          (() => {
+            const vw = document.documentElement.clientWidth;
+            return [...document.querySelectorAll('*')].map(e => {
+              const r = e.getBoundingClientRect();
+              return { tag: e.tagName, cls: (e.className||'').toString().slice(0,60),
+                       right: Math.round(r.right), width: Math.round(r.width) };
+            }).filter(x => x.right > vw + 1).sort((a,b)=>b.right-a.right).slice(0,8);
+          })()
+        JS
+        warn "DEBUG viewport=#{page.evaluate_script('document.documentElement.clientWidth')} overflow=#{overflow}"
+        offenders.each { |o| warn "DEBUG overflows: <#{o['tag']} class='#{o['cls']}'> right=#{o['right']} width=#{o['width']}" }
+      end
       expect(overflow).to be <= 1 # allow sub-pixel rounding
     end
   end
