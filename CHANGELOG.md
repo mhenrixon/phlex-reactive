@@ -255,6 +255,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not just the importmap-style `controllers/index.js`, and its post-install output
   ends by telling you to run `bin/rails phlex_reactive:doctor` to verify.
 
+### Performance
+
+- **Nested-root fast path for the client field walks (#117).** `#collectFields`,
+  `recompute`, and `#listnavOptions` computed field ownership (the issue #15
+  "is this element mine, not a nested reactive root's?" check) with a per-element
+  `el.closest('[data-controller~="reactive"]')` walk on every matched field —
+  `recompute`'s `#ownedField` did a **fresh** `querySelectorAll('[name="…"]')` +
+  `closest()` filter **per declared input AND per output on every keystroke**
+  (~60 DOM queries on a 30-field calculator). A new `#ownershipFilter()` hoists
+  the decision to **once per op**: with no nested reactive root (the common case)
+  it returns a constant-true predicate and the per-field `closest()` walk is
+  skipped entirely; when a nested root is present it falls back to the exact
+  `#ownsField` closest() check, so issue #15 scoping is byte-identical. `recompute`
+  additionally resolves its inputs and outputs through a per-call, **first-wins**
+  `byName` memo (`if (owns(el)) break` on the first owned match — last-wins would
+  change radio-group / Rails hidden+checkbox behavior). Measured same-machine
+  before/after (bun + happy-dom, engine-relative): **recompute ~31 µs → ~23 µs per
+  keystroke (~25%)** on the 30-input calculator, 0 retained bytes/call;
+  `#collectFields` (once per dispatch, dominated by the dispatch overhead) stays
+  within noise. A **method/keystroke-level** win, not a request-level one. Field
+  ownership is unchanged for every component; the issue #15 nested-root bun tests
+  pass untouched. New coverage: `spec/javascript/reactive_recompute_ownership.test.js`
+  proves first-wins resolution for duplicate owned names and nested-root rejection.
+
 ### Changed
 
 - **Structured `Phlex::Reactive::Stream` value object — the endpoint stops

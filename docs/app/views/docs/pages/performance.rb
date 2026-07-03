@@ -594,17 +594,29 @@ module Views
                   strong { 'engine-relative. ' }
                   code { '#collectFields' }
                   plain ' via a full dispatch over happy-dom: ~34 µs for a 5-field form, ~96 µs for a '
-                  plain '60-field grid. Adding 2 nested reactive roots (the '
-                  code { '#ownsField' }
-                  plain ' ownership filter, issue #15) adds ~6% — the '
+                  plain '60-field grid. Adding 2 nested reactive roots (the ownership filter, issue #15) '
+                  plain 'adds ~6%. The ownership check is hoisted to once per dispatch (issue #117): with '
+                  plain 'no nested reactive root — the common case — the '
                   code { 'closest()' }
-                  plain ' scope check per field is cheap.'
+                  plain ' scope check per field is skipped entirely. '
+                  code { 'collectFields' }
+                  plain ' runs once per dispatch, so this is dominated by the dispatch overhead and the '
+                  plain 'fast path does not move it out of noise.'
                 end
                 li do
                   strong { 'engine-relative. ' }
                   code { 'recompute' }
                   plain ' on a 30-input calculator (read every declared input, run the reducer, write '
-                  plain 'one output): ~30 µs per keystroke over happy-dom.'
+                  plain 'one output): ~23 µs per keystroke over happy-dom, down from ~31 µs (~25%). This '
+                  plain 'is where the issue #117 fast path pays off: the pre-#117 per-name '
+                  code { 'querySelectorAll' }
+                  plain ' + '
+                  code { 'closest()' }
+                  plain ' walk ran per input AND per output on every keystroke (~60 DOM queries on a '
+                  plain '30-field calculator); the hoisted ownership probe plus a first-wins '
+                  code { 'byName' }
+                  plain ' memo collapses that to one query per distinct declared name, with the ownership '
+                  plain 'decision made once. A per-keystroke (method-level) win, not a request-level one.'
                 end
               end
               DocsUI::Callout(:note) do
