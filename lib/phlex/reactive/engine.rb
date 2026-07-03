@@ -84,6 +84,11 @@ module Phlex
       # a one-line log pointing at the cause. No-op when the route is fine.
       config.after_initialize do
         Phlex::Reactive.warn_unless_action_route_mounted!
+
+        # Attach the opt-in LogSubscriber (issue #107) exactly once, only when
+        # the app enabled it. attach_to is idempotent-safe here because this runs
+        # once per boot; the events fire for APMs regardless of this flag.
+        Phlex::Reactive::LogSubscriber.attach_to(:phlex_reactive) if Phlex::Reactive.log_events
       end
     end
   end

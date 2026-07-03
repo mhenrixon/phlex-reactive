@@ -1660,6 +1660,47 @@ See [docs/broadcasting.md](https://phlex-reactive.zoolutions.llc/docs/broadcasti
 
 ---
 
+## Observability
+
+The hot paths emit `ActiveSupport::Notifications` events, so an APM (AppSignal,
+Datadog, Skylight) sees reactive traffic at the **component level** — which
+component/action a slow request was, render time, and broadcast fan-out. Three
+events, all under the `phlex_reactive` namespace:
+
+| Event | Fires | Payload |
+|-------|-------|---------|
+| `action.phlex_reactive` | once per request | `component`, `action`, `outcome` (`ok`/`denied_undeclared`/`invalid_token`/`not_found`/`unauthorized`) |
+| `render.phlex_reactive` | per component render | `component`, `bytesize` |
+| `broadcast.phlex_reactive` | per `broadcast_*_to` (Action Cable **and** pgbus) | `component`, `stream_action`, `streamables` |
+
+Payloads carry **names, the outcome, and sizes only** — never the token, params,
+or state, so an event can't leak a secret. Subscribe from an initializer:
+
+```ruby
+ActiveSupport::Notifications.subscribe("action.phlex_reactive") do |*args|
+  event = ActiveSupport::Notifications::Event.new(*args)
+  MyAPM.record("reactive.#{event.payload[:outcome]}", event.duration,
+    component: event.payload[:component], action: event.payload[:action])
+end
+```
+
+To watch reactive traffic in your own log without an APM, flip on the bundled
+`LogSubscriber` (default off) — one compact line per event at DEBUG:
+
+```ruby
+# config/initializers/phlex_reactive.rb
+Phlex::Reactive.log_events = true
+# [reactive] Counter#increment ok (3.1ms)
+# [reactive] render Counter 512B (0.9ms)
+# [reactive] broadcast replace Counter →2 (1.4ms)
+```
+
+The events fire whether or not you enable the LogSubscriber; the flag only
+controls the gem's own log lines. See
+[docs/performance.md](https://phlex-reactive.zoolutions.llc/docs/performance).
+
+---
+
 ## Documentation
 
 - [Installation & bundler setups](https://phlex-reactive.zoolutions.llc/docs/installation)

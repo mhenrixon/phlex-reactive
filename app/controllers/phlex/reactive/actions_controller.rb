@@ -27,28 +27,55 @@ module Phlex
       wrap_parameters false if respond_to?(:wrap_parameters)
 
       def create
+        # ONE action.phlex_reactive event per request (issue #107). The event
+        # payload carries the component/action NAMES + outcome ONLY (never the
+        # token, params, or state); we fill it as those become known and set
+        # :outcome on every exit path — the success tail and each rescue. The
+        # rescue bodies are unchanged (verbose diagnostics + reactive_error per
+        # #82/#87); we only ADD the outcome finalizer. `action` is safe to read
+        # up front (it comes from the request, not the verified token).
+        event = { component: nil, action: reactive_action_name.to_s, outcome: nil }
+        Phlex::Reactive.instrument("action", event) do
+          create_action(event)
+        end
+      end
+
+      private
+
+      # The action body, run inside the instrument block so its payload (`event`)
+      # can be finalized on every exit path. Kept separate so `create` stays a
+      # thin instrument wrapper.
+      def create_action(event)
         payload = verified_payload
         component_class = resolve_component(payload["c"])
+        event[:component] = component_class.name
         action_def = component_class.reactive_action(reactive_action_name)
 
         # default-deny
-        return reactive_error(:forbidden, undeclared_action_message(component_class), kind: :forbidden) unless action_def
+        unless action_def
+          event[:outcome] = :denied_undeclared
+          return reactive_error(:forbidden, undeclared_action_message(component_class), kind: :forbidden)
+        end
 
         component = component_class.from_identity(payload)
         coerced = coerce_params(action_def.params, component_class:, action_name: action_def.name)
 
         result = run_action(component, action_def, coerced)
 
+        event[:outcome] = :ok
         render turbo_stream: response_streams(result, component)
       rescue Phlex::Reactive::InvalidToken => e
+        # The component name here came from an UNVERIFIED token — do NOT report it
+        # as trusted. Leave event[:component] nil.
+        event[:outcome] = :invalid_token
         reactive_error(:bad_request, e.message, kind: e.diagnostic || :tampered)
       rescue ActiveRecord::RecordNotFound
+        event[:outcome] = :not_found
         reactive_error(:not_found, record_not_found_message(payload), kind: :not_found)
       rescue *authorization_errors => e
+        event[:outcome] = :unauthorized
         reactive_error(:forbidden, authorization_error_message(e, component_class, action_def), kind: :forbidden)
       end
-
-      private
 
       # Reply to an endpoint failure. The status NEVER changes with any flag —
       # only the body. Precedence for the body (issue #100):

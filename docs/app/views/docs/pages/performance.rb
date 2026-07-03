@@ -15,6 +15,7 @@ module Views
         def content
           overview
           hot_paths
+          observability
           measuring
           before_change
           numbers
@@ -111,6 +112,101 @@ module Views
                   plain 'per controller; CSRF + pgbus connection id stay live (they can rotate).'
                 end
               end
+            end
+          end
+        end
+
+        def observability
+          DocsUI::Section('Observability (ActiveSupport::Notifications)') do
+            DocsUI::Prose() do
+              p do
+                plain 'The hot paths emit '
+                code { 'ActiveSupport::Notifications' }
+                plain ' events so an APM (AppSignal, Datadog, Skylight) sees reactive traffic at the '
+                strong { 'component level' }
+                plain ' — which component/action a slow request was, how long a render took, and broadcast '
+                plain 'fan-out. Three events, all in the '
+                code { 'phlex_reactive' }
+                plain ' namespace:'
+              end
+              ul do
+                li do
+                  code { 'action.phlex_reactive' }
+                  plain ' — one per request. Payload: '
+                  code { 'component' }
+                  plain ', '
+                  code { 'action' }
+                  plain ', '
+                  code { 'outcome' }
+                  plain ' ('
+                  code { 'ok' }
+                  plain '/'
+                  code { 'denied_undeclared' }
+                  plain '/'
+                  code { 'invalid_token' }
+                  plain '/'
+                  code { 'not_found' }
+                  plain '/'
+                  code { 'unauthorized' }
+                  plain ').'
+                end
+                li do
+                  code { 'render.phlex_reactive' }
+                  plain ' — around each component render. Payload: '
+                  code { 'component' }
+                  plain ', '
+                  code { 'bytesize' }
+                  plain '.'
+                end
+                li do
+                  code { 'broadcast.phlex_reactive' }
+                  plain ' — around each '
+                  code { 'broadcast_*_to' }
+                  plain ' (fires on Action Cable AND pgbus). Payload: '
+                  code { 'component' }
+                  plain ', '
+                  code { 'stream_action' }
+                  plain ', '
+                  code { 'streamables' }
+                  plain ' (the key count).'
+                end
+              end
+              p do
+                strong { 'Payloads carry names, the outcome, and sizes only' }
+                plain ' — never the token, the params, or component state, so an event can never leak a '
+                plain 'secret. An '
+                code { 'invalid_token' }
+                plain ' event has no trusted component name (the token did not verify), so it is omitted.'
+              end
+              p { plain 'Subscribe from an initializer exactly as you would for any Rails event:' }
+            end
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'config/initializers/phlex_reactive_apm.rb')
+              ActiveSupport::Notifications.subscribe('action.phlex_reactive') do |*args|
+                event = ActiveSupport::Notifications::Event.new(*args)
+                # event.payload => { component:, action:, outcome: }
+                # event.duration => ms
+                MyAPM.record("reactive.\#{event.payload[:outcome]}", event.duration,
+                  component: event.payload[:component], action: event.payload[:action])
+              end
+            RUBY
+            DocsUI::Prose() do
+              p do
+                plain 'To watch reactive traffic in your own log without an APM, flip on the bundled '
+                code { 'LogSubscriber' }
+                plain ' (default off). It logs one compact line per event at DEBUG:'
+              end
+            end
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'config/initializers/phlex_reactive.rb')
+              Phlex::Reactive.log_events = true
+              # [reactive] Counter#increment ok (3.1ms)
+              # [reactive] Counter#drop_table denied_undeclared (0.2ms)
+              # [reactive] render Counter 512B (0.9ms)
+              # [reactive] broadcast replace Counter →2 (1.4ms)
+            RUBY
+            DocsUI::Callout(:tip) do
+              plain 'The events fire whether or not you enable the LogSubscriber — the flag only controls the '
+              plain "gem's own log lines. An unsubscribed instrument is cheap (a few objects per call, zero "
+              plain 'retained), so the hot paths carry it unconditionally.'
             end
           end
         end

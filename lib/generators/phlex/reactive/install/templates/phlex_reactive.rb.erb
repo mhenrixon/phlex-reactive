@@ -19,6 +19,12 @@
 # change). Defaults to Rails.env.local? — on in development AND test, off in production.
 # Phlex::Reactive.verbose_errors = true
 
+# Log one compact line per reactive event (action/render/broadcast) at DEBUG —
+# `[reactive] Counter#increment ok (3.1ms)`. Default off. The events fire for
+# your APM regardless (ActiveSupport::Notifications, `*.phlex_reactive`); this
+# flag only controls the gem's own log lines. See the README Observability section.
+# Phlex::Reactive.log_events = true
+
 # Sign identity tokens with a dedicated key instead of secret_key_base.
 # Phlex::Reactive.verifier = ActiveSupport::MessageVerifier.new(ENV["REACTIVE_KEY"])
 
