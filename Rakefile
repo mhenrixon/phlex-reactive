@@ -82,6 +82,32 @@ namespace :bench do
     FileUtils.mkdir_p("tmp/benchmarks")
     sh({ "RAILS_ENV" => "test" }, "ruby benchmark/request/derailed.rb")
   end
+
+  desc "Run the client dispatch micro-benchmarks (extractToken, collectFields, recompute) via bun"
+  task :client do
+    # The client hot path (reactive_controller.js) is benched off-browser with
+    # mitata + happy-dom, driven through the controller's PUBLIC surface only —
+    # so NOTHING under app/javascript/ is touched (no __bench exports). See
+    # benchmark/client/ and docs/…/performance.rb for the honest framing (the
+    # happy-dom numbers are engine-relative; the extractToken regex numbers are
+    # engine-faithful under bun/JSC).
+    require "fileutils"
+    FileUtils.mkdir_p("tmp/benchmarks")
+    header = "\n### benchmark/client/index.bench.js ###"
+    puts "\e[1;35m#{header}\e[0m"
+    result = `bun run benchmark/client/index.bench.js 2>&1`
+    puts result
+    File.open("tmp/benchmarks/client.txt", "w") do |out|
+      out.puts header
+      out.puts result.gsub(/\e\[[0-9;]*m/, "")
+      # A crashed bench must not pass silently — index.bench.js runs mitata with
+      # `throw: true`, so a throwing bench exits non-zero. Record the failure in
+      # the saved report and abort, matching the bench:micro contract.
+      out.puts "!!! FAILED (exit #{$CHILD_STATUS.exitstatus})" unless $CHILD_STATUS.success?
+    end
+    puts "\nSaved report to tmp/benchmarks/client.txt"
+    abort "\nClient benchmark failed (exit #{$CHILD_STATUS.exitstatus})" unless $CHILD_STATUS.success?
+  end
 end
 
 desc "Run the micro-benchmark suite (alias for bench:micro)"
