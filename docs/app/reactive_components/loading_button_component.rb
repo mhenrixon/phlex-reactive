@@ -28,6 +28,14 @@ class LoadingButtonComponent < Phlex::HTML
   def save = @count += 1
 
   def view_template
+    # The spinner is present in the DOM always; this scoped rule reveals it ONLY
+    # while busy_on marks it with data-reactive-busy — pure CSS, no Ruby toggle.
+    style do
+      # Static CSS, no user input — Phlex safe(), not Rails html_safe.
+      css = '[data-testid="spinner"]{display:none} ' \
+            '[data-testid="spinner"][data-reactive-busy]{display:inline-block}'
+      raw(safe(css)) # rubocop:disable Rails/OutputSafety
+    end
     div(**reactive_root(class: 'flex items-center gap-3')) do
       button(**mix(on(:save, disable_with: 'Saving…'),
                    class: 'btn btn-sm btn-primary', data: { testid: 'save' })) { 'Save' }

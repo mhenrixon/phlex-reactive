@@ -27,6 +27,14 @@ class LatencyComponent < Phlex::HTML
   def bump = @count += 1
 
   def view_template
+    # Reveal the spinner ONLY while busy_on marks it with data-reactive-busy —
+    # pure CSS, no Ruby toggle.
+    style do
+      # Static CSS, no user input — Phlex safe(), not Rails html_safe.
+      css = '[data-testid="latency-spinner"]{display:none} ' \
+            '[data-testid="latency-spinner"][data-reactive-busy]{display:inline-block}'
+      raw(safe(css)) # rubocop:disable Rails/OutputSafety
+    end
     div(**reactive_root(class: 'flex items-center gap-3')) do
       # disable_with: swaps the label and disables the button while the action is
       # in flight — invisible on localhost until the simulator injects a delay.
