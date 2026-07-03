@@ -35,6 +35,7 @@ module Views
               | [Inline edit + dirty tracking](/docs/example-inline-edit) | Show ↔ edit (Enter saves, Escape cancels) plus an “Unsaved” badge + leave-guard with zero shipped state. |
               | [Notifications / badges](/docs/example-notifications) | Pure broadcast — a background event pushes a live re-render, plus a `broadcast_js_to` cross-tab pulse. |
               | [Reactive collections](/docs/example-collections) | Add / remove rows + a running count + an empty state, declared **once** with `reactive_collection`, optimistic dismiss + a self-dismissing flash. |
+              | [File uploads & custom types](/docs/example-uploads) | `:file` / `[:file]` params (multipart `FormData`), a nested-hash param alongside the file (#39), and a custom `Phlex::Reactive.param_type`. Code-first — no live demo. |
               | [Loading states](/docs/example-loading-states) | `disable_with:` + `busy_on` + the always-on `aria-busy`, with a latency toggle to make the pending window visible. |
               | [Client-only ops](/docs/example-client-ops) | `on_client` tabs / outside-close menu / accessible drawer — zero fetches, zero custom JS. |
               | [Failure surface](/docs/example-failure) | `error_flash` + `data-reactive-error` + `dismiss_after:` — what an adopter gets for free when an action fails. |
@@ -54,17 +55,18 @@ module Views
               | **Live broadcasts** — `broadcast_replace_to` / `broadcast_append_to` / `broadcast_js_to` → cross-tab sync | [Chat](/docs/example-chat), [Notifications](/docs/example-notifications), [Todo list](/docs/example-todo-list), [Team inbox](/docs/example-team-inbox) |
               | **Failure surface** — `error_flash` / `data-reactive-error` / `dismiss_after:` / timeout + offline | [Failure surface](/docs/example-failure), [Team inbox](/docs/example-team-inbox) |
               | **Combobox keyboard navigation** — `listnav:` (Arrow keys move a client highlight, Enter picks) | [Searchable combobox demo](/demos/searchable-combobox) |
+              | **File uploads & custom param types** — `:file` / `[:file]` (multipart `FormData`), `Phlex::Reactive.param_type` | [File uploads & custom types](/docs/example-uploads) (code-first) |
             MD
 
             DocsUI::Callout(:note) do
               md <<~MD
-                **File uploads** (`:file` params / multipart `FormData`) and
-                **custom param types** (`Phlex::Reactive.param_type`) don't yet have
-                a dedicated live example page — see the
-                [README](https://github.com/mhenrixon/phlex-reactive#readme) for the
-                reference. The [payment split](/docs/example-payment-split) is the
-                closest cousin: it's the nested-params / auto-collected sibling-fields
-                example that a `FormData` upload extends.
+                **File uploads** (`:file` / `[:file]` params, multipart `FormData`)
+                and **custom param types** (`Phlex::Reactive.param_type`) have a
+                dedicated [code-first walkthrough](/docs/example-uploads) — no live
+                demo, because a public upload endpoint is a storage/abuse surface.
+                The [payment split](/docs/example-payment-split) is the closest live
+                cousin: the nested-params / auto-collected sibling-fields example that
+                a `FormData` upload extends.
               MD
             end
           end
