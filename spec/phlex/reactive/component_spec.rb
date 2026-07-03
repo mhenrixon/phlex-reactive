@@ -644,6 +644,102 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  describe "#on loading states (issue #99 — loading:/disable_with:)" do
+    subject(:instance) { state_klass.new }
+
+    it "omits the loading param by default (bare on() hot path untouched)" do
+      attrs = instance.send(:on, :increment)
+      expect(attrs[:data]).not_to have_key(:reactive_loading_param)
+    end
+
+    it "expands disable_with: shorthand to { disable: true, text: … }" do
+      attrs = instance.send(:on, :save, disable_with: "Saving…")
+      expect(JSON.parse(attrs[:data][:reactive_loading_param]))
+        .to eq({ "disable" => true, "text" => "Saving…" })
+    end
+
+    it "emits a full loading: hash (disable + class + text)" do
+      attrs = instance.send(:on, :save, loading: { disable: true, class: "opacity-50", text: "Saving…" })
+      expect(JSON.parse(attrs[:data][:reactive_loading_param]))
+        .to eq({ "disable" => true, "class" => ["opacity-50"], "text" => "Saving…" })
+    end
+
+    it "serializes a loading class array" do
+      attrs = instance.send(:on, :save, loading: { class: %w[opacity-50 pointer-events-none] })
+      expect(JSON.parse(attrs[:data][:reactive_loading_param]))
+        .to eq({ "class" => %w[opacity-50 pointer-events-none] })
+    end
+
+    it "normalizes loading disable: to a real boolean" do
+      attrs = instance.send(:on, :save, loading: { disable: true })
+      expect(JSON.parse(attrs[:data][:reactive_loading_param])).to eq({ "disable" => true })
+    end
+
+    it "normalizes to: :root to the @root sentinel" do
+      attrs = instance.send(:on, :save, loading: { class: "busy", to: :root })
+      expect(JSON.parse(attrs[:data][:reactive_loading_param]))
+        .to eq({ "class" => ["busy"], "to" => "@root" })
+    end
+
+    it "passes a to: CSS selector string through verbatim" do
+      attrs = instance.send(:on, :save, loading: { class: "busy", to: ".spinner" })
+      expect(JSON.parse(attrs[:data][:reactive_loading_param]))
+        .to eq({ "class" => ["busy"], "to" => ".spinner" })
+    end
+
+    it "merges disable_with: over loading: (disable_with wins on text + implies disable)" do
+      attrs = instance.send(:on, :save, loading: { class: "busy" }, disable_with: "Saving…")
+      expect(JSON.parse(attrs[:data][:reactive_loading_param]))
+        .to eq({ "class" => ["busy"], "disable" => true, "text" => "Saving…" })
+    end
+
+    it "keeps the loading hint out of the explicit params payload" do
+      attrs = instance.send(:on, :save, disable_with: "Saving…", reason: "click")
+      expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({ "reason" => "click" })
+    end
+
+    it "threads loading alongside confirm, debounce and optimistic without collision" do
+      attrs = instance.send(:on, :save, confirm: "Sure?", debounce: 200,
+        optimistic: { add_class: "pending" }, disable_with: "Saving…")
+      expect(attrs[:data][:reactive_confirm_param]).to eq("Sure?")
+      expect(attrs[:data][:reactive_debounce_param]).to eq(200)
+      expect(JSON.parse(attrs[:data][:reactive_optimistic_param])).to eq({ "add_class" => ["pending"] })
+      expect(JSON.parse(attrs[:data][:reactive_loading_param]))
+        .to eq({ "disable" => true, "text" => "Saving…" })
+    end
+
+    it "rejects an unknown loading key (default-deny — a dead hint fails at build)" do
+      expect { instance.send(:on, :save, loading: { spin: true }) }
+        .to raise_error(ArgumentError, /spin/)
+    end
+
+    it "rejects a non-hash loading:" do
+      expect { instance.send(:on, :save, loading: "Saving…") }
+        .to raise_error(ArgumentError, /loading/)
+    end
+
+    it "still forces type=button for a click trigger with a loading hint" do
+      attrs = instance.send(:on, :save, disable_with: "Saving…")
+      expect(attrs[:type]).to eq("button")
+    end
+  end
+
+  describe "#busy_on (issue #99 — scoped busy indicators)" do
+    subject(:instance) { state_klass.new }
+
+    it "emits data-reactive-busy-on for the named action" do
+      expect(instance.send(:busy_on, :save)).to eq({ data: { reactive_busy_on: "save" } })
+    end
+
+    it "stringifies a symbol action name" do
+      expect(instance.send(:busy_on, :destroy)[:data][:reactive_busy_on]).to eq("destroy")
+    end
+
+    it "accepts a string action name" do
+      expect(instance.send(:busy_on, "save")[:data][:reactive_busy_on]).to eq("save")
+    end
+  end
+
   describe "#on_client (issue #95 — client-only DOM ops, zero round trip)" do
     subject(:instance) { state_klass.new }
 

@@ -8,6 +8,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Declarative loading states — `loading:` / `disable_with:` on `on(...)` +
+  `busy_on(:action)` (#99).** Between the click and the morph the UI was fully
+  live and unchanged: no per-trigger feedback, buttons stayed enabled, and a
+  rapid double-click enqueued a full duplicate POST (the queue serializes tokens,
+  it does not dedupe). This adds Livewire's `wire:loading` + `phx-disable-with`
+  without a Stimulus controller. `disable_with: "Saving…"` disables the trigger
+  and swaps its text while pending — and because a disabled button fires no
+  further clicks, a double-click now enqueues exactly **one** POST (the disable
+  is the dedup). `loading: { disable:, class:, text:, to: }` is the full form:
+  a loading class on the trigger or a `to:` target, plus disable + text. Both
+  apply at **enqueue** (covering the queue wait, not just the fetch) and revert
+  on settle — **guarded** so a disconnected trigger is skipped and a
+  server-rendered new label is never clobbered; the disable/text swap deliberately
+  do NOT apply during a `debounce:` quiet period, so a debounced `input` is not
+  disabled mid-typing. Independently, **every** round trip now carries an
+  always-on busy vocabulary for the whole enqueue→settle window — no Ruby needed:
+  `data-reactive-busy="<action>"` on the trigger and root (a **space-separated
+  set** on the root so concurrent actions don't clobber), `aria-busy` on the root
+  (via a **pending counter**, cleared only when the last request settles), and
+  `busy_on(:action)` to scope `data-reactive-busy` onto a spinner only while that
+  action is in flight. Style it with pure CSS (`[data-reactive-busy] .spinner { … }`).
+  The trigger is now captured from `event.currentTarget` (not `event.target`), so
+  a `<button><span>` click disables/relabels the button, not the inner span.
+  Emitted as `data-reactive-loading-param` (JSON) via the guarded-append pattern,
+  so the bare-`on()` hot path stays byte-identical. **`loading:` and
+  `disable_with:` are now RESERVED keyword names on `on(...)`** — like
+  `debounce:`/`confirm:`/`throttle:`/`optimistic:`, they can no longer be used as
+  free action params.
 - **`optimistic:` on `on(...)` — declared, reversible visual hints (#98).**
   Reactive interactions no longer wait a full round trip for their first visual
   change — and a checkbox no longer fails to flip at all (the client's
