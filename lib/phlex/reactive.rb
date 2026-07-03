@@ -462,6 +462,11 @@ loader.ignore("#{lib}/phlex/reactive/version.rb")
 # (generators/phlex/reactive/... defining Phlex::Reactive::Generators::...)
 # deliberately doesn't follow Zeitwerk's rules, so the loader must ignore them.
 loader.ignore("#{lib}/generators")
+# The RSpec matchers file (issue #110) defines RSpec::Matchers, not a
+# Phlex::Reactive::TestHelpers::Matchers constant, so it doesn't follow
+# Zeitwerk's naming — test_helpers.rb requires it explicitly (only when RSpec is
+# present), and the loader must ignore it.
+loader.ignore("#{lib}/phlex/reactive/test_helpers/matchers.rb")
 # The engine is required explicitly below (only when Rails is present) and must
 # not be eager-loaded before that.
 loader.do_not_eager_load("#{__dir__}/reactive/engine.rb")

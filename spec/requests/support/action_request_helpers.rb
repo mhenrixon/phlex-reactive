@@ -1,24 +1,26 @@
 # frozen_string_literal: true
 
-# Shared helpers for the request suite (issue #40). Every request spec mints a
-# signed identity token and POSTs it to the action endpoint exactly as a
-# component would. These two helpers were copy-pasted across the suite; they now
-# live here and are mixed into `type: :request` examples via rails_helper.rb.
+# The gem's own request suite dogfoods the PUBLIC Phlex::Reactive::TestHelpers
+# (issue #110) — the honesty check that the shipped helper actually works. The
+# legacy names (token_for / post_action) that the suite grew up on (issue #40)
+# now thinly delegate to the public API, so every existing request spec exercises
+# the public module verbatim.
 #
-# `post_multipart` (the #34 file path) stays LOCAL to file_params_spec.rb — it
-# sends multipart FormData, not a JSON body, so it doesn't belong in this shared
-# JSON helper.
+# post_multipart stays LOCAL to file_params_spec.rb (it predates the public
+# post_reactive_multipart and asserts a slightly different shape); it too rides
+# token_for below, so it goes through the public token path.
 module ActionRequestHelpers
-  # Mint a token exactly as a component would, using the app's verifier.
+  include Phlex::Reactive::TestHelpers
+
+  # Legacy alias: the suite mints class-form tokens as token_for(klass, payload).
   def token_for(klass, payload = {})
-    Phlex::Reactive.sign(payload.merge("c" => klass.name))
+    reactive_token_for(klass, payload)
   end
 
-  # POST a reactive action as a JSON body (token + act + params), the encoding
-  # the client uses when no file input is present.
+  # Legacy alias: post_action(klass, act:, payload:, params:) -> the public
+  # post_reactive_action(klass, act, params:, payload:). The wire (JSON body,
+  # action_path, headers) is the public helper's, so the suite proves it.
   def post_action(klass, act:, payload: {}, params: {})
-    post "/reactive/actions",
-      params: { token: token_for(klass, payload), act:, params: }.to_json,
-      headers: { "Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html" }
+    post_reactive_action(klass, act, params:, payload:)
   end
 end
