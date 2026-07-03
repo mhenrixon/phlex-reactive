@@ -24,7 +24,9 @@ class Doc
       view: 'ExampleNotifications' },
     { slug: 'example-chat',          title: 'Cross-tab chat',          group: 'Examples', view: 'ExampleChat' },
     { slug: 'example-loading-states', title: 'Loading states',         group: 'Examples',
-      view: 'ExampleLoadingStates' }
+      view: 'ExampleLoadingStates' },
+    { slug: 'example-client-ops', title: 'Client-only ops', group: 'Examples',
+      view: 'ExampleClientOps' }
   ].freeze
 
   attr_reader :slug, :title, :group, :view_name
