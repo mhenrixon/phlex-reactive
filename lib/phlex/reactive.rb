@@ -592,8 +592,9 @@ loader.tag = "phlex-reactive"
 # (lib/phlex/reactive/foo.rb -> Phlex::Reactive::Foo).
 lib = File.expand_path("..", __dir__)
 loader.push_dir(lib)
-# js.rb defines JS (an acronym), not the default-inflected `Js`.
-loader.inflector.inflect("js" => "JS")
+# js.rb defines JS and component/dsl.rb defines Component::DSL (acronyms), not
+# the default-inflected `Js`/`Dsl`.
+loader.inflector.inflect("js" => "JS", "dsl" => "DSL")
 # The gem-name shim (`require "phlex-reactive"`) is a plain require, not a
 # managed file.
 loader.ignore("#{lib}/phlex-reactive.rb")
