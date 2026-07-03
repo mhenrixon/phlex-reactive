@@ -46,6 +46,13 @@ module Phlex
     # minted for phlex-reactive can't be replayed against another verifier use.
     IDENTITY_PURPOSE = "phlex-reactive/identity"
 
+    # The ActiveSupport::Notifications namespace for the gem's hot-path events
+    # (issue #107): action.phlex_reactive, render.phlex_reactive,
+    # broadcast.phlex_reactive. APM tools (AppSignal, Datadog, Skylight)
+    # auto-subscribe to `*.phlex_reactive` and get component-level visibility.
+    # Payloads carry NAMES/outcome/sizes ONLY — never the token, params, or state.
+    INSTRUMENTATION_NAMESPACE = "phlex_reactive"
+
     class << self
       # The message verifier used to sign/verify component identity tokens.
       # Defaults to a purpose-scoped verifier derived from secret_key_base.
@@ -95,6 +102,29 @@ module Phlex
         return @verbose_errors if defined?(@verbose_errors)
 
         defined?(::Rails.env) && ::Rails.env.local?
+      end
+
+      # Attach the opt-in LogSubscriber (issue #107) so each hot-path event is
+      # debug-logged as one compact line (`[reactive] Counter#increment ok
+      # (3.1ms)`). Default OFF — the events still fire for APMs regardless; this
+      # only controls the gem's own log lines. The engine reads it at boot and
+      # attaches exactly once. Set true in an initializer to see the lines.
+      attr_writer :log_events
+
+      def log_events
+        return @log_events if defined?(@log_events)
+
+        false
+      end
+
+      # Emit an `<event>.phlex_reactive` ActiveSupport::Notifications event around
+      # a block, yielding the mutable payload so a rescue can finalize the outcome
+      # (issue #107). ASN.instrument is cheap when nothing is subscribed (the hot
+      # paths depend on this — proven by the render bench), so this wraps the
+      # render/broadcast/action paths unconditionally. The payload must carry
+      # NAMES/outcome/sizes ONLY — never token/params/state.
+      def instrument(event, payload = {}, &)
+        ::ActiveSupport::Notifications.instrument("#{event}.#{INSTRUMENTATION_NAMESPACE}", payload, &)
       end
 
       def verifier

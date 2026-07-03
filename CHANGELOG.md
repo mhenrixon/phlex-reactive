@@ -8,6 +8,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`ActiveSupport::Notifications` on the hot paths + an opt-in `LogSubscriber`
+  (#107).** The gem now emits three events under the `phlex_reactive` namespace,
+  so an APM (AppSignal, Datadog, Skylight) sees reactive traffic at the
+  **component level** — which component/action a slow request was, render time,
+  and broadcast fan-out — where before it saw nothing:
+  - `action.phlex_reactive` — one per request; payload `component`, `action`,
+    `outcome` (`ok`/`denied_undeclared`/`invalid_token`/`not_found`/`unauthorized`).
+  - `render.phlex_reactive` — per render; payload `component`, `bytesize`.
+  - `broadcast.phlex_reactive` — per `broadcast_*_to` (fires on Action Cable
+    **and** pgbus); payload `component`, `stream_action`, `streamables` count.
+
+  Payloads carry **names, the outcome, and sizes only** — never the token,
+  params, or state, so an event can't leak a secret; an `invalid_token` event has
+  no trusted component name (the token didn't verify) and omits it. Statuses and
+  the endpoint flow are unchanged — the instrument only wraps the existing paths.
+  An unsubscribed `instrument` is cheap (a few objects per call, **zero
+  retained** — measured on the render micro bench) so the hot paths carry it
+  unconditionally. Flip on `Phlex::Reactive.log_events = true` (default off) to
+  get one compact debug line per event: `[reactive] Counter#increment ok (3.1ms)`.
+  See the Observability section of the README and the performance docs page.
+
 - **`bin/rails phlex_reactive:doctor` — validate the whole install (#106).** Five
   closed issues (#3 boot/eager-load, #26 route shadowing, #42 lost request, #48
   unregistered controller, #57 importmap 404) were pure integration papercuts

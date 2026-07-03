@@ -197,6 +197,9 @@ RSpec/DescribeClass:
     - spec/phlex/reactive/streamable_morph_spec.rb
     - spec/phlex/reactive/streamable_token_spec.rb
     - spec/phlex/reactive/streamable_view_context_spec.rb
+    # render.phlex_reactive + broadcast.phlex_reactive are cross-cutting events
+    # emitted from several class methods, not one class under test (issue #107).
+    - spec/phlex/reactive/instrumentation_spec.rb
 
 # The `describe Klass, "label"` form uses the second arg as a context label
 # (e.g. `describe Component, "reactive_collection"`), not a method name.

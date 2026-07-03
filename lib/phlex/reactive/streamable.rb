@@ -151,7 +151,16 @@ module Phlex
         # view context still carries the full Rails helper set, so
         # dom_id/url_for/t()/csrf keep working during a re-render or broadcast.
         def render_component(component)
-          component.render_in(turbo_view_context)
+          # render.phlex_reactive (issue #107): the pure render cost — the unit
+          # an APM most wants (broadcast fan-out renders once per stream key).
+          # Payload carries the component NAME + html bytesize ONLY. bytesize is
+          # known only after rendering, so we mutate the payload inside the block.
+          event = { component: name, bytesize: 0 }
+          Phlex::Reactive.instrument("render", event) do
+            html = component.render_in(turbo_view_context)
+            event[:bytesize] = html.bytesize
+            html
+          end
         end
 
         # `morph: true` emits `<turbo-stream action="replace" method="morph">` so
@@ -201,44 +210,59 @@ module Phlex
         # so a peer tab keeps its focus/caret on the morphed row. The broadcast
         # path takes EXTRA <turbo-stream> attributes via `attributes:` (not the
         # TagBuilder's `method:` kwarg), so the morph flag rides there.
+        # Each broadcast_*_to wraps its body in a broadcast.phlex_reactive event
+        # (issue #107) via instrument_broadcast — the stream action + streamables
+        # COUNT + component name, never the model/state. The event fires on BOTH
+        # transports (Action Cable AND pgbus): it wraps this class-method body,
+        # which is the same on either, so pgbus optionality is preserved.
         def broadcast_replace_to(*streamables, model: nil, exclude: nil, visible_to: nil, morph: false, **options)
-          component = build(model, options)
-          ::Turbo::StreamsChannel.broadcast_replace_to(
-            *streamables, target: component.id, html: render_component(component),
-            **morph_attributes(morph), **broadcast_transport_opts(exclude:, visible_to:)
-          )
+          instrument_broadcast("replace", streamables) do
+            component = build(model, options)
+            ::Turbo::StreamsChannel.broadcast_replace_to(
+              *streamables, target: component.id, html: render_component(component),
+              **morph_attributes(morph), **broadcast_transport_opts(exclude:, visible_to:)
+            )
+          end
         end
 
         def broadcast_update_to(*streamables, model: nil, exclude: nil, visible_to: nil, **options)
-          component = build(model, options)
-          ::Turbo::StreamsChannel.broadcast_update_to(
-            *streamables, target: component.id, html: render_component(component),
-            **broadcast_transport_opts(exclude:, visible_to:)
-          )
+          instrument_broadcast("update", streamables) do
+            component = build(model, options)
+            ::Turbo::StreamsChannel.broadcast_update_to(
+              *streamables, target: component.id, html: render_component(component),
+              **broadcast_transport_opts(exclude:, visible_to:)
+            )
+          end
         end
 
         def broadcast_append_to(*streamables, target:, model: nil, exclude: nil, visible_to: nil, **options)
-          component = build(model, options)
-          ::Turbo::StreamsChannel.broadcast_append_to(
-            *streamables, target:, html: render_component(component),
-            **broadcast_transport_opts(exclude:, visible_to:)
-          )
+          instrument_broadcast("append", streamables) do
+            component = build(model, options)
+            ::Turbo::StreamsChannel.broadcast_append_to(
+              *streamables, target:, html: render_component(component),
+              **broadcast_transport_opts(exclude:, visible_to:)
+            )
+          end
         end
 
         def broadcast_prepend_to(*streamables, target:, model: nil, exclude: nil, visible_to: nil, **options)
-          component = build(model, options)
-          ::Turbo::StreamsChannel.broadcast_prepend_to(
-            *streamables, target:, html: render_component(component),
-            **broadcast_transport_opts(exclude:, visible_to:)
-          )
+          instrument_broadcast("prepend", streamables) do
+            component = build(model, options)
+            ::Turbo::StreamsChannel.broadcast_prepend_to(
+              *streamables, target:, html: render_component(component),
+              **broadcast_transport_opts(exclude:, visible_to:)
+            )
+          end
         end
 
         def broadcast_remove_to(*streamables, model: nil, exclude: nil, visible_to: nil, **options)
-          component = build(model, options)
-          ::Turbo::StreamsChannel.broadcast_remove_to(
-            *streamables, target: component.id,
-            **broadcast_transport_opts(exclude:, visible_to:)
-          )
+          instrument_broadcast("remove", streamables) do
+            component = build(model, options)
+            ::Turbo::StreamsChannel.broadcast_remove_to(
+              *streamables, target: component.id,
+              **broadcast_transport_opts(exclude:, visible_to:)
+            )
+          end
         end
 
         # Push server-side client DOM ops to EVERY subscriber of a stream (issue
@@ -261,18 +285,33 @@ module Phlex
         # actor-reply concern only (Response#js), so it raises ArgumentError here
         # rather than silently shipping a hostile-feeling broadcast.
         def broadcast_js_to(*streamables, ops, exclude: nil, visible_to: nil, target: nil)
-          json = broadcast_js_ops_json(ops)
-          ::Turbo::StreamsChannel.broadcast_action_to(
-            *streamables,
-            action: "reactive:js",
-            target: target,
-            attributes: { data: { reactive_ops: json } },
-            render: false,
-            **broadcast_transport_opts(exclude:, visible_to:)
-          )
+          instrument_broadcast("reactive:js", streamables) do
+            json = broadcast_js_ops_json(ops)
+            ::Turbo::StreamsChannel.broadcast_action_to(
+              *streamables,
+              action: "reactive:js",
+              target: target,
+              attributes: { data: { reactive_ops: json } },
+              render: false,
+              **broadcast_transport_opts(exclude:, visible_to:)
+            )
+          end
         end
 
         private
+
+        # Wrap a broadcast_*_to body in a broadcast.phlex_reactive event (issue
+        # #107). Payload: the component NAME, the Turbo stream action, and the
+        # streamables COUNT — never the model/state. Fires on both transports
+        # because it wraps the shared class-method body. Returns the block's value
+        # (the broadcast result) so callers are unaffected.
+        def instrument_broadcast(stream_action, streamables, &)
+          Phlex::Reactive.instrument(
+            "broadcast",
+            { component: name, stream_action: stream_action, streamables: streamables.size },
+            &
+          )
+        end
 
         # Validate + serialize broadcast ops: reject focus-class ops (they steal
         # focus in every tab) and an empty chain (a dead broadcast), then return
