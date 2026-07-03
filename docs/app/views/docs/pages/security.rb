@@ -308,7 +308,7 @@ module Views
                   plain '; '
                   code { 'kind' }
                   plain ' is one of '
-                  code { 'redirected | http | content-type | network' }
+                  code { 'redirected | http | content-type | timeout | offline | network' }
                   plain ' (all retriable) or '
                   code { 'apply' }
                   plain ' — the server already completed the mutation but something AFTER the fetch threw ' \
@@ -341,6 +341,30 @@ module Views
             DocsUI::Callout(:note, title: 'The events are hooks, not the security boundary') do
               plain 'A 403 still denies the action server-side whether or not anything listens; the existing ' \
                     'console.error logging is unchanged. The events only make the failure visible to your UI.'
+            end
+            DocsUI::Prose() do
+              p do
+                plain 'The '
+                code { 'timeout' }
+                plain ' and '
+                code { 'offline' }
+                plain ' kinds bound the request itself. '
+                code { 'AbortSignal.timeout' }
+                plain ' (default 30s, set '
+                code { '<meta name="phlex-reactive-timeout">' }
+                plain ') aborts a hung request so one dead connection can no longer wedge the component\'s ' \
+                      'request queue; an offline click short-circuits BEFORE the fetch (the edit is never ' \
+                      'half-sent) and mirrors '
+                code { 'data-reactive-offline' }
+                plain ' onto '
+                code { '<html>' }
+                plain ' as a pure CSS hook.'
+              end
+            end
+            DocsUI::Callout(:warning, title: 'A timed-out request may have SUCCEEDED — no auto-replay') do
+              plain 'A timeout means the server did not answer in time, NOT that it did nothing — the mutation ' \
+                    'may have committed. phlex-reactive never auto-replays, and even a manual retry() can ' \
+                    'double-apply a non-idempotent action. Make retryable actions idempotent, or gate retry UI.'
             end
           end
         end

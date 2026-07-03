@@ -25,6 +25,24 @@ class DemosController < ActionController::Base
     render html: component + template.html_safe, layout: true
   end
 
+  # Timeout + offline surface (issue #101). A SHORT phlex-reactive-timeout meta
+  # (300ms) so the component's 1.5s `slow` action reliably aborts on the client,
+  # plus a document-level probe node the reactive:error listener writes the kind
+  # into — the spec reads it to prove kind=timeout / kind=offline without app JS.
+  def network_status
+    component = render_to_string(NetworkStatusComponent.new(count: 0), layout: false)
+    extras = <<~HTML
+      <meta name="phlex-reactive-timeout" content="1000">
+      <div data-testid="error-probe"></div>
+      <script>
+        document.addEventListener("reactive:error", (e) => {
+          document.querySelector("[data-testid='error-probe']").textContent = e.detail.kind
+        })
+      </script>
+    HTML
+    render html: component + extras.html_safe, layout: true
+  end
+
   def todos
     render_component TodoListComponent.new
   end

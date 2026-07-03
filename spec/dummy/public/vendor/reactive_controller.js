@@ -172,11 +172,47 @@ export function __resetReactiveDismissForTest() {
   dismissRegistered = false
 }
 
+// Offline CSS hook (issue #101). Mirror data-reactive-offline on
+// document.documentElement from navigator.onLine, kept in sync by the window
+// online/offline events — so an app can dim a save button or show a banner with
+// PURE CSS and zero JS ([data-reactive-offline] .save { pointer-events: none }).
+// Guarded on window (needed for addEventListener AND navigator) so importing the
+// module in a non-browser (bun test) context is a no-op, and registered once
+// (the online/offline listeners are NOT {once}, so a second registerReactiveActions
+// call must not stack duplicates) — mirroring the dismiss guard + reset seam.
+let offlineRegistered = false
+export function registerReactiveOffline() {
+  if (offlineRegistered) return
+  if (typeof window === "undefined" || typeof document === "undefined") return
+  if (typeof window.addEventListener !== "function") return
+  offlineRegistered = true
+  // toggleAttribute(name, force) writes data-reactive-offline="" (a bare boolean
+  // attr the [data-reactive-offline] selector matches) or removes it — never the
+  // "true" string. navigator.onLine === false is the reliable direction (a false
+  // "online" is spec-permitted but rare, and this is only a presentational hook —
+  // the authoritative offline signal is the #perform gate, not this attribute).
+  // Fully defensive: a missing documentElement/toggleAttribute/navigator degrades
+  // to a no-op — a presentational hook must NEVER throw during bootstrap.
+  const sync = () => {
+    const root = document.documentElement
+    if (typeof root?.toggleAttribute !== "function") return
+    root.toggleAttribute("data-reactive-offline", globalThis.navigator?.onLine === false)
+  }
+  sync() // seed synchronously so first paint is correct
+  window.addEventListener("online", sync)
+  window.addEventListener("offline", sync)
+}
+
+export function __resetReactiveOfflineForTest() {
+  offlineRegistered = false
+}
+
 export function registerReactiveActions() {
   registerReactiveVisit()
   registerReactiveToken()
   registerReactiveJs()
   registerReactiveDismiss()
+  registerReactiveOffline()
 }
 
 // Escape a DOM id for safe interpolation into a RegExp (an id can legally contain
@@ -405,6 +441,7 @@ export default class extends Controller {
   #debounceTimers = new Map() // trigger element -> { timer, flush } pending dispatch
   #throttleTimers = new Map() // trigger element -> Map(action -> suppression timer)
   #actionPathCache // page-stable action path, resolved once per controller
+  #timeoutMsCache // page-stable request timeout (ms), resolved once per controller (issue #101)
   // Loading-state bookkeeping (issue #99). All keyed so overlapping enqueues
   // refcount correctly and never clobber each other:
   #busyPending = 0 // root aria-busy pending counter (remove only at zero)
@@ -906,6 +943,21 @@ export default class extends Controller {
     // set here. #settleLoading in the finally clears it — see #enqueue.
 
     try {
+      // Offline gate (issue #101), authoritative at the NETWORK BOUNDARY (send
+      // time), not at enqueue. A click can enqueue while online and reach here
+      // after going offline (a debounced/queued request, a rapid transition) —
+      // gating in #perform makes the kind consistently "offline" for that whole
+      // condition instead of leaking through as a "network" fetch throw. The
+      // fetch never fires, so the edit is not half-sent; the finally still runs
+      // (settle clears loading), the optimistic hint reverts, and retry() (which
+      // re-enters #perform) re-checks and sends once back online.
+      if (navigator.onLine === false) {
+        this.#revertOptimistic(inverse)
+        this.#markError("offline")
+        this.#emitError(action, params, allParams, { kind: "offline" })
+        return
+      }
+
       let response
       try {
         const headers = {
@@ -937,10 +989,28 @@ export default class extends Controller {
           headers,
           body,
           credentials: "same-origin",
+          // Bound the request (issue #101): a server that never answers used to
+          // wedge this.queue forever (the finally that clears aria-busy/loading
+          // never ran). AbortSignal.timeout(ms) aborts the fetch after the
+          // configured window; the abort surfaces in this catch as a
+          // DOMException named "TimeoutError" (see the branch below).
+          signal: AbortSignal.timeout(this.#timeoutMs()),
         })
       } catch (error) {
         console.error("[phlex-reactive] action error", error)
         this.#revertOptimistic(inverse)
+        // AbortSignal.timeout() rejects with a DOMException named "TimeoutError"
+        // (a manual AbortController.abort() would be "AbortError" — we don't use
+        // one, but accept it too for robustness). A timeout is NOT "offline":
+        // the request left and the server didn't answer in time; connectivity is
+        // unknown. So do NOT clone the offline-fallback template or mark network
+        // — just fire kind:"timeout" (retriable). The queue still advances
+        // (#perform returns, never rejects), so the hung request un-wedges it.
+        if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+          this.#markError("timeout")
+          this.#emitError(action, params, allParams, { kind: "timeout" })
+          return
+        }
         // No server reached — nothing to render (issue #100). Clone a
         // server-rendered <template data-reactive-error-flash> into the flash
         // region as an offline fallback. The template is rendered by the app
@@ -1484,6 +1554,19 @@ export default class extends Controller {
     return (this.#actionPathCache ??=
       document.querySelector('meta[name="phlex-reactive-action-path"]')?.content ||
       "/reactive/actions")
+  }
+
+  // The per-request timeout in ms (issue #101), from a page-stable
+  // <meta name="phlex-reactive-timeout"> (default 30000). Cached per-controller
+  // like the action path. Parsed defensively: a missing/blank/non-positive/NaN
+  // value falls back to the default, so a typo'd meta can never disable the
+  // timeout (which would reintroduce the wedged-queue bug) or set a zero/negative
+  // window that aborts instantly.
+  #timeoutMs() {
+    if (this.#timeoutMsCache != null) return this.#timeoutMsCache
+    const raw = document.querySelector('meta[name="phlex-reactive-timeout"]')?.content
+    const ms = Number(raw)
+    return (this.#timeoutMsCache = Number.isFinite(ms) && ms > 0 ? ms : 30000)
   }
 
   // CSRF token and connection id are read LIVE (not cached) on purpose: Rails
