@@ -235,13 +235,16 @@ module Views
         def reply_source
           <<~RUBY
             def toggle
-              authorize! @todo, :update?   # the token proves identity, not permission
+              # the token proves identity, not permission
+              authorize! @todo, :update?
               @todo.toggle!(:done)
-              # no explicit return → the DEFAULT reply: replace #id in place
+              # no return → DEFAULT reply: replace #id in place
             end
 
             def rename(title:)
-              return reply.replace.flash(:error, "Title can't be blank") if title.blank?
+              if title.blank?
+                return reply.replace.flash(:error, "Title required")
+              end
               @todo.update!(title:)
               reply.replace
             end
@@ -252,7 +255,7 @@ module Views
               reply.remove
             end
 
-            # the slug changed → send the browser to the new URL
+            # the slug changed → redirect the browser
             def publish
               @article.publish!
               reply.redirect(article_url(@article))
@@ -262,11 +265,12 @@ module Views
 
         def morph_source
           <<~RUBY
-            # A debounced per-field save fires WHILE the user is still typing/tabbing.
-            # Morph in place so the focused <input> and its in-progress value survive.
+            # A debounced per-field save fires WHILE the
+            # user is still typing. Morph in place so the
+            # focused <input> and its value survive.
             def update(name:)
               @row.update!(name:)
-              # <turbo-stream method="morph"> — focus + caret preserved
+              # method="morph" — focus + caret preserved
               reply.morph
             end
           RUBY
@@ -274,11 +278,12 @@ module Views
 
         def broadcast_source
           <<~RUBY
-            # In a model callback or a job — light up every OTHER viewer's tab.
-            # Same render as the click reply; pushed over the transport, not returned.
+            # In a model callback or job — light up every
+            # OTHER viewer's tab with the same render,
+            # pushed over the transport (not returned).
             Chat::Message.broadcast_append_to(
               @room, target: "messages", model: message,
-              exclude: reactive_connection_id   # skip the actor's own tab
+              exclude: reactive_connection_id # skip actor
             )
           RUBY
         end
