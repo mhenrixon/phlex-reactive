@@ -340,7 +340,23 @@ module Views
 
               Rotating `secret_key_base` (or your verifier's secret) invalidates all outstanding
               tokens at once — open tabs must reload.
+
+              The signed payload is **versioned** (a `"v"` key, currently
+              `Phlex::Reactive::TOKEN_VERSION`). This lets a future change to the token shape
+              **upgrade tokens already in flight** instead of breaking every open page at deploy:
+              verification runs the payload through an upgrader chain (oldest → current) before
+              your component rebuilds from it. A token minted before versioning existed carries no
+              `"v"` and is read as-is — introducing versioning invalidated nothing.
             MD
+
+            DocsUI::Callout(:note, title: 'Unknown token versions fail closed') do
+              md <<~MD
+                A token signed by a **newer** deploy than the running code (a rollback scenario)
+                verifies its signature but carries a version this code doesn't understand. Rather
+                than guess the newer shape, `Phlex::Reactive.verify` returns `nil`, so the endpoint
+                answers 400 — the same path as a tampered token. Fail-closed, never fail-open.
+              MD
+            end
           end
         end
 
