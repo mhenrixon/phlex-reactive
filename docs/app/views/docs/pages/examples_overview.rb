@@ -13,14 +13,11 @@ module Views
             'component rendered on its page, not a screenshot.'
         end
 
+        # One section only — an overview index stays scannable, and the auto-TOC
+        # deliberately hides on a page with too few sections (see the system
+        # spec). The two tables (the examples + the by-feature map) live under the
+        # single heading so no TOC is triggered.
         def content
-          the_examples
-          by_feature
-        end
-
-        private
-
-        def the_examples
           DocsUI::Section('The examples') do
             md <<~MD
               Each page below is a complete, working feature you can copy and
@@ -32,24 +29,17 @@ module Views
               | Example | What it shows |
               |---|---|
               | [Counter](/docs/example-counter) | State-backed — the smallest reactive component. Click → server → re-render, no DB row. |
-              | [Payment split](/docs/example-payment-split) | Live sum-to-total rebalancer: nested bracketed params, auto-collected siblings, a client-side [`reactive_compute`](#by-feature) total that paints before the debounced save. |
+              | [Payment split](/docs/example-payment-split) | Live sum-to-total rebalancer: nested bracketed params, auto-collected siblings, a client-side `reactive_compute` total that paints before the debounced save. |
               | [Cross-tab chat](/docs/example-chat) | Record-backed action **and broadcast** → live cross-tab sync in ~60 lines of Ruby, zero JS. |
               | [Live todo list](/docs/example-todo-list) | Per-row record-backed components: add / toggle / rename / archive, Enter-to-add, morph-in-place, broadcast on change. |
               | [Inline edit](/docs/example-inline-edit) | Show ↔ edit toggle: Enter saves, Escape cancels — replacing a Stimulus controller plus three routes. |
               | [Notifications / badges](/docs/example-notifications) | Pure broadcast (no client action) — a job pushes a live re-render. |
               | [Reactive collections](/docs/example-collections) | Add / remove rows + a running count + an empty state, declared **once** with `reactive_collection`. |
-            MD
-          end
-        end
 
-        def by_feature
-          DocsUI::Section('By feature') do
-            md <<~MD
-              Scanning for a specific capability — "how do I do a client-only
-              tab, a loading spinner, a live character count, an unsaved-changes
-              badge"? Each headline feature is showcased inside one of the
-              examples above (or, for the combobox, a live demo). The reference
-              docs for each live in the [README](https://github.com/mhenrixon/phlex-reactive#readme).
+              **Scanning for a specific capability** — each headline feature is
+              showcased inside one of the examples above (or, for the combobox, a
+              live demo). The reference docs for each live in the
+              [README](https://github.com/mhenrixon/phlex-reactive#readme).
 
               | Feature | Where it's shown |
               |---|---|

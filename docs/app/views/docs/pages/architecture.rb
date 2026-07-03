@@ -246,8 +246,17 @@ module Views
               reply.replace
             end
 
-            def approve  = (@row.approve!;      reply.remove)                 # drop the element
-            def publish  = (@article.publish!;  reply.redirect(article_url(@article)))  # slug changed
+            # drop the element from the DOM
+            def approve
+              @row.approve!
+              reply.remove
+            end
+
+            # the slug changed → send the browser to the new URL
+            def publish
+              @article.publish!
+              reply.redirect(article_url(@article))
+            end
           RUBY
         end
 
@@ -257,7 +266,8 @@ module Views
             # Morph in place so the focused <input> and its in-progress value survive.
             def update(name:)
               @row.update!(name:)
-              reply.morph          # <turbo-stream method="morph"> — focus + caret preserved
+              # <turbo-stream method="morph"> — focus + caret preserved
+              reply.morph
             end
           RUBY
         end
