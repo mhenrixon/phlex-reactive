@@ -174,8 +174,8 @@ module Phlex
         # content gets a level-carrying wrapper (or the configured
         # Phlex::Reactive.flash_component); component content renders VERBATIM
         # — the caller owns the markup, no wrapper, no double-wrapping.
-        def flash_stream(level, content, target:)
-          Phlex::Reactive.flash_builder.append(target, html: flash_html(level, content))
+        def flash_stream(level, content, target:, dismiss_after: nil)
+          Phlex::Reactive.flash_builder.append(target, html: flash_html(level, content, dismiss_after))
         end
 
         # Resolve flash `content` to HTML, carrying the level (issue #77):
@@ -185,13 +185,18 @@ module Phlex
         #     app's component is instantiated new(level:, content:) and
         #     rendered through the existing render_html path.
         #   * a String otherwise — the default level-carrying wrapper below.
-        def flash_html(level, content)
+        def flash_html(level, content, dismiss_after = nil)
+          # Verbatim Phlex component content owns its own markup (and lifecycle),
+          # so dismiss_after has nowhere to hang — it wraps only string content.
           return render_html(content) if content.is_a?(::Phlex::SGML)
 
           component_class = Phlex::Reactive.flash_component
-          return render_html(component_class.new(level:, content:)) if component_class
+          if component_class
+            html = render_html(component_class.new(level:, content:))
+            return dismiss_after ? wrap_dismiss(html, dismiss_after) : html
+          end
 
-          default_flash_html(level, content)
+          default_flash_html(level, content, dismiss_after)
         end
 
         # The default string-flash wrapper:
@@ -206,13 +211,30 @@ module Phlex
         # (html_safe) still renders. The wrapper is html_safe by construction
         # (both interpolations are escaped above), so the TagBuilder emits it
         # as-is.
-        def default_flash_html(level, content)
+        def default_flash_html(level, content, dismiss_after = nil)
           level_attr = CGI.escapeHTML(level.to_s)
           body = ERB::Util.html_escape(content.to_s)
 
-          # html_safe is safe by construction: both interpolated pieces are escaped above.
+          # html_safe is safe by construction: every interpolated piece is escaped
+          # (dismiss_attr coerces to an integer, so it can't inject an attribute).
           %(<div class="reactive-flash reactive-flash--#{level_attr}" \
-data-reactive-flash-level="#{level_attr}">#{body}</div>).html_safe
+data-reactive-flash-level="#{level_attr}"#{dismiss_attr(dismiss_after)}>#{body}</div>).html_safe
+        end
+
+        # The self-dismiss attribute, or "" when off. The value is forced through
+        # to_i so a String/float (or an injection attempt) becomes a plain integer
+        # — the client's document-level handler reads it as a timeout in ms.
+        def dismiss_attr(dismiss_after)
+          return "" if dismiss_after.nil?
+
+          %( data-reactive-dismiss-after="#{dismiss_after.to_i}")
+        end
+
+        # Wrap already-rendered flash HTML (the flash_component path) in a
+        # dismiss-bearing div. SafeBuffer#to_s returns SELF, so concatenate the
+        # html_safe pieces (never .to_s + raw) to keep the buffer safe.
+        def wrap_dismiss(html, dismiss_after)
+          (%(<div#{dismiss_attr(dismiss_after)}>).html_safe + html.html_safe + "</div>".html_safe)
         end
 
         # Build a turbo-stream that updates an arbitrary target id with `content`
@@ -325,8 +347,12 @@ data-reactive-ops="#{ERB::Util.html_escape(json)}"></turbo-stream>).html_safe
 
       # Append a flash turbo-stream into a host-app container (default
       # <div id="flash">, configurable via Phlex::Reactive.flash_target).
-      def flash(level, content, target: Phlex::Reactive.flash_target)
-        stream(self.class.flash_stream(level, content, target:))
+      # `dismiss_after:` (ms) makes the flash self-remove after the timeout — a
+      # document-level client handler removes any [data-reactive-dismiss-after]
+      # container, so it works for reply AND broadcast flashes (issue #100). It
+      # wraps only STRING content; a verbatim Phlex component owns its lifecycle.
+      def flash(level, content, target: Phlex::Reactive.flash_target, dismiss_after: nil)
+        stream(self.class.flash_stream(level, content, target:, dismiss_after:))
       end
 
       # Also re-render a COMPANION element alongside self — a page heading, a

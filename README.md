@@ -1104,6 +1104,75 @@ One honest caveat on timing: `reactive:applied` means the turbo-streams were
 DOM mutation may complete a tick later. If you need post-morph timing, listen
 to Turbo's own events (`turbo:before-stream-render` and friends).
 
+#### Showing the user a failure (not just the console)
+
+The events above are the *hook* — but a user who just wants to see "that
+didn't work" shouldn't have to write a toast controller. There are three
+built-in ways to surface a failure, cheapest first:
+
+**1. In-action validation replies (already works).** For a failure your action
+*knows about* — a validation error, a business rule — return a flash directly.
+It renders at **200** (a normal reply, not an error):
+
+```ruby
+def rename(title:)
+  return reply.replace.flash(:error, "Title can't be blank") if title.blank?
+  @todo.update!(title:)
+end
+```
+
+**2. `Phlex::Reactive.error_flash` — server-rendered flashes on endpoint
+failures.** For the failures the *endpoint* catches (bad token, default-deny,
+authorization, missing record — the 400/403/404 rescue paths), set a lambda and
+every one renders a turbo-stream flash the user sees, at the **same status** it
+already returns (statuses never change):
+
+```ruby
+# config/initializers/phlex_reactive.rb
+Phlex::Reactive.error_flash = ->(kind) { "Something went wrong (#{kind})." }
+```
+
+The client now **renders non-OK turbo-stream bodies** (previously it read the
+body only for the console and discarded it), so an `error_flash` — or a plain
+controller replying `status: :unprocessable_entity` with a turbo-stream flash —
+lands in your flash region. The failing component's root also gets
+`data-reactive-error="<kind>"`, so you can style it in **pure CSS** with zero JS,
+and the next successful action clears it:
+
+```css
+[data-reactive-error] { outline: 2px solid var(--danger); }
+```
+
+> **Note.** A 400 (invalid token) reply never refreshes the client's held token
+> — the identity token is not a nonce, it stays retry-valid. The client only
+> adopts a fresh token from a body that re-renders *this* element's id, so a
+> foreign/error body can't swap it out.
+
+**3. Offline fallback (no server to render anything).** A `network` failure
+reached no server, so there's nothing to render. Opt in with a server-rendered
+`<template>` in your layout — on a network failure the client clones it into the
+flash region (it's your trusted markup, cloned verbatim — no client templating):
+
+```erb
+<template data-reactive-error-flash>
+  <div class="reactive-flash reactive-flash--error">You appear to be offline.</div>
+</template>
+```
+
+#### Self-dismissing flashes (`dismiss_after:`)
+
+A flash that never cleans itself up piles up. Pass `dismiss_after:` (ms) and the
+flash removes itself after the timeout — driven by a **document-level** handler,
+so it self-cleans both reply-delivered and **broadcast-delivered** flashes (the
+flash container is a plain host-app div with no controller attached):
+
+```ruby
+reply.replace.flash(:error, "Couldn't save — try again", dismiss_after: 4000)
+```
+
+It wraps string content with `data-reactive-dismiss-after="4000"`; a verbatim
+Phlex component owns its own lifecycle and is left untouched.
+
 ### Reactive collections (add/remove rows + count + empty-state)
 
 An add/remove-row list — line items, attachments, tags, comments, a
@@ -1193,6 +1262,19 @@ Phlex::Reactive.action_path = "/_r/actions"
 # Diagnostic error bodies + dropped-param logging (default: Rails.env.local? —
 # on in development AND test, off in production):
 Phlex::Reactive.verbose_errors = true
+
+# User-visible flash on endpoint failures (default nil = off). When set, every
+# rescue path (400/403/404) ALSO renders a turbo-stream flash the user sees — at
+# the SAME status it returns today (statuses never change). The lambda receives
+# the failure kind (:tampered/:unknown_class/:not_reactive_class/:forbidden/
+# :not_found), so you can map it to a friendly message:
+Phlex::Reactive.error_flash = ->(kind) do
+  case kind
+  when :not_found  then "That item is no longer available."
+  when :forbidden  then "You don't have permission to do that."
+  else                  "Something went wrong — please try again."
+  end
+end
 ```
 
 If you set a custom `action_path`, expose it to the client:

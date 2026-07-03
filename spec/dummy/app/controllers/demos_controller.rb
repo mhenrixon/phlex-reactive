@@ -10,6 +10,21 @@ class DemosController < ActionController::Base
     render_component CounterComponent.new(count: 0)
   end
 
+  # User-visible failure surface (issue #100): a boom (undeclared → 403 with an
+  # error_flash), a success that clears data-reactive-error, and a self-dismissing
+  # flash. The page carries a server-rendered <template data-reactive-error-flash>
+  # so the offline fallback has something to clone (not exercised without a real
+  # network failure, but proves the opt-in renders).
+  def failure_surface
+    component = render_to_string(FailureSurfaceComponent.new(count: 0), layout: false)
+    template = <<~HTML
+      <template data-reactive-error-flash>
+        <div class="reactive-flash reactive-flash--error" data-testid="offline-flash">You are offline</div>
+      </template>
+    HTML
+    render html: component + template.html_safe, layout: true
+  end
+
   def todos
     render_component TodoListComponent.new
   end

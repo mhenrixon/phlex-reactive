@@ -5,6 +5,7 @@ Rails.application.routes.draw do
 
   # Example pages exercised by system specs.
   get "counter" => "demos#counter"
+  get "failure_surface" => "demos#failure_surface"
   get "chat" => "demos#chat"
   get "todos" => "demos#todos"
   get "combobox" => "demos#combobox"

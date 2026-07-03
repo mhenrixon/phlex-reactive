@@ -137,6 +137,16 @@ module Phlex
 
       attr_writer :flash_target
 
+      # A user-visible flash rendered on every endpoint rescue path (issue #100).
+      # Default nil = today's behavior (a bare head, or the verbose_errors
+      # plain-text diagnostic). Set a lambda ->(kind) { "message" } (kind is
+      # :tampered/:unknown_class/:not_reactive_class/:forbidden/:not_found) and
+      # the ActionsController ALSO renders a turbo-stream flash into flash_target
+      # — at the SAME status it returns today (statuses never change). Composes
+      # with verbose_errors: the turbo-stream flash wins the response body, the
+      # diagnostic still goes to the log.
+      attr_accessor :error_flash
+
       # Component class used to render STRING flash content (issue #77).
       # Instantiated as flash_component.new(level:, content:) and rendered
       # through the existing render path, replacing the built-in

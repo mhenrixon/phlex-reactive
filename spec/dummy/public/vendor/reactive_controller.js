@@ -107,10 +107,76 @@ export function registerReactiveJs() {
   }
 }
 
+// Document-level self-dismissing flashes (issue #100). A flash rendered with
+// dismiss_after: carries data-reactive-dismiss-after="<ms>"; after the timeout
+// it removes itself. This is deliberately NOT a Stimulus controller — the flash
+// container is a plain host-app div (Response#flash appends into it) with no
+// controller attached, so nothing would honor the attr. A document-level scan
+// on turbo:before-stream-render (which fires for EVERY <turbo-stream> render —
+// a reply AND a broadcast) schedules removal for any newly-arrived dismissing
+// flash. Each is marked data-reactive-dismiss-scheduled so re-scans (a later
+// stream render) never double-schedule the same node. Registered once; the
+// guard flag makes a second call a no-op (bun imports the module once per run).
+let dismissRegistered = false
+export function registerReactiveDismiss() {
+  if (dismissRegistered) return
+  if (typeof document === "undefined" || !document.addEventListener) return
+  dismissRegistered = true
+  // turbo:before-stream-render fires BEFORE the stream is applied — and Turbo
+  // then does `await nextRepaint(); await event.detail.render(this)`, so a bare
+  // setTimeout(0) can run BEFORE the node is inserted (observed under Falcon).
+  // WRAP event.detail.render instead: run Turbo's own render, then scan once it
+  // has resolved — timing-independent and correct on every server. The event
+  // fires for EVERY <turbo-stream> (a reply AND a broadcast), so both delivery
+  // paths self-clean. detail.render may be absent on exotic streams — guard it.
+  document.addEventListener("turbo:before-stream-render", wrapStreamRenderForDismiss)
+}
+
+// Chain the dismissing-flash scan after Turbo's own stream render resolves, so
+// the scan sees the freshly-inserted node. Idempotent per event (marks
+// detail.render as already-wrapped) and defensive if detail/render is missing.
+function wrapStreamRenderForDismiss(event) {
+  const detail = event.detail
+  const original = detail?.render
+  if (typeof original !== "function" || original.__reactiveDismissWrapped) {
+    // No render to wrap (or already wrapped) — fall back to a post-repaint scan.
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(scheduleReactiveDismissals)
+    else setTimeout(scheduleReactiveDismissals, 0)
+    return
+  }
+  const wrapped = async (streamElement) => {
+    await original(streamElement)
+    scheduleReactiveDismissals()
+  }
+  wrapped.__reactiveDismissWrapped = true
+  detail.render = wrapped
+}
+
+// Scan for un-scheduled dismissing flashes and schedule each one's removal.
+// Kept a module function so the scan logic is testable and re-run on every
+// stream render.
+function scheduleReactiveDismissals() {
+  const flashes = document.querySelectorAll("[data-reactive-dismiss-after]")
+  for (const el of flashes) {
+    if (el.hasAttribute("data-reactive-dismiss-scheduled")) continue
+    const ms = Number(el.getAttribute("data-reactive-dismiss-after"))
+    if (!Number.isFinite(ms) || ms <= 0) continue
+    el.setAttribute("data-reactive-dismiss-scheduled", "")
+    setTimeout(() => el.remove(), ms)
+  }
+}
+
+// Test seam: reset the one-time registration guard so a fresh document stub in
+// the next test registers its own listener (bun runs all specs in one process).
+export function __resetReactiveDismissForTest() {
+  dismissRegistered = false
+}
+
 export function registerReactiveActions() {
   registerReactiveVisit()
   registerReactiveToken()
   registerReactiveJs()
+  registerReactiveDismiss()
 }
 
 // Escape a DOM id for safe interpolation into a RegExp (an id can legally contain
@@ -784,6 +850,38 @@ export default class extends Controller {
     this.#emit("reactive:error", { action, params: sentParams, ...extra, retry })
   }
 
+  // Mark the reactive root as errored (issue #100) with the failure kind, so an
+  // app can style it purely in CSS ([data-reactive-error] { … }) with zero JS.
+  // Guarded — a plain replace may have detached the root before the failure lands.
+  #markError(kind) {
+    if (this.element?.isConnected === false) return
+    this.element?.setAttribute?.("data-reactive-error", kind)
+  }
+
+  // Clear the failure marker on the next successful apply (issue #100).
+  #clearError() {
+    this.element?.removeAttribute?.("data-reactive-error")
+  }
+
+  // Offline fallback (issue #100): a network failure reached no server, so there
+  // is no body to render. Clone the content of a server-rendered
+  // <template data-reactive-error-flash> into the flash region so the user still
+  // sees SOMETHING. The template is app-authored (trusted) — this is a pure
+  // deep clone, never client templating of untrusted data. No template, or no
+  // flash container, is a silent no-op (a page without the opt-in is unchanged).
+  #renderNetworkFallback() {
+    const template = document.querySelector("[data-reactive-error-flash]")
+    if (!template?.content) return
+    // The flash region is the host-app container Response#flash targets. Its id
+    // defaults to "flash" (Phlex::Reactive.flash_target); an app that customized
+    // it can point the fallback at the same node by putting the template's
+    // data-reactive-error-flash value there — but the common case is #flash.
+    const targetId = template.getAttribute("data-reactive-error-flash") || "flash"
+    const region = document.getElementById(targetId)
+    if (!region) return
+    region.appendChild(template.content.cloneNode(true))
+  }
+
   async #perform(action, params, inverse, settle) {
     // Auto-collect named field values inside this component so a button-
     // triggered action still receives sibling inputs (Livewire-style), plus any
@@ -843,6 +941,12 @@ export default class extends Controller {
       } catch (error) {
         console.error("[phlex-reactive] action error", error)
         this.#revertOptimistic(inverse)
+        // No server reached — nothing to render (issue #100). Clone a
+        // server-rendered <template data-reactive-error-flash> into the flash
+        // region as an offline fallback. The template is rendered by the app
+        // (trusted), so this is a pure clone — no client templating of data.
+        this.#renderNetworkFallback()
+        this.#markError("network")
         this.#emitError(action, params, allParams, { kind: "network" })
         return
       }
@@ -850,6 +954,7 @@ export default class extends Controller {
       if (response.redirected) {
         console.error("[phlex-reactive] action was redirected (auth/CSRF?) — no update applied")
         this.#revertOptimistic(inverse)
+        this.#markError("redirected")
         this.#emitError(action, params, allParams, { kind: "redirected", status: response.status })
         return
       }
@@ -857,6 +962,19 @@ export default class extends Controller {
         const errorBody = await response.text()
         console.error(`[phlex-reactive] action failed: HTTP ${response.status}`, errorBody)
         this.#revertOptimistic(inverse)
+        // Render a non-OK turbo-stream body so a server-rendered error flash
+        // (an error_flash rescue, or a status: :unprocessable_entity validation
+        // reply from a plain controller) is actually SHOWN — instead of being
+        // read only for the console (issue #100). #extractToken is run as usual;
+        // it NO-OPS when no stream re-renders our id, so a 400 InvalidToken body
+        // never refreshes the held identity token (which is not a nonce and stays
+        // retry-valid — do not "fix" that). A non-turbo-stream body is left to the
+        // console.error above (an HTML error page must not be handed to Turbo).
+        if ((response.headers.get("Content-Type") || "").includes("turbo-stream")) {
+          this.#currentToken = this.#extractToken(errorBody) ?? this.#currentToken
+          window.Turbo.renderStreamMessage(errorBody)
+        }
+        this.#markError("http")
         this.#emitError(action, params, allParams, { kind: "http", status: response.status, body: errorBody })
         return
       }
@@ -865,6 +983,7 @@ export default class extends Controller {
       if (!contentType.includes("turbo-stream")) {
         console.error(`[phlex-reactive] expected a turbo-stream, got "${contentType}" — no update applied`)
         this.#revertOptimistic(inverse)
+        this.#markError("content-type")
         this.#emitError(action, params, allParams, { kind: "content-type", status: response.status })
         return
       }
@@ -878,6 +997,9 @@ export default class extends Controller {
       // replace (Response.morph) or an update morphs in place, preserving the
       // focused input + caret on unchanged nodes — see issue #28.
       window.Turbo.renderStreamMessage(html)
+      // A successful apply CLEARS any prior failure marker (issue #100), so
+      // error-driven CSS on the root (a red border, a shake) resets on recovery.
+      this.#clearError()
       // Lifecycle hook (issue #79): the streams were HANDED TO Turbo — a
       // renderStreamMessage applies asynchronously, so the DOM mutation may
       // complete a tick later. Apps needing post-morph timing listen to Turbo's

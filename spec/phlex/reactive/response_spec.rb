@@ -380,4 +380,72 @@ RSpec.describe Phlex::Reactive::Response do
       expect(response.streams.last).to include('action="reactive:js"')
     end
   end
+
+  # Issue #100: dismiss_after — a flash that self-removes after N ms. The wrapper
+  # carries data-reactive-dismiss-after="<ms>"; a document-level client handler
+  # removes the container after the timeout (works for reply AND broadcast
+  # flashes, since it isn't tied to any Stimulus controller). Off by default —
+  # no attribute unless the caller opts in.
+  describe "dismiss_after: (issue #100)" do
+    it "wraps a string flash with data-reactive-dismiss-after when set" do
+      stream = described_class.with.flash(:error, "boom", dismiss_after: 4000).streams.first
+
+      expect(stream).to include('data-reactive-dismiss-after="4000"')
+      expect(stream).to include('class="reactive-flash reactive-flash--error"')
+      expect(stream).to include("boom")
+    end
+
+    it "omits the attribute entirely when dismiss_after is not given (default)" do
+      stream = described_class.with.flash(:error, "boom").streams.first
+
+      expect(stream).not_to include("data-reactive-dismiss-after")
+    end
+
+    it "coerces the ms to an integer string (a float/String can't inject an attribute)" do
+      stream = described_class.with.flash(:notice, "hi", dismiss_after: "4000\"><script>").streams.first
+
+      expect(stream).to include('data-reactive-dismiss-after="4000"')
+      expect(stream).not_to include("<script>")
+    end
+
+    it "still HTML-escapes the content inside a dismissing wrapper (injection contract)" do
+      stream = described_class.with.flash(:notice, "<em>x</em> & y", dismiss_after: 3000).streams.first
+
+      expect(stream).to include("&lt;em&gt;x&lt;/em&gt; &amp; y")
+      expect(stream).not_to include("<em>x</em>")
+    end
+
+    it "applies dismiss_after to flash_component content too (wraps the rendered component)" do
+      klass = Class.new(Phlex::HTML) do
+        def self.name = "DismissFlashProbe"
+
+        def initialize(level:, content:)
+          @level = level
+          @content = content
+        end
+
+        def view_template = div(class: "toast") { @content }
+      end
+      allow(Phlex::Reactive).to receive(:flash_component).and_return(klass)
+
+      stream = described_class.with.flash(:error, "boom", dismiss_after: 2000).streams.first
+
+      expect(stream).to include('data-reactive-dismiss-after="2000"')
+      expect(stream).to include("toast")
+    end
+
+    it "does NOT wrap verbatim Phlex component content (the caller owns the markup)" do
+      klass = Class.new(Phlex::HTML) do
+        def self.name = "VerbatimDismissProbe"
+        def view_template = span { "flash" }
+      end
+
+      stream = described_class.with.flash(:error, klass.new, dismiss_after: 2000).streams.first
+
+      # Component content renders verbatim — no built-in wrapper, so no place for
+      # the gem to hang dismiss_after. Documented limitation: dismiss_after wraps
+      # only STRING content; a component owns its own lifecycle.
+      expect(stream).not_to include("data-reactive-dismiss-after")
+    end
+  end
 end
