@@ -33,3 +33,15 @@
 #   <meta name="phlex-reactive-timeout" content="15000"> <%# 15s, in ms %>
 # A timed-out POST may have SUCCEEDED server-side — phlex-reactive never
 # auto-replays; make retryable actions idempotent.
+
+# Latency simulator (development only). On localhost the click→morph round trip is
+# ~5ms, so pending/loading/optimistic affordances (aria-busy, disable_with, busy_on,
+# optimistic hints) flash by too fast to see. Add this meta to your layout head IN
+# DEVELOPMENT ONLY to expose window.PhlexReactive.enableLatencySim(ms) /
+# disableLatencySim() in the browser console (importmap module exports aren't
+# reachable from the console, so this handle is how you toggle it):
+#   <% # in app/views/layouts/application.html.erb, inside <head>: %>
+#   <%%= tag.meta(name: "phlex-reactive-env", content: "development") if Rails.env.development? %>
+# Then in the console: PhlexReactive.enableLatencySim(400)  // delay every action 400ms
+# It persists to sessionStorage (clears when the tab closes). WITHOUT this meta
+# there is no global handle and zero production surface.

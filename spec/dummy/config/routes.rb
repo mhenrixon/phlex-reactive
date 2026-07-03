@@ -7,6 +7,7 @@ Rails.application.routes.draw do
   get "counter" => "demos#counter"
   get "failure_surface" => "demos#failure_surface"
   get "network_status" => "demos#network_status"
+  get "latency" => "demos#latency"
   get "chat" => "demos#chat"
   get "todos" => "demos#todos"
   get "combobox" => "demos#combobox"
