@@ -59,6 +59,20 @@ module Phlex
         def register(klass)
           @registry_mutex.synchronize { @registry[klass] = true }
         end
+
+        # A point-in-time snapshot of every registered streamable class, taken
+        # under the registry lock (the doctor iterates it — issue #106). Returns
+        # a plain Array so callers never hold the live WeakMap or the lock while
+        # working; a class GC'd later simply won't appear next time. Call
+        # Rails.application.eager_load! FIRST if you need every app class loaded —
+        # the WeakMap only holds classes that have actually been loaded.
+        def registered_classes
+          @registry_mutex.synchronize do
+            classes = []
+            @registry.each_key { classes << it }
+            classes
+          end
+        end
       end
 
       included do

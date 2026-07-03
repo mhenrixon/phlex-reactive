@@ -6,6 +6,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`bin/rails phlex_reactive:doctor` — validate the whole install (#106).** Five
+  closed issues (#3 boot/eager-load, #26 route shadowing, #42 lost request, #48
+  unregistered controller, #57 importmap 404) were pure integration papercuts
+  that only surfaced **after** something already broke. The doctor turns "nothing
+  happens, why?" into an actionable checklist you run before or after setup. It
+  prints `✓/✗/?` with a fix for each failure and checks: the action route
+  resolves (reuses the boot route-shadow guard), the `reactive` controller is
+  registered in a Stimulus entrypoint (importmap **or** esbuild/bun **or** a
+  layout), `csrf_meta_tags` is referenced (**advisory `?`** — never a hard fail,
+  so a Phlex-only layout isn't false-flagged), the identity verifier round-trips,
+  `base_controller_name` constantizes, every declared `action :name` has a public
+  method (mirrors the endpoint's `public_send`), and every component resolves a
+  stable `#id` (a state-backed class with no `#id` is flagged; a record-backed
+  class on the #81 default is fine). It is **read-only** — no client surface, no
+  component instantiation, default-deny untouched — and exits non-zero on a hard
+  failure so CI or a setup script can gate on it.
+- **Install generator hardening (#106).** The generator now also detects
+  `app/javascript/application.js` (esbuild/bun/webpack) as a Stimulus entrypoint,
+  not just the importmap-style `controllers/index.js`, and its post-install output
+  ends by telling you to run `bin/rails phlex_reactive:doctor` to verify.
+
 ### Changed
 
 - **`on(:typo)` fails at render, not click (#105).** A misspelled or forgotten
