@@ -1758,6 +1758,56 @@ check per dispatch, no string building — so it is safe to leave gated on
 
 ---
 
+## Testing
+
+`Phlex::Reactive::TestHelpers` is the public test surface — mix it in once and
+never reach for a private method or a hand-rolled POST:
+
+```ruby
+# spec/rails_helper.rb
+RSpec.configure do |c|
+  c.include Phlex::Reactive::TestHelpers                  # run_reactive + matchers
+  c.include Phlex::Reactive::TestHelpers, type: :request  # + the HTTP helpers
+end
+```
+
+**`run_reactive` — the no-HTTP action driver.** It runs the action through the
+SAME contract the endpoint enforces — default-deny, the signed identity
+round-trip (a record-backed component's row is re-found), schema coercion, the
+transaction wrapper — with no HTTP, and returns a `Result`. So a unit test can't
+pass on a component that would fail a real click:
+
+```ruby
+result = run_reactive(Counter.new(count: 0), :set, count: "42")  # client sends strings
+expect(result).to have_reactive_replace("counter")
+expect(result.component.instance_variable_get(:@count)).to eq(42)  # :integer, cast
+
+# default-deny, deleted-record, and authorization all surface as the real failures:
+expect { run_reactive(Counter.new(count: 0), :drop_table) }
+  .to raise_error(Phlex::Reactive::TestHelpers::UndeclaredReactiveAction)
+```
+
+`Result` answers `replace?` / `remove?` / `redirect?` / `redirect_url` /
+`streams` / `response`, plus `component` (the instance rebuilt from identity, the
+one the action ran against). A registered authorization error **raises** (the
+endpoint maps it to 403). Matchers: `have_reactive_replace`,
+`have_reactive_remove`, `have_reactive_token_for` — the last pins the token
+refresh so a reply that would silently break the next click fails your test.
+
+**HTTP helpers** — `post_reactive_action(component_or_class, act, params:, payload:)`
+and `post_reactive_multipart(...)` POST a signed token to
+`Phlex::Reactive.action_path` exactly as the client does. **Token minting** —
+`reactive_token_for(component_or_class, payload = {})`.
+
+> `verbose_errors` defaults ON in test (it changes only an error BODY, never a
+> status). Asserting an empty failure body? Set
+> `Phlex::Reactive.verbose_errors = false` in your setup.
+
+See [the testing guide](https://phlex-reactive.zoolutions.llc/docs/testing) for
+the full layer-by-layer walkthrough.
+
+---
+
 ## Documentation
 
 - [Installation & bundler setups](https://phlex-reactive.zoolutions.llc/docs/installation)
