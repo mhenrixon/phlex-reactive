@@ -26,4 +26,8 @@ BenchSupport.allocations("state-backed") { state.send(:reactive_token) }
 BenchSupport.allocations("record-backed") { record.send(:reactive_token) }
 
 BenchSupport.header("on() trigger attrs (no explicit params — the common case)")
+# Warm like line 24 above: under verbose_errors on() consults reactive_actions,
+# whose Registry resolution (issue #115) memoizes per class on FIRST read — a
+# one-time, class-load-shaped cost. This measures the per-call steady state.
+state.send(:on, :increment)
 BenchSupport.allocations("on(:increment)") { state.send(:on, :increment) }
