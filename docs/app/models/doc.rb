@@ -26,7 +26,9 @@ class Doc
     { slug: 'example-loading-states', title: 'Loading states',         group: 'Examples',
       view: 'ExampleLoadingStates' },
     { slug: 'example-client-ops', title: 'Client-only ops', group: 'Examples',
-      view: 'ExampleClientOps' }
+      view: 'ExampleClientOps' },
+    { slug: 'example-failure', title: 'Failure surface', group: 'Examples',
+      view: 'ExampleFailure' }
   ].freeze
 
   attr_reader :slug, :title, :group, :view_name
