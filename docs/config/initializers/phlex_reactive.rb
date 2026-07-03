@@ -10,6 +10,10 @@ Rails.application.config.after_initialize do
   # render-time undeclared-action guard because `boom` IS declared.
   Phlex::Reactive.authorization_errors << FailureSurfaceComponent::Denied
 
+  # The flagship Team inbox: a locked message refuses to archive. Registering the
+  # error maps the denial to a clean 403 so the client reverts the optimistic hide.
+  Phlex::Reactive.authorization_errors << TeamInboxComponent::Locked
+
   # With error_flash set, the endpoint renders a turbo-stream flash the browser
   # SHOWS on a failed action, and the client marks the root data-reactive-error.
   Phlex::Reactive.error_flash = ->(kind) { "Something went wrong (#{kind})." }

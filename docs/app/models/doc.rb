@@ -28,7 +28,9 @@ class Doc
     { slug: 'example-client-ops', title: 'Client-only ops', group: 'Examples',
       view: 'ExampleClientOps' },
     { slug: 'example-failure', title: 'Failure surface', group: 'Examples',
-      view: 'ExampleFailure' }
+      view: 'ExampleFailure' },
+    { slug: 'example-team-inbox', title: 'Team inbox (flagship)', group: 'Examples',
+      view: 'ExampleTeamInbox' }
   ].freeze
 
   attr_reader :slug, :title, :group, :view_name

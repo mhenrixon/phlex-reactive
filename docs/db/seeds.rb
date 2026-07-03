@@ -14,6 +14,15 @@ if Notification.none?
   end
 end
 
+if InboxMessage.none?
+  [
+    { subject: 'Deploy to production finished', sender: 'ci' },
+    { subject: 'New signup: acme.co', sender: 'billing' },
+    { subject: 'Locked: compliance hold', sender: 'locked' }, # archive denies → optimistic revert demo
+    { subject: 'Weekly digest', sender: 'system', read: true }
+  ].each { |attrs| InboxMessage.create!(**attrs) }
+end
+
 if ChatMessage.where(room: 'lobby').none?
   [
     { author: 'ruby', body: 'Welcome to the phlex-reactive chat demo!' },
