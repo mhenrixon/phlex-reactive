@@ -1049,6 +1049,102 @@ RSpec.describe Phlex::Reactive::Component do
           .to raise_error(Phlex::Reactive::Error, /reactive_compute/)
       end
     end
+
+    # Issue #104: typed inputs. The ARRAY form must stay byte-identical on the
+    # wire (a JSON ARRAY, numeric coercion on the client). The HASH form declares
+    # a per-input type and emits a JSON OBJECT ({"title":"string","qty":"number"})
+    # so the client reads a :string input raw and coerces a :number through Number.
+    describe "typed inputs (issue #104)" do
+      let(:typed_klass) do
+        Class.new do
+          include Phlex::Reactive::Component
+
+          def self.name = "TypedCompute"
+
+          reactive_compute :preview,
+            inputs: { title: :string, qty: :number },
+            outputs: %i[title_preview char_count]
+        end
+      end
+
+      it "keeps the ARRAY form's inputs param a byte-identical JSON array" do
+        # The exact serialized string the client parses — pinned so the typed-
+        # inputs change can never silently alter the shipped array-form wire.
+        attrs = compute_klass.new.send(:reactive_compute_attrs, :payment_split)
+        expect(attrs[:data][:reactive_compute_inputs_param])
+          .to eq('["allowance","cash","leasing","total"]')
+      end
+
+      it "captures the input names in declaration order" do
+        expect(typed_klass.reactive_compute(:preview).inputs).to eq(%i[title qty])
+      end
+
+      it "captures the per-input types keyed by name" do
+        expect(typed_klass.reactive_compute(:preview).input_types)
+          .to eq(title: :string, qty: :number)
+      end
+
+      it "reports nil input_types for the array form (untyped, numeric)" do
+        expect(compute_klass.reactive_compute(:payment_split).input_types).to be_nil
+      end
+
+      it "emits the HASH form's inputs param as a JSON object of name→type" do
+        attrs = typed_klass.new.send(:reactive_compute_attrs, :preview)
+        expect(JSON.parse(attrs[:data][:reactive_compute_inputs_param]))
+          .to eq("title" => "string", "qty" => "number")
+      end
+
+      it "still emits the outputs param as a JSON array for the hash form" do
+        attrs = typed_klass.new.send(:reactive_compute_attrs, :preview)
+        expect(JSON.parse(attrs[:data][:reactive_compute_outputs_param]))
+          .to eq(%w[title_preview char_count])
+      end
+    end
+  end
+
+  # Issue #104: reactive_text mirrors a field into a TEXT NODE (live preview,
+  # char counter, "Hello, {name}") — the text sibling of reactive_field. It
+  # carries NO `name` attribute, so #collectFields never sweeps it into params.
+  describe "#reactive_text (text-node mirror, issue #104)" do
+    let(:text_klass) do
+      Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Component
+
+        def self.name = "TextMirror"
+
+        def view_template
+          reactive_text(:title_preview, "Hello")
+        end
+      end
+    end
+
+    let(:empty_klass) do
+      Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Component
+
+        def self.name = "EmptyTextMirror"
+
+        def view_template
+          reactive_text(:char_count)
+        end
+      end
+    end
+
+    it "renders a span carrying data-reactive-text=<name> with the initial content" do
+      html = text_klass.new.call
+      expect(html).to include('data-reactive-text="title_preview"')
+      expect(html).to include(">Hello</span>")
+    end
+
+    it "renders an empty span when no initial value is given" do
+      html = empty_klass.new.call
+      expect(html).to include('data-reactive-text="char_count"')
+      expect(html).to match(%r{<span[^>]*data-reactive-text="char_count"[^>]*></span>})
+    end
+
+    it "carries NO name attribute (so it is never collected/POSTed as a param)" do
+      expect(text_klass.new.call).not_to include("name=")
+    end
   end
 
   # Performance: reactive_token runs on EVERY render. It must produce a byte-

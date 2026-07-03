@@ -68,7 +68,13 @@ module Phlex
       # is the key a JS function is registered under (Reactive.compute(key, fn)).
       # The generic controller runs the reducer on `input` — writing outputs with
       # NO round trip — then the debounced POST reconciles from the server reply.
-      ComputeDefinition = Data.define(:name, :inputs, :outputs, :reducer)
+      #
+      # `input_types` (issue #104) is nil for the ARRAY input form (untyped ⇒ the
+      # client coerces every input through Number, the shipped behavior) and a
+      # { name => type } hash for the typed HASH form (:string reads the field
+      # value raw, :number coerces). `inputs` stays the ordered name list either
+      # way, so iteration order is preserved and the array-form wire is unchanged.
+      ComputeDefinition = Data.define(:name, :inputs, :outputs, :reducer, :input_types)
 
       # A declared add/remove-row collection (issue #35): the list contract tied
       # into one unit — the per-row item component, the container DOM id rows
@@ -193,6 +199,18 @@ module Phlex
         #     inputs: %i[allowance cash leasing total],  # fields the JS reducer reads
         #     outputs: %i[allowance cash leasing]        # fields it writes (no round trip)
         #
+        # `inputs:` also takes a HASH to TYPE each input (issue #104): a :number is
+        # coerced through Number on the client (the array-form default), a :string
+        # is read raw — so a live text preview reads real text, not NaN→0:
+        #
+        #   reactive_compute :preview,
+        #     inputs: { title: :string, qty: :number },
+        #     outputs: %i[title_preview char_count]
+        #
+        # An output with no matching form field writes to its reactive_text(:name)
+        # node (textContent); a declared input also mirrors into its own text node
+        # with no reducer. The array form's wire stays byte-identical.
+        #
         # Register the matching JS once at boot. The reducer's signature is
         # (values, meta) — values is { inputName: Number } over the declared
         # inputs; meta is { changed }, the name of the declared input the
@@ -210,8 +228,9 @@ module Phlex
         def reactive_compute(name, inputs: nil, outputs: nil, reducer: nil)
           return reactive_computes[name.to_sym] if inputs.nil? && outputs.nil?
 
+          input_names, input_types = normalize_compute_inputs(inputs)
           reactive_computes[name.to_sym] = ComputeDefinition.new(
-            name: name.to_sym, inputs: Array(inputs).map(&:to_sym),
+            name: name.to_sym, inputs: input_names, input_types:,
             outputs: Array(outputs).map(&:to_sym), reducer: (reducer || name).to_s
           )
         end
@@ -222,6 +241,22 @@ module Phlex
 
         def reactive_compute?(name)
           reactive_computes.key?(name.to_sym)
+        end
+
+        # Split the `inputs:` argument into [ordered names, types-or-nil] (issue
+        # #104). A HASH ({ title: :string, qty: :number }) yields typed inputs —
+        # the ordered keys plus a symbolized name→type map. Anything else (an
+        # array, a bare symbol) is the UNTYPED form — ordered names and nil types,
+        # so the array-form wire stays byte-identical and the client keeps its
+        # numeric coercion. Named after the shape it normalizes.
+        def normalize_compute_inputs(inputs)
+          if inputs.is_a?(Hash)
+            names = inputs.keys.map(&:to_sym)
+            types = inputs.transform_keys(&:to_sym).transform_values(&:to_sym)
+            [names, types]
+          else
+            [Array(inputs).map(&:to_sym), nil]
+          end
         end
 
         # The record's instance-variable symbol (e.g. :@todo), computed once.
@@ -611,6 +646,24 @@ module Phlex
         input(**reactive_field(param, **attrs))
       end
 
+      # Mirror a compute output (or a declared input) into a TEXT NODE — a live
+      # preview heading, a character counter, a "Hello, {name}" greeting (issue
+      # #104). The text sibling of reactive_field: reactive_field binds a FORM
+      # CONTROL; reactive_text binds a plain span the client writes via
+      # textContent (XSS-safe by construction — never innerHTML).
+      #
+      #   h2 { reactive_text(:title_preview, @post.title) }
+      #   small { reactive_text(:char_count) }
+      #
+      # The span carries data-reactive-text=<name> and NO `name` attribute, so
+      # #collectFields never sweeps it into the POSTed params. `initial` seeds the
+      # first paint — the SERVER render must seed the same derived value the
+      # reducer would, or a morph repaints stale text (same reconcile contract
+      # reactive_compute documents). Extra attrs merge over the binding.
+      def reactive_text(name, initial = nil, **attrs)
+        span(**mix({ data: { reactive_text: name.to_s } }, attrs)) { initial }
+      end
+
       # Scoped busy indicator (issue #99). Marks an element so the generic
       # controller toggles `data-reactive-busy` on it ONLY while `action` is in
       # flight — the scoped sibling of the always-on `data-reactive-busy` the
@@ -637,10 +690,22 @@ module Phlex
         {
           data: {
             reactive_compute_reducer_param: definition.reducer,
-            reactive_compute_inputs_param: definition.inputs.map(&:to_s).to_json,
+            reactive_compute_inputs_param: compute_inputs_param(definition),
             reactive_compute_outputs_param: definition.outputs.map(&:to_s).to_json
           }
         }
+      end
+
+      # The inputs param wire (issue #104). Untyped (array form) → a JSON ARRAY of
+      # names, byte-identical to the shipped wire so the client keeps its numeric
+      # coercion. Typed (hash form) → a JSON OBJECT of name→type
+      # ({"title":"string","qty":"number"}) so the client reads a :string raw and
+      # coerces a :number through Number.
+      def compute_inputs_param(definition)
+        types = definition.input_types
+        return definition.inputs.map(&:to_s).to_json if types.nil?
+
+        definition.inputs.to_h { [it.to_s, types[it].to_s] }.to_json
       end
 
       # Render a <select> bound to an action param (issue #23). The options block

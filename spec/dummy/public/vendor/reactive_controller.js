@@ -710,33 +710,54 @@ export default class extends Controller {
   // changed = that output's name — the reducer must be convergent (see
   // compute.js) so the change guard settles the chain.
   recompute(event) {
+    // Inputs may be a JSON ARRAY of names (array form — every input coerced
+    // through Number, the shipped behavior) or a JSON OBJECT of name→type (hash
+    // form, issue #104 — :number coerced, :string read raw). #parseComputeInputs
+    // returns [name, type] pairs either way (array form defaults type "number").
+    const inputPairs = this.#parseComputeInputs()
+    const inputs = inputPairs.map(([name]) => name)
+
+    // Identity-mirror pass (issue #104), ALWAYS run — even with NO registered
+    // reducer, so reactive_text(:title) mirrors a field into its text node with
+    // zero reducer wiring. Each declared input's RAW string value is written to
+    // its owned [data-reactive-text="<name>"] node(s). It runs BEFORE the reducer
+    // early-return below so a reducer-less binding still mirrors.
+    for (const name of inputs) this.#mirrorText(name, this.#rawFieldValue(name))
+
     const key = this.element.getAttribute("data-reactive-compute-reducer-param")
     if (!key) return
     const reduce = computeReducer(key)
     if (!reduce) return
 
-    const inputs = this.#parseComputeList("data-reactive-compute-inputs-param")
     const outputs = this.#parseComputeList("data-reactive-compute-outputs-param")
 
     const values = {}
-    for (const name of inputs) values[name] = this.#numericFieldValue(name)
+    for (const [name, type] of inputPairs) values[name] = this.#computeInputValue(name, type)
 
     const result = reduce(values, { changed: this.#changedComputeField(event, inputs) }) || {}
     for (const name of outputs) {
       if (!(name in result)) continue
       const field = this.#ownedField(name)
-      if (!field) continue
-      // Real browsers do NOT fire `input` on a programmatic .value write (issue
-      // #76), so after writing we dispatch a bubbling `input` ourselves — that's
-      // what drives a chained repaint (a summary listener, a second compute),
-      // matching the server's set_value + dispatch("input") contract. The write
-      // is CHANGE-GUARDED: an unchanged value is skipped entirely (no write, no
-      // event). The guard is what lets a reducer with overlapping inputs/outputs
-      // (the shipped payment_split shape) settle — an unconditional dispatch
-      // would re-enter input->reactive#recompute forever.
-      if (String(result[name]) === field.value) continue
-      field.value = result[name]
-      field.dispatchEvent(new Event("input", { bubbles: true }))
+      // Output resolution (issue #104): write to the owned named FIELD if one
+      // exists, ELSE mirror to every owned [data-reactive-text="<name>"] node.
+      if (field) {
+        // Real browsers do NOT fire `input` on a programmatic .value write (issue
+        // #76), so after writing we dispatch a bubbling `input` ourselves — that's
+        // what drives a chained repaint (a summary listener, a second compute),
+        // matching the server's set_value + dispatch("input") contract. The write
+        // is CHANGE-GUARDED: an unchanged value is skipped entirely (no write, no
+        // event). The guard is what lets a reducer with overlapping inputs/outputs
+        // (the shipped payment_split shape) settle — an unconditional dispatch
+        // would re-enter input->reactive#recompute forever.
+        if (String(result[name]) === field.value) continue
+        field.value = result[name]
+        field.dispatchEvent(new Event("input", { bubbles: true }))
+      } else {
+        // A text-node output: textContent, XSS-safe by construction. Change-
+        // guarded too (compare before writing), but NO input dispatch — a text
+        // node has no listener contract, so nothing chains off it.
+        this.#mirrorText(name, result[name])
+      }
     }
   }
 
@@ -816,6 +837,38 @@ export default class extends Controller {
     }
   }
 
+  // Parse the inputs param into [name, type] pairs (issue #104). The wire is a
+  // JSON ARRAY of names (array form → every input typed "number", the shipped
+  // numeric coercion) OR a JSON OBJECT of name→type (hash form → ":string" read
+  // raw, ":number" coerced). Malformed/absent degrades to [] — a bad binding
+  // must never throw on input.
+  #parseComputeInputs() {
+    const raw = this.element.getAttribute("data-reactive-compute-inputs-param")
+    if (!raw) return []
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) return parsed.map((name) => [name, "number"])
+      if (parsed && typeof parsed === "object") return Object.entries(parsed)
+      return []
+    } catch {
+      return []
+    }
+  }
+
+  // Coerce a declared input's field value for the reducer per its type (issue
+  // #104): "string" → the raw string value (field.value ?? ""); anything else
+  // ("number", the array-form default) → the numeric coercion (blank/NaN → 0).
+  #computeInputValue(name, type) {
+    if (type === "string") return this.#rawFieldValue(name)
+    return this.#numericFieldValue(name)
+  }
+
+  // A declared input's RAW string value — the display string, used for :string
+  // inputs and for identity mirrors. "" for a blank/absent field (never NaN).
+  #rawFieldValue(name) {
+    return this.#ownedField(name)?.value ?? ""
+  }
+
   // The declared compute input the event just edited — the reducer's
   // meta.changed (issue #75). The triggering field counts only when it is a
   // named form control OWNED by this root (not a nested reactive root's, issue
@@ -843,6 +896,27 @@ export default class extends Controller {
     const field = this.#ownedField(name)
     const n = Number(field?.value)
     return Number.isFinite(n) ? n : 0
+  }
+
+  // Write `value` into every owned [data-reactive-text="<name>"] node via
+  // textContent (issue #104) — XSS-safe by construction (never innerHTML). Drives
+  // both the identity mirror (an input's raw value) and a text-node output (a
+  // reducer result with no matching field). Change-guarded (skip an unchanged
+  // node) and NO input dispatch — a text node has no listener contract. String()
+  // so a numeric result renders like the DOM would.
+  #mirrorText(name, value) {
+    const text = String(value)
+    for (const node of this.#ownedTextNodes(name)) {
+      if (node.textContent === text) continue
+      node.textContent = text
+    }
+  }
+
+  // Every [data-reactive-text="<name>"] mirror OWNED by this root (skips nested
+  // reactive roots, issue #15). Empty when none — reactive_text is optional.
+  #ownedTextNodes(name) {
+    const nodes = this.element.querySelectorAll(`[data-reactive-text="${name}"]`)
+    return Array.from(nodes).filter((el) => this.#ownsField(el))
   }
 
   // Enqueue the action — debounced if a debounce window is set, else immediately.

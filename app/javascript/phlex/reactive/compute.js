@@ -22,10 +22,24 @@
 //
 // The reducer's signature is (values, meta):
 //
-//   values — a plain object of { inputName: Number } over the declared inputs
+//   values — a plain object of { inputName: value } over the declared inputs.
+//            Untyped inputs (the array form) AND :number-typed inputs arrive as
+//            Numbers (blank/NaN → 0); :string-typed inputs (the hash form,
+//            issue #104) arrive as the RAW string. `reactive_compute :x, inputs:
+//            { title: :string, qty: :number }` is what selects per-input types;
+//            `inputs: %i[a b]` stays all-numeric (backward compatible).
 //   meta   — { changed }: the name (string) of the declared input the
 //            triggering event edited, or null (a direct recompute() call, or a
 //            target this root doesn't own / didn't declare as an input).
+//
+// OUTPUTS may be a form FIELD or a TEXT NODE (issue #104). An output whose name
+// matches an owned control writes its .value (+ the change-guarded input
+// dispatch below). An output with NO matching field writes textContent to every
+// owned [data-reactive-text="<name>"] node (reactive_text(:name)) — XSS-safe by
+// construction, change-guarded, NO input dispatch (a text node has no listener
+// contract). A declared INPUT also mirrors into its own text node on every
+// input via an always-run pass — so reactive_text(:title) is a live field
+// preview with NO registered reducer at all.
 //
 // It returns a plain object of { outputName: value } — only the outputs it
 // names are written, so it can leave the edited field (and its caret)
