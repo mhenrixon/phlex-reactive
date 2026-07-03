@@ -295,14 +295,21 @@ The [inline edit example](https://phlex-reactive.zoolutions.llc/docs/example-inl
 | Example | What it shows |
 |---|---|
 | [Counter](https://phlex-reactive.zoolutions.llc/docs/example-counter) | State-backed, the smallest reactive component |
-| [Payment split](https://phlex-reactive.zoolutions.llc/docs/example-payment-split) | Live sum-to-total rebalancer — nested bracketed params, a disabled computed field, auto-collected siblings (#64–#67) |
+| [Payment split](https://phlex-reactive.zoolutions.llc/docs/example-payment-split) | Nested bracketed params, auto-collected siblings, and a live `reactive_compute` + `reactive_text` preview (#64–#67, #104) |
 | [Cross-tab chat](https://phlex-reactive.zoolutions.llc/docs/example-chat) | Record-backed action **+ pgbus broadcast** → live sync across tabs/browsers |
-| [Live todo list](https://phlex-reactive.zoolutions.llc/docs/example-todo-list) | Per-row components, add/toggle/rename/delete, Enter-to-add, broadcast on change |
-| [Inline edit](https://phlex-reactive.zoolutions.llc/docs/example-inline-edit) | Show ↔ edit mode toggle, replacing a Stimulus controller + 3 routes |
-| [Notifications / badges](https://phlex-reactive.zoolutions.llc/docs/example-notifications) | Pure broadcast (no client action) — a job pushes a re-render |
+| [Live todo list](https://phlex-reactive.zoolutions.llc/docs/example-todo-list) | Per-row components, add/toggle/rename/archive, optimistic toggle + delete, Enter-to-add, broadcast on change |
+| [Inline edit + dirty tracking](https://phlex-reactive.zoolutions.llc/docs/example-inline-edit) | Show ↔ edit toggle plus an "Unsaved" badge + leave-guard, with zero shipped state |
+| [Notifications / badges](https://phlex-reactive.zoolutions.llc/docs/example-notifications) | Pure broadcast — a background event pushes a re-render, plus a `broadcast_js_to` cross-tab pulse |
+| [Reactive collections](https://phlex-reactive.zoolutions.llc/docs/example-collections) | Add/remove rows + a running count + an empty state, declared **once** with `reactive_collection`, optimistic dismiss |
+| [Loading states](https://phlex-reactive.zoolutions.llc/docs/example-loading-states) | `disable_with:` + `busy_on` + `aria-busy`, with a latency toggle to make the pending window visible |
+| [Client-only ops](https://phlex-reactive.zoolutions.llc/docs/example-client-ops) | `on_client` tabs / outside-close menu / accessible drawer — zero fetches, zero custom JS |
+| [Failure surface](https://phlex-reactive.zoolutions.llc/docs/example-failure) | `error_flash` + `data-reactive-error` + `dismiss_after:` — what you get for free when an action fails |
+| [Team inbox (flagship)](https://phlex-reactive.zoolutions.llc/docs/example-team-inbox) | The whole toolkit in one UI: collection rows, optimistic archive that **reverts on failure**, cross-tab broadcast, an `on_client` kebab, error flashes |
 
-The cross-tab chat in ~60 lines of Ruby (and zero JS) is the showcase — see
-[docs/examples/chat.md](https://phlex-reactive.zoolutions.llc/docs/example-chat).
+Every page renders its **real** reactive component inline (source read straight
+off the file), so the demo and the code can never drift. The
+[Team inbox](https://phlex-reactive.zoolutions.llc/docs/example-team-inbox) is the
+flagship — every feature composed into one believable UI.
 
 ---
 
@@ -1862,9 +1869,15 @@ the full layer-by-layer walkthrough.
 - [Testing reactive components](https://phlex-reactive.zoolutions.llc/docs/testing)
 - [Performance & benchmarking](https://phlex-reactive.zoolutions.llc/docs/performance)
 - Examples: [counter](https://phlex-reactive.zoolutions.llc/docs/example-counter) ·
+  [payment split](https://phlex-reactive.zoolutions.llc/docs/example-payment-split) ·
   [chat](https://phlex-reactive.zoolutions.llc/docs/example-chat) · [todo list](https://phlex-reactive.zoolutions.llc/docs/example-todo-list) ·
   [inline edit](https://phlex-reactive.zoolutions.llc/docs/example-inline-edit) ·
-  [notifications](https://phlex-reactive.zoolutions.llc/docs/example-notifications)
+  [notifications](https://phlex-reactive.zoolutions.llc/docs/example-notifications) ·
+  [collections](https://phlex-reactive.zoolutions.llc/docs/example-collections) ·
+  [loading states](https://phlex-reactive.zoolutions.llc/docs/example-loading-states) ·
+  [client-only ops](https://phlex-reactive.zoolutions.llc/docs/example-client-ops) ·
+  [failure surface](https://phlex-reactive.zoolutions.llc/docs/example-failure) ·
+  [team inbox](https://phlex-reactive.zoolutions.llc/docs/example-team-inbox)
 
 ## Credits & prior art
 
