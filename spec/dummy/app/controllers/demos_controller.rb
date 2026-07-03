@@ -10,6 +10,19 @@ class DemosController < ActionController::Base
     render_component CounterComponent.new(count: 0)
   end
 
+  # Client debug mode (issue #108). Force Phlex::Reactive.debug ON around THIS
+  # render so the root carries data-reactive-debug="true"; the generic controller
+  # then console.groups every dispatch. The spec overrides console.group to write
+  # into a probe node and asserts the trace was emitted (with NAMES, never the
+  # token/values). Restore the flag after — a global toggled for one page only.
+  def debug
+    was = Phlex::Reactive.debug
+    Phlex::Reactive.debug = true
+    render_component CounterComponent.new(count: 0)
+  ensure
+    Phlex::Reactive.debug = was
+  end
+
   # User-visible failure surface (issue #100): a boom (undeclared → 403 with an
   # error_flash), a success that clears data-reactive-error, and a self-dismissing
   # flash. The page carries a server-rendered <template data-reactive-error-flash>

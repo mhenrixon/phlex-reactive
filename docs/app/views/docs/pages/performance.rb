@@ -208,6 +208,50 @@ module Views
               plain "gem's own log lines. An unsubscribed instrument is cheap (a few objects per call, zero "
               plain 'retained), so the hot paths carry it unconditionally.'
             end
+            DocsUI::Prose() do
+              h3 { 'Client debug mode (devtools-lite)' }
+              p do
+                plain 'The '
+                code { 'LogSubscriber' }
+                plain ' above is the '
+                strong { 'server' }
+                plain ' lens. The '
+                strong { 'client' }
+                plain ' lens is '
+                code { 'console.error' }
+                plain ' on a failure plus the lifecycle events — but on the '
+                em { 'successful-but-wrong' }
+                plain ' path (which streams arrived? did a token refresh come?) there was nothing to see. '
+                code { 'Phlex::Reactive.debug' }
+                plain ' fills that gap: turn it on and every reactive root carries '
+                code { 'data-reactive-debug="true"' }
+                plain ', so the generic controller '
+                code { 'console.group' }
+                plain 's every dispatch in the browser.'
+              end
+            end
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'config/initializers/phlex_reactive.rb')
+              Phlex::Reactive.debug = Rails.env.development?
+            RUBY
+            DocsUI::Code(<<~TEXT, lexer: :text, filename: 'browser console')
+              ▼ reactive #todo_42 rename → 200 (48ms)
+                  params: [title] + collected: [title]
+                  encoding: json
+                  streams: replace → #todo_42
+                  token: refreshed ✓
+            TEXT
+            DocsUI::Callout(:tip) do
+              strong { 'Names and outcomes only.' }
+              plain ' The trace shows the param and collected-field '
+              strong { 'names' }
+              plain ' (never their values — they may be sensitive), the encoding, the status, the response '
+              plain 'stream actions + targets, whether a token refresh arrived ('
+              strong { 'never the token value' }
+              plain '), and the round-trip ms. Off (the default) it does nothing — one attribute check per '
+              plain 'dispatch, no string building — so leave it gated on '
+              code { 'Rails.env.development?' }
+              plain '.'
+            end
           end
         end
 

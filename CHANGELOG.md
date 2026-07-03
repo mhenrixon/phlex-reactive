@@ -8,6 +8,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Client debug mode (devtools-lite) — `console.group` every dispatch (#108).**
+  The `LogSubscriber` (#107) is the *server* lens; this is the *client* one. Set
+  `Phlex::Reactive.debug = true` (default off; the initializer template suggests
+  `Rails.env.development?`) and `reactive_attrs`/`reactive_root` stamp
+  `data-reactive-debug="true"` on the root — the string `"true"`, not a
+  boolean-true attr, which Phlex renders valueless and the client would read as
+  falsy. The generic controller then `console.group`s **every dispatch** with the
+  action, the explicit param **names** + collected sibling-field **names** (never
+  their values — they may be sensitive), the request encoding (`json`/`multipart`),
+  the HTTP status, the response's stream actions + targets (parsed from the body
+  the controller **already read** — no re-fetch), whether a token refresh arrived
+  (a boolean — **never the token value**), and the round-trip ms:
+  `▼ reactive #todo_42 rename → 200 (48ms)`. This finally surfaces the
+  *successful-but-wrong* path (the #30/#44/#46/#50 token-threading series: which
+  streams arrived? did a refresh come?), which `console.error` + the #79 lifecycle
+  events never covered. **Zero cost when off** — one attribute check per dispatch,
+  no string building — measured on the render/token micro benches: **0 extra
+  allocations** per render and no throughput change. See the Client debug mode
+  section of the README.
+
 - **`ActiveSupport::Notifications` on the hot paths + an opt-in `LogSubscriber`
   (#107).** The gem now emits three events under the `phlex_reactive` namespace,
   so an APM (AppSignal, Datadog, Skylight) sees reactive traffic at the

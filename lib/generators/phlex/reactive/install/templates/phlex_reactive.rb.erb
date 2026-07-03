@@ -25,6 +25,14 @@
 # flag only controls the gem's own log lines. See the README Observability section.
 # Phlex::Reactive.log_events = true
 
+# Client debug mode (devtools-lite). When on, every reactive root carries
+# data-reactive-debug="true" and the browser console.groups EVERY dispatch —
+# action, param/collected field NAMES (never values), request encoding, HTTP
+# status, the response's stream actions + targets, whether a token refresh
+# arrived (never the token value), and the round-trip ms. Off by default; safe to
+# gate on development (off → one attribute check per dispatch, zero string building).
+# Phlex::Reactive.debug = Rails.env.development?
+
 # Sign identity tokens with a dedicated key instead of secret_key_base.
 # Phlex::Reactive.verifier = ActiveSupport::MessageVerifier.new(ENV["REACTIVE_KEY"])
 

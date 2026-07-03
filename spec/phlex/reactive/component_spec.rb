@@ -472,6 +472,46 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  describe "#reactive_attrs debug flag (issue #108)" do
+    subject(:instance) { state_klass.new }
+
+    # This unit spec runs WITHOUT Rails, so debug defaults to false. Each example
+    # sets it explicitly; restore the lazy default after each by removing the ivar
+    # entirely so an explicit value never leaks into the next (the verbose_errors
+    # precedent below).
+    around do
+      it.run
+    ensure
+      Phlex::Reactive.remove_instance_variable(:@debug) if Phlex::Reactive.instance_variable_defined?(:@debug)
+    end
+
+    it "omits data-reactive-debug when debug is off (the default)" do
+      Phlex::Reactive.debug = false
+      expect(instance.send(:reactive_attrs)[:data]).not_to have_key(:reactive_debug)
+    end
+
+    it "emits data-reactive-debug=\"true\" (STRING) when debug is on" do
+      Phlex::Reactive.debug = true
+      # STRING "true", not boolean: Phlex renders a boolean-true attr VALUELESS,
+      # which the client's getAttribute reads as "" → falsy (the on()/warn_unsaved
+      # precedent). The explicit ="true" is what the controller matches on.
+      expect(instance.send(:reactive_attrs)[:data][:reactive_debug]).to eq("true")
+    end
+
+    it "flows the flag through reactive_root too" do
+      Phlex::Reactive.debug = true
+      attrs = instance.send(:reactive_attrs)
+      expect(attrs[:data][:reactive_debug]).to eq("true")
+      # still a full reactive root's attrs
+      expect(attrs[:data][:controller]).to eq("reactive")
+    end
+
+    it "defaults debug to false with no Rails env" do
+      Phlex::Reactive.remove_instance_variable(:@debug) if Phlex::Reactive.instance_variable_defined?(:@debug)
+      expect(Phlex::Reactive.debug).to be(false)
+    end
+  end
+
   describe "#on trigger attributes (issue #17 debounce)" do
     subject(:instance) { state_klass.new }
 

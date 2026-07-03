@@ -354,12 +354,17 @@ module Phlex
       # signed identity token. Spread onto the root:
       #   div(id:, **reactive_attrs) { ... }
       def reactive_attrs
-        {
-          data: {
-            controller: "reactive",
-            reactive_token_value: reactive_token
-          }
+        data = {
+          controller: "reactive",
+          reactive_token_value: reactive_token
         }
+        # Client debug mode (issue #108): stamp the flag so the generic controller
+        # console.groups every dispatch. STRING "true", not boolean — Phlex renders
+        # a boolean-true attr VALUELESS, which getAttribute reads as "" (falsy in
+        # JS), so the client's attr check would never fire (the on()/warn_unsaved
+        # precedent). Off by default → no key, no string, zero client surface.
+        data[:reactive_debug] = "true" if Phlex::Reactive.debug
+        { data: }
       end
 
       # The WHOLE reactive root in one spread (issue #48). reactive_attrs alone

@@ -117,6 +117,24 @@ module Phlex
         false
       end
 
+      # Client debug mode (issue #108): the "devtools-lite" lens on the reactive
+      # round trip. When true, reactive_attrs (and so reactive_root) stamps
+      # data-reactive-debug="true" on the root, and the generic controller
+      # console.groups every dispatch — action, param/collected NAMES (never
+      # values), request encoding, HTTP status, the response's stream actions +
+      # targets, whether a token refresh arrived (never the token VALUE), and the
+      # round-trip ms. Default OFF (the initializer template suggests
+      # Rails.env.development?); zero cost when off (one nil-check per dispatch, no
+      # attr, no string building). The `defined?` guard (not `||=`) makes an
+      # explicit `= false` stick even where a truthy default might otherwise apply.
+      attr_writer :debug
+
+      def debug
+        return @debug if defined?(@debug)
+
+        false
+      end
+
       # Emit an `<event>.phlex_reactive` ActiveSupport::Notifications event around
       # a block, yielding the mutable payload so a rescue can finalize the outcome
       # (issue #107). ASN.instrument is cheap when nothing is subscribed (the hot
