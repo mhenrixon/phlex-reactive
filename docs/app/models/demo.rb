@@ -74,6 +74,21 @@ class Demo
         # subscriber, excluding the sender's own connection:
         render ChatRoomComponent.new(room: "lobby", messages: ChatMessage.for_room("lobby"))
       RUBY
+    },
+    {
+      slug: 'team-inbox',
+      title: 'Team inbox',
+      group: 'Records',
+      blurb: 'The flagship — reactive_collection rows + optimistic archive (revert on ' \
+             'failure) + disable_with + cross-tab broadcast + an on_client kebab + error_flash.',
+      component: 'TeamInboxComponent',
+      build: -> { TeamInboxComponent.new },
+      call_site: <<~RUBY
+        # A believable inbox composing the whole toolkit. Archive is optimistic
+        # (hides instantly, reverts if the server denies a locked message); every
+        # change broadcasts to teammates' tabs; the row kebab is a pure client op:
+        render TeamInboxComponent.new
+      RUBY
     }
   ].freeze
 

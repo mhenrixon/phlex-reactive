@@ -22,7 +22,15 @@ class Doc
     { slug: 'example-collections',   title: 'Collections',             group: 'Examples', view: 'ExampleCollections' },
     { slug: 'example-notifications', title: 'Notifications',           group: 'Examples',
       view: 'ExampleNotifications' },
-    { slug: 'example-chat',          title: 'Cross-tab chat',          group: 'Examples', view: 'ExampleChat' }
+    { slug: 'example-chat',          title: 'Cross-tab chat',          group: 'Examples', view: 'ExampleChat' },
+    { slug: 'example-loading-states', title: 'Loading states',         group: 'Examples',
+      view: 'ExampleLoadingStates' },
+    { slug: 'example-client-ops', title: 'Client-only ops', group: 'Examples',
+      view: 'ExampleClientOps' },
+    { slug: 'example-failure', title: 'Failure surface', group: 'Examples',
+      view: 'ExampleFailure' },
+    { slug: 'example-team-inbox', title: 'Team inbox (flagship)', group: 'Examples',
+      view: 'ExampleTeamInbox' }
   ].freeze
 
   attr_reader :slug, :title, :group, :view_name

@@ -13,6 +13,7 @@ module Views
         end
 
         def content
+          try_it
           intro
           badge
           who_receives
@@ -25,6 +26,23 @@ module Views
         end
 
         private
+
+        def try_it
+          DocsUI::Section('Try it') do
+            md <<~MD
+              A **real** live bell. Click "Simulate a background event" — it stands
+              in for a job finishing. The count bumps and the bell re-renders via a
+              `broadcast_replace_to`, so **every tab** you have open on this page
+              updates (open a second tab to see it). It also fires a
+              `broadcast_js_to` pulse — a whitelisted DOM op, not HTML — so the bell
+              on the *other* tabs bounces to grab attention, with no re-render at all.
+            MD
+            render Views::Examples::LiveExample.new(
+              component: NotificationBellComponent.new(unread: 0),
+              filename: 'app/components/notification_bell_component.rb'
+            )
+          end
+        end
 
         def intro
           DocsUI::Section('When the server just pushes') do

@@ -24,6 +24,7 @@ module Views
         end
 
         def content
+          try_live_compute
           two_variants
           what
           component
@@ -36,6 +37,24 @@ module Views
         end
 
         private
+
+        def try_live_compute
+          DocsUI::Section('Try it — a client-side compute') do
+            md <<~MD
+              Before the payment-split walkthrough, here's the `reactive_compute` +
+              `reactive_text` shape in its smallest form: a live post preview. Type
+              in the field — the heading mirrors the title and the counter recomputes
+              **in the browser with no round trip** (an `input->reactive#recompute`
+              runs the `preview` JS reducer). Click **Save** and the server persists
+              and re-renders, seeding the identical derived text — the one-math-two-
+              sites contract `reactive_compute` exists to enforce.
+            MD
+            render Views::Examples::LiveExample.new(
+              component: PostPreviewComponent.new(todo: preview_demo_todo),
+              filename: 'app/components/post_preview_component.rb'
+            )
+          end
+        end
 
         def two_variants
           DocsUI::Section('Two flavors of the same rebalance') do
@@ -355,6 +374,12 @@ module Views
               end
             end
           end
+        end
+
+        # A dedicated demo record for the live compute preview, found-or-created so
+        # repeated page renders reuse one row.
+        def preview_demo_todo
+          Todo.find_or_create_by!(title: 'Type here to preview')
         end
 
         def component_source
