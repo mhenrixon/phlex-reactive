@@ -265,3 +265,20 @@ test("the active-sim console.warn banner fires once, not per request", async () 
   const banners = warnings.filter((w) => w.toLowerCase().includes("latency"))
   expect(banners.length).toBe(1)
 })
+
+test("disableLatencySim resets the warn-once guard so a later enable re-announces", async () => {
+  // enable → warn once → disable → enable again → the banner MUST fire again.
+  // disableLatencySim() is the lifecycle boundary that re-arms the one-time warn,
+  // so each fresh activation re-announces the sim is on (the banner text points
+  // the user AT disableLatencySim() to turn it off).
+  const { controller } = buildController({ latency: 20 })
+
+  await click(controller) // first activation → banner #1
+  expect(warnings.filter((w) => w.toLowerCase().includes("latency")).length).toBe(1)
+
+  disableLatencySim() // clears the key AND re-arms the guard
+  enableLatencySim(20) // re-set the key (same globalThis.sessionStorage stub)
+
+  await click(controller) // second activation → banner #2
+  expect(warnings.filter((w) => w.toLowerCase().includes("latency")).length).toBe(2)
+})

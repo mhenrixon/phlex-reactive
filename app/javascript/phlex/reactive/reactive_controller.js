@@ -234,6 +234,11 @@ export function enableLatencySim(ms) {
 export function disableLatencySim() {
   if (typeof sessionStorage === "undefined") return
   sessionStorage.removeItem(LATENCY_KEY)
+  // Re-arm the one-time "sim active" banner: turning the sim OFF is the lifecycle
+  // boundary, so a later enableLatencySim() in the same session re-announces that
+  // the sim is on (otherwise the guard would stay set across an off→on cycle and
+  // swallow the banner). Matches the __resetReactiveLatencyForTest seam.
+  latencyBannerShown = false
 }
 
 // The dev gate. importmap module exports aren't reachable from the DevTools
