@@ -13,6 +13,7 @@ Rails.application.routes.draw do
   get "combobox" => "demos#combobox"
   get "new_order" => "demos#new_order"
   get "order/:id" => "demos#order"
+  get "post_preview/:id" => "demos#post_preview"
   get "notifications" => "demos#notifications"
   get "reactive_rows" => "demos#reactive_rows"
   get "rich_editor/:id" => "demos#rich_editor"

@@ -78,6 +78,13 @@ class DemosController < ActionController::Base
     render_component OrderComponent.new(order: Order.find(params[:id]))
   end
 
+  # reactive_text + typed compute (issue #104): a live title preview + character
+  # counter that update in-browser as you type (no round trip), then a save
+  # reconciles through the server (the morph re-seeds the derived heading/counter).
+  def post_preview
+    render_component PostPreviewComponent.new(todo: Todo.find(params[:id]))
+  end
+
   def notifications
     render_component NotificationsListComponent.new
   end

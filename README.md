@@ -334,6 +334,8 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `js` | The immutable op builder behind `on_client`: `show`/`hide`/`toggle` (the `hidden` attribute, with an optional `transition:`), `add_class`/`remove_class`/`toggle_class`, `set_attr`/`remove_attr`/`toggle_attr` (allowlisted names), `focus`/`focus_first`, and `dispatch` — chainable. |
 | `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
+| `reactive_text(:name, initial)` | Mirror a compute output (or a declared input) into a **text node** — a live preview heading, a character counter, `"Hello, {name}"` — via `textContent` (XSS-safe). The text sibling of `reactive_field`; carries no `name`, so it's never POSTed. See [Client-side computes](#client-side-computes-reactive_compute--reactive_text). |
+| `reactive_compute :name, inputs: { title: :string, qty: :number }, outputs:` | **Typed** inputs: a `:string` reaches the JS reducer raw, a `:number` is coerced through `Number`. The array form (`inputs: %i[a b]`) stays all-numeric. |
 | `reactive_root(track_dirty: true, warn_unsaved: true)` / `reactive_field(:param, dirty: true)` | **Dirty tracking** against the DOM's own `defaultValue`/`defaultChecked`/`defaultSelected` — no client state. Marks changed fields + the root `data-reactive-dirty`; `warn_unsaved:` arms a `beforeunload`/`turbo:before-visit` guard. Style with `[data-reactive-dirty]`. See [Dirty-field tracking](#dirty-field-tracking-dirty--track_dirty--warn_unsaved). |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
 | `reactive_collection :name, item:, container:, count:, empty:, size:` | Declare an add/remove-row list once; actions call `reply.append`/`prepend`/`remove`. See [Reactive collections](#reactive-collections-addremove-rows--count--empty-state). |
@@ -797,6 +799,53 @@ free as an ordinary action-param name (`on(:switch, key: "pgbus")` still passes
 > input — the second would overwrite the first's action name. Bind each key
 > trigger to its own element (the field saves on Enter; a Cancel button — or the
 > field's own blur — handles Escape), as above.
+
+### Client-side computes (`reactive_compute` + `reactive_text`)
+
+Some math should feel instant with **no round trip** — a NEW, unsaved record's
+running total, a live title preview, a character counter. `reactive_compute`
+declares a client-side reducer (a plain JS function registered once) that runs on
+`input` and writes derived values straight into the DOM. When the component also
+carries `on(...)`, the debounced POST still fires and the server reply reconciles
+— the compute just paints first.
+
+```ruby
+reactive_compute :preview,
+  inputs: { title: :string, qty: :number },  # typed: :string raw, :number → Number
+  outputs: %i[title_preview char_count]       # written with no round trip
+
+div(**mix(reactive_root, reactive_compute_attrs(:preview))) do
+  input(**mix(reactive_field(:title, value: @post.title),
+              data: { action: "input->reactive#recompute" }))
+  h2    { reactive_text(:title_preview, @post.title) }  # a text-node output
+  small { reactive_text(:char_count) }                  # another text-node output
+end
+```
+
+```js
+// Register the reducer once at boot. Its signature is (values, { changed }).
+import { setComputeReducer } from "phlex/reactive/compute"
+setComputeReducer("preview", ({ title }) => ({
+  title_preview: title, char_count: `${title.length}/80`,
+}))
+```
+
+- **Typed inputs.** `inputs:` takes a **hash** to type each input: a `:number` is
+  coerced through `Number` (blank/NaN → 0 — the array-form default), a `:string`
+  reaches the reducer **raw** so a live text preview reads real text. The **array
+  form** (`inputs: %i[a b]`) stays all-numeric and byte-identical on the wire.
+- **`reactive_text(:name, initial)`** mirrors a value into a **text node** via
+  `textContent` (XSS-safe by construction). An output whose name matches an owned
+  form field writes that field's `.value`; an output with **no** matching field
+  writes every owned `[data-reactive-text="<name>"]` node. It carries **no
+  `name`**, so it's never collected or POSTed as a param.
+- **Reducer-less mirrors.** A declared **input** also mirrors into its own
+  `reactive_text(:same_name)` node on every keystroke with **no reducer at all** —
+  so `reactive_text(:title)` is a live field echo out of the box.
+- **Seed the server render.** Your `view_template` must seed each mirror with the
+  same derived value the reducer would (`reactive_text(:char_count, "5/80")`), or
+  a later morph repaints stale text — the same reconcile contract the whole
+  new-vs-persisted split relies on.
 
 ### Combobox keyboard navigation (`listnav:`)
 

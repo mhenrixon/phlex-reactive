@@ -8,6 +8,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`reactive_text` mirrors + typed compute inputs (#104).** Mirror a form field
+  into a **text node** — a live preview heading, a character counter,
+  `"Hello, {name}"` — with **no round trip and no bespoke Stimulus controller**.
+  Datastar's `data-text` / Alpine's `x-text`, but declared on the component.
+  - **`reactive_text(:name, initial)`** renders `span(data: { reactive_text:
+    name }) { initial }` — the **text sibling of `reactive_field`**. The client
+    writes it via **`textContent`** (XSS-safe by construction, never `innerHTML`).
+    It carries **no `name`**, so `#collectFields` never sweeps it into the POSTed
+    params.
+  - **Typed compute inputs.** `reactive_compute :x, inputs: { title: :string,
+    qty: :number }, outputs:` types each input: a `:number` is coerced through
+    `Number` (blank/NaN → 0), a `:string` reaches the reducer **raw** — so a live
+    text preview reads real text, not `NaN`. The **array form** (`inputs: %i[a
+    b]`) stays all-numeric and **byte-identical on the wire** (a JSON array); the
+    hash form emits a JSON object of name→type.
+  - **Output resolution.** A compute output whose name matches an owned form
+    field writes that field's `.value` (the existing change-guarded `input`
+    dispatch). An output with **no** matching field writes every owned
+    `[data-reactive-text="<name>"]` node via `textContent` — change-guarded too,
+    but **no** input dispatch (a text node has no listener contract).
+  - **Reducer-less identity mirrors.** A separate always-run pass syncs each
+    declared **input**'s raw value into its own `reactive_text(:same_name)` node
+    on every keystroke — so `reactive_text(:title)` is a live field echo with **no
+    registered reducer at all**.
+  - **Seed the server render.** `view_template` must seed each mirror with the
+    same derived value the reducer would, or a later morph repaints stale text —
+    the same reconcile contract the new-vs-persisted split already documents.
+
 - **Dirty-field tracking + unsaved-changes guard (#103).** Show "unsaved
   changes", enable **Save** only when something changed, or warn before navigating
   away — Livewire's `wire:dirty` — **without shipping any client state**. The

@@ -21,7 +21,8 @@
           "reactive_controller": "/vendor/reactive_controller.js",
           "phlex/reactive/confirm": "/vendor/confirm.js",
           "phlex/reactive/compute": "/vendor/compute.js",
-          "payment_split_reducer": "/vendor/payment_split_reducer.js"
+          "payment_split_reducer": "/vendor/payment_split_reducer.js",
+          "post_preview_reducer": "/vendor/post_preview_reducer.js"
         }
       }
     </script>
@@ -31,15 +32,18 @@
       import { Application } from "@hotwired/stimulus"
       import ReactiveController from "reactive_controller"
       import { registerPaymentSplit } from "payment_split_reducer"
+      import { registerPostPreview } from "post_preview_reducer"
 
       const application = Application.start()
       // Register eagerly so a click right after load is never missed.
       application.register("reactive", ReactiveController)
       window.Stimulus = application
 
-      // Register the demo's client-side compute reducer (the JS twin of the Ruby
-      // PaymentSplit). The OrderComponent's new-draft path runs this on input.
+      // Register the demo's client-side compute reducers (the JS twins of the Ruby
+      // PaymentSplit and the issue #104 typed-preview counter). The OrderComponent's
+      // new-draft path runs payment_split; PostPreviewComponent runs preview.
       registerPaymentSplit()
+      registerPostPreview()
     </script>
   </head>
   <body>
