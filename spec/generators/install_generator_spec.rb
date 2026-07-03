@@ -45,10 +45,31 @@ RSpec.describe Phlex::Reactive::Generators::InstallGenerator do
     end
   end
 
+  context "with an esbuild/bun entrypoint (app/javascript/application.js)" do
+    before do
+      FileUtils.mkdir_p(tmp.join("app/javascript"))
+      File.write(tmp.join("app/javascript/application.js"), <<~JS)
+        import { application } from "./application"
+        // existing registrations
+      JS
+    end
+
+    it "registers the reactive controller in application.js (issue #106)" do
+      run!
+      entrypoint = File.read(tmp.join("app/javascript/application.js"))
+      expect(entrypoint).to include('import ReactiveController from "phlex/reactive/reactive_controller"')
+      expect(entrypoint).to include('application.register("reactive", ReactiveController)')
+    end
+  end
+
   context "without a Stimulus entrypoint" do
     it "still writes the initializer and does not crash" do
       expect { run! }.not_to raise_error
       expect(File).to exist(tmp.join("config/initializers/phlex_reactive.rb"))
     end
+  end
+
+  it "ends the output telling the user to run the doctor (issue #106)" do
+    expect { run! }.to output(/phlex_reactive:doctor/).to_stdout
   end
 end

@@ -59,15 +59,22 @@ module Phlex
             end
 
             Scaffold one with:  rails g phlex:reactive:component Counter
+
+            Then verify the whole install:  bin/rails phlex_reactive:doctor
           MSG
         end
 
         private
 
+        # Stimulus entrypoint candidates, importmap-style AND esbuild/bun (issue
+        # #106): importmap apps register in controllers/index.js (or
+        # controllers/application.js); esbuild/bun/webpack apps register in
+        # app/javascript/application.js. Whichever exists first is the target.
         def stimulus_index_path
           %w[
             app/javascript/controllers/index.js
             app/javascript/controllers/application.js
+            app/javascript/application.js
           ].map { File.join(destination_root, it) }.find { File.exist?(it) }
         end
 

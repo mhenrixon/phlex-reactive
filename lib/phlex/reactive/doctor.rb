@@ -1,0 +1,331 @@
+# frozen_string_literal: true
+
+module Phlex
+  module Reactive
+    # Validates a phlex-reactive install and reports ✓/✗/? per check with a fix
+    # for each failure (issue #106). Five closed issues (#3 boot/eager-load, #26
+    # route shadowing, #42 lost request, #48 unregistered controller, #57
+    # importmap 404) were pure integration papercuts that only surfaced AFTER
+    # something already broke. The doctor turns "nothing happens, why?" into an
+    # actionable checklist you run before/after setup:
+    #
+    #   bin/rails phlex_reactive:doctor
+    #
+    # Every check is a small object answering [status, message, fix]. It is
+    # READ-ONLY — it never mounts a component, mutates state, or touches the
+    # default-deny boundary; the worst it does is a throwaway sign→verify round
+    # trip and (for the component checks) iterate the loaded Streamable registry.
+    class Doctor
+      # The result of one check: a status (:ok/:fail/:unknown), a human message,
+      # and (on anything but :ok) a fix line telling the adopter what to do. A
+      # plain value object (not Data) so it takes positional status/message plus
+      # keyword name:/fix: — the shape the check builders and specs construct.
+      class Check
+        attr_reader :name, :status, :message, :fix
+
+        def initialize(status, message, name: nil, fix: nil)
+          @name = name
+          @status = status
+          @message = message
+          @fix = fix
+        end
+
+        def ok? = status == :ok
+        def fail? = status == :fail
+        def unknown? = status == :unknown
+      end
+
+      # Glyphs are plain ASCII-safe Unicode with NO ANSI color, so CI/log capture
+      # reads cleanly (issue #106 acceptance: stable plain-text output).
+      GLYPHS = { ok: "✓", fail: "✗", unknown: "?" }.freeze
+
+      # The entrypoint the rake task calls: eager-load so the component registry
+      # is populated, print the report, and return TRUE when nothing failed (an
+      # advisory `?` doesn't count) so a caller can gate its exit code on it.
+      # (Not a predicate name — this is the imperative "run + report" action that
+      # happens to return a success boolean; `io` is the conventional stream name.)
+      def self.run(io: $stdout) # rubocop:disable Naming/PredicateMethod,Naming/MethodParameterName
+        ::Rails.application.eager_load! if defined?(::Rails) && ::Rails.application
+        doctor = new
+        io.puts(doctor.report)
+        !doctor.failures?
+      end
+
+      # Run every check and return the ordered list of Check objects, memoized so
+      # report + failures? share one pass. The caller (or Doctor.run) is
+      # responsible for eager_load! so component classes are in the registry —
+      # the component checks are empty otherwise.
+      def checks
+        @checks ||= build_checks
+      end
+
+      # True when any check FAILED (a hard ✗). Advisory `?` lines are not
+      # failures — a Phlex-layout app legitimately can't verify csrf that way.
+      def failures?
+        checks.any?(&:fail?)
+      end
+
+      def build_checks
+        components = registered_components
+        [
+          route_check,
+          stimulus_check,
+          csrf_check,
+          verifier_check,
+          base_controller_check,
+          action_check(components),
+          id_check(components)
+        ]
+      end
+
+      # --- individual checks ------------------------------------------------
+
+      # Does POST <action_path> resolve to the gem's ActionsController? A host
+      # catch-all route shadows it otherwise (issue #26). Reuses the shipped
+      # guard verbatim — it already handles routes-not-yet-drawn.
+      def route_check
+        path = Phlex::Reactive.action_path
+        if Phlex::Reactive.action_route_ok?(path)
+          Check.new(:ok, "POST #{path} routes to #{Doctor.actions_controller}", name: :route)
+        else
+          Check.new(:fail, "POST #{path} does not resolve to #{Doctor.actions_controller}", name: :route,
+            fix: "A host catch-all route (match \"*path\", ...) likely shadows it. Exempt " \
+                 "#{path.delete_prefix("/")} from the catch-all, or set Phlex::Reactive.action_path " \
+                 "to an unshadowed path.")
+        end
+      end
+
+      # Is the generic `reactive` controller registered in a Stimulus entrypoint
+      # (issue #48)? Grep the candidate entrypoints for the register line; when
+      # importmap is present, additionally verify the pin resolves.
+      def stimulus_check
+        entrypoint = stimulus_registration_files.find { registers_reactive?(it) }
+        return stimulus_missing_check unless entrypoint
+
+        if importmap_pin_broken?
+          return Check.new(:fail, "reactive registered in #{relative(entrypoint)}, but the importmap " \
+                                  "pin for phlex/reactive/reactive_controller is missing", name: :stimulus,
+            fix: "The engine auto-pins it; if you overrode config/importmap.rb, add:\n  " \
+                 "pin \"phlex/reactive/reactive_controller\"")
+        end
+
+        Check.new(:ok, "reactive controller registered in #{relative(entrypoint)}", name: :stimulus)
+      end
+
+      # ADVISORY only (issue #106): grep ERB layouts AND Phlex layout files for a
+      # csrf_meta_tags reference. A hard fail would false-flag Phlex-layout apps
+      # (this gem's core audience), so a miss is :unknown, never :fail.
+      def csrf_check
+        if csrf_meta_referenced?
+          Check.new(:ok, "csrf_meta_tags found in a layout", name: :csrf)
+        else
+          Check.new(:unknown, "could not verify csrf_meta_tags in a layout", name: :csrf,
+            fix: "Confirm your layout renders csrf_meta_tags (ERB: <%= csrf_meta_tags %>; " \
+                 "Phlex: render Phlex::Rails::Helpers::CSRFMetaTags or emit the meta tags) — " \
+                 "the client reads the CSRF token from <meta name=\"csrf-token\">.")
+        end
+      end
+
+      # A throwaway sign→verify round trip proves the verifier is configured and
+      # the key round-trips (a bad secret_key_base or a purpose mismatch fails).
+      def verifier_check
+        payload = { "c" => "Phlex::Reactive::Doctor", "probe" => true }
+        roundtripped = Phlex::Reactive.verify(Phlex::Reactive.sign(payload))
+        if roundtripped == payload
+          Check.new(:ok, "identity verifier signs and verifies", name: :verifier)
+        else
+          Check.new(:fail, "identity verifier did not round-trip a probe payload", name: :verifier,
+            fix: "Check secret_key_base is set, or configure a dedicated " \
+                 "Phlex::Reactive.verifier = ActiveSupport::MessageVerifier.new(key).")
+        end
+      rescue => e # rubocop:disable Style/RescueStandardError
+        Check.new(:fail, "identity verifier raised: #{e.message}", name: :verifier,
+          fix: "Set secret_key_base, or configure Phlex::Reactive.verifier explicitly.")
+      end
+
+      # Does Phlex::Reactive.base_controller_name constantize (issue #48-adjacent)?
+      def base_controller_check
+        name = Phlex::Reactive.base_controller_name
+        klass = Phlex::Reactive.base_controller
+        Check.new(:ok, "base_controller_name #{name} constantizes to #{klass}", name: :base_controller)
+      rescue => e # rubocop:disable Style/RescueStandardError
+        Check.new(:fail, "base_controller_name #{Phlex::Reactive.base_controller_name.inspect} " \
+                         "does not constantize (#{e.class})", name: :base_controller,
+          fix: "Set Phlex::Reactive.base_controller_name to a controller that exists " \
+               "(e.g. \"ApplicationController\").")
+      end
+
+      # Every declared `action :name` must have a public instance method (mirrors
+      # the endpoint's public_send dispatch — a missing one 500s at click).
+      def action_check(components)
+        missing = components.flat_map { missing_action_methods(it) }
+        return Check.new(:ok, "every declared action has a public method", name: :actions) if missing.empty?
+
+        Check.new(:fail, "declared actions with no matching public method: #{missing.join(", ")}", name: :actions,
+          fix: "Define a public method for each, or remove the `action :name` declaration.")
+      end
+
+      # Flag a class that would raise NotImplementedError in #id at render: it
+      # inherits Streamable's default #id AND is NOT record-backed. A record-backed
+      # class on the default is FINE — that default shipped in #81.
+      def id_check(components)
+        offenders = components.select { default_id_without_record?(it) }.map(&:name)
+        return Check.new(:ok, "every component resolves a stable #id", name: :ids) if offenders.empty?
+
+        Check.new(:fail, "state-backed components with no #id (render raises NotImplementedError): " \
+                         "#{offenders.join(", ")}", name: :ids,
+          fix: "Add `def id = \"my-thing\"` to each — a state-backed component has no record to " \
+               "derive a default id from.")
+      end
+
+      # --- rendering --------------------------------------------------------
+
+      # The full plain-text report: a line per check, plus an indented fix under
+      # each non-passing one. No ANSI color (clean CI/log capture).
+      def report
+        lines = ["phlex-reactive doctor", ""]
+        results = checks
+        results.each { lines << render_check(it) }
+        lines << ""
+        lines << summary_line(results)
+        lines.join("\n")
+      end
+
+      # One check as "✓/✗/? message" plus an indented "→ fix" when it isn't ok.
+      def render_check(check)
+        line = "#{GLYPHS.fetch(check.status)} #{check.message}"
+        line += "\n    → #{check.fix}" if check.fix && !check.ok?
+        line
+      end
+
+      def self.actions_controller
+        "phlex/reactive/actions"
+      end
+
+      private
+
+      # A one-line tally: how many passed, failed, and are advisory/unknown.
+      def summary_line(results)
+        passed = results.count(&:ok?)
+        failed = results.count(&:fail?)
+        advisory = results.count(&:unknown?)
+        parts = ["#{passed} passed"]
+        parts << "#{failed} failed" if failed.positive?
+        parts << "#{advisory} advisory" if advisory.positive?
+        parts.join(", ")
+      end
+
+      # The registry filtered to real, CONSTANT-RESOLVABLE reactive components.
+      # A class is only invokable by the endpoint if its own name round-trips
+      # through safe_constantize (that's exactly how ActionsController#resolve_component
+      # rebuilds it from the token). So we validate only classes where
+      # name.safe_constantize is the class itself — which also excludes anonymous
+      # classes (name nil) and test fixtures that fake `def self.name` without a
+      # matching constant, keeping the whole-app scan honest.
+      def registered_components
+        Phlex::Reactive::Streamable.registered_classes.select { constant_backed_component?(it) }
+      end
+
+      def constant_backed_component?(klass)
+        reactive_component?(klass) && klass.name && klass.name.safe_constantize.equal?(klass)
+      rescue StandardError
+        false
+      end
+
+      def reactive_component?(klass)
+        klass.respond_to?(:reactive_actions) && klass.include?(Phlex::Reactive::Component)
+      rescue StandardError
+        false
+      end
+
+      # "Klass#action" for every declared action on `klass` that has no public
+      # method to dispatch to. Kept as its own method (not a nested block) so the
+      # class is a named method arg, not a shadowed `it`.
+      def missing_action_methods(klass)
+        klass.reactive_actions.keys
+          .reject { klass.public_method_defined?(it) }
+          .map { "#{klass}##{it}" }
+      end
+
+      # True when the class still uses Streamable's default #id AND has no record
+      # to back it (so the default raises). owner == Streamable means no override.
+      def default_id_without_record?(klass)
+        klass.instance_method(:id).owner == Phlex::Reactive::Streamable &&
+          !(klass.respond_to?(:reactive_record_key) && klass.reactive_record_key)
+      rescue StandardError
+        false
+      end
+
+      def stimulus_missing_check
+        Check.new(:fail, "the reactive controller is not registered in any Stimulus entrypoint", name: :stimulus,
+          fix: "Add to your entrypoint (e.g. app/javascript/controllers/index.js):\n  " \
+               "import ReactiveController from \"phlex/reactive/reactive_controller\"\n  " \
+               "application.register(\"reactive\", ReactiveController)\n" \
+               "or re-run: bin/rails generate phlex:reactive:install")
+      end
+
+      # Files that may hold the register line: the JS entrypoint candidates,
+      # importmap-style AND esbuild/bun (issue #106) — controllers/index.js,
+      # controllers/application.js, application.js — PLUS ERB layouts, since a
+      # small/importmap app often registers inline in <head> rather than in a
+      # dedicated entrypoint file. Only existing files are returned.
+      def stimulus_registration_files
+        candidates = %w[
+          app/javascript/controllers/index.js
+          app/javascript/controllers/application.js
+          app/javascript/application.js
+        ].map { app_path(it) }
+        candidates += ::Dir.glob(app_path("app/views/layouts/**/*.erb"))
+        candidates.select { File.exist?(it) }
+      end
+
+      def registers_reactive?(path)
+        File.read(path).include?('application.register("reactive", ReactiveController)')
+      rescue StandardError
+        false
+      end
+
+      # Only meaningful when importmap is in use. True when importmap is present
+      # but the reactive_controller pin is absent (the engine pins it, so this is
+      # really "someone overrode importmap.rb and dropped the pin").
+      def importmap_pin_broken?
+        return false unless defined?(::Importmap) && ::Rails.application.respond_to?(:importmap)
+
+        map = ::Rails.application.importmap
+        return false unless map
+
+        !map.packages.key?("phlex/reactive/reactive_controller")
+      rescue StandardError
+        false
+      end
+
+      # Grep ERB layouts AND Phlex layout files for a csrf_meta_tags reference.
+      def csrf_meta_referenced?
+        globs = %w[
+          app/views/**/*.erb
+          app/views/**/*.rb
+          app/components/**/*.rb
+          app/views/**/layout*.html*
+        ].map { app_path(it) }
+
+        ::Dir.glob(globs).any? do
+          File.read(it).include?("csrf_meta_tags")
+        rescue StandardError
+          false
+        end
+      rescue StandardError
+        false
+      end
+
+      def app_path(relative)
+        ::Rails.root.join(relative).to_s
+      end
+
+      def relative(path)
+        return path unless defined?(::Rails) && ::Rails.root
+
+        path.delete_prefix("#{::Rails.root}/")
+      end
+    end
+  end
+end

@@ -46,7 +46,7 @@ Gem::Specification.new do |spec|
       # three root docs), so a glob in a dirty working tree can't sweep in
       # machine-local artifacts (logs, .env, tmp, editor backups). This keeps
       # spec.files stable across build environments without a hand-written manifest.
-      patterns = %w[{app,config,lib}/**/*.{rb,js,erb} lib/**/USAGE]
+      patterns = %w[{app,config,lib}/**/*.{rb,js,erb,rake} lib/**/USAGE]
       patterns.flat_map { |p| Dir.glob(p, base: __dir__) }
         .select { |f| File.file?(File.join(__dir__, f)) } +
         %w[CHANGELOG.md LICENSE.txt README.md].select { |f| File.file?(File.join(__dir__, f)) }

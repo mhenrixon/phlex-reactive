@@ -91,6 +91,14 @@ That's all for **importmap** apps: the engine mounts the action endpoint at
 `/reactive/actions` and auto-pins (and preloads) the client runtime, and the
 installer adds the eager registration below to your Stimulus entrypoint.
 
+Verify the whole install any time with the doctor — it checks the route, the
+Stimulus registration, CSRF, the identity verifier, and every component, printing
+`✓/✗/?` with a fix for each failure:
+
+```bash
+bin/rails phlex_reactive:doctor
+```
+
 <details>
 <summary>What the installer wires (or do it by hand)</summary>
 
@@ -140,7 +148,9 @@ for broadcasting.
 
 Two host-app setups make the first reactive component *silently do nothing* —
 components render, but no action ever fires, with no error pointing at the cause.
-The gem now logs a warning for each, but here are the fixes:
+Run `bin/rails phlex_reactive:doctor` first — it flags both of these (and more)
+with the fix inline. The gem also logs a warning for each at boot; here are the
+fixes:
 
 **A catch-all route shadows `POST /reactive/actions`.** The engine appends its
 route *after* everything in your `config/routes.rb`, so a bottom-of-file

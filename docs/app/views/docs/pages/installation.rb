@@ -250,15 +250,30 @@ module Views
           DocsUI::Section('Verify it works') do
             DocsUI::Prose() do
               p do
-                plain 'Drop a counter on any page, click '
+                plain 'Run the doctor — it validates the whole install (route, Stimulus registration, ' \
+                      'CSRF, the identity verifier, and every component) and prints '
+                code { '✓/✗/?' }
+                plain ' with a fix for each failure:'
+              end
+            end
+            DocsUI::Code(<<~SHELL, lexer: :shell)
+              bin/rails phlex_reactive:doctor
+            SHELL
+            DocsUI::Prose() do
+              p do
+                plain 'Then drop a counter on any page, click '
                 code { '+' }
                 plain ', and watch it increment with no full-page reload. If it reloads or does ' \
                       'nothing, check the testing guide troubleshooting section.'
               end
             end
             DocsUI::Callout(:tip) do
-              plain 'No full-page reload is the signal everything is wired: the engine endpoint is ' \
-                    'mounted, the controller is registered eagerly, and Turbo morphs the component in place.'
+              plain 'The doctor is read-only and safe to run anywhere. A '
+              code { '✗' }
+              plain ' points at the exact fix; a '
+              code { '?' }
+              plain ' is advisory (e.g. it can’t confirm csrf_meta_tags in a Phlex-only layout). ' \
+                    'No full-page reload on the click is the runtime signal everything is wired.'
             end
           end
         end
