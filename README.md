@@ -1507,7 +1507,45 @@ Phlex::Reactive.error_flash = ->(kind) do
   else                  "Something went wrong — please try again."
   end
 end
+
+# Component-aware wrapper around every action (audit / rate-limit / assert).
+# Sees the resolved component, action name, and COERCED params; runs inside
+# the connection-id scope but OUTSIDE the transaction. See "Two seams" below.
+Phlex::Reactive.around_action do |ctx, &action|
+  RateLimiter.check!(ctx.request.remote_ip, ctx.action_name) # raise -> 403
+  result = action.call
+  AuditLog.record!(actor: Current.user, action: ctx.action_name)
+  result # <- REQUIRED: return the continuation's value
+end
 ```
+
+#### Two seams: HTTP-layer (`base_controller_name`) vs component-layer (`around_action`)
+
+There are two places to wrap a reactive action, and they see different things:
+
+| | Base controller (`base_controller_name`) | `Phlex::Reactive.around_action` |
+|---|---|---|
+| **Layer** | HTTP request | the resolved component action |
+| **Sees** | headers, session, `request` | the component instance, action name, **coerced** params, `request` |
+| **Runs** | full Rails filter chain | inside `with_connection_id`, **outside** the transaction |
+| **Use for** | auth, CSRF, coarse per-IP rate limiting | audit logging, component-aware rate limiting, assertions |
+
+Plain Rails `around_action` / `rate_limit` on a dedicated base controller already
+covers attributes, authentication, and coarse per-IP throttling — but that layer
+never sees the resolved component, the declared action name, or the coerced
+params, and can't sit *inside* the connection-id scope yet *outside* the action's
+transaction. `Phlex::Reactive.around_action` is that component-aware seam. `ctx` is
+a frozen `Phlex::Reactive::ActionContext` (`component`, `action_name`, `params`,
+`request`); the fold runs *after* token verify, default-deny, and param coercion,
+so a wrapper can never widen what's invokable.
+
+**Contract — each wrapper MUST return `action.call`'s value.** The endpoint
+type-checks the action's return for a `Phlex::Reactive::Response`; a wrapper that
+ends on its logger's return value instead silently downgrades every reply to the
+implicit self-replace. A wrapper raising a registered `authorization_errors` error
+renders as 403; an unregistered raise is a 500. Multiple wrappers nest in
+registration order (last-registered outermost). Tests reset the stack with
+`Phlex::Reactive.reset_around_actions!`.
 
 If you set a custom `action_path`, expose it to the client:
 

@@ -142,16 +142,52 @@ module Phlex
       # for the duration of the action via Phlex::Reactive.current_connection_id,
       # so a broadcast in the action can pass exclude: reactive_connection_id
       # and skip the actor's own echo.
+      #
+      # The component-aware around_action stack (issue #112) folds in HERE —
+      # INSIDE with_connection_id (so a wrapper's own broadcast can exclude the
+      # actor) but OUTSIDE transaction_wrapper (so a rate-limit rejection never
+      # opens a transaction, and an audit wrapper observes commit/rollback). The
+      # fold returns the continuation's value unchanged, so the action's
+      # Phlex::Reactive::Response survives to response_streams.
       def run_action(component, action_def, coerced)
         Phlex::Reactive.with_connection_id(request.headers["X-Pgbus-Connection"]) do
-          transaction_wrapper do
-            if coerced.any?
-              component.public_send(action_def.name, **coerced)
-            else
-              component.public_send(action_def.name)
+          with_around_actions(component, action_def, coerced) do
+            transaction_wrapper do
+              if coerced.any?
+                component.public_send(action_def.name, **coerced)
+              else
+                component.public_send(action_def.name)
+              end
             end
           end
         end
+      end
+
+      # Fold the registered around_action wrappers around `block`, innermost being
+      # the transactioned action. The empty-stack fast path is a bare `yield` —
+      # the default request gains only one Array#empty? check. Each wrapper is
+      # called with the frozen ActionContext and the continuation as its block, so
+      # a well-behaved wrapper returns action.call's value and the action's
+      # Response propagates out unchanged (issue #112).
+      #
+      # Fold: seed the accumulator with the innermost action, then walk the stack
+      # oldest → newest wrapping each wrapper AROUND the accumulated continuation.
+      # The FIRST-registered wrapper wraps the action, and each later wrapper wraps
+      # that — so the LAST-registered runs OUTERMOST (LIFO nesting).
+      def with_around_actions(component, action_def, coerced, &block)
+        stack = Phlex::Reactive.around_actions
+        return yield if stack.empty?
+
+        ctx = Phlex::Reactive::ActionContext.new(
+          component: component,
+          action_name: action_def.name,
+          params: coerced,
+          request: request
+        )
+
+        stack.reduce(block) do |inner, wrapper|
+          -> { wrapper.call(ctx, &inner) }
+        end.call
       end
 
       # Turn the action's return value into the turbo-stream(s) to render for

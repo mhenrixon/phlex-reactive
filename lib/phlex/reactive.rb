@@ -75,6 +75,16 @@ module Phlex
     # Payloads carry NAMES/outcome/sizes ONLY — never the token, params, or state.
     INSTRUMENTATION_NAMESPACE = "phlex_reactive"
 
+    # What a component-aware around_action wrapper sees (issue #112). Frozen: a
+    # wrapper OBSERVES the resolved action — it must not mutate the context to
+    # widen invokability (the token verify, component resolution, default-deny,
+    # and schema coercion have already run and are not negotiable here).
+    #   * component    — the resolved, identity-rebuilt component instance
+    #   * action_name  — the declared action Symbol about to run
+    #   * params       — the SCHEMA-COERCED params (dropped keys already gone)
+    #   * request      — the ActionDispatch::Request (remote_ip, headers, ...)
+    ActionContext = Data.define(:component, :action_name, :params, :request)
+
     class << self
       # The message verifier used to sign/verify component identity tokens.
       # Defaults to a purpose-scoped verifier derived from secret_key_base.
@@ -222,6 +232,47 @@ module Phlex
       # NAMES/outcome/sizes ONLY — never token/params/state.
       def instrument(event, payload = {}, &)
         ::ActiveSupport::Notifications.instrument("#{event}.#{INSTRUMENTATION_NAMESPACE}", payload, &)
+      end
+
+      # Register a COMPONENT-AWARE around_action wrapper (issue #112). The block
+      # is folded into the endpoint BETWEEN with_connection_id and the action's
+      # transaction — so it sees the resolved component instance, the declared
+      # action name, and the coerced params (an ActionContext), and a rejection
+      # NEVER opens a transaction. This is the seam for audit logging,
+      # component-aware rate limiting, and assertions; the base controller
+      # (base_controller_name) remains the seam for HTTP-layer concerns (auth,
+      # CSRF, coarse per-IP rate limiting) that don't need the resolved action.
+      #
+      #   Phlex::Reactive.around_action do |ctx, &action|
+      #     RateLimiter.check!(ctx.request.remote_ip, ctx.action_name) # raise -> 403
+      #     result = action.call
+      #     AuditLog.record!(actor: Current.user, action: ctx.action_name)
+      #     result   # <- REQUIRED: return the continuation's value
+      #   end
+      #
+      # CONTRACT — each wrapper MUST return `action.call`'s value. The endpoint
+      # type-checks the action's return for a Phlex::Reactive::Response; a wrapper
+      # that returns its logger's result instead silently downgrades every reply
+      # to the implicit self-replace. Wrappers nest in registration order with the
+      # LAST-registered outermost. Register in an initializer.
+      def around_action(&block)
+        raise ::ArgumentError, "Phlex::Reactive.around_action requires a block" unless block
+
+        around_actions << block
+      end
+
+      # The registered around_action wrappers, oldest first. The endpoint folds
+      # them so the last-registered runs outermost; an empty stack is the default
+      # hot path (the controller short-circuits with `return yield`).
+      def around_actions
+        @around_actions ||= []
+      end
+
+      # Drop all registered around_action wrappers. For test isolation (the
+      # shipped hook — specs registering a temporary wrapper reset around every
+      # example); never called in production.
+      def reset_around_actions!
+        @around_actions = []
       end
 
       def verifier
