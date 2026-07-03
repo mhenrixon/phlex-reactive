@@ -33,6 +33,10 @@ module Phlex
       # up without ever sharing a mutable context across threads.
       ThreadViewContext = Struct.new(:view_context, :builder, :renderer, :generation)
 
+      # Focus ops are actor-only (they steal focus): broadcast_js_to rejects a
+      # broadcast that carries one. Names mirror Phlex::Reactive::JS's focus verbs.
+      BROADCAST_REFUSED_OPS = %w[focus focus_first].freeze
+
       # Every class that includes Streamable, so the engine can flush their
       # memoized view contexts on a Rails code reload (dev) in one pass. A
       # WeakMap used as a set (the class is the key) so a class reloaded by
@@ -223,7 +227,53 @@ module Phlex
           )
         end
 
+        # Push server-side client DOM ops to EVERY subscriber of a stream (issue
+        # #97) — the broadcast sibling of Response#js. Rides a `reactive:js`
+        # custom stream action over Turbo::StreamsChannel, so it works on Action
+        # Cable AND pgbus (transport opts pass through broadcast_transport_opts
+        # exactly like every other broadcast):
+        #
+        #   Notifications::Badge.broadcast_js_to(user, :alerts,
+        #     js.add_class("#bell", "has-unread"), exclude: reactive_connection_id)
+        #
+        # `ops` is a Phlex::Reactive::JS chain (or a raw [[op, args], ...] array);
+        # `target` (an element id) scopes op resolution on the client (nil →
+        # document-scoped). The ops JSON is HTML-escaped through the TagBuilder's
+        # attributes: path (data-reactive-ops), so a value can't break out of the
+        # attribute.
+        #
+        # The builder REJECTS focus-class ops (focus/focus_first) outright:
+        # broadcasting a focus steals focus in every subscriber's tab. Focus is an
+        # actor-reply concern only (Response#js), so it raises ArgumentError here
+        # rather than silently shipping a hostile-feeling broadcast.
+        def broadcast_js_to(*streamables, ops, exclude: nil, visible_to: nil, target: nil)
+          json = broadcast_js_ops_json(ops)
+          ::Turbo::StreamsChannel.broadcast_action_to(
+            *streamables,
+            action: "reactive:js",
+            target: target,
+            attributes: { data: { reactive_ops: json } },
+            render: false,
+            **broadcast_transport_opts(exclude:, visible_to:)
+          )
+        end
+
         private
+
+        # Validate + serialize broadcast ops: reject focus-class ops (they steal
+        # focus in every tab) and an empty chain (a dead broadcast), then return
+        # the JSON wire form. Works on a JS chain (inspect .ops) and a raw array.
+        def broadcast_js_ops_json(ops)
+          pairs = ops.is_a?(Phlex::Reactive::JS) ? ops.ops : Array(ops)
+          refused = pairs.map { |name, _| name.to_s } & Phlex::Reactive::Streamable::BROADCAST_REFUSED_OPS
+          unless refused.empty?
+            raise ArgumentError,
+              "broadcast_js_to refuses focus op(s) #{refused.join(", ")} — broadcasting focus " \
+              "steals it in every subscriber's tab. Focus is an actor-reply concern (reply.js)."
+          end
+
+          Phlex::Reactive::Response.js_ops_json(ops)
+        end
 
         def build(model, options)
           new(**(model ? component_args(model, options) : options))

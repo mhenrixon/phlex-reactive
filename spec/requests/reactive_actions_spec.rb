@@ -328,6 +328,53 @@ RSpec.describe "Reactive actions", type: :request do
         expect(response.body.scan("data-reactive-token-value=").size).to eq(1)
       end
     end
+
+    # Issue #97: reply.<verb>.js(ops) pushes server-side client DOM ops over a
+    # reactive:js stream. The op stream must ride AFTER the render stream (so a
+    # focus op sees the post-render DOM — Turbo applies streams in document
+    # order) and must NOT count as a self-render (its action name is reactive:js,
+    # not replace/update/reactive:token), so the morph's own token refresh is
+    # untouched.
+    describe "js (issue #97 — server-pushed client DOM ops)" do
+      it "emits the reactive:js op stream AFTER the render stream" do
+        post_action(CounterComponent, payload: { "s" => { "count" => 4 } }, act: "bump_with_js")
+
+        expect(response).to have_http_status(:ok)
+        expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+
+        render_at = response.body.index('action="replace"')
+        js_at = response.body.index('action="reactive:js"')
+        expect(render_at).not_to be_nil
+        expect(js_at).not_to be_nil
+        expect(js_at).to be > render_at # ops LAST — focus sees the morphed DOM
+      end
+
+      it "keeps the morph's token refresh intact (reactive:js is not a self-render)" do
+        post_action(CounterComponent, payload: { "s" => { "count" => 4 } }, act: "bump_with_js")
+
+        # The morph carries the fresh token; the endpoint must NOT append an extra
+        # reactive:token, and the reactive:js stream must NOT suppress the refresh.
+        expect(response.body).to include("data-reactive-token-value=")
+        expect(response.body).not_to include('action="reactive:token"')
+        # The morph re-renders self (carries the token); the js stream targets self
+        # too, but only the morph is a token-bearing self-render.
+        expect(response.body.scan("data-reactive-token-value=").size).to eq(1)
+      end
+
+      it "carries the ops HTML-escaped (no attribute break-out)" do
+        post_action(CounterComponent, payload: { "s" => { "count" => 4 } }, act: "bump_with_js")
+
+        expect(response.body).to include("data-reactive-ops=")
+        expect(response.body).to include("&quot;focus&quot;")
+        expect(response.body).to include("&quot;app:bumped&quot;")
+      end
+
+      it "scopes the op stream to the component's own id (self-scoped @root)" do
+        post_action(CounterComponent, payload: { "s" => { "count" => 4 } }, act: "bump_with_js")
+
+        expect(response.body).to include('<turbo-stream action="reactive:js" target="counter"')
+      end
+    end
   end
 
   describe "tampering" do

@@ -332,7 +332,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
 | `reactive_collection :name, item:, container:, count:, empty:, size:` | Declare an add/remove-row list once; actions call `reply.append`/`prepend`/`remove`. See [Reactive collections](#reactive-collections-addremove-rows--count--empty-state). |
-| `reply.replace` / `.morph` / `.update` / `.remove` / `.redirect(url)` / `.with(*)` | Return from an action to control the reply (flash, remove, redirect, multi-stream). See [Controlling the action's reply](#reply--controlling-the-actions-reply). |
+| `reply.replace` / `.morph` / `.update` / `.remove` / `.redirect(url)` / `.with(*)` / `.js(ops)` | Return from an action to control the reply (flash, remove, redirect, multi-stream, server-pushed client ops). See [Controlling the action's reply](#reply--controlling-the-actions-reply). |
 | `reply.append(name, model)` / `.prepend(...)` / `.remove(name, model)` | Add/remove a row in a declared `reactive_collection` (row + count + empty-state in one reply). |
 
 Param types: `:string` (default), `:integer`, `:float`, `:boolean`, `:file`.
@@ -774,6 +774,7 @@ def update(quantity:, price:) = (@item.update!(quantity:, price:); reply.streams
 | `reply.remove` | remove the element (backed by `Streamable#to_stream_remove`) |
 | `reply.redirect(url)` | client-side `Turbo.visit` (pass a `*_url`); rides a `reactive:visit` turbo-stream, not an HTTP 3xx |
 | `reply.streams(*streams)` | **partial update** — emit exactly these streams (no full-self replace) + a tiny token-only refresh, so live inputs survive; for per-field grid editing (issue #30) |
+| `.js(ops, target: …)` | also push **client DOM ops** (focus, dispatch, class/attr toggles) over a `reactive:js` stream, applied AFTER the render — `reply.morph.js(js.focus("[name=next]"))` focuses the morphed field (issue #97) |
 | `reply.with(*streams)` / `#stream(*more)` | multi-stream (self re-render still injected for the token) |
 
 `.flash`/`.stream`/`.also_*` are additive on a self-replace, so the component's
@@ -811,6 +812,50 @@ reply.replace.flash(:error, Alert.new(level: :error, message: msg))
 #    (instantiated new(level:, content:)); component content still bypasses it:
 Phlex::Reactive.flash_component = MyFlash   # default nil → the built-in wrapper
 ```
+
+#### Server-pushed client ops (`reply.js` + `broadcast_js_to`, issue #97)
+
+Sometimes the server needs the client to do something other than swap HTML —
+focus the next field after a save, dispatch an app event to a toast host, add an
+unread badge — WITHOUT re-rendering to make it happen. `reply.<verb>.js(ops)`
+chains a `reactive:js` stream carrying declared client DOM ops (the same `js`
+builder as [`on_client`](#client-only-ops-on_client--js--zero-round-trips))
+onto any reply. The op stream rides **after** the render streams, so a focus op
+sees the freshly rendered/morphed DOM:
+
+```ruby
+def save(title:)
+  @todo.update!(title:)
+  # Morph in place, THEN focus the next field + tell a toast host we saved:
+  reply.morph.js(js.focus("[name=next_field]").dispatch("app:saved", detail: { id: @todo.id }))
+end
+```
+
+`target:` scopes op resolution on the client; it defaults to the bound
+component's id for `replace`/`morph`/`update` (so `@root` and component-relative
+selectors just work), and to document-scope for a subject-free `reply.with`.
+
+The same ops broadcast to **every** subscriber of a stream over the usual
+transport (Action Cable **or** pgbus) — a background nudge to all viewers:
+
+```ruby
+# In a model/job: light up the bell in every viewer's tab, minus the actor's own.
+Notifications::Badge.broadcast_js_to(user, :alerts,
+  js.add_class("#bell", "has-unread"), exclude: reactive_connection_id)
+```
+
+`broadcast_js_to` **refuses focus-class ops** (`focus`/`focus_first` raise
+`ArgumentError`): broadcasting focus would steal it in every subscriber's tab, so
+focus is an actor-reply concern only. Everything else is a fair broadcast (class
+and attribute toggles, `dispatch`). As with `on_client`, the ops are
+whitelist-interpreted client-side — an unknown op warns and is skipped — and the
+ops attribute is HTML-escaped, so a value can't break out of it. `reactive:js`
+is not a self-render: it never counts toward the token refresh, so the reply's
+signed token still rolls forward exactly as it would without the ops.
+
+> **Ephemeral by design.** Like `on_client`, server-pushed ops are transient UI:
+> the next server re-render of the component resets whatever they toggled. State
+> that must survive a re-render belongs in a signed `action`, not an op.
 
 #### Record-authorized, transient-state actions (issue #64)
 

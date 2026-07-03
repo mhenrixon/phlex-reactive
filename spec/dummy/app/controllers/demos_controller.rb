@@ -105,6 +105,13 @@ class DemosController < ActionController::Base
     render_component MorphGridComponent.new(account: Account.find(params[:id]))
   end
 
+  # Issue #97: post-save focus lands on the freshly morphed field via
+  # reply.morph.js(js.focus(...)) — the reactive:js op stream rides AFTER the
+  # morph so focus targets the morphed node.
+  def js_focus
+    render_component JsFocusComponent.new(account: Account.find(params[:id]))
+  end
+
   def partial_grid
     render_component PartialGridComponent.new(line_item: LineItem.find(params[:id]))
   end

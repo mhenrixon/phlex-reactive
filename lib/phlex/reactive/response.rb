@@ -17,14 +17,15 @@ module Phlex
     #   Response.redirect(article_url(@article))        # slug changed -> Turbo.visit the new URL
     #   Response.replace(self).stream(Totals.update(@order))  # multi-stream
     class Response
-      attr_reader :streams, :redirect_url, :token_component
+      attr_reader :streams, :redirect_url, :token_component, :subject_component
 
       class << self
         # Re-render the component in place (explicit form of today's default).
         # `morph: true` morphs the subtree (preserves the focused input + caret)
         # instead of an outerHTML swap — see .morph (issue #28).
         def replace(component, morph: false)
-          new(streams: [morph ? component.to_stream_morph : component.to_stream_replace])
+          new(streams: [morph ? component.to_stream_morph : component.to_stream_replace],
+            subject_component: component)
         end
 
         # Re-render the component in place via Idiomorph (issue #28). Emits
@@ -33,10 +34,10 @@ module Phlex
         # per-field reactive editing (a "spreadsheet" grid where a debounced save
         # fires while the user is still typing/tabbing). The morphed root still
         # carries the fresh signed token, so the next action verifies.
-        def morph(component) = new(streams: [component.to_stream_morph])
+        def morph(component) = new(streams: [component.to_stream_morph], subject_component: component)
 
         # Morph only inner HTML (preserves the root element + its token attr).
-        def update(component) = new(streams: [component.to_stream_update])
+        def update(component) = new(streams: [component.to_stream_update], subject_component: component)
 
         # Remove the component's element from the DOM. Uses the instance
         # to_stream_remove (the component already knows its own #id — no
@@ -221,6 +222,37 @@ data-reactive-flash-level="#{level_attr}">#{body}</div>).html_safe
           Phlex::Reactive.flash_builder.update(target, html: render_html(content))
         end
 
+        # Build a `reactive:js` turbo-stream carrying server-pushed client DOM
+        # ops (issue #97). `ops` is a Phlex::Reactive::JS chain or a raw
+        # [[op, args], ...] array; `target` (an element id or nil) scopes op
+        # resolution on the client (nil → document-scoped). The ops JSON is
+        # HTML-escaped into the attribute exactly like to_stream_token — a raw
+        # interpolation would be an injection vector. The client's registered
+        # reactive:js handler runs the ops through the SAME whitelist interpreter
+        # as on_client (default-deny), so an unknown op is warn-and-skipped there.
+        def js_stream(ops, target: nil)
+          json = js_ops_json(ops)
+          target_attr = target ? %( target="#{ERB::Util.html_escape(target)}") : ""
+          %(<turbo-stream action="reactive:js"#{target_attr} \
+data-reactive-ops="#{ERB::Util.html_escape(json)}"></turbo-stream>).html_safe
+        end
+
+        # Normalize `ops` to its JSON wire form, rejecting an empty chain — a
+        # reactive:js stream with no ops is a dead stream (a mistake at the call
+        # site), so fail loudly rather than emit an inert tag.
+        def js_ops_json(ops)
+          if ops.is_a?(Phlex::Reactive::JS)
+            raise ArgumentError, "js(...) got no ops — a dead reactive:js stream" if ops.empty?
+
+            ops.to_json
+          else
+            list = Array(ops)
+            raise ArgumentError, "js(...) got no ops — a dead reactive:js stream" if list.empty?
+
+            list.to_json
+          end
+        end
+
         # Resolve `content` to the HTML for a turbo-stream's `html:`. Two forms,
         # both SAFE against injection by default:
         #   * a Phlex component instance — rendered through the configured
@@ -244,11 +276,19 @@ data-reactive-flash-level="#{level_attr}">#{body}</div>).html_safe
       # OUT of the full-self replace but still needs the token refreshed. The
       # endpoint appends this component's tiny to_stream_token instead, so the
       # token rolls forward without re-rendering (and clobbering) the children.
-      def initialize(streams: [], redirect_url: nil, render_self: true, token_component: nil)
+      #
+      # subject_component: the component a self-targeting builder (replace/morph/
+      # update) re-renders (issue #97). Distinct from token_component so it does
+      # NOT trip refresh_token? — it exists only to default #js's target to the
+      # bound component's id, so reply.morph.js(js.focus("@root")) scopes to the
+      # morphed root without the caller repeating the id.
+      def initialize(streams: [], redirect_url: nil, render_self: true, token_component: nil,
+                     subject_component: nil)
         @streams = streams.freeze
         @redirect_url = redirect_url
         @render_self = render_self
         @token_component = token_component
+        @subject_component = subject_component
         freeze
       end
 
@@ -259,8 +299,28 @@ data-reactive-flash-level="#{level_attr}">#{body}</div>).html_safe
           streams: @streams + more.flatten,
           redirect_url: @redirect_url,
           render_self: @render_self,
-          token_component: @token_component
+          token_component: @token_component,
+          subject_component: @subject_component
         )
+      end
+
+      # Chain a `reactive:js` op stream — server-pushed client DOM ops (issue
+      # #97) — onto this reply, so a focus/dispatch/class toggle runs on the
+      # client after the render applies:
+      #
+      #   reply.morph.js(js.focus("[name=next]").dispatch("app:saved"))
+      #
+      # `ops` is a Phlex::Reactive::JS chain (or a raw [[op, args], ...] array).
+      # `target` (an element id) scopes op resolution on the client; it defaults
+      # to the bound component's id (subject_component/token_component) so
+      # self-scoped ops (@root, a component-relative selector) just work, and is
+      # nil (document-scoped) for a subject-free reply.with. Returns a NEW
+      # Response (immutable) — the op stream rides the same stream() plumbing, so
+      # the endpoint emits it LAST (after all render streams) and a focus op sees
+      # the post-render DOM.
+      def js(ops, target: :__default)
+        resolved = target == :__default ? default_js_target : target
+        stream(self.class.js_stream(ops, target: resolved))
       end
 
       # Append a flash turbo-stream into a host-app container (default
@@ -299,6 +359,16 @@ data-reactive-flash-level="#{level_attr}">#{body}</div>).html_safe
       # but still needs the token rolled forward — the endpoint appends the bound
       # component's tiny token-only stream (issue #30).
       def refresh_token? = !@token_component.nil?
+
+      private
+
+      # The default `target` for #js: the bound component's id when this reply is
+      # component-scoped (replace/morph/update set subject_component; .streams and
+      # collections set token_component), else nil — a subject-free reply.with is
+      # document-scoped unless the caller passes target: explicitly.
+      def default_js_target
+        (@subject_component || @token_component)&.id
+      end
     end
   end
 end
