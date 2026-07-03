@@ -6,26 +6,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Performance
-
-- **Ship a minified client runtime — `reactive_controller.js` 106 KB → 22 KB
-  (−79%; ~7.7 KB gzipped).** The authored client modules are comment-dense on
-  purpose (the source is the documentation, and the JS suite imports it), so the
-  gem no longer ships that source to browsers. `rake build:js` (bun) produces a
-  minified twin of each module — `reactive_controller.min.js`,
-  `confirm.min.js`, `compute.min.js` — each with a linked sourcemap that
-  embeds the original source, so devtools still shows the readable code. The
-  engine now pins and precompiles the `.min.js` (plus its `.map`); the bare
-  specifiers are unchanged, so **no consumer edit is required** — importmap apps
-  transparently load the small file. The confirm/compute override seams stay
-  separately pinned (not bundled in), so `import { setConfirmResolver } from
-  "phlex/reactive/confirm"` still works. The bun minifier output is
-  deterministic (byte-identical across bun patch releases), so the artifacts are
-  committed and shipped in the gem — consumers need no bun — and CI (`rake
-  build:js_check`) rebuilds and fails on drift. The system suite now runs the
-  vendored minified build in a real browser under both Puma and Falcon, so the
-  code that ships is the code that is proven. Measured on bun 1.3.14.
-
 ### Changed
 
 - **One inheritance-aware registry behind the Component DSL; `component.rb` split
@@ -51,6 +31,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Performance
 
+- **Ship a minified client runtime — `reactive_controller.js` 106 KB → 22 KB
+  (−79%; ~7.7 KB gzipped).** The authored client modules are comment-dense on
+  purpose (the source is the documentation, and the JS suite imports it), so the
+  gem no longer ships that source to browsers. `rake build:js` (bun) produces a
+  minified twin of each module — `reactive_controller.min.js`,
+  `confirm.min.js`, `compute.min.js` — each with a linked sourcemap that
+  embeds the original source, so devtools still shows the readable code. The
+  engine now pins and precompiles the `.min.js` (plus its `.map`); the bare
+  specifiers are unchanged, so **no consumer edit is required** — importmap apps
+  transparently load the small file. The confirm/compute override seams stay
+  separately pinned (not bundled in), so `import { setConfirmResolver } from
+  "phlex/reactive/confirm"` still works. The bun minifier output is
+  deterministic (byte-identical across bun patch releases), so the artifacts are
+  committed and shipped in the gem — consumers need no bun — and CI (`rake
+  build:js_check`) rebuilds and fails on drift. The system suite now runs the
+  vendored minified build in a real browser under both Puma and Falcon, so the
+  code that ships is the code that is proven. Measured on bun 1.3.14.
 - **Multi-key broadcast fan-out is ~9.5× faster (#119).** Measured, transport
   doubled out, K=10 stream keys: a hand loop over `broadcast_replace_to` →
   `broadcast_replace_to_each` moves 2.88k i/s (347 μs) → 27.3k i/s (37 μs)
