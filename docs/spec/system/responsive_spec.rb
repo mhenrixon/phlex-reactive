@@ -54,8 +54,10 @@ RSpec.describe 'Responsive shell', type: :system do
             }).filter(x => x.right > vw + 1).sort((a,b)=>b.right-a.right).slice(0,8);
           })()
         JS
-        warn "DEBUG viewport=#{page.evaluate_script('document.documentElement.clientWidth')} overflow=#{overflow}"
-        offenders.each { |o| warn "DEBUG overflows: <#{o['tag']} class='#{o['cls']}'> right=#{o['right']} width=#{o['width']}" }
+        warn "DEBUG overflow=#{overflow}"
+        offenders.each do |o|
+          warn "DEBUG el <#{o['tag']} .#{o['cls']}> right=#{o['right']} w=#{o['width']}"
+        end
       end
       expect(overflow).to be <= 1 # allow sub-pixel rounding
     end
