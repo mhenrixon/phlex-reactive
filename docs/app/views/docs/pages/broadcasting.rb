@@ -105,8 +105,9 @@ module Views
               - `.broadcast_replace_to(*streamables, model:, morph:)` — replace the
                 element with id `component.id`. Pass `morph: true` for a cross-tab
                 morph (see below).
-              - `.broadcast_update_to(*streamables, model:)` — replace its *inner*
-                HTML.
+              - `.broadcast_update_to(*streamables, model:, morph:)` — replace its
+                *inner* HTML. Pass `morph: true` for a cross-tab morph, so a peer
+                editing the component keeps its focus/caret (see below).
               - `.broadcast_append_to(*streamables, target:, model:)` — append into
                 container `target`.
               - `.broadcast_prepend_to(*streamables, target:, model:)` — prepend into
@@ -249,10 +250,19 @@ module Views
               ```
 
               This emits `method="morph"` on the broadcast `<turbo-stream>`, so
-              idiomorph patches the existing DOM rather than replacing it. Only
-              `broadcast_replace_to` takes `morph:` — `update` already patches inner
-              HTML, and `append` / `prepend` / `remove` don't replace an existing
-              element.
+              idiomorph patches the existing DOM rather than replacing it.
+
+              `broadcast_update_to` takes `morph:` too — a plain `update` swaps the
+              *inner* HTML (still tearing down a focused input mid-edit), so
+              `morph: true` patches the inner HTML in place instead, keeping a peer's
+              caret:
+
+              ```ruby
+              Totals.broadcast_update_to(@order, :totals, model: @order, morph: true)
+              ```
+
+              `append` / `prepend` / `remove` don't replace an existing element, so
+              they take no `morph:`.
             MD
           end
         end

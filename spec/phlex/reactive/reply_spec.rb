@@ -67,7 +67,15 @@ RSpec.describe Phlex::Reactive::Reply do
     end
 
     it "update mirrors Response.update(self)" do
-      expect(counter.reply.update.streams.first).to include('action="update"')
+      stream = counter.reply.update.streams.first
+      expect(stream).to include('action="update"')
+      expect(stream).not_to include("method=") # plain update by default
+    end
+
+    it "update(morph: true) mirrors Response.update(self, morph: true) — issue #113" do
+      stream = counter.reply.update(morph: true).streams.first
+      expect(stream).to include('action="update"')
+      expect(stream).to include('method="morph"')
     end
 
     it "remove mirrors Response.remove(self) — render_self false" do

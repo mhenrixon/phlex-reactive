@@ -8,6 +8,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`morph:` on the update verbs (#113).** The `update` family now takes the same
+  `morph:` flag `replace` already had, closing the verb-matrix asymmetry: Turbo 8
+  supports `method="morph"` on `action="update"`, so an inner-HTML update can morph
+  in place instead of swapping. This matters most for a **cross-tab
+  `broadcast_update_to`** into a component a peer is editing — a plain update tore
+  down their focus/caret; `morph: true` patches the inner HTML in place and keeps
+  it. Threaded through every update surface:
+  - `Streamable.update(model, morph: true)` (class builder) and
+    `#to_stream_update(morph: true)` (instance primitive) — emit
+    `method="morph"`.
+  - `broadcast_update_to(*streamables, morph: true)` — carries the attr through
+    `attributes:` (the broadcast path has no `method:` kwarg), so it works on
+    **both** Action Cable and pgbus; the pgbus-absent fallback is unchanged.
+  - `Response.update(component, morph: true)` and `Reply#update(morph: true)` —
+    `reply.update(morph: true)`.
+
+  **Default `false` everywhere → byte-identical to today** (no `method=` attribute),
+  so existing components are unaffected. No new dependency — Idiomorph ships with
+  `turbo-rails >= 2.0`.
+
 - **Component-aware `around_action` seam (#112).** Register a wrapper with
   `Phlex::Reactive.around_action { |ctx, &action| … }` and it folds into the
   endpoint **between** `with_connection_id` and the action's transaction — so it
@@ -25,6 +45,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   empty stack (the default) adds only one `Array#empty?` check to the hot path;
   `Phlex::Reactive.reset_around_actions!` resets it for tests. See the README
   "Two seams" section and the security page.
+
 - **Versioned identity-token payload + upgrader chain (#111).** Every signed
   token now carries a `"v"` key (`Phlex::Reactive::TOKEN_VERSION`, currently `1`),
   and `Phlex::Reactive.verify` runs the payload through an upgrader chain before
@@ -172,6 +193,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ends by telling you to run `bin/rails phlex_reactive:doctor` to verify.
 
 ### Changed
+
+- **`Phlex::Reactive.flash_builder` → `stream_builder` (and `reset_flash_builder!`
+  → `reset_stream_builder!`) (#113).** The memoized `Turbo::Streams::TagBuilder`
+  is used well beyond flashes — `reactive_collection` row removal, count-companion
+  updates, `also_update` — so the `flash_` name misled. Renamed to `stream_builder`
+  / `reset_stream_builder!`. **`flash_builder` and `reset_flash_builder!` stay as
+  permanent aliases** (no deprecation warnings), so the engine's reload hook and
+  any app code keep working unchanged. Purely a rename — behavior is identical.
 
 - **BREAKING (declaration-time): an unknown param type symbol now raises (#109).**
   Before, a schema naming a type the coercer didn't recognize (a typo like

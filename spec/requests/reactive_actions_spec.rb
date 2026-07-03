@@ -85,6 +85,30 @@ RSpec.describe "Reactive actions", type: :request do
       html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin
       expect(html).not_to include("method=")
     end
+
+    # Issue #113: broadcast_update_to gains the same morph: flag. A cross-tab
+    # update into a component a peer is editing morphs in place, so the peer
+    # keeps its focus/caret instead of an inner-HTML clobber. The morph flag
+    # rides through `attributes:` (the broadcast path has no method: kwarg).
+    # The pgbus-absent fallback (this Action Cable path) is unchanged unless
+    # morph: true is asked for.
+    it "broadcasts a morphing update when morph: true (issue #113)" do
+      broadcasts = capture_turbo_stream_broadcasts("todos") do
+        TodoItemComponent.broadcast_update_to("todos", model: todo, morph: true)
+      end
+      html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin
+      expect(html).to include('action="update"')
+      expect(html).to include('method="morph"')
+    end
+
+    it "broadcasts a plain update (no morph attr) by default" do
+      broadcasts = capture_turbo_stream_broadcasts("todos") do
+        TodoItemComponent.broadcast_update_to("todos", model: todo)
+      end
+      html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin
+      expect(html).to include('action="update"')
+      expect(html).not_to include("method=")
+    end
   end
 
   describe "record + state component (InlineEditComponent, issue #6)" do

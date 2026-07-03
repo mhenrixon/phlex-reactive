@@ -48,9 +48,11 @@ module Phlex
         Response.morph(@component)
       end
 
-      # Morph only inner HTML (preserves the root element + its token attr).
-      def update
-        Response.update(@component)
+      # Update only inner HTML (preserves the root element + its token attr).
+      # `morph: true` morphs the inner HTML in place (issue #113) so a
+      # cross-tab/per-field update keeps a focused input's caret.
+      def update(morph: false)
+        Response.update(@component, morph:)
       end
 
       # Reactive collections (issue #35) — add/remove a row in a declared

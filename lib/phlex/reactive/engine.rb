@@ -74,7 +74,7 @@ module Phlex
       # fresh after boot. See Streamable.reset_all_view_contexts!.
       config.to_prepare do
         Phlex::Reactive::Streamable.reset_all_view_contexts!
-        Phlex::Reactive.reset_flash_builder!
+        Phlex::Reactive.reset_stream_builder!
       end
 
       # Boot-time guard (issue #26): warn if the action path doesn't resolve to

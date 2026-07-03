@@ -344,20 +344,24 @@ module Phlex
       end
 
       # A Turbo::Streams::TagBuilder bound to an off-request view context, used
-      # to build standalone streams (e.g. a Response flash append) not tied to a
-      # specific component's id. Cached PER THREAD alongside the context it's
-      # bound to (see off_request_view_context for why per-thread).
-      def flash_builder
+      # to build standalone streams not tied to a specific component's id — a
+      # Response flash append, a reactive_collection row removal, a count
+      # companion update, an also_update companion. Cached PER THREAD alongside
+      # the context it's bound to (see off_request_view_context for why
+      # per-thread). Renamed from flash_builder (issue #113): the builder does
+      # far more than flashes, so the name misled. flash_builder stays a
+      # permanent alias below so the engine's to_prepare and app code keep working.
+      def stream_builder
         off_request_view_context_cache[:builder]
       end
 
       # The off-request view context for the current thread, built once and
-      # reused for both the flash builder and standalone component renders.
+      # reused for both the stream builder and standalone component renders.
       # Cached PER THREAD, not per process: an ActionView context carries mutable
       # output_buffer/view_flow state (render_in's capture swaps it), so sharing
       # one instance across threads can interleave content on a threaded server.
       # Rebuilt when the renderer object changes or the generation is bumped
-      # (reset_flash_builder! / Rails code reload), so a reloaded controller is
+      # (reset_stream_builder! / Rails code reload), so a reloaded controller is
       # never served stale.
       def off_request_view_context
         off_request_view_context_cache[:view_context]
@@ -366,10 +370,18 @@ module Phlex
       # Invalidate the per-thread context + builder for ALL threads by bumping
       # the generation; each thread rebuilds lazily on next use. Registered on
       # Rails' reloader by the engine; also used by specs. Thread-safe (an
-      # integer bump, no shared structure to tear down).
-      def reset_flash_builder!
+      # integer bump, no shared structure to tear down). Renamed from
+      # reset_flash_builder! (issue #113); the old name stays a permanent alias
+      # below so the engine's to_prepare hook keeps working.
+      def reset_stream_builder!
         @off_request_view_context_generation = off_request_view_context_generation + 1
       end
+
+      # Permanent aliases for the pre-#113 names. Kept forever (no deprecation)
+      # so the engine's to_prepare hook and any app code calling the old names
+      # keep working unchanged.
+      alias flash_builder stream_builder
+      alias reset_flash_builder! reset_stream_builder!
 
       def off_request_view_context_generation
         @off_request_view_context_generation ||= 0
