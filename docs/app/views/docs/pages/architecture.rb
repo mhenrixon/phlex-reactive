@@ -87,7 +87,9 @@ module Views
                   code { 'replace' }
                   plain ' swaps outerHTML, '
                   code { 'update' }
-                  plain ' morphs inner HTML).'
+                  plain ' swaps inner HTML; pass '
+                  code { 'morph: true' }
+                  plain ' to either to morph in place).'
                 end
                 li do
                   code { 'reply.morph' }

@@ -49,4 +49,35 @@ RSpec.describe "Streamable morph (issue #28)" do
       expect(TodoItemComponent.replace(todo)).not_to include("method=")
     end
   end
+
+  # Issue #113: the update verbs gain the same morph: flag replace already has.
+  # Turbo 8 supports method="morph" on action="update", so an inner-HTML update
+  # can morph in place — a cross-tab update no longer clobbers a peer's caret.
+  describe "#to_stream_update (instance primitive)" do
+    it "adds method=\"morph\" when morph: true" do
+      stream = CounterComponent.new(count: 0).to_stream_update(morph: true)
+      expect(stream).to include('action="update"')
+      expect(stream).to include('method="morph"')
+      expect(stream).to include('target="counter"')
+    end
+
+    it "stays a plain update (no morph attr) by default — back-compat" do
+      stream = CounterComponent.new(count: 0).to_stream_update
+      expect(stream).to include('action="update"')
+      expect(stream).not_to include("method=")
+    end
+  end
+
+  describe ".update(model, morph:) class builder" do
+    it "adds method=\"morph\" when morph: true" do
+      stream = TodoItemComponent.update(todo, morph: true)
+      expect(stream).to include('action="update"')
+      expect(stream).to include('method="morph"')
+      expect(stream).to include(%(target="#{ActionView::RecordIdentifier.dom_id(todo)}"))
+    end
+
+    it "omits method= by default (unchanged)" do
+      expect(TodoItemComponent.update(todo)).not_to include("method=")
+    end
+  end
 end

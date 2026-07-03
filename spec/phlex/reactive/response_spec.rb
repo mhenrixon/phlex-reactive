@@ -156,6 +156,19 @@ RSpec.describe Phlex::Reactive::Response do
       response = described_class.replace(counter).also_replace(item)
       expect(response.streams.last).not_to include("method=")
     end
+
+    # Issue #113: Response.update gains the same morph: flag replace already has.
+    it "update(morph: true) emits a morphing update" do
+      response = described_class.update(counter, morph: true)
+      expect(response.streams.first).to include('action="update"')
+      expect(response.streams.first).to include('method="morph"')
+    end
+
+    it "update defaults to a plain update (no morph attr) — back-compat" do
+      response = described_class.update(counter)
+      expect(response.streams.first).to include('action="update"')
+      expect(response.streams.first).not_to include("method=")
+    end
   end
 
   # Issue #77: the flash level must reach the wire. String content gets a

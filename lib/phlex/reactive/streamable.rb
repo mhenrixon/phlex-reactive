@@ -172,9 +172,13 @@ module Phlex
           turbo_stream_builder.replace(component.id, html: render_component(component), **morph_method(morph))
         end
 
-        def update(model = nil, **options)
+        # `morph: true` emits `<turbo-stream action="update" method="morph">` so
+        # Turbo 8 morphs the inner HTML in place instead of replacing it (issue
+        # #113) — a cross-tab update no longer clobbers a peer's focus/caret.
+        # Default (morph: false) is the unchanged plain update.
+        def update(model = nil, morph: false, **options)
           component = build(model, options)
-          turbo_stream_builder.update(component.id, html: render_component(component))
+          turbo_stream_builder.update(component.id, html: render_component(component), **morph_method(morph))
         end
 
         def append(target:, model: nil, **options)
@@ -225,12 +229,17 @@ module Phlex
           end
         end
 
-        def broadcast_update_to(*streamables, model: nil, exclude: nil, visible_to: nil, **options)
+        # `morph: true` makes the live cross-tab update morph in place (issue
+        # #113), so a peer tab editing this component keeps its focus/caret
+        # instead of an inner-HTML clobber. Like broadcast_replace_to's morph
+        # flag, it rides through `attributes:` (the broadcast path has no
+        # `method:` kwarg) via morph_attributes.
+        def broadcast_update_to(*streamables, model: nil, exclude: nil, visible_to: nil, morph: false, **options)
           instrument_broadcast("update", streamables) do
             component = build(model, options)
             ::Turbo::StreamsChannel.broadcast_update_to(
               *streamables, target: component.id, html: render_component(component),
-              **broadcast_transport_opts(exclude:, visible_to:)
+              **morph_attributes(morph), **broadcast_transport_opts(exclude:, visible_to:)
             )
           end
         end
@@ -432,8 +441,16 @@ module Phlex
         self.class.turbo_stream_builder.replace(id, html: self.class.render_component(self), method: :morph)
       end
 
-      def to_stream_update
-        self.class.turbo_stream_builder.update(id, html: self.class.render_component(self))
+      # `morph: true` emits `<turbo-stream action="update" method="morph">`
+      # (issue #113) so Turbo 8 morphs the inner HTML in place, preserving a
+      # focused <input> + caret across a per-field update. Default (morph:
+      # false) is the unchanged plain update. Passing `method: :morph` inline
+      # (as #to_stream_morph does) keeps the plain call's wire byte-identical.
+      # Used by Response.update.
+      def to_stream_update(morph: false)
+        builder = self.class.turbo_stream_builder
+        html = self.class.render_component(self)
+        morph ? builder.update(id, html:, method: :morph) : builder.update(id, html:)
       end
 
       # Render a TOKEN-ONLY refresh stream (issue #30): a tiny

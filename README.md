@@ -312,10 +312,13 @@ The cross-tab chat in ~60 lines of Ruby (and zero JS) is the showcase — see
 |---|---|
 | `#id` | Stable DOM id == Turbo Stream target. Must match the root element's `id`. Record-backed components default to `dom_id(record)` (issue #81); everything else implements it (`def id`). An explicit `def id` always wins. |
 | `.replace(model = nil, morph: false, **opts)` | `<turbo-stream action=replace target=id>` of a freshly built component; `morph: true` adds `method="morph"` |
-| `.update` / `.append(target:)` / `.prepend(target:)` / `.remove` | The other Turbo Stream actions |
+| `.update(model = nil, morph: false, **opts)` | `<turbo-stream action=update target=id>` (inner-HTML update); `morph: true` adds `method="morph"` so Turbo morphs the inner HTML in place (issue #113) |
+| `.append(target:)` / `.prepend(target:)` / `.remove` | The other Turbo Stream actions |
 | `.broadcast_replace_to(*streamables, model:, morph: false)` | Broadcast a replace over the stream transport (pgbus SSE / Action Cable); `morph: true` morphs in place |
-| `.broadcast_append_to(*streamables, target:, model:)` / `_update_` / `_prepend_` / `_remove_` | The broadcast variants |
-| `#to_stream_replace` / `#to_stream_morph` / `#to_stream_update` / `#to_stream_remove` | Stream the *already-built* instance (used internally after an action / by `reply`); `#to_stream_morph` morphs in place |
+| `.broadcast_update_to(*streamables, model:, morph: false)` | Broadcast an inner-HTML update; `morph: true` morphs in place, so a peer editing the component keeps its focus/caret (issue #113) |
+| `.broadcast_append_to(*streamables, target:, model:)` / `_prepend_` / `_remove_` | The other broadcast variants |
+| `#to_stream_replace` / `#to_stream_morph` / `#to_stream_remove` | Stream the *already-built* instance (used internally after an action / by `reply`); `#to_stream_morph` morphs in place |
+| `#to_stream_update(morph: false)` | Inner-HTML update of the *already-built* instance; `morph: true` morphs in place (issue #113) |
 
 Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 
@@ -1048,8 +1051,8 @@ def update(quantity:, price:) = (@item.update!(quantity:, price:); reply.streams
 
 | Builder | Reply |
 |---|---|
-| `reply.replace` / `reply.update` | re-render in place (default; `replace` is an outerHTML swap, `update` morphs inner HTML) |
-| `reply.morph` / `reply.replace(morph: true)` | re-render in place via Idiomorph (`method="morph"`) — preserves the focused `<input>` + caret; for per-field reactive editing (issue #28) |
+| `reply.replace` / `reply.update(morph: false)` | re-render in place (default; `replace` swaps the whole element via outerHTML, `update` swaps only the inner HTML) |
+| `reply.morph` / `reply.replace(morph: true)` / `reply.update(morph: true)` | re-render in place via Idiomorph (`method="morph"`) — preserves the focused `<input>` + caret; for per-field reactive editing (`replace` #28; `update` #113) |
 | `.also_update(target, html:)` | also re-render a companion element by DOM id; `html` is a plain string (escaped) or a Phlex component |
 | `.also_replace(component, morph: false)` | also re-render another Streamable component, targeting its own `#id`; `morph: true` morphs it in place |
 | `.flash(level, content, target: …)` | append a flash; `content` is a plain string (escaped, wrapped in a level-carrying `<div>` — see [Flash levels](#flash-levels)) or a Phlex component (rendered verbatim; off-request — no Rails `flash`); target defaults to `Phlex::Reactive.flash_target` (`"flash"`) |

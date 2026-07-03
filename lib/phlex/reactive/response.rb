@@ -36,8 +36,12 @@ module Phlex
         # carries the fresh signed token, so the next action verifies.
         def morph(component) = new(streams: [component.to_stream_morph], subject_component: component)
 
-        # Morph only inner HTML (preserves the root element + its token attr).
-        def update(component) = new(streams: [component.to_stream_update], subject_component: component)
+        # Update only inner HTML (preserves the root element + its token attr).
+        # `morph: true` morphs the inner HTML in place (issue #113) instead of
+        # replacing it, so a cross-tab update keeps a peer's focus/caret.
+        def update(component, morph: false)
+          new(streams: [component.to_stream_update(morph:)], subject_component: component)
+        end
 
         # Remove the component's element from the DOM. Uses the instance
         # to_stream_remove (the component already knows its own #id — no
@@ -131,7 +135,7 @@ module Phlex
         # or an already-built dom-id string (e.g. the value the row used as #id).
         def collection_row_remove(definition, model)
           if model.is_a?(String)
-            Phlex::Reactive.flash_builder.remove(model)
+            Phlex::Reactive.stream_builder.remove(model)
           else
             definition.item.remove(model)
           end
@@ -175,7 +179,7 @@ module Phlex
         # Phlex::Reactive.flash_component); component content renders VERBATIM
         # — the caller owns the markup, no wrapper, no double-wrapping.
         def flash_stream(level, content, target:, dismiss_after: nil)
-          Phlex::Reactive.flash_builder.append(target, html: flash_html(level, content, dismiss_after))
+          Phlex::Reactive.stream_builder.append(target, html: flash_html(level, content, dismiss_after))
         end
 
         # Resolve flash `content` to HTML, carrying the level (issue #77):
@@ -241,7 +245,7 @@ data-reactive-flash-level="#{level_attr}"#{dismiss_attr(dismiss_after)}>#{body}<
         # (a Phlex component instance or an HTML string). Used by #also_update to
         # re-render a companion element that isn't itself a Streamable component.
         def update_stream(target, content)
-          Phlex::Reactive.flash_builder.update(target, html: render_html(content))
+          Phlex::Reactive.stream_builder.update(target, html: render_html(content))
         end
 
         # Build a `reactive:js` turbo-stream carrying server-pushed client DOM
