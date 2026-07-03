@@ -8,6 +8,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Versioned identity-token payload + upgrader chain (#111).** Every signed
+  token now carries a `"v"` key (`Phlex::Reactive::TOKEN_VERSION`, currently `1`),
+  and `Phlex::Reactive.verify` runs the payload through an upgrader chain before
+  your component rebuilds from it. This is infrastructure for the NEXT breaking
+  shape change (a rename, per-token expiry, a nonce): instead of every open page
+  breaking at deploy — an old-shape token verifies fine, then blows up later in
+  `from_identity` — the old payload upgrades transparently. Contract:
+  - A token minted **before** versioning existed carries no `"v"`; it is read as
+    version 0 (today's shape) and passes through byte-identical — introducing
+    versioning **invalidated nothing in flight**.
+  - When you change the shape, bump `TOKEN_VERSION` and register
+    **`Phlex::Reactive.register_token_upgrader(old_version) { |payload| … }`**;
+    upgraders run oldest → current.
+  - A token from a **newer** version than the running code (a rolled-back deploy)
+    **fails closed** — `verify` returns `nil`, so the endpoint answers 400, the
+    same path as a tampered token. Never fail-open.
+
+  `from_identity` ignores the extra `"v"` key, so existing components are
+  unaffected. Perf: the one added key costs +3 objects / +480 bytes per
+  `reactive_token` (a single `Hash#merge`); HMAC signing dominates and is
+  unchanged, so throughput is within measurement noise.
+
 - **Public `Phlex::Reactive::TestHelpers` + a no-HTTP `run_reactive` action
   driver (#110).** The gem now ships the test surface it used to keep private.
   Mix it in (`config.include Phlex::Reactive::TestHelpers`) for:

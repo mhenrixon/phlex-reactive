@@ -144,6 +144,22 @@ RSpec.describe "Reactive actions", type: :request do
 
       expect(response).to have_http_status(:bad_request)
     end
+
+    it "rejects a token from a NEWER version than the running code (#111 — fails closed to 400)" do
+      # A rolled-back deploy verifies a token minted by newer code (v ahead of
+      # TOKEN_VERSION). verify returns nil, and the endpoint's existing
+      # `|| raise(InvalidToken)` turns that into a 400 — no controller change.
+      future = Phlex::Reactive.verifier.generate(
+        { "c" => "TodoItemComponent", "gid" => "x", "v" => Phlex::Reactive::TOKEN_VERSION + 1 },
+        purpose: Phlex::Reactive::IDENTITY_PURPOSE
+      )
+
+      post "/reactive/actions",
+        params: { token: future, act: "toggle" }.to_json,
+        headers: { "Content-Type" => "application/json", "Accept" => "text/vnd.turbo-stream.html" }
+
+      expect(response).to have_http_status(:bad_request)
+    end
   end
 
   describe "blank field reaches the action; the component guards (issue #8)" do

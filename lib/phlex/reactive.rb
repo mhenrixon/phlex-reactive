@@ -60,6 +60,14 @@ module Phlex
     # minted for phlex-reactive can't be replayed against another verifier use.
     IDENTITY_PURPOSE = "phlex-reactive/identity"
 
+    # The current identity-token payload version (issue #111), stamped into every
+    # signed token under the "v" key. It exists so the NEXT breaking shape change
+    # (a rename, per-token expiry, a nonce) can upgrade tokens already in flight
+    # instead of breaking every open page at deploy. A token minted before this
+    # existed carries no "v" — treated as version 0 (today's shape). Bump this and
+    # register a register_token_upgrader(old_version) when you change the shape.
+    TOKEN_VERSION = 1
+
     # The ActiveSupport::Notifications namespace for the gem's hot-path events
     # (issue #107): action.phlex_reactive, render.phlex_reactive,
     # broadcast.phlex_reactive. APM tools (AppSignal, Datadog, Skylight)
@@ -346,14 +354,65 @@ module Phlex
         base_controller_name.constantize
       end
 
-      # Returns the verified payload hash, or nil if the token is invalid.
+      # Returns the verified, version-upgraded payload hash, or nil if the token
+      # is invalid (bad signature/purpose) OR carries a version this code doesn't
+      # understand. The single verify choke point (issue #111): after the
+      # signature check we run upgrade_token so an older-shape payload is migrated
+      # to the current shape before from_identity ever sees it.
       def verify(token)
-        verifier.verified(token, purpose: IDENTITY_PURPOSE)
+        payload = verifier.verified(token, purpose: IDENTITY_PURPOSE)
+        payload && upgrade_token(payload)
       end
 
-      # Signs a payload hash into an identity token.
+      # Signs a payload hash into an identity token, stamping the current
+      # TOKEN_VERSION (issue #111). The "v" key is the ONLY thing added — a
+      # from_identity that ignores unknown keys is unaffected.
       def sign(payload)
-        verifier.generate(payload, purpose: IDENTITY_PURPOSE)
+        verifier.generate(payload.merge("v" => TOKEN_VERSION), purpose: IDENTITY_PURPOSE)
+      end
+
+      # Migrate a verified payload from whatever version it was signed at up to
+      # TOKEN_VERSION (issue #111). Runs the registered upgraders oldest → current,
+      # then stamps the payload to the current version. Contract:
+      #   * no "v"  → version 0 (the shape from before versioning existed). With no
+      #     v0 upgrader registered this is a pure passthrough — introducing
+      #     versioning invalidates NOTHING already in flight.
+      #   * v == current → returned as-is (the hot path — one integer compare).
+      #   * v  > current → nil. A rolled-back deploy verifying a token minted by
+      #     NEWER code must not guess the newer shape; returning nil fails closed
+      #     through the endpoint's existing `|| raise(InvalidToken)` → 400.
+      def upgrade_token(payload)
+        version = payload.fetch("v", 0)
+        return payload if version == TOKEN_VERSION
+        return nil if version > TOKEN_VERSION
+
+        upgrade_from(payload, version)
+      end
+
+      # Register an upgrader that rewrites a payload signed at `from_version` into
+      # the shape of `from_version + 1` (issue #111). Register in load order at
+      # boot when you bump TOKEN_VERSION; the block receives the payload hash and
+      # returns the migrated hash (the "v" stamp is applied by upgrade_token, so
+      # the block only reshapes the data). Example, for a future count → n rename:
+      #
+      #   Phlex::Reactive.register_token_upgrader(0) do |payload|
+      #     payload.merge("s" => { "n" => payload.dig("s", "count") })
+      #   end
+      def register_token_upgrader(from_version, &block)
+        raise ::ArgumentError, "register_token_upgrader requires a block" unless block
+
+        token_upgraders[Integer(from_version)] = block
+      end
+
+      # from_version => callable(payload) -> migrated payload. Sparse: an entry
+      # exists only for a version that actually changed shape.
+      def token_upgraders
+        @token_upgraders ||= {}
+      end
+
+      # Drop all registered upgraders. For tests that register a temporary one.
+      def reset_token_upgraders!
+        @token_upgraders = {}
       end
 
       # The acting client's SSE connection id during an action, or nil. Set by
@@ -427,6 +486,27 @@ module Phlex
 
       def default_logger
         ::Rails.logger if defined?(::Rails) && ::Rails.respond_to?(:logger)
+      end
+
+      # Walk the upgrader chain from `version` up to TOKEN_VERSION, applying each
+      # registered upgrader in turn (issue #111). A gap in the chain (a version
+      # bumped with no shape change, so no upgrader registered) is a no-op step —
+      # the payload passes through unchanged to the next version. Only stamp the
+      # current "v" if an upgrader ACTUALLY reshaped the payload: a versionless
+      # (v0) token with no upgraders registered — today's case — is returned
+      # byte-identical, so introducing versioning invalidates nothing in flight.
+      # Runs only for a genuinely old token (the v == current hot path already
+      # returned in upgrade_token), so this is off the render path.
+      def upgrade_from(payload, version)
+        upgraded = false
+        version.upto(TOKEN_VERSION - 1) do
+          upgrader = token_upgraders[it]
+          next unless upgrader
+
+          payload = upgrader.call(payload)
+          upgraded = true
+        end
+        upgraded ? payload.merge("v" => TOKEN_VERSION) : payload
       end
 
       def default_verifier

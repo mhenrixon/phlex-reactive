@@ -458,6 +458,31 @@ module Views
                 code { 'secret_key_base' }
                 plain ' invalidates all outstanding tokens (open tabs must reload).'
               end
+              p do
+                plain 'The signed payload is '
+                strong { 'versioned' }
+                plain ' (a '
+                code { '"v"' }
+                plain ' key, currently '
+                code { 'Phlex::Reactive::TOKEN_VERSION' }
+                plain '). This exists so a future change to the token shape can '
+                strong { 'upgrade tokens already in flight' }
+                plain ' instead of breaking every open page at deploy: verification runs the payload '
+                plain 'through an upgrader chain (oldest → current) before your component rebuilds from it. '
+                plain 'A token minted before versioning existed carries no '
+                code { '"v"' }
+                plain ' and is read as-is — introducing versioning invalidated nothing.'
+              end
+            end
+            DocsUI::Callout(:note, title: 'Unknown token versions fail closed') do
+              plain 'A token signed by a NEWER deploy than the running code (a rollback scenario) verifies its '
+              plain 'signature but carries a version this code does not understand. Rather than guess the newer '
+              plain 'shape, '
+              code { 'Phlex::Reactive.verify' }
+              plain ' returns '
+              code { 'nil' }
+              plain ', so the endpoint answers 400 — the same path as a tampered token. Fail-closed, never '
+              plain 'fail-open.'
             end
           end
         end

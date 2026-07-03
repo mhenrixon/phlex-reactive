@@ -76,6 +76,16 @@ RSpec.describe Phlex::Reactive::Component do
       rebuilt.increment
       expect(rebuilt.count).to eq(2)
     end
+
+    it "ignores the token version key (#111) — the leftover \"v\" is harmless" do
+      # verify leaves "v" in the payload; from_identity assembles kwargs only from
+      # the declared record/state keys, so the version marker never reaches new(**).
+      payload = Phlex::Reactive.verify(state_klass.new(count: 9).send(:reactive_token))
+      expect(payload).to have_key("v")
+
+      rebuilt = state_klass.from_identity(payload)
+      expect(rebuilt.count).to eq(9) # rebuilt cleanly despite the extra "v"
+    end
   end
 
   describe "record + state identity (issue #6)" do
@@ -1286,9 +1296,10 @@ RSpec.describe Phlex::Reactive::Component do
   # pin the payload SHAPE (decoded) so an allocation optimization can't silently
   # change what's signed.
   describe "#reactive_token payload (perf invariants)" do
-    it "signs {c, s} for a state-backed component, with string keys" do
+    it "signs {c, s} for a state-backed component, with string keys (+ version marker #111)" do
       token = state_klass.new(count: 5).send(:reactive_token)
-      expect(Phlex::Reactive.verify(token)).to eq("c" => "StateThing", "s" => { "count" => 5 })
+      expect(Phlex::Reactive.verify(token))
+        .to eq("c" => "StateThing", "s" => { "count" => 5 }, "v" => Phlex::Reactive::TOKEN_VERSION)
     end
 
     it "is stable across repeated renders of equal state" do
