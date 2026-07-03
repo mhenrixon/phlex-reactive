@@ -624,6 +624,24 @@ RSpec.describe Phlex::Reactive::Component do
       expect { instance.send(:on, :toggle, optimistic: [%w[toggle_class done]]) }
         .to raise_error(ArgumentError, /optimistic/)
     end
+
+    # checked: :keep on a click trigger must NOT force type="button" — the hint's
+    # whole point is a native checkbox/radio flip, and a forced button type would
+    # destroy the control (issue #98). The caller supplies the real type.
+    it "skips the forced type=button for a click trigger with checked: :keep" do
+      attrs = instance.send(:on, :toggle, optimistic: { checked: :keep })
+      expect(attrs).not_to have_key(:type)
+    end
+
+    it "still forces type=button for a click trigger whose hint is NOT checked: :keep" do
+      attrs = instance.send(:on, :destroy, optimistic: { hide: true })
+      expect(attrs[:type]).to eq("button")
+    end
+
+    it "still forces type=button for a bare click trigger (no optimistic hint)" do
+      attrs = instance.send(:on, :increment)
+      expect(attrs[:type]).to eq("button")
+    end
   end
 
   describe "#on_client (issue #95 — client-only DOM ops, zero round trip)" do

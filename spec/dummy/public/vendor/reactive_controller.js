@@ -1108,14 +1108,24 @@ export default class extends Controller {
     const undo = []
     for (const el of targets) {
       if (optimistic.add_class) {
-        el.classList.add(...optimistic.add_class)
-        undo.push(() => el.classList.remove(...optimistic.add_class))
+        // Undo only the classes this op ACTUALLY added — a class already present
+        // was not our change, so reverting it would strip a class the element
+        // legitimately had (the add was a no-op). Capture the real delta now.
+        const added = optimistic.add_class.filter((c) => !el.classList.contains(c))
+        el.classList.add(...added)
+        if (added.length) undo.push(() => el.classList.remove(...added))
       }
       if (optimistic.remove_class) {
-        el.classList.remove(...optimistic.remove_class)
-        undo.push(() => el.classList.add(...optimistic.remove_class))
+        // Symmetric: undo only the classes actually removed — one already absent
+        // wasn't our change, so re-adding it would introduce a class that wasn't
+        // there before.
+        const removed = optimistic.remove_class.filter((c) => el.classList.contains(c))
+        el.classList.remove(...removed)
+        if (removed.length) undo.push(() => el.classList.add(...removed))
       }
       if (optimistic.toggle_class) {
+        // toggle_class is its own inverse regardless of prior state — toggling
+        // the same classes back exactly restores it, no delta tracking needed.
         optimistic.toggle_class.forEach((c) => el.classList.toggle(c))
         undo.push(() => optimistic.toggle_class.forEach((c) => el.classList.toggle(c)))
       }

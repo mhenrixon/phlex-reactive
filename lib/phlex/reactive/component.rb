@@ -481,7 +481,12 @@ module Phlex
         # The client decides preventDefault behavior from event.params (never by
         # sniffing the descriptor), so EVERY window binding flags the param.
         attrs[:data][:reactive_window_param] = "true" if window_bound
-        attrs[:type] = "button" if event == "click" && !window_bound
+        # Force type="button" for click triggers so a bare button inside a <form>
+        # can't submit it — EXCEPT when checked: :keep is declared: that hint's
+        # whole point is to let a click-bound checkbox/radio flip natively, and a
+        # forced type="button" would destroy the very control being toggled
+        # (issue #98). The caller supplies the real type="checkbox"/"radio".
+        attrs[:type] = "button" if event == "click" && !window_bound && !optimistic_keeps_native?(optimistic)
         attrs
       end
 
@@ -614,6 +619,17 @@ module Phlex
       OPTIMISTIC_CLASS_OPS = %w[toggle_class add_class remove_class].freeze
 
       private
+
+      # True when the hint declares checked: :keep — the click-bound
+      # checkbox/radio case that must SKIP the forced type="button" so the native
+      # control (and its native flip) survives (issue #98). Accepts symbol or
+      # string keys/values; nil-safe for the no-hint hot path.
+      def optimistic_keeps_native?(optimistic)
+        return false unless optimistic.is_a?(Hash)
+
+        value = optimistic[:checked] || optimistic["checked"]
+        value.to_s == "keep"
+      end
 
       # Normalize + validate the optimistic hint hash, returning its JSON wire
       # form (data-reactive-optimistic-param). `to: :root` becomes the same

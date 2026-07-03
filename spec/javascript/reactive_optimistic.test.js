@@ -42,6 +42,7 @@ function makeEl({ owner = null } = {}) {
     add: (...cs) => cs.forEach((c) => el.classes.add(c)),
     remove: (...cs) => cs.forEach((c) => el.classes.delete(c)),
     toggle: (c) => (el.classes.has(c) ? el.classes.delete(c) : el.classes.add(c)),
+    contains: (c) => el.classes.has(c),
   }
   return el
 }
@@ -230,6 +231,48 @@ test("remove_class reverts (re-adds the class) on failure", async () => {
   expect(trigger.classes.has("active")).toBe(false) // applied
   await promise
   expect(trigger.classes.has("active")).toBe(true) // reverted
+})
+
+// The revert must undo ONLY what the op actually changed — a class already
+// present (add is a no-op) must NOT be stripped on revert (CodeRabbit review).
+test("add_class revert does NOT strip a class that was already present", async () => {
+  const { controller } = buildController([{ ok: false, status: 500 }])
+  const trigger = makeTrigger()
+  trigger.classes.add("busy") // pre-existing — the add is a no-op
+
+  const { promise } = fireDispatch(controller, trigger, { add_class: ["busy"] })
+  expect(trigger.classes.has("busy")).toBe(true) // still there (no-op add)
+  await promise
+  // The revert must leave the pre-existing class alone — we never added it.
+  expect(trigger.classes.has("busy")).toBe(true)
+})
+
+// Symmetric: a class already ABSENT (remove is a no-op) must NOT be re-added on
+// revert — else the revert introduces a class that was never there.
+test("remove_class revert does NOT re-add a class that was already absent", async () => {
+  const { controller } = buildController([{ ok: false, status: 500 }])
+  const trigger = makeTrigger() // "gone" is absent — the remove is a no-op
+
+  const { promise } = fireDispatch(controller, trigger, { remove_class: ["gone"] })
+  expect(trigger.classes.has("gone")).toBe(false)
+  await promise
+  // The revert must not introduce a class that was never present.
+  expect(trigger.classes.has("gone")).toBe(false)
+})
+
+// A mixed add_class where ONE class is new and ONE pre-existing: revert removes
+// only the newly-added one, preserving the pre-existing.
+test("add_class revert removes only the newly-added classes, preserving pre-existing", async () => {
+  const { controller } = buildController([{ ok: false, status: 500 }])
+  const trigger = makeTrigger()
+  trigger.classes.add("busy") // pre-existing
+
+  const { promise } = fireDispatch(controller, trigger, { add_class: ["busy", "dim"] })
+  expect(trigger.classes.has("busy")).toBe(true)
+  expect(trigger.classes.has("dim")).toBe(true) // newly added
+  await promise
+  expect(trigger.classes.has("busy")).toBe(true) // preserved
+  expect(trigger.classes.has("dim")).toBe(false) // only this one reverted
 })
 
 test("toggle_class reverts (toggles back) on failure", async () => {

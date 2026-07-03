@@ -18,11 +18,14 @@
 class OptimisticRowComponent < ApplicationComponent
   include Phlex::Reactive::Component
 
+  # Registered in the dummy's phlex_reactive initializer so the endpoint turns it
+  # into a clean 403 — a DECLARED authorization failure (not default-deny).
+  class Denied < StandardError; end
+
   reactive_record :todo
   action :toggle
   action :destroy
-  # NOTE: :boom is deliberately NOT declared — the endpoint default-denies it
-  # (403), the real failure the revert path is proved against.
+  action :boom
 
   def initialize(todo:)
     @todo = todo
@@ -35,10 +38,21 @@ class OptimisticRowComponent < ApplicationComponent
     @todo.update!(done: !@todo.done?)
   end
 
+  # A DELIBERATELY slow failure: the sleep lets the browser spec observe the
+  # applied optimistic hint (add_class "pending") BEFORE the failure lands and the
+  # client reverts it — proving both the apply AND the revert without racing a
+  # fast default-deny 403.
+  def boom
+    sleep 0.4
+    raise Denied, "nope"
+  end
+
   # Hide-then-remove: the optimistic hint hides the row instantly; reply.remove
   # drops it from the DOM. No root re-render, so the hint is left standing and
-  # the row never flashes back before removal.
+  # the row never flashes back before removal. The small delay keeps the
+  # instantly-hidden state observable before the removal stream lands.
   def destroy
+    sleep 0.4
     @todo.destroy!
     reply.remove
   end
@@ -47,10 +61,19 @@ class OptimisticRowComponent < ApplicationComponent
     li(**mix(reactive_attrs, id:, data: { testid: "opt-row", done: @todo.done?.to_s })) do
       # The optimistic checkbox: checked:keep lets the native flip happen NOW;
       # toggle_class paints the status label in the same gesture. On success the
-      # morph overwrites with server truth; on failure the flip reverts.
+      # morph overwrites with server truth; on failure the flip reverts. Two
+      # checkboxes cover BOTH trigger bindings the issue distinguishes:
+      #   * CLICK-bound — checked: :keep skips the unconditional preventDefault so
+      #     the native flip happens now (the new #98 branch).
+      #   * CHANGE-bound — preventDefault is already a no-op (change isn't
+      #     cancelable), so :keep only contributes the failure revert.
       input(**mix(
-        on(:toggle, event: "change", optimistic: { checked: :keep, toggle_class: "is-done", to: ".status" }),
+        on(:toggle, optimistic: { checked: :keep, toggle_class: "is-done", to: ".status" }),
         type: "checkbox", checked: @todo.done?, data: { testid: "opt-check" }
+      ))
+      input(**mix(
+        on(:toggle, event: "change", optimistic: { checked: :keep }),
+        type: "checkbox", checked: @todo.done?, data: { testid: "opt-check-change" }
       ))
       span(class: ["status", ("is-done" if @todo.done?)], data: { testid: "status" }) { @todo.done? ? "done" : "todo" }
 

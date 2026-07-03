@@ -487,8 +487,11 @@ client state the DOM can't be trusted to hold). Supported ops in the hint hash:
   root (`to: :root` targets the root element itself).
 - `checked: :keep` — for a **click-bound** checkbox/radio, the client skips its
   unconditional `preventDefault` so the **native flip happens now** (a bare
-  toggle click has no navigation default to lose). On a `change`-bound control
-  the flip is already native — `:keep` then only contributes the failure revert.
+  toggle click has no navigation default to lose). `on(...)` also skips the
+  forced `type="button"` it normally adds to click triggers — that would destroy
+  the very checkbox being toggled — so you supply the real `type="checkbox"` /
+  `type="radio"`. On a `change`-bound control the flip is already native
+  (`change` isn't cancelable) — `:keep` then only contributes the failure revert.
 - `hide: true` — hides the target immediately.
 
 ```ruby
