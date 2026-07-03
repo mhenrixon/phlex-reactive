@@ -237,7 +237,14 @@ module Phlex
         def remove?
           return false if @response.nil?
 
-          @response.streams.any? { it.include?(%(action="remove")) }
+          # Check the OPENING <turbo-stream> tag, not the whole string: a rendered
+          # body that happens to contain the literal `action="remove"` (a quoted
+          # code sample, say) must not false-positive. Same parse the token check
+          # and the matchers use.
+          @response.streams.any? do
+            open_tag = it[/<turbo-stream\b[^>]*>/] || ""
+            open_tag.include?(%(action="remove"))
+          end
         end
 
         def redirect?

@@ -197,6 +197,11 @@ RSpec.describe Phlex::Reactive::TestHelpers do
         expect(result).to have_reactive_token_for(CounterComponent.new(count: 1))
       end
 
+      it "also accepts a bare DOM id (the documented component-or-id contract)" do
+        result = run_reactive(CounterComponent.new(count: 0), :increment)
+        expect(result).to have_reactive_token_for("counter")
+      end
+
       it "fails readably when NO fresh token for the component is present" do
         result = run_reactive(TodoItemComponent.new(todo:), :archive) # remove: no token
         expect { expect(result).to have_reactive_token_for(TodoItemComponent.new(todo:)) }

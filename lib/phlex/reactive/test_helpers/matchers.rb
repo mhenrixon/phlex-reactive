@@ -90,9 +90,9 @@ end
 # Pins the #44/#46 token-refresh regression class: a reply that fails to roll the
 # component's signed token forward makes the next action reject silently. This
 # matcher asserts a fresh data-reactive-token-value for the component IS present.
-RSpec::Matchers.define :have_reactive_token_for do |component|
+RSpec::Matchers.define :have_reactive_token_for do |component_or_id|
   match do |result|
-    @id = component.id
+    @id = Phlex::Reactive::TestHelpers.matcher_target_id(component_or_id)
     @streams = result.streams
     target = %(target="#{ERB::Util.html_escape(@id)}")
     @streams.any? { |stream| stream.include?("data-reactive-token-value") && stream.include?(target) }
