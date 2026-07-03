@@ -8,6 +8,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Request timeout + offline handling — `reactive:error` kinds `timeout` and
+  `offline` (#101).** A server that never responded used to wedge a component's
+  request queue *forever* — each action chains on the previous one, so one hung
+  `fetch` froze every future action and the `finally` that clears `aria-busy` /
+  the loading state never ran. Going offline just fail-fast-looped each click as
+  `kind: "network"`. Two mechanisms close this:
+  - **Timeout.** The fetch is bounded by `AbortSignal.timeout(ms)` — default
+    **30 s**, configurable via a page-authored `<meta name="phlex-reactive-timeout">`
+    (same pattern as the action-path meta; no server setting). On abort it fires
+    `reactive:error` `kind: "timeout"` (retriable) and the queue advances, so the
+    component recovers. `AbortSignal.timeout()` rejects with a `TimeoutError`
+    `DOMException` (NOT `AbortError`), correctly distinguished from a genuine
+    network `TypeError` in the fetch catch.
+  - **Offline.** A gate at the **network boundary** (`#perform`, send time — so a
+    request that enqueued while online but reaches the wire after a drop is still
+    caught) short-circuits when `navigator.onLine === false`: it fires
+    `reactive:error` `kind: "offline"` (retriable) and never sends, so the edit is
+    not half-sent. `data-reactive-offline` is mirrored onto `<html>` (kept in sync
+    by the `online`/`offline` events) as a pure-CSS hook, zero app JS.
+  - **Explicit non-goal:** no automatic replay. A timed-out POST may have
+    succeeded server-side, so even manual `retry()` can double-apply a
+    non-idempotent action — make retryable actions idempotent or gate retry UI.
 - **User-visible failure surface — render error bodies, `error_flash`,
   `dismiss_after:` (#100).** A failing action used to show the user *nothing*:
   the client read a non-OK body only for the console and discarded it, the

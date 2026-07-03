@@ -1050,7 +1050,9 @@ latency, veto a dispatch, or build retry UI **without forking the controller**:
 | `redirected` | the POST was redirected (an auth `before_action` / CSRF guard bounced it) | `status`, `retry` |
 | `http` | non-2xx response (403 default-deny/authorization, 400 bad token, 404 record gone, 500 …) | `status`, `body`, `retry` |
 | `content-type` | 200, but not a turbo-stream (an HTML error page, a misconfigured route) | `status`, `retry` |
-| `network` | `fetch` itself rejected (offline, DNS, connection reset) — the server never saw the request | `retry` |
+| `timeout` | the request took longer than the configured window (default 30s) and was aborted — the server may or may not have finished | `retry` |
+| `offline` | the browser was offline (`navigator.onLine === false`) when the action fired — the fetch was never sent | `retry` |
+| `network` | `fetch` itself rejected (DNS, connection reset, an interface drop mid-flight) — the server never saw the request | `retry` |
 | `apply` | the server processed the action successfully, but something AFTER the fetch threw (a malformed response, a Turbo render error) | no `retry` |
 
 `apply` covers a throw in the controller's own post-fetch code — not a
@@ -1069,8 +1071,53 @@ the events add hooks, they don't replace the log.
 
 **`kind: "apply"` carries no `retry()` at all** — by the time this fires the
 server has already completed the mutation, so retrying would re-POST an
-action that already succeeded (potentially a non-idempotent one). Only the
-four fetch/response-shaped kinds above are retriable.
+action that already succeeded (potentially a non-idempotent one). Every kind
+EXCEPT `apply` is retriable.
+
+#### Request timeout (`kind: "timeout"`)
+
+A server that never responds used to wedge a component's request queue forever
+(each action chains on the previous one) — the spinner never cleared and every
+later action froze. Now the fetch is bounded by `AbortSignal.timeout`: after the
+window (default **30 s**) it aborts, fires `reactive:error` `kind: "timeout"`,
+and the queue advances so the component keeps working. Configure the window with
+a page-stable meta (app-authored, following the same pattern as the action path):
+
+```erb
+<meta name="phlex-reactive-timeout" content="15000"> <%# 15s #%>
+```
+
+> **Non-goal — no automatic replay.** A timed-out POST **may have succeeded
+> server-side** (the server just answered too late). phlex-reactive never
+> auto-replays a request, and even a manual `retry()` can double-apply a
+> non-idempotent action. Make retryable actions idempotent, or gate your retry
+> UI accordingly.
+
+#### Offline (`kind: "offline"`)
+
+When the browser is offline (`navigator.onLine === false`) at send time, the
+action short-circuits **before the fetch** — the edit is never half-sent — and
+fires `reactive:error` `kind: "offline"` with a `retry()`. The check lives at the
+network boundary, so a request that enqueued while online but reaches the wire
+after a connection drop is reported as `offline`, not `network`.
+
+`phlex-reactive` also mirrors `data-reactive-offline` onto `<html>` whenever the
+browser goes offline (kept in sync by the `online`/`offline` events) — a **pure
+CSS hook**, zero app JS:
+
+```css
+[data-reactive-offline] .save-button { opacity: .5; pointer-events: none }
+[data-reactive-offline] .offline-banner { display: block }
+```
+
+```js
+// Auto-retry a specific action when the connection returns:
+document.addEventListener("reactive:error", (e) => {
+  if (e.detail.kind === "offline") {
+    addEventListener("online", () => e.detail.retry(), { once: true })
+  }
+})
+```
 
 The events bubble from the component's root element (or from `document` when
 the root was detached by the failing round trip), so they compose with plain
@@ -1281,6 +1328,14 @@ If you set a custom `action_path`, expose it to the client:
 
 ```erb
 <meta name="phlex-reactive-action-path" content="<%= Phlex::Reactive.action_path %>">
+```
+
+The client request timeout (default 30 s) is likewise an app-authored meta —
+there is no server-side setting, so drop it in your layout head if 30 s is wrong
+for your slowest action:
+
+```erb
+<meta name="phlex-reactive-timeout" content="15000"> <%# 15s, in ms #%>
 ```
 
 ---

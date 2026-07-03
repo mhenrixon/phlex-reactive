@@ -26,3 +26,10 @@
 # it, expose it to the client with:
 #   <meta name="phlex-reactive-action-path" content="<%%= Phlex::Reactive.action_path %>">
 # Phlex::Reactive.action_path = "/_r/actions"
+
+# Client request timeout (default 30s). There is NO server-side setting — a hung
+# request aborts client-side after this window (reactive:error kind "timeout"),
+# so the per-component queue never wedges. Override in your layout head:
+#   <meta name="phlex-reactive-timeout" content="15000"> <%# 15s, in ms %>
+# A timed-out POST may have SUCCEEDED server-side — phlex-reactive never
+# auto-replays; make retryable actions idempotent.
