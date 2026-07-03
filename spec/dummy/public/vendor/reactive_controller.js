@@ -497,6 +497,7 @@ export default class extends Controller {
   #throttleTimers = new Map() // trigger element -> Map(action -> suppression timer)
   #actionPathCache // page-stable action path, resolved once per controller
   #timeoutMsCache // page-stable request timeout (ms), resolved once per controller (issue #101)
+  #tokenRegexCache // { id, token, self } — #extractToken's two per-id RegExps, rebuilt on id change (issue #118)
   // Loading-state bookkeeping (issue #99). All keyed so overlapping enqueues
   // refcount correctly and never clobber each other:
   #busyPending = 0 // root aria-busy pending counter (remove only at zero)
@@ -1447,27 +1448,44 @@ export default class extends Controller {
       return html.match(/data-reactive-token-value="([^"]+)"/)?.[1]
     }
 
+    const { token, self } = this.#tokenRegexes(id)
+
     // The dedicated token-only refresh for THIS element (partial updates / the
     // collection container) — an attribute on the <turbo-stream> itself.
-    const tokenStream = html.match(
-      new RegExp(
-        `<turbo-stream\\b[^>]*\\baction="reactive:token"[^>]*\\btarget="${escapeRegExp(id)}"[^>]*\\bdata-reactive-token-value="([^"]+)"`,
-      ),
-    )
+    const tokenStream = html.match(token)
     if (tokenStream) return tokenStream[1]
 
     // A full self re-render: a replace/update of THIS element whose template root
     // carries the fresh token. Scope the token search to that one stream so a
     // sibling/child token elsewhere in the body can't leak in.
-    const selfStream = html.match(
-      new RegExp(
-        `<turbo-stream\\b[^>]*\\baction="(?:replace|update)"[^>]*\\btarget="${escapeRegExp(id)}"[^>]*>([\\s\\S]*?)</turbo-stream>`,
-      ),
-    )
+    const selfStream = html.match(self)
     if (selfStream) return selfStream[1].match(/data-reactive-token-value="([^"]+)"/)?.[1]
 
     // Nothing re-rendered our id — keep the current token.
     return undefined
+  }
+
+  // The two per-id RegExps #extractToken uses to self-match this element's next
+  // token (issue #118). `this.element.id` is page-stable, so these are compiled
+  // ONCE and reused across every response — instead of allocating two fresh
+  // RegExps per round trip. The memo is KEYED ON THE ID and rebuilt when it
+  // changes: a re-render that re-identifies the root must scan for the NEW target,
+  // never the stale one (or the token would freeze — see the id-change bun test).
+  // The PATTERNS are byte-identical to the pre-memo inline literals; only their
+  // allocation moved.
+  #tokenRegexes(id) {
+    const cache = this.#tokenRegexCache
+    if (cache && cache.id === id) return cache
+    const escaped = escapeRegExp(id)
+    return (this.#tokenRegexCache = {
+      id,
+      token: new RegExp(
+        `<turbo-stream\\b[^>]*\\baction="reactive:token"[^>]*\\btarget="${escaped}"[^>]*\\bdata-reactive-token-value="([^"]+)"`,
+      ),
+      self: new RegExp(
+        `<turbo-stream\\b[^>]*\\baction="(?:replace|update)"[^>]*\\btarget="${escaped}"[^>]*>([\\s\\S]*?)</turbo-stream>`,
+      ),
+    })
   }
 
   // True when `el` is collected by THIS reactive root and not by a nested one.

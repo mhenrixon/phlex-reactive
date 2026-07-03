@@ -579,7 +579,16 @@ module Views
                   code { 'DOMParser' }
                   plain ' parse of that same 500KB body is ~4.3 ms — '
                   strong { '~450× slower' }
-                  plain ': the targeted regex is why token extraction never parses the body into a document.'
+                  plain ': the targeted regex is why token extraction never parses the body into a document. '
+                  plain 'The two per-id regexes are '
+                  strong { 'memoized on the stable root id' }
+                  plain ' (issue #118) — compiled once, reused across every response, rebuilt only if the id '
+                  plain 'changes — but this was '
+                  strong { 'measured, not assumed: ' }
+                  plain 'extractToken is already ~0.25% of the '
+                  code { 'DOMParser' }
+                  plain ' ceiling, so removing two regex allocations per call is a correctness/cleanliness win '
+                  plain 'that sits below the timing floor of the dispatch-driven bench. Not worth further optimization.'
                 end
                 li do
                   strong { 'engine-relative. ' }
