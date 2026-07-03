@@ -450,8 +450,30 @@ module Phlex
       #   input(type: "checkbox", checked: @todo.done,
       #     **mix(on(:toggle, event: "change", optimistic: { checked: :keep }), name: "done"))
       #   button(**on(:destroy, confirm: "Delete?", optimistic: { hide: true, to: :root })) { "Delete" }
+      # `loading:` / `disable_with:` (issue #99) — declarative per-trigger loading
+      # states, Livewire's wire:loading + phx-disable-with without a Stimulus
+      # controller. The moment the request is ENQUEUED (covering the queue wait,
+      # not just the fetch), the trigger gets `data-reactive-busy="<action>"`, an
+      # optional loading class, an optional disabled + text swap; all revert in a
+      # guarded finally. `loading:` is a hash:
+      #   * disable: true         — disable the trigger while pending
+      #   * class: "…" / [ … ]    — a loading class string/array on the trigger
+      #                             (or a `to:` selector scoped to the root)
+      #   * text: "Saving…"       — swap the trigger's textContent while pending
+      #   * to: :root / "sel"     — target the class/text at the root or a selector
+      # `disable_with: "Saving…"` is the shorthand for
+      # `{ disable: true, text: "Saving…" }` and merges over an explicit `loading:`
+      # (its text/disable win). Both become RESERVED on() kwargs (CHANGELOG note,
+      # like #80's four and #98's optimistic:) — no longer free action-param names.
+      # The trigger/root also always carry `data-reactive-busy` for the whole
+      # pending window regardless of these hints, so an app styles a spinner with
+      # `[data-reactive-busy] .spinner { display: block }` and zero Ruby; see
+      # busy_on for scoped indicators.
+      #   button(**on(:save, disable_with: "Saving…")) { "Save" }
+      #   button(**on(:destroy, confirm: "Sure?", loading: { class: "opacity-50" })) { "Delete" }
       def on(action_name, event: "click", debounce: nil, throttle: nil, confirm: nil, listnav: nil,
-             window: false, once: false, outside: false, optimistic: nil, **params)
+             window: false, once: false, outside: false, optimistic: nil, loading: nil, disable_with: nil,
+             **params)
         if debounce && throttle
           raise ArgumentError,
             "on(#{action_name.inspect}) got both debounce: and throttle: — they are mutually " \
@@ -473,6 +495,9 @@ module Phlex
         attrs[:data][:reactive_confirm_param] = confirm if confirm
         attrs[:data][:reactive_listnav_option_param] = listnav if listnav
         attrs[:data][:reactive_optimistic_param] = optimistic_hint_json(optimistic, action_name) if optimistic
+        if (loading_hint = loading_hint_json(loading, disable_with, action_name))
+          attrs[:data][:reactive_loading_param] = loading_hint
+        end
         # STRING "true", not boolean: Phlex renders a `true` attribute VALUELESS
         # (data-reactive-outside-param), which Stimulus's param reader sees as ""
         # — falsy in JS, so the guard silently never fires. The explicit ="true"
@@ -555,6 +580,16 @@ module Phlex
       #   reactive_input(:value, value: @record.name, type: "text")
       def reactive_input(param, **attrs)
         input(**reactive_field(param, **attrs))
+      end
+
+      # Scoped busy indicator (issue #99). Marks an element so the generic
+      # controller toggles `data-reactive-busy` on it ONLY while `action` is in
+      # flight — the scoped sibling of the always-on `data-reactive-busy` the
+      # trigger and root carry. Spread onto any element inside the reactive root;
+      # style it with `[data-reactive-busy] { … }` and zero Ruby:
+      #   span(**busy_on(:save), class: "spinner hidden")
+      def busy_on(action)
+        { data: { reactive_busy_on: action.to_s } }
       end
 
       # Data attributes declaring a client-side compute for the root element.
@@ -664,6 +699,53 @@ module Phlex
               "on(#{action_name.inspect}) got an unknown optimistic hint #{key.inspect} — " \
               "supported: toggle_class/add_class/remove_class, checked: :keep, hide: true, to:"
           end
+        end
+
+        hint.to_json
+      end
+
+      # Normalize + validate the loading hint (issue #99), returning its JSON wire
+      # form (data-reactive-loading-param) or nil when neither loading: nor
+      # disable_with: is given (the bare on() hot path stays untouched).
+      # disable_with: "Saving…" expands to { disable: true, text: … } and MERGES
+      # over an explicit loading: hash — its text/disable win. `to: :root` becomes
+      # the "@root" sentinel the js op builder uses so the client resolves targets
+      # uniformly. An unknown key or a non-hash loading: raises — a dead hint must
+      # fail loudly at render, not silently in the browser (default-deny).
+      def loading_hint_json(loading, disable_with, action_name)
+        return nil if loading.nil? && disable_with.nil?
+
+        source = loading || {}
+        unless source.is_a?(Hash)
+          raise ArgumentError,
+            "on(#{action_name.inspect}) loading: must be a Hash of loading hints " \
+            "(e.g. { disable: true, class: \"opacity-50\", text: \"Saving…\" }), got #{loading.class}"
+        end
+
+        hint = {}
+        source.each do |key, value|
+          case key.to_s
+          when "class"
+            hint["class"] = Array(value).map(&:to_s)
+          when "disable"
+            hint["disable"] = value ? true : false
+          when "text"
+            hint["text"] = value.to_s
+          when "to"
+            hint["to"] = value == :root ? Phlex::Reactive::JS::ROOT_SENTINEL : value.to_s
+          else
+            raise ArgumentError,
+              "on(#{action_name.inspect}) got an unknown loading hint #{key.inspect} — " \
+              "supported: disable:, class:, text:, to:"
+          end
+        end
+
+        # disable_with: "Saving…" ≡ { disable: true, text: … }, applied AFTER the
+        # explicit loading: hash so it wins on both keys (the shorthand is the
+        # more specific intent when a caller passes both).
+        if disable_with
+          hint["disable"] = true
+          hint["text"] = disable_with.to_s
         end
 
         hint.to_json

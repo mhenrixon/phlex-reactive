@@ -110,6 +110,13 @@ class DemosController < ActionController::Base
     render html: %(<ul>#{component}</ul>).html_safe, layout: true
   end
 
+  # Declarative loading states (issue #99): a disable_with button that disables +
+  # swaps its text while a slow save runs, so a rapid double-click enqueues only
+  # ONE POST (the disabled button swallows the second), plus a busy_on spinner.
+  def loading_button
+    render_component LoadingButtonComponent.new(count: 0)
+  end
+
   def morph_grid
     render_component MorphGridComponent.new(account: Account.find(params[:id]))
   end

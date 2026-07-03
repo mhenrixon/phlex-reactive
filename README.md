@@ -326,6 +326,9 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `on(:close_menu, outside: true)` | Fire only for events **outside** this component's root (close-a-dropdown-on-outside-click). Window-bound; never `preventDefault`s, so links elsewhere keep navigating. |
 | `on(:track, event: "scroll", window: true, throttle: 250)` | `window:` binds the trigger to the window (page-level scroll/resize); `throttle:` rate-limits leading-edge — first event fires, the rest drop until the window elapses. Mutually exclusive with `debounce:`. |
 | `on(:toggle, optimistic: { checked: :keep })` | Apply a reversible **visual hint** the instant the trigger fires (before the round trip); revert it if the action fails. Cosmetic only. See [Optimistic hints](#optimistic-visual-hints-optimistic). |
+| `on(:save, disable_with: "Saving…")` | Disable the trigger + swap its text while the action is pending (a disabled button also swallows a rapid double-click). Shorthand for `loading: { disable: true, text: "Saving…" }`. See [Loading states](#declarative-loading-states-loading--disable_with). |
+| `on(:save, loading: { disable: true, class: "opacity-50", text: "…" })` | Full loading form: `disable:`, a loading `class:` (on the trigger or a `to:` target), a `text:` swap. Reverts on settle. |
+| `busy_on(:save)` | Mark any element so it carries `data-reactive-busy` **only while `save` is in flight** — a spinner styled with pure CSS, zero Ruby. See [Loading states](#declarative-loading-states-loading--disable_with). |
 | `on(:action, once: true)` | Fire at most once, then unbind (Stimulus's native `:once`). |
 | `on_client(:click, js.toggle("#menu"))` | **Client-only** trigger: applies declared DOM ops with ZERO round trip — no token, no POST, ever. Takes the same `window:`/`once:`/`outside:` modifiers. See [Client-only ops](#client-only-ops-on_client--js--zero-round-trips). |
 | `js` | The immutable op builder behind `on_client`: `show`/`hide`/`toggle` (the `hidden` attribute, with an optional `transition:`), `add_class`/`remove_class`/`toggle_class`, `set_attr`/`remove_attr`/`toggle_attr` (allowlisted names), `focus`/`focus_first`, and `dispatch` — chainable. |
@@ -521,6 +524,81 @@ button(**on(:destroy, confirm: "Delete?", optimistic: { hide: true, to: :root })
 `optimistic:` (like `debounce:`/`confirm:`/`throttle:`) is a **reserved keyword
 name** on `on(...)`. An unknown hint op, a `checked:` value other than `:keep`,
 or a non-hash raises at render — a dead hint fails loudly, never silently.
+
+### Declarative loading states (`loading:` / `disable_with:`)
+
+Between the click and the morph, the user needs to see that something is
+happening — and a mutating button needs to stop a rapid double-click from firing
+twice. `loading:` / `disable_with:` are Livewire's `wire:loading` +
+`phx-disable-with` and LiveView's `phx-click-loading`, without a Stimulus
+controller. Both are **reserved keyword names** on `on(...)`.
+
+The moment a request is **enqueued** — covering the queue wait, not just the
+fetch — the trigger and root get the always-on busy vocabulary, and (if declared)
+the loading hint applies; everything reverts when the round trip settles
+(success **or** failure), guarded so a re-rendered trigger is never clobbered.
+
+**`disable_with:` — the common case.** Disable the trigger and swap its text
+while pending. A disabled button fires no further clicks, so a rapid double-click
+enqueues exactly **one** POST (the queue only serializes tokens — it does not
+dedupe; the disable is what dedupes):
+
+```ruby
+button(**on(:save, disable_with: "Saving…")) { "Save" }
+```
+
+**`loading:` — the full form.** A hash of:
+
+- `disable: true` — disable the trigger while pending.
+- `class: "…"` / `[ … ]` — a loading class on the **trigger**, or on a `to:`
+  selector scoped to the root (`to: :root` targets the root element itself).
+- `text: "Saving…"` — swap the trigger's `textContent` while pending.
+
+```ruby
+button(**on(:destroy, confirm: "Sure?", loading: { disable: true, class: "opacity-50 pointer-events-none" })) { "Delete" }
+```
+
+`disable_with: "Saving…"` is the shorthand for `{ disable: true, text: "Saving…" }`
+and, if you pass both, merges over an explicit `loading:` (its `text`/`disable`
+win). An unknown loading key or a non-hash `loading:` raises at render.
+
+**The `aria-busy` + `data-reactive-busy` contract (always on — zero Ruby).**
+Independent of any `loading:` hint, **every** reactive round trip marks the DOM
+for the whole enqueue→settle window, so you can style spinners and dimming with
+pure CSS:
+
+- the **trigger** and the **root** carry `data-reactive-busy="<action>"` (a
+  **space-separated set** on the root, so two concurrent actions never clobber);
+- the **root** carries `aria-busy="true"` (driven by a pending counter — it
+  clears only when the last in-flight request settles, so overlapping actions
+  don't clear it early);
+- `busy_on(:action)` marks any element inside the root so **it** gets
+  `data-reactive-busy` toggled **only while that action is in flight** — a scoped
+  spinner:
+
+```ruby
+button(**on(:save, disable_with: "Saving…")) { "Save" }
+span(**busy_on(:save), class: "spinner")
+```
+
+phlex-reactive ships **no CSS** for these — you own the styling. A minimal
+example (not shipped — copy into your app's stylesheet):
+
+```css
+/* Reveal a busy_on / aria-busy spinner only while its action is in flight. */
+.spinner { display: none; }
+[data-reactive-busy] .spinner,
+[data-reactive-busy].spinner { display: inline-block; }
+
+/* Dim the whole component during any round trip. */
+[aria-busy="true"] { opacity: 0.6; transition: opacity 120ms ease; }
+```
+
+The disable + text swap apply **only at enqueue**, never during a `debounce:`
+quiet period — so a debounced `input` trigger (whose element *is* the text field)
+is not disabled mid-typing. On settle the text is restored only if it still
+matches what was swapped in; a morph that rendered a **new** server label is left
+alone.
 
 ### Client-only ops (`on_client` + `js`) — zero round trips
 

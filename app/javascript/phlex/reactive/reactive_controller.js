@@ -339,6 +339,12 @@ export default class extends Controller {
   #debounceTimers = new Map() // trigger element -> { timer, flush } pending dispatch
   #throttleTimers = new Map() // trigger element -> Map(action -> suppression timer)
   #actionPathCache // page-stable action path, resolved once per controller
+  // Loading-state bookkeeping (issue #99). All keyed so overlapping enqueues
+  // refcount correctly and never clobber each other:
+  #busyPending = 0 // root aria-busy pending counter (remove only at zero)
+  #busyActions = new Map() // action -> in-flight count (root's space-separated busy set + busy_on)
+  #busyTokenCounts = new WeakMap() // element -> Map(action -> count): its data-reactive-busy token set
+  #loadingSnapshots = new Map() // trigger element -> { count, disabled, text } refcounted snapshot
 
   // Mark that a reactive controller actually connected, so the registration
   // guard above knows the controller was registered (issue #26 part 2).
@@ -385,7 +391,8 @@ export default class extends Controller {
     // modifier params (issue #80). The client decides preventDefault behavior
     // from event.params — set by the Ruby on() — never by sniffing the
     // Stimulus descriptor.
-    const { action, params, debounce, throttle, confirm, outside, window: windowBound, optimistic } = event.params
+    const { action, params, debounce, throttle, confirm, outside, window: windowBound, optimistic, loading } =
+      event.params
     if (!action) return
 
     // Outside guard FIRST (issue #80): an outside: trigger only fires for
@@ -396,9 +403,14 @@ export default class extends Controller {
     // lifecycle event (nothing to announce, nothing to veto).
     if (outside && this.element.contains(event.target)) return
 
-    // Capture the trigger element now; #proceed runs in a later microtask (after
-    // the confirm resolver settles), by which point event.target may be reset.
-    const target = event.target
+    // The trigger is event.currentTarget — the element on(...) was spread onto —
+    // NOT event.target (issue #99). A `<button><span>Save</span></button>` click
+    // has target === the span, which carries no params and is the wrong element
+    // to disable / swap text on. currentTarget is the bound element; fall back to
+    // target for a directly-invoked/synthetic event. Captured now because
+    // #proceed runs in a later microtask (after the confirm resolver), by which
+    // point currentTarget is reset to null.
+    const target = event.currentTarget ?? event.target
 
     // Stop native behavior (button submit / FORM NAVIGATION) HERE, synchronously
     // within the event dispatch — BEFORE the (possibly async) confirm gate below.
@@ -424,7 +436,7 @@ export default class extends Controller {
     if (!windowBound && !this.#keepsNativeToggle(optimistic, target)) event.preventDefault()
 
     // No confirm message → proceed straight away (unchanged fast path).
-    if (!confirm) return this.#proceed(target, action, params, debounce, throttle, optimistic)
+    if (!confirm) return this.#proceed(target, action, params, debounce, throttle, optimistic, loading)
 
     // Confirmation gate (issue #52, made overridable + async in #55). A reactive
     // trigger can't use Hotwire's data-turbo-confirm — this controller preempts
@@ -441,7 +453,7 @@ export default class extends Controller {
       .then(() => confirmResolver(confirm))
       .catch(() => false)
       .then((ok) => {
-        if (ok) this.#proceed(target, action, params, debounce, throttle, optimistic)
+        if (ok) this.#proceed(target, action, params, debounce, throttle, optimistic, loading)
       })
   }
 
@@ -626,7 +638,7 @@ export default class extends Controller {
   // Split out of dispatch so both the no-confirm fast path and the post-confirm
   // microtask share one place (issue #55). `target` is captured up front because
   // this can run in a later microtask, after event.target has been reset.
-  #proceed(target, action, params, debounce, throttle, optimistic) {
+  #proceed(target, action, params, debounce, throttle, optimistic, loading) {
     // Lifecycle veto point (issue #79): one cancelable reactive:before-dispatch
     // per user gesture — post-preventDefault, post-confirm, PRE-debounce (and
     // PRE-throttle, the same timing). event.preventDefault() skips the
@@ -644,19 +656,21 @@ export default class extends Controller {
     // Debounced trigger (e.g. on(:update, event: "input", debounce: 300)):
     // coalesce rapid events into ONE round trip after a quiet period, instead of
     // one POST per keystroke (issue #17). A blur flushes a pending dispatch.
-    // The optimistic hint (issue #98) rides to the flush too, so it applies ONCE
-    // per enqueue — a debounced trigger must not flap toggle_class per keystroke.
+    // The optimistic hint (issue #98) and the loading state (issue #99) ride to
+    // the flush too, so they apply ONCE per enqueue — a debounced input must not
+    // flap toggle_class per keystroke, and its element must NOT be disabled
+    // during the quiet period (that would break typing). Both apply at ENQUEUE.
     const ms = Number(debounce) || 0
-    if (ms > 0) return this.#debounceDispatch(target, ms, action, params, optimistic)
+    if (ms > 0) return this.#debounceDispatch(target, ms, action, params, optimistic, loading)
 
     // Throttled trigger (e.g. on(:track, event: "scroll", window: true,
     // throttle: 250), issue #80): LEADING-EDGE rate limit — fire the first
     // event immediately, drop the rest until the window elapses. debounce and
     // throttle are mutually exclusive (the Ruby on() raises on both).
     const throttleMs = Number(throttle) || 0
-    if (throttleMs > 0) return this.#throttleDispatch(target, throttleMs, action, params, optimistic)
+    if (throttleMs > 0) return this.#throttleDispatch(target, throttleMs, action, params, optimistic, loading)
 
-    return this.#enqueue(action, params, optimistic, target)
+    return this.#enqueue(action, params, optimistic, target, loading)
   }
 
   // Apply the optimistic hint ONCE (recording its inverse) and chain the round
@@ -664,21 +678,30 @@ export default class extends Controller {
   // per-controller queue reverts the RIGHT request's hint on failure (issue
   // #98). Applying here — the single flush/enqueue point every path funnels
   // through — is what makes a hint apply once per enqueue, not per raw dispatch.
-  #enqueue(action, params, optimistic, target) {
+  //
+  // The loading state (issue #99) applies here too, for the same reason: enqueue
+  // is the moment the request is committed to the queue, so the always-on busy
+  // vocabulary (data-reactive-busy on the trigger + root, aria-busy via a pending
+  // counter, busy_on scoping) and the loading hint (disable + class + text swap)
+  // cover the WHOLE pending window — queue wait included — not just the fetch. It
+  // returns a `settle` closure that #perform runs in its finally (success OR
+  // failure), guarded so a morph-replaced trigger is never clobbered.
+  #enqueue(action, params, optimistic, target, loading) {
     const inverse = this.#applyOptimistic(optimistic, target)
-    this.queue = (this.queue ?? Promise.resolve()).then(() => this.#perform(action, params, inverse))
+    const settle = this.#applyLoading(action, target, loading)
+    this.queue = (this.queue ?? Promise.resolve()).then(() => this.#perform(action, params, inverse, settle))
     return this.queue
   }
 
   // Reset a per-element timer; only enqueue the round trip after `ms` of quiet.
   // Also flush immediately on blur so leaving the field never drops the last
   // edit (a long debounce shouldn't swallow a value the user tabbed away from).
-  #debounceDispatch(target, ms, action, params, optimistic) {
+  #debounceDispatch(target, ms, action, params, optimistic, loading) {
     this.#clearDebounce(target)
 
     const flush = () => {
       this.#clearDebounce(target)
-      this.#enqueue(action, params, optimistic, target)
+      this.#enqueue(action, params, optimistic, target, loading)
     }
     const timer = setTimeout(flush, ms)
     target?.addEventListener?.("blur", flush, { once: true })
@@ -706,7 +729,7 @@ export default class extends Controller {
   // are keyed on action + target, NOT target alone: window-bound scroll/resize
   // events all share event.target === document, so two window-bound triggers
   // on one component would otherwise collide on one timer.
-  #throttleDispatch(target, ms, action, params, optimistic) {
+  #throttleDispatch(target, ms, action, params, optimistic, loading) {
     const timers = this.#throttleTimers.get(target) ?? new Map()
     if (timers.has(action)) return // inside the window — suppress
 
@@ -716,7 +739,7 @@ export default class extends Controller {
     }, ms)
     timers.set(action, timer)
     this.#throttleTimers.set(target, timers)
-    return this.#enqueue(action, params, optimistic, target) // leading edge: fire NOW
+    return this.#enqueue(action, params, optimistic, target, loading) // leading edge: fire NOW
   }
 
   // Clear every throttle suppression timer (used on disconnect, alongside
@@ -761,7 +784,7 @@ export default class extends Controller {
     this.#emit("reactive:error", { action, params: sentParams, ...extra, retry })
   }
 
-  async #perform(action, params, inverse) {
+  async #perform(action, params, inverse, settle) {
     // Auto-collect named field values inside this component so a button-
     // triggered action still receives sibling inputs (Livewire-style), plus any
     // chosen file inputs in the SAME walk. Explicit params
@@ -780,7 +803,9 @@ export default class extends Controller {
       ? this.#buildFormData(token, action, allParams, files)
       : JSON.stringify({ token, act: action, params: allParams })
 
-    this.element.setAttribute("aria-busy", "true")
+    // aria-busy on the root is now driven by the loading pending counter
+    // (#applyLoading, applied at ENQUEUE so it covers the queue wait too), not
+    // set here. #settleLoading in the finally clears it — see #enqueue.
 
     try {
       let response
@@ -869,7 +894,11 @@ export default class extends Controller {
       this.#revertOptimistic(inverse)
       this.#emit("reactive:error", { action, params: allParams, kind: "apply" })
     } finally {
-      this.element.removeAttribute("aria-busy")
+      // Settle the loading state (issue #99): decrement the pending counter,
+      // drop the trigger's/root's busy tokens, restore disabled/text/class —
+      // guarded so a morph-replaced trigger is never clobbered. Runs on EVERY
+      // exit (success, every failure branch, or an apply throw).
+      settle?.()
     }
   }
 
@@ -1163,6 +1192,165 @@ export default class extends Controller {
   #optimisticTargets(optimistic, trigger) {
     if (optimistic.to == null) return trigger ? [trigger] : []
     return this.#opTargets({ to: optimistic.to })
+  }
+
+  // Apply the loading state for THIS enqueue (issue #99) and return a `settle`
+  // closure that undoes exactly this enqueue's contribution when the round trip
+  // finishes (success OR any failure). Everything is refcounted so overlapping
+  // enqueues never clobber: A's settle can't clear busy while B is still pending.
+  //
+  // Two layers:
+  //   1. The ALWAYS-ON busy vocabulary (fires for every action, no hint needed):
+  //      data-reactive-busy="<action>" on the trigger and the root (a
+  //      space-separated, per-action refcounted set), aria-busy on the root (a
+  //      pending counter), and data-reactive-busy on any busy_on element scoped
+  //      to this action. Apps style a spinner with pure CSS and zero Ruby.
+  //   2. The loading HINT (only when loading:/disable_with: was declared):
+  //      disable the trigger, add a loading class (to the trigger or a `to:`
+  //      target), swap its text. These apply at ENQUEUE — never during a debounce
+  //      quiet period — so a debounced input is not disabled mid-typing.
+  #applyLoading(action, trigger, loading) {
+    this.#markBusy(action, trigger)
+    const restoreHint = this.#applyLoadingHint(action, trigger, loading)
+
+    let settled = false
+    return () => {
+      if (settled) return // one settle per enqueue, even if called twice
+      settled = true
+      this.#unmarkBusy(action, trigger)
+      restoreHint()
+    }
+  }
+
+  // Layer 1 — the always-on busy markers. Trigger + root carry the action token;
+  // the root's counter drives aria-busy; busy_on elements scoped to this action
+  // light up. Refcounts (#busyActions, #busyPending) so overlapping requests
+  // don't clear each other.
+  #markBusy(action, trigger) {
+    this.#setBusyToken(trigger, action, +1)
+    this.#setBusyToken(this.element, action, +1)
+
+    this.#busyActions.set(action, (this.#busyActions.get(action) ?? 0) + 1)
+    if (this.#busyPending++ === 0) this.element.setAttribute("aria-busy", "true")
+
+    for (const el of this.#busyOnTargets(action)) this.#setBusyToken(el, action, +1)
+  }
+
+  #unmarkBusy(action, trigger) {
+    this.#setBusyToken(trigger, action, -1)
+    this.#setBusyToken(this.element, action, -1)
+
+    const count = (this.#busyActions.get(action) ?? 1) - 1
+    if (count <= 0) this.#busyActions.delete(action)
+    else this.#busyActions.set(action, count)
+
+    if (--this.#busyPending <= 0) {
+      this.#busyPending = 0
+      this.element.removeAttribute("aria-busy")
+    }
+
+    for (const el of this.#busyOnTargets(action)) this.#setBusyToken(el, action, -1)
+  }
+
+  // Add (+1) or remove (-1) `action` from an element's space-separated
+  // data-reactive-busy token set, refcounted PER ELEMENT+ACTION so two queued
+  // requests of the same action on the same element don't drop the token early
+  // (and two DIFFERENT actions both keep their token — the set never clobbers).
+  // The attribute is removed only when the set empties. No-op on a nullish/
+  // detached element (a morph may have replaced the trigger before settle).
+  #setBusyToken(el, action, delta) {
+    if (!el || typeof el.getAttribute !== "function") return
+
+    const counts = (this.#busyTokenCounts.get(el) ?? new Map())
+    const next = (counts.get(action) ?? 0) + delta
+    if (next <= 0) counts.delete(action)
+    else counts.set(action, next)
+
+    if (counts.size === 0) {
+      this.#busyTokenCounts.delete(el)
+      el.removeAttribute("data-reactive-busy")
+      return
+    }
+    this.#busyTokenCounts.set(el, counts)
+    el.setAttribute("data-reactive-busy", [...counts.keys()].join(" "))
+  }
+
+  // busy_on elements scoped to THIS action, owned by this root (not a nested
+  // reactive root's, issue #15). data-reactive-busy-on="<action>" is the marker
+  // busy_on(:action) emits.
+  #busyOnTargets(action) {
+    const nodes = this.element.querySelectorAll?.("[data-reactive-busy-on]") ?? []
+    return [...nodes].filter(
+      (el) => el.getAttribute("data-reactive-busy-on") === action && this.#ownsField(el),
+    )
+  }
+
+  // Layer 2 — the loading HINT (disable + class + text). Snapshots the trigger's
+  // ORIGINAL disabled/text/classes on the FIRST enqueue for that trigger
+  // (refcounted so an overlapping enqueue never snapshots the already-swapped
+  // "Saving…" as the original), applies the swap, and returns a restore closure.
+  // With no hint, returns a no-op restore (the always-on busy markers still ran).
+  #applyLoadingHint(action, trigger, loading) {
+    if (!loading || !trigger) return () => {}
+
+    const classTargets = this.#loadingTargets(loading, trigger)
+    const classes = Array.isArray(loading.class) ? loading.class : []
+    const addedByTarget = []
+    for (const el of classTargets) {
+      const added = classes.filter((c) => !el.classList.contains(c))
+      el.classList.add(...added)
+      if (added.length) addedByTarget.push([el, added])
+    }
+
+    // Snapshot disabled/text ONCE per trigger (refcounted). A second overlapping
+    // enqueue increments the count but does NOT re-snapshot — so the recorded
+    // "original" is the true pre-loading state, never the swapped label.
+    const snap = this.#loadingSnapshots.get(trigger)
+    if (snap) {
+      snap.count++
+    } else if (loading.disable || loading.text != null) {
+      this.#loadingSnapshots.set(trigger, {
+        count: 1,
+        disabled: trigger.disabled,
+        text: trigger.textContent,
+        hadText: loading.text != null,
+      })
+    }
+
+    if (loading.disable) trigger.disabled = true
+    if (loading.text != null) trigger.textContent = loading.text
+
+    return () => {
+      for (const [el, added] of addedByTarget) if (el.isConnected) el.classList.remove(...added)
+      this.#restoreLoadingSnapshot(trigger, loading)
+    }
+  }
+
+  // Restore the trigger's disabled/text from its snapshot when the LAST enqueue
+  // for that trigger settles (refcount → 0). GUARDED: skip a disconnected
+  // trigger (a plain replace detached it — the node is gone), and do NOT restore
+  // the text if it no longer equals what we swapped IN (a morph rendered a new
+  // server label — clobbering it with the old text would fight server truth).
+  #restoreLoadingSnapshot(trigger, loading) {
+    const snap = this.#loadingSnapshots.get(trigger)
+    if (!snap) return
+    if (--snap.count > 0) return // another enqueue for this trigger is still pending
+    this.#loadingSnapshots.delete(trigger)
+
+    if (!trigger.isConnected) return // detached — nothing to restore
+
+    if (loading.disable) trigger.disabled = snap.disabled
+    // Only restore the label if the trigger still shows OUR swapped text; a
+    // changed textContent means the server morph relabeled it — leave it.
+    if (snap.hadText && trigger.textContent === loading.text) trigger.textContent = snap.text
+  }
+
+  // The elements a loading class applies to: the `to:` selector (resolved like
+  // an op target — "@root" is the root, a selector is scoped to this root's
+  // owned matches) or, with no `to:`, the trigger itself.
+  #loadingTargets(loading, trigger) {
+    if (loading.to == null) return trigger ? [trigger] : []
+    return this.#opTargets({ to: loading.to })
   }
 
   // The action path comes from a <meta> tag that is fixed for the page's life,
