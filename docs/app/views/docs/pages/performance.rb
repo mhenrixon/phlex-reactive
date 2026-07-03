@@ -664,6 +664,50 @@ module Views
                 plain 'benching through the public surface instead of a private export). They are a '
                 plain 'consistent baseline for a before/after, not the isolated cost of the walk alone.'
               end
+              h3 { 'Payload size (what the browser downloads)' }
+              p do
+                plain 'The client runtime is auto-pinned and preloaded on every page, so its transfer size '
+                plain 'is a real cost. The authored source is comment-dense on purpose (the source IS the '
+                plain "documentation, and the JS suite imports it), so the gem doesn't ship it to browsers — "
+                plain 'it ships a '
+                strong { 'prebuilt minified twin' }
+                plain ' of each module ('
+                code { 'rake build:js' }
+                plain ', bun) with a linked sourcemap. The engine pins the '
+                code { '.min.js' }
+                plain '; devtools resolves the '
+                code { '.map' }
+                plain ' back to the readable source on demand.'
+              end
+              ul do
+                li do
+                  code { 'reactive_controller.js' }
+                  plain ': 106 KB → '
+                  strong { '22 KB' }
+                  plain ' minified (−79%); ~36 KB → '
+                  strong { '~7.7 KB' }
+                  plain ' gzipped (−78%).'
+                end
+                li do
+                  code { 'confirm.js' }
+                  plain ' + '
+                  code { 'compute.js' }
+                  plain ': 7 KB → 0.5 KB combined (the two override seams).'
+                end
+              end
+              p do
+                plain 'The bun minifier output is '
+                strong { 'deterministic' }
+                plain ' (byte-identical across bun patch releases), so the '
+                code { '.min.js' }
+                plain '/'
+                code { '.min.js.map' }
+                plain ' are committed and shipped in the gem — consumers need no bun — and CI ('
+                code { 'rake build:js_check' }
+                plain ') rebuilds and fails if a source edit landed without a rebuild. The system suite '
+                plain 'runs the vendored minified build in a real browser under both Puma and Falcon, so '
+                plain 'the code that ships is the code that is proven.'
+              end
             end
           end
         end

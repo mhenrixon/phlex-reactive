@@ -118,7 +118,8 @@ module Views
               plain ', the controller is fetched on first appearance — and a user who clicks ' \
                     'immediately after load can fire before it connects, so nothing happens. Eager ' \
                     "registration (above) guarantees it's bound before any interaction. The engine " \
-                    'already preloads the asset, so this adds no latency.'
+                    'already pins and preloads the prebuilt minified build (~22 KB, not the ~106 KB ' \
+                    'commented source), so this adds no latency.'
             end
           end
         end
@@ -132,12 +133,16 @@ module Views
             JS
             DocsUI::Prose() do
               p do
-                plain "If your bundler can't resolve the gem path, copy the file in:"
+                plain "If your bundler can't resolve the gem path, copy the file in. The gem "
+                plain 'ships a prebuilt minified module ('
+                code { 'reactive_controller.min.js' }
+                plain ', ~22 KB vs ~106 KB source) with a linked sourcemap — vendor that:'
               end
             end
             DocsUI::Code(<<~SHELL, lexer: :shell)
-              cp "$(bundle show phlex-reactive)/app/javascript/phlex/reactive/reactive_controller.js" \\
-                 app/javascript/controllers/reactive_controller.js
+              js="$(bundle show phlex-reactive)/app/javascript/phlex/reactive"
+              cp "$js/reactive_controller.min.js"     app/javascript/controllers/reactive_controller.js
+              cp "$js/reactive_controller.min.js.map"  app/javascript/controllers/reactive_controller.min.js.map
             SHELL
             DocsUI::Prose() do
               p do

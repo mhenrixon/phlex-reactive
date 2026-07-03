@@ -135,8 +135,10 @@ import ReactiveController from "phlex/reactive/reactive_controller"
 application.register("reactive", ReactiveController)
 ```
 
-The JS ships at `app/javascript/phlex/reactive/reactive_controller.js` in the
-gem; point your bundler at the gem path or copy it in. See
+The gem ships a prebuilt, minified `reactive_controller.min.js` (~22 KB vs the
+~106 KB commented source) with a linked sourcemap, and auto-pins it for importmap
+apps — so browsers load the small file while devtools still shows the real code.
+Point your bundler at the gem path or copy the `.min.js` (+ its `.map`) in. See
 [docs/installation.md](https://phlex-reactive.zoolutions.llc/docs/installation).
 </details>
 
