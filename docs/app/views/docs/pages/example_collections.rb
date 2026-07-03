@@ -4,7 +4,7 @@ module Views
   module Docs
     module Pages
       class ExampleCollections < DocsUI::Page
-        title 'Reactive collections'
+        title 'Example: collections (add/remove rows + count + empty-state)'
         eyebrow 'Examples'
 
         def lead
@@ -17,6 +17,8 @@ module Views
           declare_collection
           row_and_empty
           what_each_reply_emits
+          add_to_top
+          instant_feedback
           why_count_right
           repeated_add_remove
           cross_tab
@@ -56,34 +58,38 @@ module Views
                 include Phlex::Reactive::Component
 
                 reactive_collection :notifications,
-                  item: NotificationRow,         # the per-row Streamable component
+                  item: NotificationRow,          # the per-row Streamable component
                   container: "notifications",     # the DOM id rows live in
                   count: "notifications-count",   # optional companion id (the size badge)
                   empty: NotificationsEmpty,      # optional empty-state component
-                  size: -> { Todo.count }         # resolves the live size (re-counted server-side)
+                  size: -> { current_user.todos.size }  # this list's live size (re-counted server-side)
 
                 action :add, params: {title: :string}
-                action :dismiss, params: {id: :integer}
+                action :dismiss, params: {id: :integer}   # default-deny + schema-coerced to Integer
 
                 def id = "notifications-list"
 
                 def add(title:)
-                  todo = Todo.create!(title:)
+                  todo = current_user.todos.create!(title:)
                   reply.append(:notifications, todo)   # row + bump count + clear empty-state
                 end
 
                 def dismiss(id:)
-                  Todo.find(id).destroy!
-                  reply.remove(:notifications, id)     # row + bump count + restore empty-state at 0
+                  todo = current_user.todos.find(id)   # scope the lookup + authorize BEFORE destroy!
+                  authorize! todo, :destroy?
+                  todo.destroy!
+                  reply.remove(:notifications, todo)   # pass the RECORD → its dom_id is the remove target
                 end
 
                 def view_template
+                  todos = current_user.todos.order(:created_at, :id)
+
                   div(**reactive_root) do
-                    span(id: "notifications-count") { Todo.count.to_s }
+                    span(id: "notifications-count") { todos.size.to_s }
 
                     ul(id: "notifications") do
-                      if Todo.exists?
-                        Todo.order(:created_at, :id).each { |t| render NotificationRow.new(todo: t) }
+                      if todos.any?
+                        todos.each { |t| render NotificationRow.new(todo: t) }
                       else
                         render NotificationsEmpty.new
                       end
@@ -91,7 +97,9 @@ module Views
 
                     div do
                       input(name: "title", placeholder: "New notification…", autocomplete: "off")
-                      button(**mix(on(:add))) { "Add" }
+                      # disable_with: swaps the label + disables while the create is in flight,
+                      # so a rapid double-click enqueues exactly one add.
+                      button(**mix(on(:add, disable_with: "Adding…"))) { "Add" }
                     end
                   end
                 end
@@ -103,6 +111,53 @@ module Views
                 plain 'empty-state — are what '
                 code { 'view_template' }
                 plain ' renders on first paint, so the initial server render and the reactive deltas cannot drift.'
+              end
+              ul do
+                li do
+                  strong { 'Params are schema-coerced and default-deny.' }
+                  plain ' '
+                  code { 'params: {id: :integer}' }
+                  plain ' coerces the client value to an Integer; anything not in the schema is dropped before '
+                  plain 'reaching '
+                  code { 'dismiss' }
+                  plain '. A delete action still needs a real check: '
+                  strong { 'scope the lookup' }
+                  plain ' ('
+                  code { 'current_user.todos.find' }
+                  plain ') and '
+                  code { 'authorize!' }
+                  plain ' the record '
+                  strong { 'before' }
+                  plain ' '
+                  code { 'destroy!' }
+                  plain ' — the signed token proves identity, not permission.'
+                end
+                li do
+                  strong { 'Pass the record to ' }
+                  code { 'reply.remove' }
+                  plain '. The remove target is the row component'
+                  plain "'s "
+                  code { 'dom_id' }
+                  plain ' — so '
+                  code { 'reply.remove(:notifications, todo)' }
+                  plain ' hands it the record (fetched '
+                  strong { 'before' }
+                  plain ' '
+                  code { 'destroy!' }
+                  plain ', while it still answers '
+                  code { 'dom_id' }
+                  plain '). A raw integer id is not a dom_id and would target the wrong node; pass the record (or its '
+                  code { 'dom_id' }
+                  plain ' string) instead.'
+                end
+                li do
+                  code { 'disable_with: "Adding…"' }
+                  plain ' on the Add button disables it and swaps its label while the '
+                  code { 'create!' }
+                  plain ' is in flight — a collection add is the canonical pending-state case (see '
+                  em { 'Instant feedback' }
+                  plain ' below).'
+                end
               end
             end
           end
@@ -136,7 +191,10 @@ module Views
                 def view_template
                   li(id:, class: "notification") do
                     span(class: "body") { @todo.title }
-                    button(**mix(on(:dismiss, id: @todo.id))) { "×" }
+                    # optimistic hide: true hides the row the instant × is clicked,
+                    # then reply.remove takes it out — no flash-back on success.
+                    button(**mix(on(:dismiss, id: @todo.id,
+                      confirm: "Dismiss?", optimistic: {hide: true, to: :root}))) { "×" }
                   end
                 end
               end
@@ -182,6 +240,106 @@ module Views
           end
         end
 
+        def add_to_top
+          DocsUI::Section('Add to the top (prepend)') do
+            DocsUI::Prose() do
+              p do
+                plain 'A notifications list usually shows the newest first. '
+                code { 'reply.prepend' }
+                plain ' is '
+                code { 'append' }
+                plain "'s twin — same row + count + empty-state contract, but the row lands at the "
+                strong { 'top' }
+                plain ' of the container instead of the bottom:'
+              end
+            end
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/components/notifications_list.rb')
+              def add(title:)
+                todo = current_user.todos.create!(title:)
+                reply.prepend(:notifications, todo)   # newest notification on top
+              end
+            RUBY
+            DocsUI::Prose() do
+              p do
+                plain 'Keep the first render in agreement: order the '
+                code { 'view_template' }
+                plain ' query the same way ('
+                code { 'order(created_at: :desc)' }
+                plain ' for newest-first) so a reload matches what '
+                code { 'prepend' }
+                plain ' streams in.'
+              end
+            end
+          end
+        end
+
+        def instant_feedback
+          DocsUI::Section('Instant feedback: pending Add, optimistic dismiss, failed create') do
+            DocsUI::Prose() do
+              p do
+                plain "A collection's add and dismiss buttons are the canonical place for pending-state and "
+                plain 'optimistic UX — the round trip includes a DB write, so the row should not appear frozen:'
+              end
+              ul do
+                li do
+                  code { 'disable_with: "Adding…"' }
+                  plain ' on '
+                  strong { 'Add' }
+                  plain ' — disables the button and swaps its label from enqueue until the reply settles. A '
+                  plain 'disabled button fires no further clicks, so a fast double-click enqueues exactly one '
+                  code { 'create!' }
+                  plain '. Style dimming/spinners off '
+                  code { '[aria-busy="true"]' }
+                  plain ' / '
+                  code { 'busy_on(:add)' }
+                  plain ' — both are on for free during the round trip.'
+                end
+                li do
+                  code { 'optimistic: {hide: true, to: :root}' }
+                  plain ' on '
+                  strong { 'dismiss' }
+                  plain ' — hides the row the instant × is clicked, before the round trip. Because '
+                  code { 'reply.remove' }
+                  plain ' does '
+                  strong { 'not' }
+                  plain ' re-render the row root, the hide is left standing on success (the row then removes) — '
+                  plain 'no flash-back. A failed dismiss replays the inverse and the row reappears.'
+                end
+              end
+              p do
+                plain 'When the create can fail (a blank title, a validation), catch it and flash instead of letting '
+                plain 'the 500 surface — a self-dismissing '
+                code { 'reply.flash' }
+                plain ' keeps the list intact:'
+              end
+            end
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/components/notifications_list.rb')
+              def add(title:)
+                todo = current_user.todos.new(title:)
+                if todo.save
+                  reply.append(:notifications, todo)
+                else
+                  # No row, no count change — just a flash that clears itself after 4s.
+                  reply.streams.flash(:error, todo.errors.full_messages.to_sentence, dismiss_after: 4000)
+                end
+              end
+            RUBY
+            DocsUI::Prose() do
+              p do
+                code { 'reply.streams' }
+                plain ' (no arguments) emits the flash + the container'
+                plain "'s token-only refresh and "
+                strong { 'nothing else' }
+                plain ' — the list is untouched, and the '
+                code { 'title' }
+                plain ' field the user is mid-typing in is never torn down. '
+                code { 'dismiss_after:' }
+                plain ' removes the flash after the timeout with no follow-up action.'
+              end
+            end
+          end
+        end
+
         def why_count_right
           DocsUI::Section('Why the count is always right') do
             DocsUI::Prose() do
@@ -207,6 +365,21 @@ module Views
                   code { 'size:' }
                   plain ' source.'
                 end
+              end
+              li do
+                strong { 'Scope it to this list.' }
+                plain ' '
+                code { 'size:' }
+                plain ' resolves in the container'
+                plain "'s context, so it counts "
+                strong { 'this' }
+                plain ' list — '
+                code { 'current_user.todos.size' }
+                plain ', not a global '
+                code { 'Todo.count' }
+                plain '. A per-parent list scopes through its record ('
+                code { '-> { @record.items.size }' }
+                plain ') so two parents on one page each report their own size.'
               end
               p do
                 code { 'count:' }
@@ -295,7 +468,7 @@ module Views
             end
             DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/components/notifications_list.rb')
               def add(title:)
-                todo = Todo.create!(title:)
+                todo = current_user.todos.create!(title:)
                 NotificationRow.broadcast_append_to(
                   current_user, :notifications,
                   target: "notifications", model: todo,

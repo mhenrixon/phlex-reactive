@@ -208,7 +208,11 @@ module Views
                 end
                 li do
                   strong { 'pgbus' }
-                  plain ' (optional, recommended) for reliable broadcasting'
+                  plain ' (optional, recommended) — the reliable broadcast transport. See '
+                  a(href: doc_path('broadcasting')) { 'Broadcasting' }
+                  plain ' and '
+                  a(href: doc_path('transport-pgbus')) { 'Transport: pgbus' }
+                  plain ' to wire it up.'
                 end
               end
             end
@@ -224,7 +228,7 @@ module Views
                 plain ' as needed:'
               end
             end
-            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'config/initializers/phlex_reactive.rb')
+            DocsUI::Code(<<~'RUBY', lexer: :ruby, filename: 'config/initializers/phlex_reactive.rb')
               Phlex::Reactive.base_controller_name = "ApplicationController"   # CSRF + auth + Current
               Phlex::Reactive.renderer             = ApplicationController     # app helpers during render
               Phlex::Reactive.authorization_errors = [Pundit::NotAuthorizedError]
@@ -232,17 +236,166 @@ module Views
               # Phlex::Reactive.verifier    = ActiveSupport::MessageVerifier.new(ENV["REACTIVE_KEY"])
               # Phlex::Reactive.flash_target = "flash"                         # DOM id reply…flash appends into
               # Phlex::Reactive.flash_component = MyFlash                      # renders string flashes: new(level:, content:)
+              # Phlex::Reactive.error_flash  = ->(kind) { "Something went wrong (#{kind})." } # flash on endpoint failures
             RUBY
             DocsUI::Prose() do
               p do
-                plain 'If you change '
-                code { 'action_path' }
-                plain ', expose it to the client:'
+                strong { 'error_flash' }
+                plain ' turns the failures the '
+                strong { 'endpoint' }
+                plain ' catches — bad token, default-deny, authorization, missing record (the '
+                code { '400' }
+                plain '/'
+                code { '403' }
+                plain '/'
+                code { '404' }
+                plain ' rescue paths) — into a turbo-stream flash the user sees, at the '
+                strong { 'same status' }
+                plain ' it already returns (statuses never change). The '
+                code { 'kind' }
+                plain ' argument is one of '
+                code { ':tampered' }
+                plain ', '
+                code { ':unknown_class' }
+                plain ', '
+                code { ':not_reactive_class' }
+                plain ', '
+                code { ':forbidden' }
+                plain ', '
+                code { ':not_found' }
+                plain '. It composes with '
+                code { 'flash_target' }
+                plain '/'
+                code { 'flash_component' }
+                plain ' above.'
               end
             end
-            DocsUI::Code(<<~ERB, lexer: :erb)
-              <meta name="phlex-reactive-action-path" content="<%= Phlex::Reactive.action_path %>">
-            ERB
+            observability
+            action_path_meta
+            client_metas
+            param_types
+          end
+        end
+
+        def observability
+          DocsUI::Prose() do
+            h3 { 'Observability & diagnostics' }
+            p do
+              plain 'Three opt-in knobs help you see what the endpoint and client are doing. '
+              plain 'None of them change HTTP statuses or leak token/param values.'
+            end
+            ul do
+              li do
+                code { 'Phlex::Reactive.verbose_errors' }
+                plain ' — diagnostic endpoint error bodies + dropped-param logging (statuses never change). '
+                plain 'Defaults to '
+                code { 'Rails.env.local?' }
+                plain ' — on in development '
+                strong { 'and' }
+                plain ' test, off in production.'
+              end
+              li do
+                code { 'Phlex::Reactive.log_events' }
+                plain ' — one compact line per reactive event (action/render/broadcast) at '
+                code { 'DEBUG' }
+                plain ' — '
+                code { '[reactive] Counter#increment ok (3.1ms)' }
+                plain '. Default off. The events fire for your APM regardless ('
+                code { 'ActiveSupport::Notifications' }
+                plain ', '
+                code { '*.phlex_reactive' }
+                plain '); this flag only controls the gem’s own log lines.'
+              end
+              li do
+                code { 'Phlex::Reactive.debug' }
+                plain ' — client debug mode (devtools-lite). When on, every reactive root carries '
+                code { 'data-reactive-debug="true"' }
+                plain ' and the console groups every dispatch — action, param '
+                strong { 'names' }
+                plain ' (never values), status, stream targets, round-trip ms. Off by default; gate it on '
+                code { 'Rails.env.development?' }
+                plain '.'
+              end
+            end
+          end
+        end
+
+        def action_path_meta
+          DocsUI::Prose() do
+            p do
+              plain 'If you change '
+              code { 'action_path' }
+              plain ', expose it to the client:'
+            end
+          end
+          DocsUI::Code(<<~ERB, lexer: :erb)
+            <meta name="phlex-reactive-action-path" content="<%= Phlex::Reactive.action_path %>">
+          ERB
+        end
+
+        def client_metas
+          DocsUI::Prose() do
+            h3 { 'Client page-meta knobs' }
+            p do
+              plain 'Two more '
+              code { '<meta>' }
+              plain ' tags tune the client runtime. There is '
+              strong { 'no' }
+              plain ' server-side setting for either — they live in your layout head.'
+            end
+          end
+          DocsUI::Code(<<~ERB, lexer: :erb)
+            <%# Client request timeout (default 30s). A hung request aborts client-side after %>
+            <%# this window (reactive:error kind "timeout"), so the per-component queue never wedges. %>
+            <meta name="phlex-reactive-timeout" content="15000"> <%# 15s, in ms %>
+
+            <%# Latency simulator — DEVELOPMENT ONLY. Exposes window.PhlexReactive.enableLatencySim(ms) / %>
+            <%# disableLatencySim() so you can actually SEE pending/optimistic affordances (~5ms locally). %>
+            <%= tag.meta(name: "phlex-reactive-env", content: "development") if Rails.env.development? %>
+          ERB
+          DocsUI::Prose() do
+            p do
+              plain 'A timed-out POST may have '
+              strong { 'succeeded' }
+              plain ' server-side — phlex-reactive never auto-replays, so make retryable actions idempotent. '
+              plain 'With the latency simulator meta present, toggle it from the browser console: '
+              code { 'PhlexReactive.enableLatencySim(400)' }
+              plain ' delays every action 400ms (persists to sessionStorage, clears when the tab closes). '
+              plain 'Without the meta there is no global handle and zero production surface.'
+            end
+          end
+        end
+
+        def param_types
+          DocsUI::Prose() do
+            h3 { 'Custom param types' }
+            p do
+              plain 'Register your own coercion for '
+              code { 'action ..., params:' }
+              plain ' in the initializer. The block gets the raw client value and returns the coerced value, or '
+              code { 'Phlex::Reactive::ParamSchema::DROP' }
+              plain ' to reject it (the keyword default then applies — the drop-don’t-fabricate contract).'
+            end
+          end
+          DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'config/initializers/phlex_reactive.rb')
+            Phlex::Reactive.param_type(:money) do |value|
+              /\\A\\d+(\\.\\d{1,2})?\\z/.match?(value.to_s) ? BigDecimal(value) : Phlex::Reactive::ParamSchema::DROP
+            end
+
+            # then, in any component:
+            #   action :charge, params: { amount: :money }
+            #   def charge(amount:) = @invoice.charge!(amount) # a BigDecimal, or unset
+          RUBY
+          DocsUI::Callout(:warning, title: 'Register during boot only') do
+            plain 'The registry is '
+            strong { 'frozen after initialization' }
+            plain ' (the engine’s '
+            code { 'after_initialize' }
+            plain ' calls '
+            code { 'freeze_param_types!' }
+            plain '), so a runtime '
+            code { 'param_type' }
+            plain ' call raises. Declare every custom type in the initializer.'
           end
         end
 

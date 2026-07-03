@@ -104,8 +104,23 @@ module Views
                 end
                 li do
                   code { 'coerce_params' }
-                  plain ' — every action with a param schema. The bracket-key regex is hoisted to a frozen '
-                  plain 'constant (no per-key recompile).'
+                  plain ' — every action with a param schema. Three wins on this path: the schema is '
+                  strong { 'compiled once at declaration' }
+                  plain ' ('
+                  code { 'ParamSchema.compile' }
+                  plain ', from '
+                  code { 'action :name, params:' }
+                  plain '), so a click never re-walks or re-validates it; the per-request work is '
+                  strong { 'bracket-key expansion' }
+                  plain ' of Rails-form field names ('
+                  code { 'invoice[items][0][qty]' }
+                  plain ' → nested hash) using a frozen '
+                  code { 'BRACKET_SEGMENT' }
+                  plain ' regex (no per-key recompile); and each scalar dispatches through the '
+                  strong { 'param-type registry' }
+                  plain ', which is frozen after boot ('
+                  code { 'freeze_param_types!' }
+                  plain ') so lookups hit a stable hash with no allocation.'
                 end
                 li do
                   plain 'client meta lookups — every dispatch. The page-stable action path is resolved once '
@@ -180,12 +195,12 @@ module Views
               end
               p { plain 'Subscribe from an initializer exactly as you would for any Rails event:' }
             end
-            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'config/initializers/phlex_reactive_apm.rb')
+            DocsUI::Code(<<~'RUBY', lexer: :ruby, filename: 'config/initializers/phlex_reactive_apm.rb')
               ActiveSupport::Notifications.subscribe('action.phlex_reactive') do |*args|
                 event = ActiveSupport::Notifications::Event.new(*args)
                 # event.payload => { component:, action:, outcome: }
                 # event.duration => ms
-                MyAPM.record("reactive.\#{event.payload[:outcome]}", event.duration,
+                MyAPM.record("reactive.#{event.payload[:outcome]}", event.duration,
                   component: event.payload[:component], action: event.payload[:action])
               end
             RUBY
@@ -251,6 +266,49 @@ module Views
               plain 'dispatch, no string building — so leave it gated on '
               code { 'Rails.env.development?' }
               plain '.'
+            end
+            DocsUI::Prose() do
+              h3 { 'Why a param silently vanished (verbose_errors)' }
+              p do
+                plain 'The '
+                code { 'LogSubscriber' }
+                plain ' tells you a request happened; '
+                code { 'Phlex::Reactive.verbose_errors' }
+                plain ' tells you '
+                em { 'why an action got its keyword default instead of your value' }
+                plain ' — the drop-don\'t-fabricate contract means a param that fails coercion or isn\'t in '
+                plain 'the schema is dropped '
+                strong { 'without an error' }
+                plain '. When on, param coercion warn-logs every dropped key with its '
+                strong { 'bracketed path' }
+                plain ' and reason ('
+                code { 'undeclared' }
+                plain ' — not in the schema, the '
+                code { 'invoice[date]' }
+                plain '-vs-flat-schema footgun; or '
+                code { 'uncoercible' }
+                plain ' — present but wouldn\'t cast), and an endpoint failure carries a plain-text '
+                plain 'diagnostic body. It defaults to '
+                code { 'Rails.env.local?' }
+                plain ' (development '
+                strong { 'and' }
+                plain ' test), so production stays opaque unless you opt in.'
+              end
+            end
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'config/initializers/phlex_reactive.rb')
+              Phlex::Reactive.verbose_errors = Rails.env.local?  # the default; set = false to silence
+              # [phlex-reactive] dropped param invoice[date] (undeclared)
+              # [phlex-reactive] dropped param invoice_items_attributes[0][qty] (uncoercible)
+            RUBY
+            DocsUI::Callout(:note) do
+              plain 'The diagnostics collector is a '
+              strong { 'nil check on the hot path' }
+              plain ' — with the flag off, '
+              code { 'coerce' }
+              plain ' passes a '
+              code { 'nil' }
+              plain ' collector and every diagnostic branch early-returns, so the drop-path stays zero-cost '
+              plain 'in production. The bracketed-path logging only runs when you flip the flag on.'
             end
           end
         end

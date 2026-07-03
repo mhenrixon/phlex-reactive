@@ -13,6 +13,7 @@ module Views
         end
 
         def content
+          live
           component
           rendering
           notes
@@ -20,15 +21,25 @@ module Views
 
         private
 
+        def live
+          DocsUI::Section('Try it') do
+            md <<~MD
+              This is a **real** reactive component rendered right here — not a
+              screenshot. Click the buttons; each click POSTs to
+              `/reactive/actions`, the server rebuilds the component from its
+              signed token, runs the action, and re-renders in place.
+            MD
+            render CounterComponent.new(count: 0)
+          end
+        end
+
         def component
           DocsUI::Section('The component') do
-            DocsUI::Prose() do
-              p do
-                plain 'Include both mixins, sign the count into the DOM with '
-                code { 'reactive_state' }
-                plain ', and declare the actions a click may invoke.'
-              end
-            end
+            md <<~MD
+              One `include` is the whole setup: `include Phlex::Reactive::Component`
+              pulls in `Streamable` automatically. Sign the count into the DOM with
+              `reactive_state`, and declare the actions a click may invoke.
+            MD
             DocsUI::Code(component_source, lexer: :ruby, filename: 'app/components/counter.rb')
           end
         end
@@ -41,33 +52,34 @@ module Views
 
         def notes
           DocsUI::Section('Notes') do
-            DocsUI::Prose() do
-              ul do
-                li do
-                  code { 'reactive_state :count' }
-                  plain ' signs the count into the DOM token. On each action the server rebuilds '
-                  code { 'Counter.new(count: <verified>)' }
-                  plain ', runs the method, and re-renders. The new count is signed into the next token automatically.'
-                end
-                li do
-                  code { 'on(:set, count: 0)' }
-                  plain ' passes an explicit param. Explicit params win over any collected form fields.'
-                end
-                li do
-                  strong { 'Concurrency is handled.' }
-                  plain ' Click '
-                  code { '+' }
-                  plain ' five times fast and you get '
-                  code { '5' }
-                  plain ' — the client serializes requests per component and threads the fresh token through, '
-                  plain "so rapid clicks don't clobber each other."
-                end
-              end
-            end
+            md <<~MD
+              - `reactive_state :count` signs the count into the DOM token. On each
+                action the server rebuilds `Counter.new(count: <verified>)`, runs
+                the method, and re-renders. The new count is signed into the next
+                token automatically.
+              - `on(:set, count: 0)` passes an explicit param. Explicit params win
+                over any collected form fields.
+              - `action :set, params: { count: :integer }` declares a **typed**
+                param. The schema is compiled once, at class load — so a typo'd type
+                symbol (`{ count: :interger }`) raises
+                `Phlex::Reactive::UnknownParamType` immediately, not silently at
+                click time. A `:integer` value that won't coerce is dropped and the
+                keyword default (`count: 0`) applies, so the action never receives a
+                fabricated value.
+              - Actions are **default-deny** — only methods declared with `action`
+                are invokable. In development and test (`verbose_errors`), an
+                undeclared or typo'd action (`on(:increement)`) fails loudly at
+                **render** time, listing the declared actions, instead of surfacing
+                as an opaque HTTP 403 at click time.
+              - **Concurrency is handled.** Click `+` five times fast and you get
+                `5` — the client serializes requests per component and threads the
+                fresh token through, so rapid clicks don't clobber each other.
+            MD
             DocsUI::Callout(:tip) do
-              plain 'This is record-less on purpose. For anything backed by data, prefer '
-              code { 'reactive_record' }
-              plain ' so state lives in the DB.'
+              md <<~MD
+                This is record-less on purpose. For anything backed by data, prefer
+                `reactive_record` so state lives in the DB.
+              MD
             end
           end
         end
@@ -76,7 +88,7 @@ module Views
           <<~RUBY
             # app/components/counter.rb
             class Counter < ApplicationComponent
-              include Phlex::Reactive::Component
+              include Phlex::Reactive::Component            # pulls in Streamable too
 
               reactive_state :count                       # signed state (no DB row)
               action :increment
