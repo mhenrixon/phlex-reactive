@@ -28,6 +28,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   so existing components are unaffected. No new dependency — Idiomorph ships with
   `turbo-rails >= 2.0`.
 
+- **Component-aware `around_action` seam (#112).** Register a wrapper with
+  `Phlex::Reactive.around_action { |ctx, &action| … }` and it folds into the
+  endpoint **between** `with_connection_id` and the action's transaction — so it
+  sees the resolved component instance, the declared action name, and the
+  **coerced** params (a frozen `Phlex::Reactive::ActionContext`), and a rejection
+  never opens a transaction. This is the seam for audit logging, component-aware
+  rate limiting, and assertions; the base controller (`base_controller_name`)
+  stays the seam for HTTP-layer concerns (auth, CSRF, coarse per-IP throttling)
+  that don't need the resolved action. Contract: **each wrapper MUST return
+  `action.call`'s value** — the endpoint type-checks the action's return for a
+  `Phlex::Reactive::Response`, so a wrapper that returns its logger's result
+  silently downgrades every reply to the implicit self-replace. A wrapper raising
+  a registered `authorization_errors` error renders as 403; an unregistered raise
+  is a 500. Wrappers nest in registration order (last-registered outermost). The
+  empty stack (the default) adds only one `Array#empty?` check to the hot path;
+  `Phlex::Reactive.reset_around_actions!` resets it for tests. See the README
+  "Two seams" section and the security page.
+
 - **Versioned identity-token payload + upgrader chain (#111).** Every signed
   token now carries a `"v"` key (`Phlex::Reactive::TOKEN_VERSION`, currently `1`),
   and `Phlex::Reactive.verify` runs the payload through an upgrader chain before
