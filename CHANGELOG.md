@@ -31,6 +31,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Performance
 
+- **Multi-key broadcast fan-out is ~9.5× faster (#119).** Measured, transport
+  doubled out, K=10 stream keys: a hand loop over `broadcast_replace_to` →
+  `broadcast_replace_to_each` moves 2.88k i/s (347 μs) → 27.3k i/s (37 μs)
+  (**9.5×**, and within ~4% of a single 1-key broadcast — K renders + K HMACs
+  collapse to 1 + 1), allocations 1250 obj / 186 KB → 151 obj / 22 KB (**−88%**
+  objects, 0 retained). Same-machine before/after on the new
+  `benchmark/micro/broadcast.rb`; numbers on the performance docs page.
 - **`#extractToken` per-id regex memoization (#118).** The client's
   `#extractToken` (`reactive_controller.js`) compiled its two self-matching
   `RegExp` objects — the `reactive:token` matcher and the self replace/update
@@ -51,6 +58,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`broadcast_*_to_each` — render-once, multi-key broadcast fan-out (#119).**
+  `broadcast_*_to` concatenates its `*streamables` into ONE stream key, so
+  pushing the same component to K DIFFERENT keys (a per-tenant loop — "the list
+  page stream AND the dashboard stream") with a hand-written loop was K builds +
+  K renders + K identity HMACs for BYTE-IDENTICAL HTML. Every verb now has an
+  `_each` sibling — `broadcast_replace_to_each` / `_update_` / `_append_` /
+  `_prepend_` / `_remove_` — taking an enumerable of stream keys (each a
+  `[record, :symbol]` pair or a bare string): it renders the component **once**
+  and loops only the cheap channel call. Transport opts (`exclude:` /
+  `visible_to:`) and `morph:` forward **per key** exactly as the single-key verbs
+  do, so the pgbus path suppresses the actor's echo on every stream and the
+  Action Cable path is unchanged (the no-opts call passes no unknown keyword —
+  the pgbus-optionality invariant holds; the old-pgbus-shape double guards the
+  `ArgumentError` regression). Per-VIEWER `visible_to:` content (different HTML
+  per viewer) stays the irreducible render-per-call case. Pure composition of the
+  existing private helpers; no change to any single-key method.
+- **`benchmark/micro/broadcast.rb` — the missing broadcast bench (#119).** The
+  broadcast render path was a named hot path (`.claude/rules/performance.md`)
+  with no bench. It doubles the transport out and measures the server-side
+  build + render + HMAC cost at 1 key, a hand K-key loop, and `_to_each` over K
+  keys — auto-discovered by `rake bench:micro`. It also benched `model_param_name`
+  (the audit's measure-first candidate: 815k i/s, 8 obj/call — immaterial next to
+  the ~37 μs build, so **measured and left alone**, no memoization).
 - **Client dispatch micro-bench harness — `rake bench:client` (#116).** The client
   hot path (`app/javascript/.../reactive_controller.js`) was named a hot path in
   `.claude/rules/performance.md` but had **no bench of any kind** — every claim

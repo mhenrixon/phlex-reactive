@@ -329,6 +329,88 @@ module Phlex
           end
         end
 
+        # --- Multi-key fan-out (issue #119) ---------------------------------
+        # Broadcast ONE component to K DIFFERENT stream keys — a per-tenant loop
+        # ("the list page stream AND the dashboard stream"). The classic
+        # broadcast_*_to concatenates *streamables into ONE key, so fanning out
+        # to K keys the hand way is K× build + K× render + K× identity HMAC for
+        # BYTE-IDENTICAL HTML. These render the component ONCE and loop only the
+        # cheap channel call:
+        #
+        #   Counter.broadcast_replace_to_each(
+        #     accounts.map { [it, :counters] }, model: counter, exclude: reactive_connection_id)
+        #
+        # `stream_keys` is an enumerable of keys; each key is passed to the
+        # transport as its raw parts (a [record, :symbol] pair, or a bare string
+        # — `Array(key)` handles both). Transport opts (exclude:/visible_to:) and
+        # morph: forward PER key exactly as the single-key verbs do, so
+        # pgbus-present suppresses the actor's echo on every stream and
+        # pgbus-absent is unchanged (the no-opts call passes no unknown keyword).
+        #
+        # Irreducible exception: per-VIEWER content (visible_to: rendering
+        # DIFFERENT HTML per viewer) still renders per call — that's a
+        # render-per-viewer by definition and can't be shared. This fan-out is
+        # for the same payload to many keys.
+        def broadcast_replace_to_each(stream_keys, model: nil, exclude: nil, visible_to: nil, morph: false, **options)
+          instrument_broadcast("replace", stream_keys) do
+            component = build(model, options)
+            html = render_component(component)
+            transport = broadcast_transport_opts(exclude:, visible_to:)
+            stream_keys.each do
+              ::Turbo::StreamsChannel.broadcast_replace_to(
+                *Array(it), target: component.id, html:, **morph_attributes(morph), **transport
+              )
+            end
+          end
+        end
+
+        def broadcast_update_to_each(stream_keys, model: nil, exclude: nil, visible_to: nil, morph: false, **options)
+          instrument_broadcast("update", stream_keys) do
+            component = build(model, options)
+            html = render_component(component)
+            transport = broadcast_transport_opts(exclude:, visible_to:)
+            stream_keys.each do
+              ::Turbo::StreamsChannel.broadcast_update_to(
+                *Array(it), target: component.id, html:, **morph_attributes(morph), **transport
+              )
+            end
+          end
+        end
+
+        def broadcast_append_to_each(stream_keys, target:, model: nil, exclude: nil, visible_to: nil, **options)
+          instrument_broadcast("append", stream_keys) do
+            component = build(model, options)
+            html = render_component(component)
+            transport = broadcast_transport_opts(exclude:, visible_to:)
+            stream_keys.each do
+              ::Turbo::StreamsChannel.broadcast_append_to(*Array(it), target:, html:, **transport)
+            end
+          end
+        end
+
+        def broadcast_prepend_to_each(stream_keys, target:, model: nil, exclude: nil, visible_to: nil, **options)
+          instrument_broadcast("prepend", stream_keys) do
+            component = build(model, options)
+            html = render_component(component)
+            transport = broadcast_transport_opts(exclude:, visible_to:)
+            stream_keys.each do
+              ::Turbo::StreamsChannel.broadcast_prepend_to(*Array(it), target:, html:, **transport)
+            end
+          end
+        end
+
+        # remove has no body — nothing to render. It still builds ONCE to read
+        # the component's #id (the target), then loops the cheap channel call.
+        def broadcast_remove_to_each(stream_keys, model: nil, exclude: nil, visible_to: nil, **options)
+          instrument_broadcast("remove", stream_keys) do
+            component = build(model, options)
+            transport = broadcast_transport_opts(exclude:, visible_to:)
+            stream_keys.each do
+              ::Turbo::StreamsChannel.broadcast_remove_to(*Array(it), target: component.id, **transport)
+            end
+          end
+        end
+
         private
 
         # Wrap a broadcast_*_to body in a broadcast.phlex_reactive event (issue
