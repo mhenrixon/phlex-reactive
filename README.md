@@ -1714,7 +1714,7 @@ Phlex::Reactive.debug = Rails.env.development?
 With it on, every reactive root carries `data-reactive-debug="true"` and the
 generic controller `console.group`s **every dispatch** in the browser:
 
-```
+```text
 ▼ reactive #todo_42 rename → 200 (48ms)
     params: [title] + collected: [title]
     encoding: json
