@@ -4,34 +4,38 @@ require "spec_helper"
 
 # The system suite drives the REAL browser via vendored copies of the client
 # modules under spec/dummy/public/vendor (importmap-pinned in the dummy layout).
-# If a copy drifts from the shipped source, the browser specs validate stale code
-# — exactly how the pgbus connection-id logic and, later, the issue #8 rich-text
-# collection fix could have gone untested. This guard makes drift a hard failure:
-# keep every vendored copy byte-identical to its source under app/javascript.
+# Production ships the MINIFIED build (the engine pins *.min.js), so the browser
+# suite must exercise that same minified code — otherwise a minifier-induced bug
+# (a mangled name that breaks a Stimulus lifecycle hook, a dropped export) ships
+# untested. Each vendored copy is therefore byte-identical to the built .min.js
+# under app/javascript, not the commented source. This guard makes drift a hard
+# failure — re-sync after `rake build:js`.
 RSpec.describe "vendored client modules" do
   root = File.expand_path("../..", __dir__)
 
-  # Each client module the system suite serves from spec/dummy/public/vendor.
-  vendored_modules = %w[
-    reactive_controller.js
-    confirm.js
-    compute.js
-  ]
+  # Each client module the system suite serves from spec/dummy/public/vendor,
+  # mapped to the minified build that production actually ships. The vendor
+  # filename keeps its bare name (the dummy importmap pins `reactive_controller`
+  # -> /vendor/reactive_controller.js); its CONTENT is the minified twin.
+  vendored_modules = {
+    "reactive_controller.js" => "reactive_controller.min.js",
+    "confirm.js" => "confirm.min.js",
+    "compute.js" => "compute.min.js"
+  }
 
   # Explicit block param (not `it`): the block body defines RSpec `it` examples,
   # so naming the param `it` would shadow RSpec's example method.
-  # rubocop:disable Style/ItBlockParameter
-  vendored_modules.each do |filename|
-    it "#{filename} is byte-identical to the shipped source (no drift)" do
-      source = File.join(root, "app/javascript/phlex/reactive", filename)
-      vendored = File.join(root, "spec/dummy/public/vendor", filename)
+  vendored_modules.each do |vendor_name, source_name|
+    it "#{vendor_name} is byte-identical to the shipped minified build (no drift)" do
+      source = File.join(root, "app/javascript/phlex/reactive", source_name)
+      vendored = File.join(root, "spec/dummy/public/vendor", vendor_name)
 
       expect(File.read(vendored)).to eq(File.read(source)),
-        "spec/dummy/public/vendor/#{filename} has drifted from the source " \
-        "app/javascript/phlex/reactive/#{filename}. Re-sync it (the system suite " \
-        "runs the vendored copy):\n\n  " \
-        "cp app/javascript/phlex/reactive/#{filename} spec/dummy/public/vendor/#{filename}"
+        "spec/dummy/public/vendor/#{vendor_name} has drifted from the shipped " \
+        "minified build app/javascript/phlex/reactive/#{source_name}. Rebuild and " \
+        "re-sync (the system suite runs the vendored minified copy):\n\n  " \
+        "rake build:js && cp app/javascript/phlex/reactive/#{source_name} " \
+        "spec/dummy/public/vendor/#{vendor_name}"
     end
   end
-  # rubocop:enable Style/ItBlockParameter
 end

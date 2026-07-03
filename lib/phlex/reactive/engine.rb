@@ -19,15 +19,21 @@ module Phlex
         end
       end
 
-      # Make reactive_controller.js available to Propshaft/Sprockets so it can
-      # be included via the asset pipeline or pinned in importmap.
+      # Make the MINIFIED client build available to Propshaft/Sprockets so it can
+      # be fingerprinted, served, and pinned in importmap. The browser ships the
+      # minified twin (108 KB -> 22 KB for the controller; `rake build:js`), not
+      # the comment-dense source. The .min.js.map is precompiled too so devtools
+      # resolves the linked sourcemap back to the readable source on demand.
       initializer "phlex_reactive.assets" do
         if it.config.respond_to?(:assets)
           it.config.assets.paths << root.join("app/javascript").to_s
           it.config.assets.precompile += %w[
-            phlex/reactive/reactive_controller.js
-            phlex/reactive/confirm.js
-            phlex/reactive/compute.js
+            phlex/reactive/reactive_controller.min.js
+            phlex/reactive/reactive_controller.min.js.map
+            phlex/reactive/confirm.min.js
+            phlex/reactive/confirm.min.js.map
+            phlex/reactive/compute.min.js
+            phlex/reactive/compute.min.js.map
           ]
         end
       end
@@ -39,7 +45,7 @@ module Phlex
         if defined?(::Importmap::Map) && it.respond_to?(:importmap)
           it.importmap.pin(
             "phlex/reactive/reactive_controller",
-            to: "phlex/reactive/reactive_controller.js",
+            to: "phlex/reactive/reactive_controller.min.js",
             preload: true
           )
           # The overridable confirm resolver (issue #55). reactive_controller.js
@@ -52,7 +58,7 @@ module Phlex
           # "phlex/reactive/confirm"` both resolve through the import map.
           it.importmap.pin(
             "phlex/reactive/confirm",
-            to: "phlex/reactive/confirm.js",
+            to: "phlex/reactive/confirm.min.js",
             preload: true
           )
           # The client-side compute (data-binding) registry behind
@@ -62,7 +68,7 @@ module Phlex
           # "phlex/reactive/compute"` — both resolve through this pin.
           it.importmap.pin(
             "phlex/reactive/compute",
-            to: "phlex/reactive/compute.js",
+            to: "phlex/reactive/compute.min.js",
             preload: true
           )
         end

@@ -113,6 +113,37 @@ end
 desc "Run the micro-benchmark suite (alias for bench:micro)"
 task bench: "bench:micro"
 
+# --- Client build -----------------------------------------------------------
+# The browser ships a MINIFIED twin of each authored client module (the source
+# stays comment-dense — it's the documentation and what the JS suite imports).
+# Output is deterministic, so the .min.js/.min.js.map are committed and shipped
+# in the gem; consumers need no bun. See scripts/build_client.js.
+namespace :build do
+  min_glob = "app/javascript/phlex/reactive/*.min.js*"
+
+  desc "Minify the client runtime (reactive_controller/confirm/compute) via bun"
+  task :js do
+    sh "bun run scripts/build_client.js"
+  end
+
+  desc "Verify the committed minified client matches a fresh build (CI drift guard)"
+  task js_check: :js do
+    # A deterministic build means the rebuild leaves the tracked artifacts
+    # byte-identical to what's checked in. `git diff` compares the working tree
+    # against the index/HEAD, so a fresh checkout that rebuilds cleanly passes;
+    # a source edit without a rebuild-and-commit shows a diff and fails CI.
+    # The pathspec is QUOTED so git expands it against the index — not the shell
+    # against the working tree: an unquoted glob only sees files still on disk, so
+    # deleting a module (and its committed .min.js/.map) would slip past the guard.
+    sh "git diff --exit-code -- '#{min_glob}'" do |ok, _res|
+      unless ok
+        warn "\e[31mMinified client is stale — run `rake build:js` and commit the result.\e[0m"
+        abort "Committed .min.js/.min.js.map do not match a fresh build."
+      end
+    end
+  end
+end
+
 desc "Build gem and verify contents"
 task :build do
   sh("gem build phlex-reactive.gemspec --strict")

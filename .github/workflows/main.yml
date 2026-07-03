@@ -119,6 +119,8 @@ jobs:
           bundler-cache: true
           working-directory: docs
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: ".bun-version"
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
       - name: Cache Playwright browsers
@@ -180,6 +182,13 @@ jobs:
         run: bun install --frozen-lockfile
       - name: JS unit tests (client controller)
         run: bun test spec/javascript
+      - name: Minified client is in sync (drift guard)
+        # The committed *.min.js/*.min.js.map must match a fresh build — the bun
+        # minifier output is deterministic (and byte-identical across bun patch
+        # releases), so a rebuild that changes a tracked byte means someone edited
+        # the source without running `rake build:js`. Runs only under one server.
+        if: matrix.server == 'puma'
+        run: bundle exec rake build:js_check
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         id: playwright-cache

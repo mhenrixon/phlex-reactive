@@ -1,0 +1,85 @@
+# frozen_string_literal: true
+
+require "spec_helper"
+
+# The gem ships a MINIFIED twin of each client module (rake build:js, via bun)
+# and pins it in production. These guards assert the committed artifacts are the
+# real, shippable thing — present, smaller than the source, valid ESM that keeps
+# the consumer-facing exports and the externalized cross-module imports. The
+# byte-for-byte "matches a fresh build" check is the CI `rake build:js_check`
+# drift guard; here we assert the SHAPE the browser and the import map rely on.
+RSpec.describe "minified client build" do # rubocop:disable RSpec/DescribeClass
+  js_dir = File.expand_path("../../app/javascript/phlex/reactive", __dir__)
+
+  # source => minified twin, with the exports a consumer/importmap depends on.
+  modules = {
+    "reactive_controller.js" => {
+      min: "reactive_controller.min.js",
+      # The default export (the Stimulus controller) plus representative named
+      # exports an app registers/overrides.
+      exports: %w[default registerReactiveActions enableLatencySim],
+      # Cross-module imports kept EXTERNAL — emitted as bare specifiers that
+      # resolve through the import map, never inlined.
+      externals: ["@hotwired/stimulus", "phlex/reactive/confirm", "phlex/reactive/compute"]
+    },
+    "confirm.js" => {
+      min: "confirm.min.js",
+      exports: %w[confirmResolver setConfirmResolver],
+      externals: []
+    },
+    "compute.js" => {
+      min: "compute.min.js",
+      exports: %w[computeReducer setComputeReducer],
+      externals: []
+    }
+  }
+
+  # rubocop:disable Style/ItBlockParameter
+  modules.each do |source_name, spec|
+    describe spec[:min] do
+      source_path = File.join(js_dir, source_name)
+      min_path = File.join(js_dir, spec[:min])
+      map_path = "#{min_path}.map"
+
+      it "is committed alongside a linked sourcemap" do
+        expect(File).to exist(min_path)
+        expect(File).to exist(map_path)
+        expect(File.read(min_path)).to include("sourceMappingURL=#{spec[:min]}.map")
+      end
+
+      it "is meaningfully smaller than the commented source" do
+        expect(File.size(min_path)).to be < File.size(source_path)
+      end
+
+      it "strips the comment prose (the source's block-comment banner is gone)" do
+        # Every source module opens with a `// ...` banner; minification drops it.
+        expect(File.read(min_path)).not_to include(File.readlines(source_path).first.strip)
+      end
+
+      it "keeps the consumer-facing ESM exports" do
+        exported = File.read(min_path)[/export\{([^}]*)\}/, 1].to_s
+        # bun renames the local binding but preserves the public name: `x as name`.
+        spec[:exports].each do |name|
+          expect(exported).to match(/\bas #{Regexp.escape(name)}\b|[,{]#{Regexp.escape(name)}[,}]/),
+            "expected #{spec[:min]} to export `#{name}`"
+        end
+      end
+
+      it "keeps cross-module imports external (bare specifiers, not inlined)" do
+        contents = File.read(min_path)
+        spec[:externals].each do |specifier|
+          expect(contents).to include(%(from"#{specifier}")),
+            "expected #{spec[:min]} to import `#{specifier}` as an external bare specifier"
+        end
+      end
+
+      it "embeds the original source in the sourcemap for devtools" do
+        map = JSON.parse(File.read(map_path))
+        expect(map["version"]).to eq(3)
+        expect(map["sources"]).to include(source_name)
+        expect(map["sourcesContent"].join).to include(File.readlines(source_path).first.strip)
+      end
+    end
+  end
+  # rubocop:enable Style/ItBlockParameter
+end
