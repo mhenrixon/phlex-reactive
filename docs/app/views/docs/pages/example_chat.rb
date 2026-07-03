@@ -13,6 +13,7 @@ module Views
         end
 
         def content
+          try_it
           intro
           model
           message
@@ -25,6 +26,23 @@ module Views
         end
 
         private
+
+        def try_it
+          DocsUI::Section('Try it') do
+            md <<~MD
+              A **real** chat room, rendered right here. Type a message and Send —
+              it creates a `ChatMessage`, appends it to the list, and broadcasts to
+              every subscriber over Turbo Streams (open a second tab to watch it
+              arrive live). The sender is excluded from the broadcast
+              (`exclude: reactive_connection_id`), so Send appends exactly once. No
+              Stimulus, no hand-picked Turbo target.
+            MD
+            render Views::Examples::LiveExample.new(
+              component: ChatRoomComponent.new(room: 'lobby', messages: ChatMessage.for_room('lobby').last(50)),
+              filename: 'app/components/chat_room_component.rb'
+            )
+          end
+        end
 
         def intro
           DocsUI::Section('The example that proves the model') do
