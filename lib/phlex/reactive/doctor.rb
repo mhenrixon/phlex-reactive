@@ -128,10 +128,12 @@ module Phlex
 
       # A throwaway sign→verify round trip proves the verifier is configured and
       # the key round-trips (a bad secret_key_base or a purpose mismatch fails).
+      # verify legitimately stamps the version key "v" (issue #111), so we check
+      # the original entries survived rather than exact equality.
       def verifier_check
         payload = { "c" => "Phlex::Reactive::Doctor", "probe" => true }
         roundtripped = Phlex::Reactive.verify(Phlex::Reactive.sign(payload))
-        if roundtripped == payload
+        if roundtripped && payload.all? { |k, v| roundtripped[k] == v }
           Check.new(:ok, "identity verifier signs and verifies", name: :verifier)
         else
           Check.new(:fail, "identity verifier did not round-trip a probe payload", name: :verifier,

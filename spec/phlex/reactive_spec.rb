@@ -4,10 +4,10 @@ require "spec_helper"
 
 RSpec.describe Phlex::Reactive do
   describe ".sign / .verify" do
-    it "round-trips a payload" do
+    it "round-trips a payload, stamping the current token version" do
       payload = { "c" => "Demo::Counter", "s" => { "count" => 3 } }
       token = described_class.sign(payload)
-      expect(described_class.verify(token)).to eq(payload)
+      expect(described_class.verify(token)).to eq(payload.merge("v" => described_class::TOKEN_VERSION))
     end
 
     it "rejects a tampered token" do
@@ -24,6 +24,51 @@ RSpec.describe Phlex::Reactive do
     it "rejects a token signed for a different purpose" do
       token = described_class.verifier.generate({ "c" => "X" }, purpose: "other")
       expect(described_class.verify(token)).to be_nil
+    end
+  end
+
+  describe "token versioning (#111)" do
+    # Sign a payload directly (no "v" stamp) to simulate a token minted by a
+    # deploy BEFORE versioning existed, or a hand-forged shape at a given version.
+    def raw_sign(payload)
+      described_class.verifier.generate(payload, purpose: described_class::IDENTITY_PURPOSE)
+    end
+
+    after { described_class.reset_token_upgraders! }
+
+    it "stamps the current version into every signed token" do
+      payload = described_class.verify(described_class.sign({ "c" => "X" }))
+      expect(payload["v"]).to eq(described_class::TOKEN_VERSION)
+    end
+
+    it "passes a versionless (v0) token through unchanged — versioning invalidates nothing in flight" do
+      # A token from before this change: no "v" key. It still verifies, and
+      # upgrade_token must treat it as today's shape (v0) and return it as-is.
+      legacy = raw_sign({ "c" => "Demo::Counter", "s" => { "count" => 3 } })
+      expect(described_class.verify(legacy)).to eq({ "c" => "Demo::Counter", "s" => { "count" => 3 } })
+    end
+
+    it "runs a registered upgrader to rewrite an older shape (oldest → current)" do
+      # A future v0 → v1 migration: e.g. the state key was renamed count → n.
+      described_class.register_token_upgrader(0) do
+        it.merge("s" => { "n" => it.dig("s", "count") })
+      end
+      legacy = raw_sign({ "c" => "Demo::Counter", "s" => { "count" => 3 } }) # no "v" => v0
+
+      upgraded = described_class.verify(legacy)
+      expect(upgraded.dig("s", "n")).to eq(3)
+      expect(upgraded["v"]).to eq(described_class::TOKEN_VERSION) # stamped to current after upgrade
+    end
+
+    it "fails closed on a token from a NEWER version than we understand (rolled-back deploy)" do
+      # A newer deploy minted v=99; this older code must not guess — return nil so
+      # the endpoint's `|| raise(InvalidToken)` turns it into a 400.
+      future = raw_sign({ "c" => "X", "v" => described_class::TOKEN_VERSION + 98 })
+      expect(described_class.verify(future)).to be_nil
+    end
+
+    it "still returns nil for a genuinely invalid signature (versioning didn't change this)" do
+      expect(described_class.verify("not-a-real-token")).to be_nil
     end
   end
 
