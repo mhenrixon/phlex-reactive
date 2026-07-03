@@ -12,10 +12,26 @@ Rails.application.config.to_prepare do
   DocsKit.configure do |c|
     c.brand        = 'phlex-reactive'
     c.title_suffix = 'phlex-reactive'
-    c.themes       = %w[dark light synthwave retro cyberpunk valentine dracula night coffee nord sunset]
-    # Monokai, inlined by Docs::Code — same as the daisyUI docs site, so the two
-    # sites' code blocks are identical (no separate rouge stylesheet asset).
-    c.code_theme   = 'Rouge::Themes::Monokai'
-    c.nav          = -> { DocsNav.groups }
+    # The one-line summary agents read first in /llms.txt (the llmstxt.org
+    # blockquote under the H1).
+    c.tagline = 'Server-driven reactive Phlex components over a Postgres-backed ' \
+                'live transport — no bespoke JS, no client framework.'
+    c.themes = %w[dark light synthwave retro cyberpunk valentine dracula night coffee nord sunset]
+
+    # Code blocks: a light base with a dark override, so the highlight stays
+    # readable when the switcher lands on a dark daisyUI theme. CSS-only scoping
+    # ([data-theme=X]) — no JS, no flash.
+    c.code_theme      = 'Rouge::Themes::Github'
+    c.code_theme_dark = 'Rouge::Themes::Monokai'
+
+    # The sidebar nav interleaves Demos + Docs, so it stays a bespoke lambda.
+    c.nav = -> { DocsNav.groups }
+
+    # nav_registries feeds the AI surfaces (/llms.txt, /llms-full.txt, search)
+    # from the registry — the custom c.nav above only drives the sidebar, so
+    # without this the AI index would be empty. Doc (the reference-page registry)
+    # supplies #nav_items; the live Demos aren't authored .md pages, so they're
+    # not indexed.
+    c.nav_registries = { 'Docs' => Doc }
   end
 end
