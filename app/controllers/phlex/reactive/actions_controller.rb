@@ -32,7 +32,7 @@ module Phlex
         action_def = component_class.reactive_action(reactive_action_name)
 
         # default-deny
-        return reactive_error(:forbidden, undeclared_action_message(component_class)) unless action_def
+        return reactive_error(:forbidden, undeclared_action_message(component_class), kind: :forbidden) unless action_def
 
         component = component_class.from_identity(payload)
         coerced = coerce_params(action_def.params, component_class:, action_name: action_def.name)
@@ -41,28 +41,51 @@ module Phlex
 
         render turbo_stream: response_streams(result, component)
       rescue Phlex::Reactive::InvalidToken => e
-        reactive_error(:bad_request, e.message)
+        reactive_error(:bad_request, e.message, kind: e.diagnostic || :tampered)
       rescue ActiveRecord::RecordNotFound
-        reactive_error(:not_found, record_not_found_message(payload))
+        reactive_error(:not_found, record_not_found_message(payload), kind: :not_found)
       rescue *authorization_errors => e
-        reactive_error(:forbidden, authorization_error_message(e, component_class, action_def))
+        reactive_error(:forbidden, authorization_error_message(e, component_class, action_def), kind: :forbidden)
       end
 
       private
 
-      # Reply to an endpoint failure. The status NEVER changes with the flag —
-      # only the body: verbose_errors renders the diagnostic as plain text (the
-      # client console.errors non-OK bodies), otherwise a bare head. The warn
-      # log fires in EVERY environment so a misbehaving client is debuggable
-      # from the server log alone.
-      def reactive_error(status, message)
+      # Reply to an endpoint failure. The status NEVER changes with any flag —
+      # only the body. Precedence for the body (issue #100):
+      #   1. error_flash set → a turbo-stream flash the user actually SEES (the
+      #      client renders non-OK turbo-stream bodies). It wins over the verbose
+      #      diagnostic (both can't be the body); the diagnostic still logs below.
+      #   2. else verbose_errors → the plain-text diagnostic (client console.errors it).
+      #   3. else a bare head.
+      # The warn log fires in EVERY environment first, so a misbehaving client is
+      # debuggable from the server log alone regardless of which body path runs.
+      def reactive_error(status, message, kind: nil)
         ::Rails.logger&.warn("[phlex-reactive] #{message}") if defined?(::Rails) && ::Rails.respond_to?(:logger)
 
-        if Phlex::Reactive.verbose_errors
+        flash = error_flash_stream(kind)
+        if flash
+          render turbo_stream: flash, status: status
+        elsif Phlex::Reactive.verbose_errors
           render plain: message, status: status
         else
           head status
         end
+      end
+
+      # Build the error flash turbo-stream when Phlex::Reactive.error_flash is
+      # configured, else nil (the non-flash body paths run). Degrades gracefully:
+      # a lambda that raises returns nil so the endpoint falls back to the bare/
+      # diagnostic body and NEVER turns one failure into a 500.
+      def error_flash_stream(kind)
+        callable = Phlex::Reactive.error_flash
+        return unless callable
+
+        message = callable.call(kind)
+        Phlex::Reactive::Response.flash_stream(:error, message, target: Phlex::Reactive.flash_target)
+      rescue => e # rubocop:disable Style/RescueStandardError
+        ::Rails.logger&.warn("[phlex-reactive] error_flash raised: #{e.message}") if defined?(::Rails) &&
+                                                                                     ::Rails.respond_to?(:logger)
+        nil
       end
 
       def undeclared_action_message(component_class)

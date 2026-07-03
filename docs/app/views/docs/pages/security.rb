@@ -21,6 +21,7 @@ module Views
           csrf_auth
           failure_modes
           failure_ux
+          error_flash_ux
           token_lifetime
           checklist
         end
@@ -340,6 +341,69 @@ module Views
             DocsUI::Callout(:note, title: 'The events are hooks, not the security boundary') do
               plain 'A 403 still denies the action server-side whether or not anything listens; the existing ' \
                     'console.error logging is unchanged. The events only make the failure visible to your UI.'
+            end
+          end
+        end
+
+        def error_flash_ux
+          DocsUI::Section('Showing the user a failure (error_flash, error bodies, dismiss_after)') do
+            DocsUI::Prose() do
+              p do
+                plain 'The lifecycle events are the hook; these three built-ins are the ready-made surface, ' \
+                      'all opt-in and '
+                strong { 'status-preserving' }
+                plain ' — no flag ever changes an HTTP status.'
+              end
+              ul do
+                li do
+                  strong { 'In-action validation replies' }
+                  plain ' — a failure the action knows about returns a flash at 200: '
+                  code { 'reply.replace.flash(:error, "Title can\'t be blank")' }
+                  plain '.'
+                end
+                li do
+                  code { 'Phlex::Reactive.error_flash' }
+                  plain ' — a '
+                  code { '->(kind) { "message" }' }
+                  plain ' lambda. When set, every endpoint rescue path (400/403/404) renders a turbo-stream ' \
+                        'flash the user sees, at the SAME status. It composes with '
+                  code { 'verbose_errors' }
+                  plain ' (the flash wins the body, the diagnostic still logs) and degrades gracefully if the ' \
+                        'lambda raises (falls back to the bare/diagnostic body — never a 500).'
+                end
+                li do
+                  strong { 'Non-OK turbo-stream bodies are rendered' }
+                  plain ' — the client applies a turbo-stream error body instead of discarding it, and marks ' \
+                        'the root '
+                  code { 'data-reactive-error="<kind>"' }
+                  plain ' (styleable in pure CSS), cleared on the next success.'
+                end
+                li do
+                  code { 'dismiss_after:' }
+                  plain ' on '
+                  code { 'reply.flash' }
+                  plain ' — a document-level handler removes the flash after the timeout, so it self-cleans ' \
+                        'reply AND broadcast flashes.'
+                end
+              end
+            end
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
+              # config/initializers/phlex_reactive.rb
+              Phlex::Reactive.error_flash = ->(kind) do
+                case kind
+                when :not_found then "That item is no longer available."
+                when :forbidden then "You don't have permission to do that."
+                else                 "Something went wrong — please try again."
+                end
+              end
+
+              # In an action, a self-dismissing validation flash:
+              reply.replace.flash(:error, "Couldn't save — try again", dismiss_after: 4000)
+            RUBY
+            DocsUI::Callout(:note, title: 'A 400 error body never refreshes the held token') do
+              plain 'The identity token is not a nonce — it stays retry-valid. The client only adopts a fresh ' \
+                    'token from a body that re-renders THIS element\'s id, so an error/foreign body can\'t swap ' \
+                    'the token out. This is intentional; do not "fix" it.'
             end
           end
         end

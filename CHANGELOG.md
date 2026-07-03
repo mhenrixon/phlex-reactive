@@ -8,6 +8,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **User-visible failure surface — render error bodies, `error_flash`,
+  `dismiss_after:` (#100).** A failing action used to show the user *nothing*:
+  the client read a non-OK body only for the console and discarded it, the
+  endpoint's rescue paths could log but not display anything, a network failure
+  had no server to render, and flashes never cleaned themselves up. Four pieces
+  close the gap, all opt-in and status-preserving:
+  - **Client renders non-OK turbo-stream bodies.** When `!response.ok` but the
+    Content-Type is a turbo-stream, the body is now applied (an `error_flash`, or
+    a plain controller's `status: :unprocessable_entity` validation reply, is
+    SHOWN). The root gets `data-reactive-error="<kind>"` (styleable in pure CSS),
+    cleared on the next success. Token safety is preserved: a 400 body never
+    refreshes the held identity token (`#extractToken` no-ops unless a stream
+    re-renders this element's id).
+  - **`Phlex::Reactive.error_flash`** (default `nil`) — a `->(kind) { "message" }`
+    lambda. When set, every rescue path (400/403/404) renders a turbo-stream flash
+    into `flash_target` at the **same status** it returns today. Composes with
+    `verbose_errors`: the flash wins the response body, the diagnostic still logs.
+    A lambda that raises degrades gracefully (falls back to the bare/diagnostic
+    body — never a 500).
+  - **Offline fallback** — a server-rendered `<template data-reactive-error-flash>`
+    the client clones into the flash region on a `network` failure (trusted
+    markup, cloned verbatim — no client templating).
+  - **`dismiss_after:` on `reply.flash`** — `reply.replace.flash(:error, msg,
+    dismiss_after: 4000)` self-removes the flash after the timeout via a
+    **document-level** handler (so it self-cleans broadcast-delivered flashes too).
+    Wraps string content; a verbatim Phlex component owns its own lifecycle.
 - **Declarative loading states — `loading:` / `disable_with:` on `on(...)` +
   `busy_on(:action)` (#99).** Between the click and the morph the UI was fully
   live and unchanged: no per-trigger feedback, buttons stayed enabled, and a
