@@ -19,6 +19,7 @@ module Views
           measuring
           before_change
           numbers
+          client_numbers
           ci
           every_change
           adding_a_benchmark
@@ -322,6 +323,7 @@ module Views
               rake bench           # the micro-benchmark suite (alias for bench:micro)
               rake bench:micro     # render, reactive_token, coerce_params — isolates each method
               rake bench:request   # end-to-end POST /reactive/actions through the full Rack stack
+              rake bench:client    # the client dispatch hot path (extractToken, collectFields, recompute) via bun
               rake bench:one[render]  # a single micro-bench by name
             SHELL
             DocsUI::Prose() do
@@ -342,6 +344,27 @@ module Views
                   code { 'Rack::MockRequest' }
                   plain ' — the same call-the-app primitive derailed_benchmarks uses — so the numbers '
                   plain 'reflect production action latency.'
+                end
+                li do
+                  strong { 'The client bench' }
+                  plain ' ('
+                  code { 'benchmark/client/' }
+                  plain ', run with '
+                  code { 'bun' }
+                  plain ') covers the JS dispatch hot path — '
+                  code { '#extractToken' }
+                  plain ', '
+                  code { '#collectFields' }
+                  plain ', '
+                  code { 'recompute' }
+                  plain ' — with '
+                  a(href: 'https://github.com/evanwashere/mitata') { plain 'mitata' }
+                  plain ' + '
+                  a(href: 'https://github.com/capricorn86/happy-dom') { plain 'happy-dom' }
+                  plain ". It drives the controller's PUBLIC surface only (no test-only exports on the "
+                  plain 'shipped controller), so nothing under '
+                  code { 'app/javascript/' }
+                  plain ' changes. Read the framing below before comparing numbers across machines.'
                 end
               end
               h3 { 'Reading the output' }
@@ -490,6 +513,104 @@ module Views
           end
         end
 
+        def client_numbers
+          DocsUI::Section('Client dispatch numbers') do
+            DocsUI::Prose() do
+              p do
+                plain 'The client hot path — the JS that runs in the browser on every click and keystroke — '
+                plain 'is benched off-browser with mitata + happy-dom ('
+                code { 'rake bench:client' }
+                plain '). The three benched paths are '
+                code { '#extractToken' }
+                plain ' (regex-reading the next signed token out of the turbo-stream response body), '
+                code { '#collectFields' }
+                plain " (the one walk that auto-collects a root's named inputs into the action params, "
+                plain 'scoped past nested reactive roots), and '
+                code { 'recompute' }
+                plain ' (the client-side data-binding compute). All three are driven through the '
+                strong { "controller's public surface" }
+                plain ' ('
+                code { 'dispatch()' }
+                plain ' / '
+                code { 'recompute()' }
+                plain ') — no test-only export is added to the shipped controller.'
+              end
+              h3 { 'How to read these — two different kinds of number' }
+              p do
+                plain 'These are '
+                strong { 'not all the same currency.' }
+                plain ' Read them by what engine produced them:'
+              end
+              ul do
+                li do
+                  strong { 'engine-faithful' }
+                  plain ' — '
+                  code { '#extractToken' }
+                  plain ' is a pure regex pass over a string. bun runs on JavaScriptCore, the same '
+                  plain 'engine class a browser uses, so the regex numbers approximate real browser cost '
+                  plain '(not identical, but the right order of magnitude).'
+                end
+                li do
+                  strong { 'engine-relative' }
+                  plain ' — '
+                  code { '#collectFields' }
+                  plain ' and '
+                  code { 'recompute' }
+                  plain ' walk a real DOM, provided by happy-dom (a JS DOM implementation, NOT a real '
+                  plain "browser's C++ DOM). happy-dom's node/query costs differ from Blink/WebKit in "
+                  plain 'absolute terms, so treat these as a '
+                  strong { 'same-machine before/after baseline' }
+                  plain ' — valid for measuring whether a change made THIS path faster or slower, not as '
+                  plain 'an absolute "microseconds in Chrome" figure.'
+                end
+              end
+              h3 { 'Representative baselines' }
+              p do
+                plain 'Measured on bun 1.3 (JavaScriptCore), Apple M2 Max. Your absolute numbers will '
+                plain 'differ; capture your own before/after on one machine.'
+              end
+              ul do
+                li do
+                  strong { 'engine-faithful. ' }
+                  code { '#extractToken' }
+                  plain ' over a ~2KB single-component response: ~4.4 µs. Over a ~500KB 200-row reactive '
+                  plain 'collection (the worst realistic scan — every row carries its own token, the '
+                  plain "container's fresh token rides last): ~9 µs. For comparison, a full "
+                  code { 'DOMParser' }
+                  plain ' parse of that same 500KB body is ~4.3 ms — '
+                  strong { '~450× slower' }
+                  plain ': the targeted regex is why token extraction never parses the body into a document.'
+                end
+                li do
+                  strong { 'engine-relative. ' }
+                  code { '#collectFields' }
+                  plain ' via a full dispatch over happy-dom: ~34 µs for a 5-field form, ~96 µs for a '
+                  plain '60-field grid. Adding 2 nested reactive roots (the '
+                  code { '#ownsField' }
+                  plain ' ownership filter, issue #15) adds ~6% — the '
+                  code { 'closest()' }
+                  plain ' scope check per field is cheap.'
+                end
+                li do
+                  strong { 'engine-relative. ' }
+                  code { 'recompute' }
+                  plain ' on a 30-input calculator (read every declared input, run the reducer, write '
+                  plain 'one output): ~30 µs per keystroke over happy-dom.'
+                end
+              end
+              DocsUI::Callout(:note) do
+                plain 'The '
+                code { 'collectFields' }
+                plain ' / '
+                code { 'recompute' }
+                plain " figures include the full dispatch() overhead around the walk (that's the price of "
+                plain 'benching through the public surface instead of a private export). They are a '
+                plain 'consistent baseline for a before/after, not the isolated cost of the walk alone.'
+              end
+            end
+          end
+        end
+
         def ci
           DocsUI::Section('CI') do
             DocsUI::Prose() do
@@ -548,6 +669,18 @@ module Views
                 plain ' picks it up automatically (it globs '
                 code { 'benchmark/micro/*.rb' }
                 plain ').'
+              end
+              p do
+                plain 'A new '
+                strong { 'client' }
+                plain ' hot path gets a '
+                code { 'benchmark/client/<name>.bench.js' }
+                plain ' that registers its benches with mitata and is imported by '
+                code { 'benchmark/client/index.bench.js' }
+                plain '. Drive the controller through its public methods (as '
+                code { 'benchmark/client/support/harness.js' }
+                plain ' does) — never add a test-only export to the shipped controller, which would trip '
+                plain 'the vendored-client re-sync rule.'
               end
             end
           end

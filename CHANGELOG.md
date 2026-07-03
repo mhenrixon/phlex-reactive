@@ -31,6 +31,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Client dispatch micro-bench harness — `rake bench:client` (#116).** The client
+  hot path (`app/javascript/.../reactive_controller.js`) was named a hot path in
+  `.claude/rules/performance.md` but had **no bench of any kind** — every claim
+  about `#extractToken` / `#collectFields` / `recompute` cost was a guess the
+  perf prime directive forbids, and it blocked the client-perf issues that need a
+  before/after. `benchmark/client/` now holds bun-runnable
+  [mitata](https://github.com/evanwashere/mitata) benches that drive those three
+  paths through the controller's **public surface only** (`dispatch()` /
+  `recompute()`) — **no `__bench` exports, nothing under `app/javascript/`
+  changes**, so the vendored-client re-sync rule is never tripped. `rake
+  bench:client` shells to `bun run benchmark/client/index.bench.js`, writes
+  `tmp/benchmarks/client.txt` alongside `micro.txt`, and **fails the task on a
+  crashed bench** (mitata runs with `throw: true`, matching the `bench:micro`
+  contract). New dev-only dependencies: **mitata + happy-dom** (a JS DOM engine
+  for the `collectFields`/`recompute` fixtures). Baselines are documented on the
+  performance page with honest framing: the happy-dom numbers are
+  **engine-relative** (valid for same-machine before/after deltas, not an
+  absolute browser cost), while the regex-only `#extractToken` numbers are
+  **engine-faithful** under bun/JSC. Pure tooling — no production-code change.
+
 - **`morph:` on the update verbs (#113).** The `update` family now takes the same
   `morph:` flag `replace` already had, closing the verb-matrix asymmetry: Turbo 8
   supports `method="morph"` on `action="update"`, so an inner-HTML update can morph
