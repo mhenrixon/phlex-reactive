@@ -61,6 +61,26 @@ RSpec.describe "Phlex::Reactive.around_action", type: :request do
 
       expect(frozen).to be(true)
     end
+
+    it "freezes ctx.params so a wrapper cannot alter the action's coerced inputs" do
+      # The context shares no mutable state with the action: ctx.params is a
+      # FROZEN dup, so a wrapper mutating it raises rather than silently swapping
+      # the value the action is about to receive.
+      raised = nil
+      Phlex::Reactive.around_action do |ctx, &action|
+        ctx.params[:count] = 999
+      rescue FrozenError => e
+        raised = e
+        action.call
+      end
+
+      post_action(CounterComponent, payload: { "s" => { "count" => 9 } }, act: "set", params: { count: "3" })
+
+      expect(response).to have_http_status(:ok)
+      expect(raised).to be_a(FrozenError)
+      # The action received the SCHEMA-COERCED 3, not the wrapper's injected 999.
+      expect(response.body).to match(/>\s*3\s*</)
+    end
   end
 
   describe "the return-value contract (issue #112 — a wrapper MUST return the continuation)" do

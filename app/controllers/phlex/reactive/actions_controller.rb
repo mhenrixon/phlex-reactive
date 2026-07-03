@@ -178,10 +178,16 @@ module Phlex
         stack = Phlex::Reactive.around_actions
         return yield if stack.empty?
 
+        # A frozen DUP of the coerced params, not the live hash: the same hash is
+        # splatted into the action below, so sharing it would let a wrapper mutate
+        # ctx.params and alter the action's actual inputs — breaking both the
+        # observe-only context contract and the schema-coercion guarantee. The
+        # dup+freeze runs only when a wrapper is registered (never the empty-stack
+        # hot path).
         ctx = Phlex::Reactive::ActionContext.new(
           component: component,
           action_name: action_def.name,
-          params: coerced,
+          params: coerced.dup.freeze,
           request: request
         )
 
