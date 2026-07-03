@@ -6,6 +6,13 @@ class CounterComponent < ApplicationComponent
   include Phlex::Reactive::Streamable
   include Phlex::Reactive::Component
 
+  # A registered authorization error (see config/initializers/phlex_reactive.rb),
+  # so `boom` denies inside the action and the endpoint maps it to a 403 — the
+  # SAME observable outcome (status 403, client kind=http) the lifecycle-events
+  # system spec watches, while keeping `boom` a DECLARED action so the render-time
+  # undeclared-action guard (issue #105) doesn't reject the page on render.
+  class Denied < StandardError; end
+
   reactive_state :count
   action :increment
   action :decrement
@@ -18,6 +25,7 @@ class CounterComponent < ApplicationComponent
   action :bump_with_sibling
   action :bump_with_self_stream
   action :bump_with_js
+  action :boom
 
   def initialize(count: 0)
     @count = count
@@ -97,6 +105,12 @@ class CounterComponent < ApplicationComponent
     reply.morph.js(js.focus("@root").dispatch("app:bumped", detail: { count: @count }))
   end
 
+  # A denied action: raises a registered authorization error so the endpoint
+  # returns 403 (client kind=http). Declared (unlike a raw undeclared action) so
+  # the page renders under the issue #105 render-time guard; the 403 the browser
+  # observes is unchanged.
+  def boom = raise(Denied, "boom")
+
   def view_template
     div(id:, **reactive_attrs) do
       button(**mix(on(:decrement), data: { testid: "dec" })) { "−" }
@@ -105,9 +119,10 @@ class CounterComponent < ApplicationComponent
       button(**mix(on(:bump_via_update), data: { testid: "bump-update" })) { "+1 (update)" }
       button(**mix(on(:reset_with_flash), data: { testid: "reset" })) { "reset" }
       button(**mix(on(:go_home), data: { testid: "go-home" })) { "go home" }
-      # DELIBERATELY undeclared action (no `action :boom`): the endpoint
-      # default-denies it with a 403, which the lifecycle-events system spec
-      # uses to observe a real reactive:error (kind=http) in the browser (#79).
+      # `boom` denies inside the action (a registered authorization error) → the
+      # endpoint returns 403, which the lifecycle-events system spec uses to
+      # observe a real reactive:error (kind=http) in the browser (#79). Declared
+      # so the page renders under the #105 render-time undeclared-action guard.
       button(**mix(on(:boom), data: { testid: "boom" })) { "boom" }
     end
   end

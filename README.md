@@ -1532,6 +1532,17 @@ hint when a flat name looks like the bracketed twin of a declared nested key
 
 The flag never changes a status — only the body and the coercion log.
 
+The same flag also makes `on(:typo)` fail loudly at **render** time: when
+`verbose_errors` is on, `on(:name)` raises `Phlex::Reactive::Error` (listing the
+declared actions) if `:name` isn't declared on that component — so a misspelled
+or forgotten `action` surfaces the moment you load the page in dev/test, instead
+of as an unexplained 403 on click. Production (flag off) keeps the permissive
+emit, so a stale page after a deploy that removed an action never 500s on render.
+A component that declares no actions of its own (a cross-component dispatch
+helper — a child row rendering a trigger for its container's action) is skipped;
+`on_client` triggers are never checked (they aren't declared actions). The
+server's default-deny stays the security boundary — this is a dev-time courtesy.
+
 See [docs/security.md](https://phlex-reactive.zoolutions.llc/docs/security) for the threat model and a checklist.
 
 ---
