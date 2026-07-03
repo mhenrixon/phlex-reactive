@@ -14,14 +14,18 @@ module Views
 
         def content
           pattern
+          transports
           stream_keys
           methods_table
           model_mapping
           from_action
           actor_echo
+          visible_to
+          cross_tab_morph
           transactional
           removing_actor
           js_ops
+          reply_js
           presence
         end
 
@@ -29,51 +33,55 @@ module Views
 
         def pattern
           DocsUI::Section('The pattern') do
-            DocsUI::Prose() do
-              p do
-                plain 'Reactive '
-                strong { 'actions' }
-                plain " update the acting user's screen. "
-                strong { 'Broadcasts' }
-                plain ' update everyone else\'s. Both target the component by its '
-                code { 'id' }
-                plain ', so they compose.'
-              end
-            end
-            DocsUI::Code(<<~RUBY, lexer: :ruby)
+            md <<~MD
+              Reactive **actions** update the acting user's screen. **Broadcasts**
+              update everyone else's. Both target the component by its `id`, so they
+              compose.
+
+              ```ruby
               # Subscribe (in the view that should receive updates):
               turbo_stream_from @list, :todos
 
               # Broadcast (from a model callback, job, service, or a reactive action):
               Todos::Item.broadcast_replace_to(@list, :todos, model: @todo)
-            RUBY
-            DocsUI::Prose() do
-              p do
-                plain 'The subscriber and broadcaster must agree on the '
-                strong { 'same stream key' }
-                plain '. Pass the same '
-                code { '*streamables' }
-                plain ' to both '
-                code { 'turbo_stream_from' }
-                plain ' and '
-                code { 'broadcast_*_to' }
-                plain '.'
-              end
-            end
+              ```
+
+              The subscriber and broadcaster must agree on the **same stream key**.
+              Pass the same `*streamables` to both `turbo_stream_from` and
+              `broadcast_*_to`.
+            MD
+          end
+        end
+
+        def transports
+          DocsUI::Section('Two transports: Action Cable or pgbus') do
+            md <<~MD
+              Every `broadcast_*_to` routes over `Turbo::StreamsChannel`, so it works
+              on **either** transport with no code change:
+
+              - **Action Cable** — the Rails default. Broadcasts go over WebSockets.
+                Nothing extra to install.
+              - **pgbus** — Postgres-backed SSE. Installing it makes the SAME
+                `broadcast_*_to` calls route over Postgres instead, and unlocks the
+                transactional guarantee, per-connection `exclude:` / `visible_to:`
+                scoping, and presence tracking below.
+
+              The plain broadcast API (replace / update / append / prepend / remove /
+              js) is identical on both. What pgbus adds are the *guarantees* — the
+              transactional deferral, actor-echo suppression, and presence — noted
+              inline where they apply.
+            MD
           end
         end
 
         def stream_keys
           DocsUI::Section('Stream keys: pass raw parts, not a built key') do
-            DocsUI::Prose() do
-              p do
-                code { 'broadcast_*_to(*streamables, ...)' }
-                plain ' builds the stream key itself. '
-                strong { 'Pass raw parts' }
-                plain ' (a record and/or symbols), not an already-built key string:'
-              end
-            end
-            DocsUI::Code(<<~RUBY, lexer: :ruby)
+            md <<~MD
+              `broadcast_*_to(*streamables, ...)` builds the stream key itself.
+              **Pass raw parts** (a record and/or symbols), not an already-built key
+              string:
+
+              ```ruby
               # GOOD — raw parts
               Chat::Message.broadcast_append_to("chat", room, target: "...", model: msg)
               turbo_stream_from "chat", room
@@ -81,90 +89,50 @@ module Views
               # BAD — double-keying ("chat:lobby" then re-keyed) trips the separator guard
               key = ChatMessage.stream_key(room)             # => "chat:lobby"
               Chat::Message.broadcast_append_to(key, ...)    # ArgumentError under pgbus
-            RUBY
-            DocsUI::Prose() do
-              p do
-                plain 'If you have a helper that returns a built key for the subscriber, pass the '
-                strong { 'same built string' }
-                plain ' to '
-                code { 'turbo_stream_from' }
-                plain ' only — but give '
-                code { 'broadcast_*_to' }
-                plain ' the raw parts. The simplest rule: '
-                strong { 'use the same raw *streamables on both sides.' }
-              end
-            end
+              ```
+
+              If you have a helper that returns a built key for the subscriber, pass
+              the **same built string** to `turbo_stream_from` only — but give
+              `broadcast_*_to` the raw parts. The simplest rule: **use the same raw
+              *streamables on both sides.**
+            MD
           end
         end
 
         def methods_table
           DocsUI::Section('The broadcast methods') do
-            DocsUI::Prose() do
-              ul do
-                li do
-                  code { '.broadcast_replace_to(*streamables, model:)' }
-                  plain ' — replace the element with id '
-                  code { 'component.id' }
-                  plain '.'
-                end
-                li do
-                  code { '.broadcast_update_to(*streamables, model:)' }
-                  plain ' — replace its '
-                  em { 'inner' }
-                  plain ' HTML.'
-                end
-                li do
-                  code { '.broadcast_append_to(*streamables, target:, model:)' }
-                  plain ' — append into container '
-                  code { 'target' }
-                  plain '.'
-                end
-                li do
-                  code { '.broadcast_prepend_to(*streamables, target:, model:)' }
-                  plain ' — prepend into '
-                  code { 'target' }
-                  plain '.'
-                end
-                li do
-                  code { '.broadcast_remove_to(*streamables, model:)' }
-                  plain ' — remove the element with id '
-                  code { 'component.id' }
-                  plain '.'
-                end
-                li do
-                  code { '.broadcast_js_to(*streamables, ops, exclude:, visible_to:, target:)' }
-                  plain ' — push '
-                  strong { 'client DOM ops' }
-                  plain ' (class/attr toggles, '
-                  code { 'dispatch' }
-                  plain ') to every subscriber. Refuses focus ops (see below).'
-                end
-              end
-            end
+            md <<~MD
+              - `.broadcast_replace_to(*streamables, model:, morph:)` — replace the
+                element with id `component.id`. Pass `morph: true` for a cross-tab
+                morph (see below).
+              - `.broadcast_update_to(*streamables, model:)` — replace its *inner*
+                HTML.
+              - `.broadcast_append_to(*streamables, target:, model:)` — append into
+                container `target`.
+              - `.broadcast_prepend_to(*streamables, target:, model:)` — prepend into
+                `target`.
+              - `.broadcast_remove_to(*streamables, model:)` — remove the element with
+                id `component.id`.
+              - `.broadcast_js_to(*streamables, ops, exclude:, visible_to:, target:)` —
+                push **client DOM ops** (class/attr toggles, `dispatch`) to every
+                subscriber. Refuses focus ops (see below).
+
+              Every one accepts the transport options `exclude:` and `visible_to:`
+              (honored on pgbus, ignored on Action Cable — see those sections).
+            MD
           end
         end
 
         def model_mapping
           DocsUI::Section('How model: maps to the init keyword') do
-            DocsUI::Prose() do
-              p do
-                plain 'The positional '
-                code { 'model:' }
-                plain " is passed to the component's "
-                code { 'initialize' }
-                plain ' under the keyword '
-                code { 'model_param_name' }
-                plain '. For a '
-                strong { 'record-backed' }
-                plain ' component ('
-                code { 'reactive_record' }
-                plain '), that keyword is the record name — the SAME keyword the action endpoint ' \
-                      'uses to rebuild the component on a click. So a single '
-                code { 'initialize(<record>:)' }
-                plain ' satisfies both clicks and broadcasts:'
-              end
-            end
-            DocsUI::Code(<<~RUBY, lexer: :ruby)
+            md <<~MD
+              The `model:` argument is passed to the component's `initialize` under the
+              keyword `model_param_name`. For a **record-backed** component
+              (`reactive_record`), that keyword is the record name — the SAME keyword
+              the action endpoint uses to rebuild the component on a click. So a single
+              `initialize(<record>:)` satisfies both clicks and broadcasts:
+
+              ```ruby
               class Todos::Item < ApplicationComponent
                 include Phlex::Reactive::Component
                 reactive_record :todo
@@ -172,52 +140,35 @@ module Views
               end
 
               Todos::Item.broadcast_replace_to(@list, :todos, model: @todo) # builds new(todo: @todo)
-            RUBY
-            DocsUI::Prose() do
-              p do
-                plain 'For a '
-                strong { 'Streamable-only' }
-                plain ' component (broadcast-only, no '
-                code { 'reactive_record' }
-                plain '), '
-                code { 'model_param_name' }
-                plain ' defaults to the demodulized, underscored class name. When the init keyword ' \
-                      'differs from that, override it:'
-              end
-            end
-            DocsUI::Code(<<~RUBY, lexer: :ruby)
+              ```
+
+              For a **Streamable-only** component (broadcast-only, no
+              `reactive_record`), `model_param_name` defaults to the demodulized,
+              underscored class name. When the init keyword differs from that, override
+              it:
+
+              ```ruby
               class NotificationsBadge < ApplicationComponent
                 include Phlex::Reactive::Streamable
                 def initialize(user:) = @user = user
                 def self.model_param_name = :user   # class name would be :notifications_badge
               end
-            RUBY
+              ```
+            MD
           end
         end
 
         def from_action
           DocsUI::Section('Broadcasting from inside a reactive action') do
-            DocsUI::Prose() do
-              p do
-                plain 'The acting user gets the action\'s HTTP response (a replace of the component by ' \
-                      'default, or whatever '
-                code { 'reply' }
-                plain ' the action returns). '
-                em { 'Everyone else' }
-                plain ' gets the broadcast. Idiomorph dedupes a '
-                code { 'replace' }
-                plain ' by DOM id, so the actor doesn\'t double-apply — but for '
-                code { 'append' }
-                plain '/'
-                code { 'prepend' }
-                plain ' (and animations or optimistic UI) the echo '
-                em { 'would' }
-                plain ' double-apply. Suppress the actor\'s own echo with '
-                code { 'exclude: reactive_connection_id' }
-                plain ':'
-              end
-            end
-            DocsUI::Code(<<~RUBY, lexer: :ruby)
+            md <<~MD
+              The acting user gets the action's HTTP response (a replace of the
+              component by default, or whatever `reply` the action returns). *Everyone
+              else* gets the broadcast. Idiomorph dedupes a `replace` by DOM id, so the
+              actor doesn't double-apply — but for `append` / `prepend` (and animations
+              or optimistic UI) the echo *would* double-apply. Suppress the actor's own
+              echo with `exclude: reactive_connection_id`:
+
+              ```ruby
               def add(title:)
                 authorize! @list, :update?
                 todo = @list.todos.create!(title:)
@@ -228,98 +179,118 @@ module Views
                   exclude: reactive_connection_id # don't echo to the actor — they got the HTTP response
                 )
               end
-            RUBY
+              ```
+            MD
           end
         end
 
         def actor_echo
           DocsUI::Section('Actor-echo suppression (exclude:)') do
-            DocsUI::Prose() do
-              p do
-                code { 'reactive_connection_id' }
-                plain " is the acting client's SSE connection id during the action (nil when the client " \
-                      'isn\'t subscribed to a stream, or outside an action). The client sends it as '
-                code { 'X-Pgbus-Connection' }
-                plain '; the action endpoint exposes it. Passing it as '
-                code { 'exclude:' }
-                plain ' tells the transport to skip delivery to that one connection — so the actor\'s ' \
-                      'truth is the HTTP response and they never get a duplicate.'
-              end
-              ul do
-                li do
-                  strong { 'With pgbus' }
-                  plain ': fully honored — the dispatcher skips the excluded connection ' \
-                        '(pgbus ≥ the streams-reactive release).'
-                end
-                li do
-                  strong { 'With Action Cable' }
-                  plain ': '
-                  code { 'exclude:' }
-                  plain ' is accepted but ignored (Action Cable has no per-connection exclusion); ' \
-                        'rely on idiomorph dedup for '
-                  code { 'replace' }
-                  plain '/'
-                  code { 'update' }
-                  plain '.'
-                end
-              end
-              p do
-                plain 'This is what makes optimistic UI safe: apply the change locally, broadcast with '
-                code { 'exclude:' }
-                plain ', and the actor never gets a conflicting echo of their own action.'
-              end
-            end
+            md <<~MD
+              `reactive_connection_id` is the acting client's SSE connection id during
+              the action (nil when the client isn't subscribed to a stream, or outside
+              an action). The client sends it as `X-Pgbus-Connection`; the action
+              endpoint exposes it. Passing it as `exclude:` tells the transport to skip
+              delivery to that one connection — so the actor's truth is the HTTP
+              response and they never get a duplicate.
+
+              - **With pgbus**: fully honored — the dispatcher skips the excluded
+                connection (pgbus ≥ the streams-reactive release).
+              - **With Action Cable**: `exclude:` is accepted but ignored (Action Cable
+                has no per-connection exclusion); rely on idiomorph dedup for `replace`
+                / `update`.
+
+              This is what makes optimistic UI safe: apply the change locally,
+              broadcast with `exclude:`, and the actor never gets a conflicting echo of
+              their own action.
+            MD
+          end
+        end
+
+        def visible_to
+          DocsUI::Section('Scoping a broadcast (visible_to:)') do
+            md <<~MD
+              Where `exclude:` names ONE connection to skip, `visible_to:` names the
+              only connections that should receive the broadcast — an allow-list rather
+              than a deny-one. It is a first-class transport option on **every**
+              `broadcast_*_to`, alongside `exclude:`:
+
+              ```ruby
+              # Only these two connections see the update — everyone else on the stream
+              # is skipped. Useful for a private DM row, a per-seat highlight, or a
+              # moderator-only control.
+              Chat::Message.broadcast_replace_to(
+                room, :messages,
+                model: msg,
+                visible_to: [alice_connection_id, bob_connection_id]
+              )
+              ```
+
+              Like `exclude:`, `visible_to:` is honored on **pgbus** (per-connection
+              delivery) and **ignored on Action Cable** (which has no per-connection
+              scoping — every subscriber of the stream receives the broadcast).
+            MD
+          end
+        end
+
+        def cross_tab_morph
+          DocsUI::Section('Cross-tab morphing (broadcast_replace_to morph:)') do
+            md <<~MD
+              A plain `broadcast_replace_to` swaps the whole element. If a peer viewer
+              is mid-interaction on that element — a text caret in an input, an open
+              `<details>`, scroll position — a swap throws that state away. Pass
+              `morph: true` to make the replace **morph in place** instead, so the peer
+              tab keeps its focus and caret on the morphed row:
+
+              ```ruby
+              # A peer tab editing the same row keeps its caret; only the changed
+              # attributes/text are patched in.
+              Todos::Item.broadcast_replace_to(@list, :todos, model: @todo, morph: true)
+              ```
+
+              This emits `method="morph"` on the broadcast `<turbo-stream>`, so
+              idiomorph patches the existing DOM rather than replacing it. Only
+              `broadcast_replace_to` takes `morph:` — `update` already patches inner
+              HTML, and `append` / `prepend` / `remove` don't replace an existing
+              element.
+            MD
           end
         end
 
         def transactional
           DocsUI::Section('Transactional broadcasts (with pgbus)') do
-            DocsUI::Prose() do
-              p do
-                plain 'The action endpoint runs your action inside a transaction. With pgbus, broadcasts ' \
-                      'defer to '
-                code { 'after_commit' }
-                plain ', so:'
-              end
-              ul do
-                li do
-                  plain 'A broadcast inside a transaction that '
-                  strong { 'rolls back never fires' }
-                  plain ' — '
-                  em { 'and' }
-                  plain ' the DB change is undone. No phantom UI update for a change that didn\'t happen.'
-                end
-                li do
-                  plain 'This is the correctness property neither Action Cable nor Livewire give you cleanly.'
-                end
-              end
-            end
-            DocsUI::Code(<<~RUBY, lexer: :ruby)
+            md <<~MD
+              The action endpoint runs your action inside a transaction. With pgbus,
+              broadcasts defer to `after_commit`, so:
+
+              - A broadcast inside a transaction that **rolls back never fires** — *and*
+                the DB change is undone. No phantom UI update for a change that didn't
+                happen.
+              - This is the correctness property neither Action Cable nor Livewire give
+                you cleanly.
+
+              ```ruby
               ActiveRecord::Base.transaction do
                 @order.update!(status: "shipped")
                 Orders::Card.broadcast_replace_to(@order.account, model: @order)  # deferred
                 ChargeService.capture!(@order)   # if this raises → no broadcast, no status change
               end
-            RUBY
+              ```
+            MD
           end
         end
 
         def removing_actor
           DocsUI::Section("Removing the actor's own element") do
-            DocsUI::Prose() do
-              p do
-                code { 'destroy' }
-                plain '-style actions are the one case where "replace the component by its id" doesn\'t ' \
-                      'fit — the element should vanish, not be replaced. Return '
-                code { 'reply.remove' }
-                plain ' from the action: the actor\'s element is removed via the built-in '
-                code { 'Streamable#to_stream_remove' }
-                plain ' (no endpoint override, no helper to add), and other tabs get '
-                code { 'broadcast_remove_to(..., exclude: reactive_connection_id)' }
-                plain '.'
-              end
-            end
-            DocsUI::Code(<<~RUBY, lexer: :ruby)
+            md <<~MD
+              `destroy`-style actions are the one case where "replace the component by
+              its id" doesn't fit — the element should vanish, not be replaced. Return
+              `reply.remove` from the action: the actor's element is removed via the
+              built-in `Streamable#to_stream_remove` (no endpoint override, no helper to
+              add), and other tabs get
+              `broadcast_remove_to(..., exclude: reactive_connection_id)`.
+
+              ```ruby
               def destroy
                 authorize! @todo, :destroy?
                 list = @todo.list
@@ -328,36 +299,28 @@ module Views
                 Todos::Item.broadcast_remove_to(list, :todos, model: @todo, exclude: reactive_connection_id)
                 reply.remove # this tab
               end
-            RUBY
-            DocsUI::Prose() do
-              p do
-                plain 'For an "undo" affordance, replace with a tombstone state instead of removing. See the '
-                strong { 'reply' }
-                plain ' API for the full set of reply controls.'
-              end
-            end
+              ```
+
+              For an "undo" affordance, replace with a tombstone state instead of
+              removing. See the **reply** API for the full set of reply controls.
+            MD
           end
         end
 
         def js_ops
-          DocsUI::Section('Pushing client DOM ops (broadcast_js_to)') do
-            DocsUI::Prose() do
-              p do
-                plain 'Sometimes a broadcast should nudge the UI rather than swap HTML — light up a bell, ' \
-                      'toggle a class, dispatch an app event. '
-                code { 'broadcast_js_to' }
-                plain ' pushes the same '
-                code { 'js' }
-                plain ' ops as '
-                code { 'reply.js' }
-                plain ' to every subscriber, over the same transport (Action Cable or pgbus):'
-              end
-            end
-            DocsUI::Code(<<~RUBY, lexer: :ruby)
+          DocsUI::Section('Pushing client DOM ops to everyone (broadcast_js_to)') do
+            md <<~MD
+              Sometimes a broadcast should nudge the UI rather than swap HTML — light up
+              a bell, toggle a class, dispatch an app event. `broadcast_js_to` pushes
+              the same `js` ops as `reply.js` to every subscriber, over the same
+              transport (Action Cable or pgbus):
+
+              ```ruby
               # Light up the bell in every viewer's tab, minus the actor's own connection.
               Notifications::Badge.broadcast_js_to(user, :alerts,
                 js.add_class("#bell", "has-unread"), exclude: reactive_connection_id)
-            RUBY
+              ```
+            MD
             DocsUI::Callout(:warning) do
               plain 'Focus ops are refused. '
               code { 'broadcast_js_to' }
@@ -375,14 +338,41 @@ module Views
           end
         end
 
-        def presence
-          DocsUI::Section('Presence (who\'s here / typing)') do
-            DocsUI::Prose() do
-              p do
-                plain 'pgbus ships presence tracking. Join on render, leave on disconnect, broadcast the change:'
+        def reply_js
+          DocsUI::Section('Nudging the actor only (reply.js)') do
+            md <<~MD
+              `broadcast_js_to` is the *everyone* half. Its actor-side sibling is
+              `reply.<verb>.js(ops)` — chained onto the reply the action returns, it
+              runs client DOM ops on the **acting** user's tab only, and it does so
+              AFTER the render streams. Because it rides after the render, a focus op
+              sees the freshly rendered (or morphed) DOM:
+
+              ```ruby
+              def save(title:)
+                @todo.update!(title:)
+                # Morph in place, THEN focus the next field + tell a toast host we saved.
+                # `focus` is legal here — it's the actor's OWN tab, not a broadcast.
+                reply.morph.js(js.focus("[name=next_field]").dispatch("app:saved", detail: { id: @todo.id }))
               end
-            end
-            DocsUI::Code(<<~RUBY, lexer: :ruby)
+              ```
+
+              `target:` scopes op resolution on the client; it defaults to the bound
+              component's id for `replace` / `morph` / `update` (so `@root` and
+              component-relative selectors just work), and to document-scope for a
+              subject-free `reply.with`. This is why the focus example above is an
+              actor-reply concern and `broadcast_js_to` refuses focus outright:
+              `reply.js` targets one tab, a broadcast targets all of them.
+            MD
+          end
+        end
+
+        def presence
+          DocsUI::Section("Presence (who's here / typing)") do
+            md <<~MD
+              pgbus ships presence tracking. Join on render, leave on disconnect,
+              broadcast the change:
+
+              ```ruby
               Pgbus.stream(@room).presence.join(
                 member_id: current_user.id,
                 metadata: { name: current_user.name }
@@ -392,7 +382,8 @@ module Views
 
               Pgbus.stream(@room).presence.members   # current list
               Pgbus.stream(@room).presence.count     # fast count for a "N online" badge
-            RUBY
+              ```
+            MD
             DocsUI::Callout(:tip) do
               plain 'See the pgbus transport guide for the full presence and SSE story.'
             end

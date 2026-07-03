@@ -16,6 +16,8 @@ module Views
           the_component
           rendering
           notes
+          loading_states
+          dirty_tracking
           validation_error
           live_as_you_type
           broadcasting
@@ -36,7 +38,7 @@ module Views
                 plain ') and partials. Here it is one component with two actions.'
               end
             end
-            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'app/components/fields/inline_edit.rb')
+            DocsUI::Code(<<~'RUBY', lexer: :ruby, filename: 'app/components/fields/inline_edit.rb')
               class Fields::InlineEdit < ApplicationComponent
                 include Phlex::Reactive::Component
 
@@ -53,7 +55,7 @@ module Views
                   @editing = editing
                 end
 
-                def id = dom_id(@record, "inline_\#{@attribute}")
+                def id = dom_id(@record, "inline_#{@attribute}")
 
                 def edit   = @editing = true
                 def cancel = @editing = false
@@ -67,12 +69,16 @@ module Views
                 def view_template
                   span(**reactive_root) do
                     if @editing
-                      # Enter saves; a dedicated Cancel button reverts on Escape.
-                      # event: "keydown.enter" / "keydown.esc" is Stimulus's native
-                      # keyboard filter, so each fires only on its key — no JS.
-                      input(**mix(on(:save, event: "keydown.enter"), name: "value",
-                                  value: current_value, autocomplete: "off"))
-                      button(**on(:save)) { "Save" }
+                      # reactive_input(:value) binds the field to the `value:` param —
+                      # no hand-written name: "value" to forget. The trigger stays on
+                      # the button, so focusing the field can't dispatch and collapse
+                      # edit mode. Enter still saves via a keydown.enter binding on the
+                      # field; Escape cancels on the Cancel button. event: "keydown.*"
+                      # is Stimulus's native keyboard filter, so each fires only on its
+                      # key — no JS.
+                      reactive_input(:value, value: current_value, autocomplete: "off",
+                                     **on(:save, event: "keydown.enter"))
+                      button(**on(:save, disable_with: "Saving…")) { "Save" }
                       button(**on(:cancel, event: "keydown.esc")) { "Cancel" }
                     else
                       span(**on(:edit), class: "editable") { current_value.presence || "—" }
@@ -170,6 +176,137 @@ module Views
           end
         end
 
+        def loading_states
+          DocsUI::Section('Loading state on Save') do
+            DocsUI::Prose() do
+              p do
+                plain 'Between the click and the re-render, the Save button should show it is working — and a '
+                plain 'mutating button should swallow a rapid double-click. '
+                code { 'disable_with:' }
+                plain ' does both: it disables the trigger and swaps its text while the action is in flight, '
+                plain 'reverting when the round trip settles (success '
+                em { 'or' }
+                plain ' failure).'
+              end
+            end
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
+              # Shorthand — disable + text swap while `save` is pending:
+              button(**on(:save, disable_with: "Saving…")) { "Save" }
+
+              # Full form — disable + a loading class + a text swap:
+              button(**on(:save, loading: { disable: true, class: "opacity-50", text: "Saving…" })) { "Save" }
+            RUBY
+            DocsUI::Prose() do
+              p do
+                plain 'Independent of any '
+                code { 'loading:' }
+                plain ' hint, '
+                strong { 'every' }
+                plain ' reactive round trip marks the DOM for the whole enqueue → settle window, so you can style '
+                plain 'spinners and dimming with pure CSS: the trigger and root carry '
+                code { 'data-reactive-busy="save"' }
+                plain ', the root carries '
+                code { 'aria-busy="true"' }
+                plain ', and '
+                code { 'busy_on(:save)' }
+                plain ' marks any element inside the root so it toggles '
+                code { 'data-reactive-busy' }
+                plain ' only while '
+                code { 'save' }
+                plain ' is in flight — a scoped spinner with zero Ruby.'
+              end
+            end
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
+              button(**on(:save, disable_with: "Saving…")) { "Save" }
+              span(**busy_on(:save), class: "spinner")
+            RUBY
+            DocsUI::Callout(:note) do
+              plain 'The disable + text swap apply only at enqueue, never during a '
+              code { 'debounce:' }
+              plain ' quiet period — so a debounced live-as-you-type field (whose element '
+              em { 'is' }
+              plain ' the input) is never disabled mid-typing.'
+            end
+          end
+        end
+
+        def dirty_tracking
+          DocsUI::Section('Dirty tracking — enable Save only when it changed') do
+            DocsUI::Prose() do
+              p do
+                plain 'An inline editor should light up Save (or show an “Unsaved” badge) only once the value '
+                plain 'actually changed, and can warn before you navigate away with edits pending — '
+                strong { 'without shipping any client state' }
+                plain '. The browser already holds the last server-rendered value: '
+                code { 'input.defaultValue' }
+                plain ' is the attribute from the last render, so '
+                em { 'dirty = current ≠ default' }
+                plain ' is read straight from the DOM — nothing to snapshot, nothing to sign.'
+              end
+            end
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
+              def view_template
+                span(**reactive_root(track_dirty: true, warn_unsaved: true)) do
+                  if @editing
+                    reactive_input(:value, value: current_value, dirty: true,
+                                   autocomplete: "off", **on(:save, event: "keydown.enter"))
+                    span(class: "unsaved-badge") { "Unsaved" }  # shown via [data-reactive-dirty]
+                    button(**on(:save, disable_with: "Saving…")) { "Save" }
+                    button(**on(:cancel, event: "keydown.esc")) { "Cancel" }
+                  else
+                    span(**on(:edit), class: "editable") { current_value.presence || "—" }
+                  end
+                end
+              end
+            RUBY
+            DocsUI::Prose() do
+              ul do
+                li do
+                  code { 'track_dirty: true' }
+                  plain ' on the root re-scans every field it owns on change; '
+                  code { 'dirty: true' }
+                  plain ' on a '
+                  code { 'reactive_field' }
+                  plain '/'
+                  code { 'reactive_input' }
+                  plain ' opts that one field in. Each changed field gets '
+                  code { 'data-reactive-dirty="true"' }
+                  plain ' and the root gets '
+                  code { 'data-reactive-dirty="<count>"' }
+                  plain ' — absent at zero, so '
+                  code { '[data-reactive-dirty]' }
+                  plain ' matches only while the form is dirty.'
+                end
+                li do
+                  code { 'warn_unsaved: true' }
+                  plain ' arms a navigate-away guard (browser '
+                  code { 'beforeunload' }
+                  plain ' + Turbo '
+                  code { 'turbo:before-visit' }
+                  plain ') gated on the live dirty count — a clean form never blocks.'
+                end
+                li do
+                  strong { 'Baselines reset on the server re-render.' }
+                  plain ' A '
+                  code { 'reply.morph' }
+                  plain ' save renders the field with the saved value as its '
+                  em { 'new' }
+                  plain ' default, so the badge clears with no reload — the client re-scans after the morph writes '
+                  plain 'the fresh '
+                  code { 'default*' }
+                  plain ' attributes.'
+                end
+              end
+            end
+            DocsUI::Code(<<~CSS, lexer: :css)
+              /* You own the styling — phlex-reactive ships no CSS for these. */
+              .unsaved-badge { display: none; }
+              [data-reactive-dirty] .unsaved-badge { display: inline; }
+              [data-reactive-dirty] button[data-testid="save"] { pointer-events: auto; opacity: 1; }
+            CSS
+          end
+        end
+
         def validation_error
           DocsUI::Section('Surfacing a validation error') do
             DocsUI::Prose() do
@@ -260,7 +397,42 @@ module Views
                 plain ' is the same thing via the opt-in flag; the morphed root still carries a '
                 plain 'fresh signed token, so the next edit verifies.'
               end
+              p do
+                strong { 'Advance to the next field on save.' }
+                plain ' Chain '
+                code { '.js' }
+                plain ' onto any reply to push client DOM ops that run '
+                em { 'after' }
+                plain ' the render, so a focus op sees the freshly morphed DOM — natural for a grid where Enter '
+                plain 'should hop to the next cell:'
+              end
             end
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
+              def update(name:)
+                authorize! @record, :update?
+                @record.update!(name:) if name.present?
+                # Morph in place (keep caret), THEN focus the next field:
+                reply.morph.js(js.focus("[name=next_field]"))
+              end
+            RUBY
+            DocsUI::Prose() do
+              p do
+                plain 'When the morph target is a '
+                em { 'sibling' }
+                plain ' cell rather than the field you are typing in, prefer '
+                code { 'reply.streams' }
+                plain ' — it emits exactly the streams you name plus a tiny token-only refresh (no full-self '
+                plain 'replace), so a neighbouring '
+                code { '<input>' }
+                plain ' the user is mid-typing in is never torn down while the total cell updates.'
+              end
+            end
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
+              def update(quantity:, price:)
+                @item.update!(quantity:, price:)
+                reply.streams(Totals.update(@item))   # re-stream ONLY the total cell
+              end
+            RUBY
           end
         end
 
