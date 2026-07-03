@@ -58,9 +58,14 @@ module Phlex
           klass = self.class
           payload = { "c" => klass.name }
 
-          if (record_ivar = klass.reactive_record_ivar)
-            record = instance_variable_get(record_ivar)
-            payload["gid"] = record.to_gid.to_s unless record.respond_to?(:persisted?) && !record.persisted?
+          # Sign the gid ONLY for a present, persisted record. An unsaved draft
+          # (persisted? == false) has no GlobalID — omit gid and let the signed
+          # state seed it (the tokenless-draft seam documented above); a nil
+          # ivar likewise carries no identity to sign, and must short-circuit
+          # before to_gid (nil.to_gid would raise).
+          if (record_ivar = klass.reactive_record_ivar) &&
+             (record = instance_variable_get(record_ivar)) && signable_gid?(record)
+            payload["gid"] = record.to_gid.to_s
           end
 
           state_ivars = klass.reactive_state_ivars
@@ -71,6 +76,15 @@ module Phlex
           end
 
           Phlex::Reactive.sign(payload)
+        end
+
+        # A record's gid is signable unless it is an unsaved AR-like draft
+        # (responds to persisted? and is not persisted) — a new_record has no
+        # id and to_gid would raise MissingModelIdError. A record that doesn't
+        # respond to persisted? (a plain GlobalID-able object) is treated as
+        # signable, matching the pre-existing contract.
+        def signable_gid?(record)
+          !(record.respond_to?(:persisted?) && !record.persisted?)
         end
       end
     end
