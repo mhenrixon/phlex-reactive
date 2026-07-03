@@ -717,12 +717,45 @@ export default class extends Controller {
     const inputPairs = this.#parseComputeInputs()
     const inputs = inputPairs.map(([name]) => name)
 
+    // Resolve every declared input AND output through ONE per-call resolver whose
+    // ownership probe is computed ONCE (issue #117), replacing the per-name
+    // closest() walk #ownedField did on every read — a 30-field calculator paid
+    // ~60 closest() sweeps per keystroke. #ownershipFilter returns a constant-true
+    // predicate in the common no-nested-root case (skipping closest() entirely)
+    // and the exact #ownsField check when a nested reactive root is present
+    // (issue #15 scoping, byte-identical to before). Resolution is memoized in a
+    // per-CALL Map, FIRST-WINS, so a name read as an input AND written as an
+    // output resolves to the SAME element and is queried once.
+    //
+    // Why per-name `[name="X"]` queries and not one bare `[name]` sweep: a single
+    // sweep is the natural "one walk", but the resolver must issue the SAME
+    // per-name query shape the field walk always has (the issue-#15 unit fakes
+    // answer only `[name="X"]`). It is O(distinct declared names) queries, not the
+    // old O(inputs + outputs) — the ownership decision is hoisted out of the loop.
+    // The memo is per-CALL only: an output write dispatches `input` (issue #76),
+    // re-entering recompute, which correctly rebuilds a fresh map (a morph may
+    // have replaced the nodes) — it is NEVER stored on the instance.
+    const owns = this.#ownershipFilter()
+    const byName = new Map()
+    const ownedField = (name) => {
+      if (byName.has(name)) return byName.get(name)
+      let found = null
+      for (const el of this.element.querySelectorAll(`[name="${name}"]`)) {
+        if (owns(el)) {
+          found = el // FIRST-WINS (radio groups, Rails hidden+checkbox name pairs)
+          break
+        }
+      }
+      byName.set(name, found)
+      return found
+    }
+
     // Identity-mirror pass (issue #104), ALWAYS run — even with NO registered
     // reducer, so reactive_text(:title) mirrors a field into its text node with
     // zero reducer wiring. Each declared input's RAW string value is written to
     // its owned [data-reactive-text="<name>"] node(s). It runs BEFORE the reducer
     // early-return below so a reducer-less binding still mirrors.
-    for (const name of inputs) this.#mirrorText(name, this.#rawFieldValue(name))
+    for (const name of inputs) this.#mirrorText(name, ownedField(name)?.value ?? "")
 
     const key = this.element.getAttribute("data-reactive-compute-reducer-param")
     if (!key) return
@@ -731,13 +764,28 @@ export default class extends Controller {
 
     const outputs = this.#parseComputeList("data-reactive-compute-outputs-param")
 
+    // Coerce each input per its declared type (issue #104): "string" → the raw
+    // display string (blank/absent → ""); else ("number", the array-form default)
+    // → the numeric coercion (blank/NaN → 0, the nanToZero the hand-written
+    // calculators use). Reads from the memoized resolver — no re-query.
     const values = {}
-    for (const [name, type] of inputPairs) values[name] = this.#computeInputValue(name, type)
+    for (const [name, type] of inputPairs) {
+      const field = ownedField(name)
+      if (type === "string") {
+        values[name] = field?.value ?? ""
+      } else {
+        const n = Number(field?.value)
+        values[name] = Number.isFinite(n) ? n : 0
+      }
+    }
 
+    // meta.changed stays on #changedComputeField (its own #ownsField check over
+    // the raw event target) — NOT this resolver. The issue-#15 nested-rejection
+    // test depends on that path being unchanged.
     const result = reduce(values, { changed: this.#changedComputeField(event, inputs) }) || {}
     for (const name of outputs) {
       if (!(name in result)) continue
-      const field = this.#ownedField(name)
+      const field = ownedField(name)
       // Output resolution (issue #104): write to the owned named FIELD if one
       // exists, ELSE mirror to every owned [data-reactive-text="<name>"] node.
       if (field) {
@@ -813,15 +861,18 @@ export default class extends Controller {
   // per the selector on data-reactive-listnav-option-param. The attr rides on the
   // TRIGGER element (the search input on(...) is spread onto), read from the
   // event; the options are still scoped to this controller's root. Empty when
-  // unset. Falls back to the root for a directly-invoked call (unit tests).
+  // unset. Falls back to the root for a directly-invoked call (unit tests). The
+  // ownership predicate is hoisted ONCE per keypress (issue #117) — in the common
+  // no-nested-root case it is a constant true, skipping a closest() walk per
+  // option.
   #listnavOptions(event) {
     const trigger = event?.currentTarget ?? event?.target ?? this.element
     const selector =
       trigger.getAttribute?.("data-reactive-listnav-option-param") ??
       this.element.getAttribute("data-reactive-listnav-option-param")
     if (!selector) return []
-    const nodes = this.element.querySelectorAll(selector)
-    return Array.from(nodes).filter((el) => this.#ownsField(el))
+    const owns = this.#ownershipFilter()
+    return Array.from(this.element.querySelectorAll(selector)).filter(owns)
   }
 
   // Parse a JSON string list from a root data attr; [] on absence/parse error so
@@ -855,20 +906,6 @@ export default class extends Controller {
     }
   }
 
-  // Coerce a declared input's field value for the reducer per its type (issue
-  // #104): "string" → the raw string value (field.value ?? ""); anything else
-  // ("number", the array-form default) → the numeric coercion (blank/NaN → 0).
-  #computeInputValue(name, type) {
-    if (type === "string") return this.#rawFieldValue(name)
-    return this.#numericFieldValue(name)
-  }
-
-  // A declared input's RAW string value — the display string, used for :string
-  // inputs and for identity mirrors. "" for a blank/absent field (never NaN).
-  #rawFieldValue(name) {
-    return this.#ownedField(name)?.value ?? ""
-  }
-
   // The declared compute input the event just edited — the reducer's
   // meta.changed (issue #75). The triggering field counts only when it is a
   // named form control OWNED by this root (not a nested reactive root's, issue
@@ -879,23 +916,6 @@ export default class extends Controller {
     if (!target?.name || typeof target.closest !== "function") return null
     if (!inputs.includes(target.name)) return null
     return this.#ownsField(target) ? target.name : null
-  }
-
-  // The first named control owned by THIS root (skips nested reactive roots,
-  // issue #15) — used by recompute to read inputs and write outputs.
-  #ownedField(name) {
-    const nodes = this.element.querySelectorAll(`[name="${name}"]`)
-    for (const el of nodes) if (this.#ownsField(el)) return el
-    return null
-  }
-
-  // A field's value as a Number, treating blank/absent/NaN as 0 — mirroring the
-  // nanToZero coercion the hand-written calculators use, so a reducer never sees
-  // "" or NaN for an empty field.
-  #numericFieldValue(name) {
-    const field = this.#ownedField(name)
-    const n = Number(field?.value)
-    return Number.isFinite(n) ? n : 0
   }
 
   // Write `value` into every owned [data-reactive-text="<name>"] node via
@@ -1480,16 +1500,48 @@ export default class extends Controller {
     return el.closest('[data-controller~="reactive"]') === this.element
   }
 
+  // A per-op ownership PREDICATE — the issue #117 fast path over issue #15
+  // scoping. #ownsField answers "is this element mine, not a nested reactive
+  // root's" with a per-element closest() walk; on a wide form or every keystroke
+  // that walk runs per matched field. This hoists the DECISION to once per op.
+  //
+  // HYBRID GATE — closest() stays the source of truth; the nested-root query only
+  // decides whether the fast path is SAFE:
+  //   * Fast path (overwhelmingly common): this root contains NO nested reactive
+  //     roots, so every element the caller's querySelectorAll returned is already
+  //     a direct descendant of this.element with no intervening reactive root —
+  //     it is ours. Return a constant-true predicate and skip the per-field
+  //     closest() walk entirely. That is the whole win.
+  //   * Nested case: fall back to the UNCHANGED #ownsField closest() check, so
+  //     scoping is byte-identical to before. We deliberately do NOT use
+  //     contains() here — the closest() form needs no node to implement
+  //     contains(), and on a real DOM the two agree for a descendant of
+  //     this.element (el.closest('[data-controller~="reactive"]') === this.element
+  //     iff no nested reactive-root descendant contains el).
+  //
+  // Computed ONCE per dispatch-scoped op (per #collectFields call, per recompute,
+  // per #listnavOptions) and NEVER stored on the instance — a morph replaces
+  // nodes, so a cached predicate would close over stale roots.
+  #ownershipFilter() {
+    const nested = this.element.querySelectorAll('[data-controller~="reactive"]')
+    if (nested.length === 0) return () => true
+    return (el) => this.#ownsField(el)
+  }
+
   // One walk over THIS root's named controls (not a nested reactive root's),
-  // returning both the scalar `fields` and any chosen `files`. A file input's
-  // `.value` is the useless "C:\fakepath\…" string, never a scalar — so its
-  // chosen files are collected separately (honoring `multiple`) and it adds no
-  // phantom blank value (issue #34). An empty `files` keeps the JSON path.
+  // returning both the scalar `fields` and any chosen `files`. The ownership
+  // predicate is hoisted ONCE (issue #117) via #ownershipFilter — in the common
+  // no-nested-root case it is a constant true, so we skip a closest() walk per
+  // field. A file input's `.value` is the useless "C:\fakepath\…" string, never a
+  // scalar — so its chosen files are collected separately (honoring `multiple`)
+  // and it adds no phantom blank value (issue #34). An empty `files` keeps the
+  // JSON path.
   #collectFields() {
     const fields = {}
     const files = []
+    const owns = this.#ownershipFilter() // compute ONCE per dispatch (issue #117)
     this.element.querySelectorAll("input[name], select[name], textarea[name]").forEach((field) => {
-      if (!this.#ownsField(field)) return
+      if (!owns(field)) return
       if (field.type === "file") {
         // Carry the input's `multiple` flag so #buildFormData keeps the array
         // shape (params[name][]) even when the user picked exactly one file —
@@ -1513,7 +1565,7 @@ export default class extends Controller {
     this.element
       .querySelectorAll("[name]:is(lexxy-editor, trix-editor, [contenteditable=''], [contenteditable=true], [contenteditable=plaintext-only])")
       .forEach((el) => {
-        if (!this.#ownsField(el)) return // skip editors owned by a nested reactive root (issue #15)
+        if (!owns(el)) return // reuse the SAME hoisted predicate (nested reactive root — issue #15)
         // A plain element (e.g. a <div contenteditable>) has no `name` IDL
         // property — only the attribute — so read getAttribute, not el.name.
         const name = el.getAttribute("name")
