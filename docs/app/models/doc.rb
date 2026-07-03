@@ -22,7 +22,9 @@ class Doc
     { slug: 'example-collections',   title: 'Collections',             group: 'Examples', view: 'ExampleCollections' },
     { slug: 'example-notifications', title: 'Notifications',           group: 'Examples',
       view: 'ExampleNotifications' },
-    { slug: 'example-chat',          title: 'Cross-tab chat',          group: 'Examples', view: 'ExampleChat' }
+    { slug: 'example-chat',          title: 'Cross-tab chat',          group: 'Examples', view: 'ExampleChat' },
+    { slug: 'example-loading-states', title: 'Loading states',         group: 'Examples',
+      view: 'ExampleLoadingStates' }
   ].freeze
 
   attr_reader :slug, :title, :group, :view_name
