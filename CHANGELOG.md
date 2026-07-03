@@ -8,6 +8,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Latency simulator dev aid — `PhlexReactive.enableLatencySim(ms)` /
+  `disableLatencySim()` (#102).** On localhost the click→morph round trip is
+  ~5 ms, so the pending/loading/optimistic affordances added in #98/#99/#100
+  (`aria-busy`, `disable_with:`, `busy_on`, optimistic hints) flash by too fast to
+  see while developing or demoing them — the reason LiveView ships
+  `liveSocket.enableLatencySim(ms)`. Two named exports from the client controller
+  (the `setConfirmResolver` precedent) persist a per-action delay to
+  `sessionStorage` under `"phlex-reactive:latency"`; `#perform` reads it live
+  right before the `fetch` — after the busy window has already opened at enqueue —
+  and awaits it, so the affordances become observable. The delay is session-scoped
+  (clears when the tab closes, so you can't leave it on across sessions), read
+  fresh per request (toggling takes effect on the next action with no reload), and
+  a one-time console banner reminds you while it's active.
+  - **Console handle, dev-gated.** importmap module exports are unreachable from
+    the DevTools console, so the bootstrap attaches
+    `window.PhlexReactive = { enableLatencySim, disableLatencySim }` — but **only**
+    when the app authored `<meta name="phlex-reactive-env" content="development">`.
+    The meta is app-authored (the engine can't inject into the host layout); the
+    install generator's initializer ships the commented snippet, and the README
+    documents it. Without the meta there is **no global handle** and `#perform`
+    short-circuits on the `null` `sessionStorage` read — **zero production
+    surface**. This finally lets a system spec observe `aria-busy` in a real
+    browser (previously impossible on a ~5 ms trip), under both Puma and Falcon.
+
 - **Request timeout + offline handling — `reactive:error` kinds `timeout` and
   `offline` (#101).** A server that never responded used to wedge a component's
   request queue *forever* — each action chains on the previous one, so one hung

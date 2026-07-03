@@ -1119,6 +1119,40 @@ document.addEventListener("reactive:error", (e) => {
 })
 ```
 
+#### Latency simulator (development aid)
+
+On localhost the click→morph round trip is **~5 ms**, so the pending affordances
+you just wired — `aria-busy`, `disable_with:`, `busy_on`, optimistic hints —
+flash by too fast to actually *see* while developing or demoing them. That's the
+same problem LiveView solves with `liveSocket.enableLatencySim(ms)`.
+
+`phlex-reactive` ships the equivalent. Because importmap module exports aren't
+reachable from the DevTools console, the two functions are exposed on a
+`window.PhlexReactive` handle — but **only** when your layout opts in with a
+development-gated meta:
+
+```erb
+<%# app/views/layouts/application.html.erb, inside <head> — DEVELOPMENT ONLY %>
+<%= tag.meta(name: "phlex-reactive-env", content: "development") if Rails.env.development? %>
+```
+
+Then, from the browser console:
+
+```js
+PhlexReactive.enableLatencySim(400)   // delay EVERY action by 400ms
+// …click around; aria-busy, spinners, disable_with, optimistic hints are now visible…
+PhlexReactive.disableLatencySim()     // back to full speed
+```
+
+The delay is read live before each fetch (so toggling takes effect on the very
+next action, no reload) and persists to `sessionStorage` — it clears when the tab
+closes, so you can't accidentally leave it on across sessions. A one-time console
+banner reminds you while it's active.
+
+Without the meta there is **no global handle at all** and the per-request read
+short-circuits on a `null` — **zero production surface**. It's purely a
+development convenience, gated by markup you author.
+
 The events bubble from the component's root element (or from `document` when
 the root was detached by the failing round trip), so they compose with plain
 Stimulus listening — a global toaster is one attribute on an ancestor:

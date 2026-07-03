@@ -43,6 +43,19 @@ class DemosController < ActionController::Base
     render html: component + extras.html_safe, layout: true
   end
 
+  # Latency simulator dev aid (issue #102). Carries the APP-AUTHORED
+  # <meta name="phlex-reactive-env" content="development"> so the client attaches
+  # window.PhlexReactive (the dev gate). The spec enables the sim and asserts
+  # aria-busy is visible during the injected client-side delay — finally covering
+  # aria-busy in a real browser (the fast `bump` action has no server-side sleep).
+  def latency
+    component = render_to_string(LatencyComponent.new(count: 0), layout: false)
+    extras = <<~HTML
+      <meta name="phlex-reactive-env" content="development">
+    HTML
+    render html: component + extras.html_safe, layout: true
+  end
+
   def todos
     render_component TodoListComponent.new
   end

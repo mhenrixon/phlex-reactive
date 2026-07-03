@@ -207,12 +207,62 @@ export function __resetReactiveOfflineForTest() {
   offlineRegistered = false
 }
 
+// Latency simulator dev aid (issue #102). On localhost the click→morph round
+// trip is ~5ms, so the pending/loading/optimistic affordances (aria-busy,
+// disable_with, busy_on, optimistic hints) flash by too fast to see while
+// developing or demoing them — the reason LiveView ships enableLatencySim(ms).
+//
+// enableLatencySim(ms) persists the delay to sessionStorage (session-scoped, so
+// it clears when the tab closes — never a config you forget you left on);
+// #perform reads it right before the fetch and awaits setTimeout(ms), stretching
+// the already-set busy window to something visible. disableLatencySim() clears
+// it. NAMED exports (the setConfirmResolver precedent) — but importmap module
+// exports are unreachable from the browser console, so registerReactiveActions
+// ALSO attaches these to window.PhlexReactive, and ONLY when the app opts in with
+// <meta name="phlex-reactive-env" content="development"> (see #attachLatencyHandle).
+export const LATENCY_KEY = "phlex-reactive:latency"
+
+// One-time "sim active" banner guard (module-level, mirroring offlineRegistered):
+// #maybeSimulateLatency warns ONCE while the sim is on, not once per request.
+let latencyBannerShown = false
+
+export function enableLatencySim(ms) {
+  if (typeof sessionStorage === "undefined") return
+  sessionStorage.setItem(LATENCY_KEY, String(ms))
+}
+
+export function disableLatencySim() {
+  if (typeof sessionStorage === "undefined") return
+  sessionStorage.removeItem(LATENCY_KEY)
+}
+
+// The dev gate. importmap module exports aren't reachable from the DevTools
+// console, so we expose the two functions on a window handle — but ONLY when the
+// app authored <meta name="phlex-reactive-env" content="development">. There is
+// NO engine-emitted meta (the engine can't inject into the host layout); the
+// install generator ships the snippet commented. Without the meta: no global
+// handle at all, and #perform short-circuits on the null sessionStorage read —
+// zero production surface. The `?.content` chain is fully defensive (a stubbed
+// document with no querySelector, a missing meta) so bootstrap never throws.
+function attachLatencyHandle() {
+  if (typeof window === "undefined" || typeof document === "undefined") return
+  const env = document.querySelector?.('meta[name="phlex-reactive-env"]')?.content
+  if (env !== "development") return
+  window.PhlexReactive = { enableLatencySim, disableLatencySim }
+}
+
+// Test seam: forget the one-time active-sim banner so the next test re-warns.
+export function __resetReactiveLatencyForTest() {
+  latencyBannerShown = false
+}
+
 export function registerReactiveActions() {
   registerReactiveVisit()
   registerReactiveToken()
   registerReactiveJs()
   registerReactiveDismiss()
   registerReactiveOffline()
+  attachLatencyHandle()
 }
 
 // Escape a DOM id for safe interpolation into a RegExp (an id can legally contain
@@ -919,6 +969,28 @@ export default class extends Controller {
     region.appendChild(template.content.cloneNode(true))
   }
 
+  // Latency simulator (issue #102): if enableLatencySim(ms) stored a delay in
+  // sessionStorage, await it before the fetch so the busy window (already open
+  // since enqueue) is actually visible on localhost. Reads the key LIVE per
+  // request — like the CSRF token — so toggling the sim mid-session takes effect
+  // on the very next action without a reload. A missing sessionStorage, an absent
+  // key, or a non-positive/NaN value resolves immediately (no timer, no delay) —
+  // the whole feature is inert for any app that never opts in. Warns ONCE while
+  // active (module-level guard), not once per request.
+  #maybeSimulateLatency() {
+    if (typeof sessionStorage === "undefined") return Promise.resolve()
+    const ms = Number(sessionStorage.getItem(LATENCY_KEY))
+    if (!Number.isFinite(ms) || ms <= 0) return Promise.resolve()
+    if (!latencyBannerShown) {
+      latencyBannerShown = true
+      console.warn(
+        `[phlex-reactive] latency simulator ACTIVE — every action is delayed by ${ms}ms. ` +
+          "Call PhlexReactive.disableLatencySim() (or clear sessionStorage) to turn it off.",
+      )
+    }
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
   async #perform(action, params, inverse, settle) {
     // Auto-collect named field values inside this component so a button-
     // triggered action still receives sibling inputs (Livewire-style), plus any
@@ -941,6 +1013,13 @@ export default class extends Controller {
     // aria-busy on the root is now driven by the loading pending counter
     // (#applyLoading, applied at ENQUEUE so it covers the queue wait too), not
     // set here. #settleLoading in the finally clears it — see #enqueue.
+
+    // Latency simulator (issue #102): the busy window (aria-busy + loading state)
+    // is already applied at enqueue, so awaiting the configured delay HERE — after
+    // that window opened and before the fetch — is what makes it visible on
+    // localhost. A null/absent/non-positive sessionStorage key is a no-op (zero
+    // production surface), so this line vanishes for any app that never opts in.
+    await this.#maybeSimulateLatency()
 
     try {
       // Offline gate (issue #101), authoritative at the NETWORK BOUNDARY (send
