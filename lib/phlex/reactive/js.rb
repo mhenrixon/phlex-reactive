@@ -157,6 +157,20 @@ module Phlex
         append("focus_first", target_args(to, global:))
       end
 
+      # --- Text content (issue #159) ---
+      #
+      # text(to, value) — set the target's textContent (stringified; nil clears).
+      # XSS-safe by construction: textContent only, NEVER innerHTML — strictly
+      # less powerful than set_attr. Pair with `global: true` to paint a value
+      # into a node OUTSIDE the component's root (the cross-root text escape,
+      # e.g. a read-only recap in another tab pane).
+
+      def text(to, value, global: false)
+        args = { "to" => normalize_target(to), "value" => value.to_s }
+        args["global"] = true if global
+        append("text", args.freeze)
+      end
+
       # --- Dispatch a bubbling CustomEvent (issue #96) ---
       #
       # dispatch(name, to: nil, detail: {}) — emit a bubbling CustomEvent so other

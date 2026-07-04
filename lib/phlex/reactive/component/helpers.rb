@@ -422,13 +422,23 @@ module Phlex
           definition = self.class.reactive_compute_def(name)
           raise Error, "#{self.class} has no reactive_compute #{name.inspect}" unless definition
 
-          {
-            data: {
-              reactive_compute_reducer_param: definition.reducer,
-              reactive_compute_inputs_param: compute_inputs_param(definition),
-              reactive_compute_outputs_param: definition.outputs.map(&:to_s).to_json
-            }
+          data = {
+            reactive_compute_reducer_param: definition.reducer,
+            reactive_compute_inputs_param: compute_inputs_param(definition),
+            reactive_compute_outputs_param: definition.outputs.map(&:to_s).to_json
           }
+          # Declared cross-root text mirrors (issue #159) ride as a JSON object of
+          # name → [id selectors]; omitted entirely when undeclared so the shipped
+          # wire stays byte-identical.
+          data[:reactive_compute_mirror_param] = compute_mirror_param(definition) if definition.mirror
+
+          { data: }
+        end
+
+        # The mirror param wire (issue #159): { "sum_a" => ["#sum_a"], … } — the
+        # values are ALWAYS arrays so the client parses one uniform shape.
+        def compute_mirror_param(definition)
+          definition.mirror.transform_keys(&:to_s).to_json
         end
 
         # The inputs param wire (issue #104). Untyped (array form) → a JSON ARRAY of

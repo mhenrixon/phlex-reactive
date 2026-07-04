@@ -80,9 +80,19 @@ class DemosController < ActionController::Base
   end
 
   # A NEW (unsaved) order: the split recomputes in-browser via reactive_compute,
-  # no round trip. total=500 seeds the three-way split.
+  # no round trip. total=500 seeds the three-way split. The page also carries a
+  # read-only recap OUTSIDE the reactive root (issue #159) — the component's
+  # declared `mirror:` paints #summary-cash/#summary-total via textContent.
+  # #summary-total deliberately seeds "—" so the spec can PROVE the identity
+  # paint happened (the text must change, not coincide).
   def new_order
-    render_component OrderComponent.new(order: Order.new(total: 500))
+    component = render_to_string(OrderComponent.new(order: Order.new(total: 500)), layout: false)
+    summary = <<~HTML
+      <div data-testid="order-summary" style="padding: 2rem">
+        Cash: <span id="summary-cash">0</span> / Total: <span id="summary-total">—</span>
+      </div>
+    HTML
+    render html: component + summary.html_safe, layout: true
   end
 
   # A PERSISTED order: editing allowance fires the reactive rebalance action and
@@ -167,6 +177,7 @@ class DemosController < ActionController::Base
         .ct-fade-to { animation: ct-fade-in 40ms ease-out }
       </style>
       <div data-testid="outside-area" style="padding: 4rem">outside the tabs</div>
+      <span id="ct-status-global" data-testid="status-global">One</span>
     HTML
     render html: component + extras.html_safe, layout: true
   end

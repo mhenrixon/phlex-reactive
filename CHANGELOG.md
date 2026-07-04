@@ -6,6 +6,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Cross-root text mirrors + the `text` client op (#159).** A derived value can
+  now be painted into a text node **outside** the computing component's reactive
+  root — the read-only recap in another tab pane that previously forced a
+  bespoke JS listener — with the library's default-deny posture intact:
+  - `reactive_compute ..., mirror: { sum_total: "#sum_total" }` declares
+    allowlisted cross-root text mirrors. Each compute pass paints every declared
+    name into its document-wide **id** target(s) via `textContent`
+    (change-guarded, never `innerHTML`, never blanks a name the pass produced no
+    value for). The value comes from the reducer result, a just-written output's
+    field, or a declared input's identity value — so it works with no reducer at
+    all. Non-id selectors raise at declare time AND are warn-and-skipped by the
+    client interpreter (two-sided default-deny). No `mirror:` → the wire is
+    byte-identical to before.
+  - `js.text(to, value, global: false)` — a new op that sets `textContent`
+    (stringified; `nil` clears), available to `on_client`, `reply.js`, and
+    `broadcast_js_to`. Strictly less powerful than `set_attr`; pair with
+    `global: true` for the cross-root paint.
+  - `global: true` is now honored on the `reactive:js` stream path: a single op
+    can opt out of the reply's target-root scope to document-wide resolution
+    (previously it was silently ignored when a `target` was set).
+
 ## [0.9.0] - 2026-07-03
 
 Consolidates everything since 0.2.6; tags 0.2.7–0.4.8 shipped without changelog

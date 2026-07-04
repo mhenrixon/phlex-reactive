@@ -28,9 +28,14 @@ class OrderComponent < ApplicationComponent
   reactive_record :order
   reactive_state :total, :allowance, :cash, :leasing
 
+  # `mirror:` (issue #159): the new-order page shows a read-only recap OUTSIDE
+  # this reactive root (another part of the page); the declared id targets are
+  # painted via textContent on every compute pass — cash from the reducer
+  # result, total from its field's identity value. No bespoke listener.
   reactive_compute :payment_split,
     inputs: %i[allowance cash leasing total],
-    outputs: %i[allowance cash leasing]
+    outputs: %i[allowance cash leasing],
+    mirror: { cash: "#summary-cash", total: "#summary-total" }
 
   action :rebalance, params: { allowance: :integer, cash: :integer, leasing: :integer, total: :integer }
 

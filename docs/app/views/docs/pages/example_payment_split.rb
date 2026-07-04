@@ -33,6 +33,7 @@ module Views
           disabled_field
           live_typing
           compute
+          cross_root_mirror
           transient
           notes
         end
@@ -303,6 +304,51 @@ module Views
               plain ', the field values) with the same derived number the reducer produces — '
               plain 'otherwise a later morph repaints stale text. That lockstep is the reconcile '
               plain 'contract the whole new-vs-persisted split relies on.'
+            end
+          end
+        end
+
+        def cross_root_mirror
+          DocsUI::Section('A recap outside the root: cross-root mirrors (#159)') do
+            md <<~MD
+              `reactive_text` is deliberately **root-isolated** (issue #15): a
+              node outside the computing component's reactive root is invisible
+              to it. But the split's numbers often need to show up in a
+              read-only recap that *isn't inside the editor at all* — a summary
+              tab pane, a sticky footer total. Instead of collapsing two
+              components into one form-wide root, the component **declares the
+              escape**:
+            MD
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
+              reactive_compute :payment_split,
+                inputs:  %i[allowance cash leasing total],
+                outputs: %i[allowance cash leasing],
+                mirror:  { cash: "#summary-cash", total: "#summary-total" }
+            RUBY
+            md <<~MD
+              On every compute pass, each declared mirror name is painted into
+              its document-wide **id** target(s) via `textContent`. The value
+              comes from wherever the pass produced it — a reducer-result key
+              (an *extra*, text-only output), a just-written output's settled
+              field value, or a declared input's identity value (which works
+              with no reducer at all). A name the pass produced no value for is
+              skipped — **a mirror never blanks a recap.**
+            MD
+            DocsUI::Callout(:note, title: 'Declared, not arbitrary') do
+              plain 'Only the selectors in the '
+              code { 'mirror:' }
+              plain ' map are ever written, and they must be single id selectors — a '
+              plain 'class/attribute/compound selector raises at declare time and is '
+              plain 're-refused by the client interpreter (two-sided default-deny). '
+              plain 'Writes are '
+              code { 'textContent' }
+              plain ' only, never '
+              code { 'innerHTML' }
+              plain ' — same XSS-safe contract as '
+              code { 'reactive_text' }
+              plain '. For a server-driven cross-root paint, use '
+              code { 'reply.js(js.text("#summary-cash", cash, global: true))' }
+              plain ' instead.'
             end
           end
         end
