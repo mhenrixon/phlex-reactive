@@ -20,6 +20,14 @@ module Phlex
       module DSL
         extend ActiveSupport::Concern
 
+        # A cross-root mirror target must be a single ID selector (issue #159)
+        # — "#" + a CSS identifier, nothing else. Not a class, not an attribute
+        # selector, not `*`, not a compound/descendant/list selector: a
+        # compromised reducer must not be able to scribble text across the
+        # page. The client interpreter enforces the SAME shape (two-sided
+        # default-deny, mirroring the attr allowlist posture).
+        MIRROR_ID_SELECTOR = /\A#[A-Za-z_][\w-]*\z/
+
         class_methods do
           # Declare the ActiveRecord (GlobalID-able) record this component is
           # rebuilt from. The signed token carries its GlobalID; the server
@@ -165,7 +173,24 @@ module Phlex
           #
           #   import { setComputeReducer } from "phlex/reactive/compute"
           #   setComputeReducer("payment_split", ({ allowance, cash, leasing, total }, { changed }) => ({ … }))
-          def reactive_compute(name, inputs: nil, outputs: nil, reducer: nil)
+          #
+          # `mirror:` (issue #159) declares CROSS-ROOT text mirrors — the opt-in
+          # escape from root isolation (issue #15) for a derived value shown in a
+          # recap OUTSIDE the computing root (another tab pane, a sticky footer):
+          #
+          #   reactive_compute :split,
+          #     inputs:  %i[a b total],
+          #     outputs: %i[a b],
+          #     mirror:  { sum_a: "#sum_a", sum_total: ["#sum_total", "#footer-total"] }
+          #
+          # Each key is a compute name — a declared input (its identity mirror
+          # also paints cross-root) or a reducer-result key (an extra text-only
+          # output). Each value is one or more DOCUMENT-WIDE id selectors the
+          # value is painted into via textContent (XSS-safe, change-guarded,
+          # never innerHTML, never a field write). Id selectors ONLY — a class/
+          # attribute/compound selector raises here (declared, not arbitrary;
+          # the client interpreter re-checks the same shape).
+          def reactive_compute(name, inputs: nil, outputs: nil, reducer: nil, mirror: nil)
             return reactive_compute_def(name) if inputs.nil? && outputs.nil?
 
             input_names, input_types = normalize_compute_inputs(inputs)
@@ -173,7 +198,8 @@ module Phlex
               self, :computes, name.to_sym,
               ComputeDefinition.new(
                 name: name.to_sym, inputs: input_names, input_types:,
-                outputs: Array(outputs).map(&:to_sym), reducer: (reducer || name).to_s
+                outputs: Array(outputs).map(&:to_sym), reducer: (reducer || name).to_s,
+                mirror: normalize_compute_mirror(mirror)
               )
             )
           end
@@ -208,6 +234,27 @@ module Phlex
             else
               [Array(inputs).map(&:to_sym), nil]
             end
+          end
+
+          # Normalize `mirror:` to { name => [id selectors] } (nil passes
+          # through — no mirror declared). Each value may be one selector or a
+          # list; every selector is validated LOUDLY at declare time against
+          # MIRROR_ID_SELECTOR (id selectors only).
+          def normalize_compute_mirror(mirror)
+            return nil if mirror.nil?
+
+            mirror.to_h do |name, selectors|
+              list = Array(selectors).map(&:to_s)
+              list.each do
+                next if it.match?(MIRROR_ID_SELECTOR)
+
+                raise ArgumentError,
+                  "#{self}: mirror target #{it.inspect} for #{name.inspect} must be a single " \
+                  "id selector (\"#some-id\") — cross-root text mirrors are declared, allowlisted " \
+                  "targets, never arbitrary selectors"
+              end
+              [name.to_sym, list.freeze]
+            end.freeze
           end
 
           # Rebuild a component instance from a verified identity payload. Called

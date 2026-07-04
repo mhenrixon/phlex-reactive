@@ -354,11 +354,12 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `busy_on(:save)` | Mark any element so it carries `data-reactive-busy` **only while `save` is in flight** — a spinner styled with pure CSS, zero Ruby. See [Loading states](#declarative-loading-states-loading--disable_with). |
 | `on(:action, once: true)` | Fire at most once, then unbind (Stimulus's native `:once`). |
 | `on_client(:click, js.toggle("#menu"))` | **Client-only** trigger: applies declared DOM ops with ZERO round trip — no token, no POST, ever. Takes the same `window:`/`once:`/`outside:` modifiers. See [Client-only ops](#client-only-ops-on_client--js--zero-round-trips). |
-| `js` | The immutable op builder behind `on_client`: `show`/`hide`/`toggle` (the `hidden` attribute, with an optional `transition:`), `add_class`/`remove_class`/`toggle_class`, `set_attr`/`remove_attr`/`toggle_attr` (allowlisted names), `focus`/`focus_first`, and `dispatch` — chainable. |
+| `js` | The immutable op builder behind `on_client`: `show`/`hide`/`toggle` (the `hidden` attribute, with an optional `transition:`), `add_class`/`remove_class`/`toggle_class`, `set_attr`/`remove_attr`/`toggle_attr` (allowlisted names), `focus`/`focus_first`, `text` (set `textContent` — XSS-safe), and `dispatch` — chainable. |
 | `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
 | `reactive_text(:name, initial)` | Mirror a compute output (or a declared input) into a **text node** — a live preview heading, a character counter, `"Hello, {name}"` — via `textContent` (XSS-safe). The text sibling of `reactive_field`; carries no `name`, so it's never POSTed. See [Client-side computes](#client-side-computes-reactive_compute--reactive_text). |
 | `reactive_compute :name, inputs: { title: :string, qty: :number }, outputs:` | **Typed** inputs: a `:string` reaches the JS reducer raw, a `:number` is coerced through `Number`. The array form (`inputs: %i[a b]`) stays all-numeric. |
+| `reactive_compute :name, ..., mirror: { sum: "#summary-sum" }` | **Cross-root text mirrors**: paint a compute value into declared, id-allowlisted nodes **outside** the reactive root (a recap in another tab pane) via `textContent` — no bespoke listener. See [Cross-root mirrors](#cross-root-mirrors-mirror--painting-a-recap-outside-the-root). |
 | `reactive_root(track_dirty: true, warn_unsaved: true)` / `reactive_field(:param, dirty: true)` | **Dirty tracking** against the DOM's own `defaultValue`/`defaultChecked`/`defaultSelected` — no client state. Marks changed fields + the root `data-reactive-dirty`; `warn_unsaved:` arms a `beforeunload`/`turbo:before-visit` guard. Style with `[data-reactive-dirty]`. See [Dirty-field tracking](#dirty-field-tracking-dirty--track_dirty--warn_unsaved). |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
 | `reactive_collection :name, item:, container:, count:, empty:, size:` | Declare an add/remove-row list once; actions call `reply.append`/`prepend`/`remove`. See [Reactive collections](#reactive-collections-addremove-rows--count--empty-state). |
@@ -771,6 +772,11 @@ button(**on_client(:click, js
 - **`focus(to)`** focuses the first match; **`focus_first(to)`** focuses the first
   focusable descendant of the match (e.g. the first menuitem inside an opened
   menu).
+- **`text(to, value)`** sets the target's `textContent` (stringified; `nil`
+  clears) — **XSS-safe by construction**, never `innerHTML`, strictly less
+  powerful than `set_attr`. With `global: true` it is the **cross-root text
+  escape**: paint a value into a recap node outside the component's root
+  (`js.text("#sum_total", total, global: true)`).
 - **`dispatch(name, to: nil, detail: {})`** emits a **bubbling `CustomEvent`** so
   another component or a plain Stimulus controller can react to a client-only
   interaction — `to:` picks the element (default: the component root), `detail:`
@@ -895,6 +901,47 @@ setComputeReducer("preview", ({ title }) => ({
   same derived value the reducer would (`reactive_text(:char_count, "5/80")`), or
   a later morph repaints stale text — the same reconcile contract the whole
   new-vs-persisted split relies on.
+
+### Cross-root mirrors (`mirror:`) — painting a recap outside the root
+
+`reactive_text` is deliberately **root-isolated** (a nested component's nodes are
+never touched — issue #15's ownership rule). But a derived value often needs to
+show up in a text node that *isn't inside the computing root at all*: a read-only
+recap in another tab pane, a sticky footer total. Collapsing two components into
+one form-wide root just for a display mirror would be a large, risky restructure —
+so the component **declares the escape** instead:
+
+```ruby
+reactive_compute :split,
+  inputs:  %i[a b total],
+  outputs: %i[a b],
+  mirror:  { sum_a: "#sum_a", sum_total: ["#sum_total", "#footer-total"] }
+```
+
+On every compute pass, each declared mirror name is painted into its
+document-wide id target(s) via `textContent`. The value comes from wherever the
+pass produced it — one declaration covers all three shapes:
+
+- a **reducer-result key** (`sum_total:` above — an *extra*, text-only output the
+  reducer returns alongside its real outputs),
+- a **just-written output**'s settled field value,
+- a declared **input**'s identity value (works with **no reducer at all**, like
+  the owned-text-node identity mirror).
+
+A name the pass produced no value for is **skipped — a mirror never blanks a
+recap**. The security posture matches the rest of the library's default-deny:
+
+- **Opt-in and declared, never implicit.** Only the selectors in the `mirror:`
+  map are ever written — a plain `reactive_text` node stays root-isolated.
+- **Id selectors only.** A class/attribute/`*`/compound selector **raises at
+  declare time**, and the client interpreter re-checks the same shape
+  (warn-and-skip) — a hand-built attr can't widen a declared mirror into a
+  page-wide selector write.
+- **`textContent` only, never `innerHTML`** — XSS-safe by construction, and never
+  a field/attribute/style write.
+
+For a **server-driven** cross-root paint (from an action reply or a broadcast),
+use the `text` op instead: `reply.js(js.text("#sum_total", total, global: true))`.
 
 ### Combobox keyboard navigation (`listnav:`)
 
@@ -1129,6 +1176,9 @@ end
 `target:` scopes op resolution on the client; it defaults to the bound
 component's id for `replace`/`morph`/`update` (so `@root` and component-relative
 selectors just work), and to document-scope for a subject-free `reply.with`.
+`global: true` on a single op opts it out of the target scope to document-wide
+resolution — `reply.morph.js(js.text("#sum_total", total, global: true))` paints
+a recap node outside the component while the morph stays root-targeted.
 
 The same ops broadcast to **every** subscriber of a stream over the usual
 transport (Action Cable **or** pgbus) — a background nudge to all viewers:

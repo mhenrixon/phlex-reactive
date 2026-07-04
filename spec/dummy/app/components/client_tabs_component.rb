@@ -32,10 +32,14 @@ class ClientTabsComponent < ApplicationComponent
 
   # One op chain per tab: hide every panel, show the picked one, restyle the
   # tab buttons — the canonical "I had to write a Stimulus controller" case,
-  # now one line of declared ops.
+  # now one line of declared ops. The text ops (issue #159) paint the picked
+  # label into a status node INSIDE the root and — via the global: escape —
+  # into a recap node OUTSIDE it (textContent only, XSS-safe).
   def tab_button(index, label, active:)
     ops = js.hide(".ct-panel").show("#ct-panel-#{index}")
       .remove_class(".ct-tab", "active").add_class("#ct-tab-#{index}", "active")
+      .text("#ct-status", label)
+      .text("#ct-status-global", label, global: true)
 
     button(**mix(on_client(:click, ops),
       id: "ct-tab-#{index}", class: ["ct-tab", active ? "active" : nil].compact,
@@ -45,6 +49,7 @@ class ClientTabsComponent < ApplicationComponent
   def panels
     div(id: "ct-panel-1", class: "ct-panel", data: { testid: "panel-1" }) { "First panel" }
     div(id: "ct-panel-2", class: "ct-panel", hidden: true, data: { testid: "panel-2" }) { "Second panel" }
+    span(id: "ct-status", data: { testid: "status" }) { "One" }
   end
 
   def menu

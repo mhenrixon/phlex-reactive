@@ -1254,6 +1254,62 @@ RSpec.describe Phlex::Reactive::Component do
           .to eq(%w[title_preview char_count])
       end
     end
+
+    # Issue #159: cross-root text mirrors. `mirror:` declares an ALLOWLISTED map
+    # from a compute name to document-wide id selector(s) painted via textContent
+    # — the declared escape from root isolation (issue #15) for a derived value
+    # shown in a recap OUTSIDE the computing root. Id selectors only (two-sided
+    # default-deny with the client interpreter); the wire is byte-identical when
+    # no mirror is declared.
+    describe "cross-root mirrors (mirror:, issue #159)" do
+      let(:mirror_klass) do
+        Class.new do
+          include Phlex::Reactive::Component
+
+          def self.name = "MirrorCompute"
+
+          reactive_compute :split,
+            inputs: %i[a b total],
+            outputs: %i[a b],
+            mirror: { sum_a: "#sum_a", sum_total: ["#sum_total", "#footer-total"] }
+        end
+      end
+
+      it "captures the mirror map normalized to name → array of id selectors" do
+        expect(mirror_klass.reactive_compute(:split).mirror)
+          .to eq(sum_a: ["#sum_a"], sum_total: ["#sum_total", "#footer-total"])
+      end
+
+      it "reports nil mirror when undeclared" do
+        expect(compute_klass.reactive_compute(:payment_split).mirror).to be_nil
+      end
+
+      it "rejects a non-id selector LOUDLY at declare time (class, attribute, *, compound)" do
+        # rubocop:disable Style/ItBlockParameter -- `bad` is read inside the nested Class.new block, where `it` would rebind
+        [".totals", "[data-x]", "*", "div#x", "#x .y", "#x,#y"].each do |bad|
+          expect do
+            Class.new do
+              include Phlex::Reactive::Component
+
+              def self.name = "BadMirror"
+              reactive_compute :split, inputs: %i[a], outputs: %i[b], mirror: { sum: bad }
+            end
+          end.to raise_error(ArgumentError, /id selector/i), "expected #{bad.inspect} to be refused"
+        end
+        # rubocop:enable Style/ItBlockParameter
+      end
+
+      it "emits the mirror map as a JSON object of name → [ids] on the root attrs" do
+        attrs = mirror_klass.new.send(:reactive_compute_attrs, :split)
+        expect(JSON.parse(attrs[:data][:reactive_compute_mirror_param]))
+          .to eq("sum_a" => ["#sum_a"], "sum_total" => ["#sum_total", "#footer-total"])
+      end
+
+      it "emits NO mirror param when undeclared (the wire stays byte-identical)" do
+        attrs = compute_klass.new.send(:reactive_compute_attrs, :payment_split)
+        expect(attrs[:data]).not_to have_key(:reactive_compute_mirror_param)
+      end
+    end
   end
 
   # Issue #104: reactive_text mirrors a field into a TEXT NODE (live preview,

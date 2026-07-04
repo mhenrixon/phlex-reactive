@@ -47,8 +47,8 @@ module Views
               them locally through the one generic reactive controller. The ops are a
               **frozen whitelist** — `show`/`hide`/`toggle`, `add_class`/
               `remove_class`/`toggle_class`, `set_attr`/`toggle_attr`/`remove_attr`,
-              `focus`/`focus_first`, `dispatch` — each a pure, local DOM mutation.
-              Nothing is read back, nothing is sent anywhere.
+              `focus`/`focus_first`, `text`, `dispatch` — each a pure, local DOM
+              mutation. Nothing is read back, nothing is sent anywhere.
 
               - **Tabs:** `js.hide(".ct-panel").show("#ct-panel-1")` plus class ops on
                 the tab buttons — the "I had to write a Stimulus controller" case, now
@@ -73,6 +73,12 @@ module Views
               or newer ops attribute can never break the page. `focus`/`focus_first`
               are allowed here (an actor's own gesture) but **rejected** from a
               broadcast, where stealing focus in every subscriber's tab would be hostile.
+
+              `text(to, value)` (#159) sets the target's `textContent` — stringified,
+              `nil` clears, **never `innerHTML`** — so a chain can paint a label or a
+              derived number without a round trip. Pair it with `global: true` to
+              reach a node **outside** the component's root (the cross-root text
+              escape a read-only recap needs).
             MD
             DocsUI::Callout(:tip) do
               md <<~MD

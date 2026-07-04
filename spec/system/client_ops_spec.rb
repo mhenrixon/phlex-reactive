@@ -33,6 +33,11 @@ RSpec.describe "Client-only ops (issue #95 — on_client + js)", type: :system d
     expect(page).to have_css("#ct-tab-2.active")
     expect(page).to have_no_css("#ct-tab-1.active")
 
+    # The text op (issue #159) painted the picked label into the status node
+    # inside the root AND — via global: true — into the recap OUTSIDE it.
+    expect(page).to have_css("[data-testid='status']", text: "Two")
+    expect(page).to have_css("[data-testid='status-global']", text: "Two")
+
     # The menu opens via a client op…
     find("[data-testid='menu-open']").click
     expect(page).to have_css("[data-testid='menu']")

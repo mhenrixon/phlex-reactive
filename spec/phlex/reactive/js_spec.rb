@@ -236,4 +236,31 @@ RSpec.describe Phlex::Reactive::JS do
         .to raise_error(ArgumentError, /during, from, to/)
     end
   end
+
+  # --- Issue #159: the text op (set textContent — the cross-root text escape) ---
+
+  describe "text op (#text) — textContent only, never innerHTML" do
+    it "serializes the target and the stringified value" do
+      expect(JSON.parse(js.text("#sum_total", 480).to_json))
+        .to eq([["text", { "to" => "#sum_total", "value" => "480" }]])
+    end
+
+    it "stringifies nil to an empty string (clears the node, never crashes the client)" do
+      expect(JSON.parse(js.text("#sum_total", nil).to_json).dig(0, 1, "value")).to eq("")
+    end
+
+    it "carries global: true only when asked (root-scoped is the lean default)" do
+      expect(JSON.parse(js.text("#sum_total", 480, global: true).to_json))
+        .to eq([["text", { "to" => "#sum_total", "value" => "480", "global" => true }]])
+      expect(JSON.parse(js.text("#sum_total", 480).to_json).dig(0, 1)).not_to have_key("global")
+    end
+
+    it "accepts :root as the target" do
+      expect(JSON.parse(js.text(:root, "done").to_json).dig(0, 1, "to")).to eq("@root")
+    end
+
+    it "rejects a target that is neither :root nor a CSS selector string" do
+      expect { js.text(:sum_total, 480) }.to raise_error(ArgumentError, /:root or a CSS selector/)
+    end
+  end
 end

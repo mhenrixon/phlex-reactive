@@ -86,7 +86,12 @@ module Phlex
       # { name => type } hash for the typed HASH form (:string reads the field
       # value raw, :number coerces). `inputs` stays the ordered name list either
       # way, so iteration order is preserved and the array-form wire is unchanged.
-      ComputeDefinition = Data.define(:name, :inputs, :outputs, :reducer, :input_types)
+      #
+      # `mirror` (issue #159) is nil when undeclared, else a { name => [id
+      # selectors] } map — DECLARED cross-root text mirrors, validated to id
+      # selectors only at declare time (the server half of the two-sided
+      # default-deny; the client interpreter re-checks the shape).
+      ComputeDefinition = Data.define(:name, :inputs, :outputs, :reducer, :input_types, :mirror)
 
       # A declared add/remove-row collection (issue #35): the list contract tied
       # into one unit — the per-row item component, the container DOM id rows

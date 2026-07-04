@@ -399,6 +399,15 @@ const CLIENT_OPS = Object.freeze({
   focus: (el) => el.focus?.(),
   focus_first: (el) => firstFocusable(el)?.focus?.(),
 
+  // Text op (issue #159): set textContent — XSS-safe by construction (never
+  // innerHTML), strictly less powerful than set_attr. Change-guarded like
+  // #mirrorText. With global: true it is the cross-root text escape: paint a
+  // value into a recap node OUTSIDE the component's root.
+  text: (el, args) => {
+    const text = String(args.value ?? "")
+    if (el.textContent !== text) el.textContent = text
+  },
+
   // Dispatch a bubbling CustomEvent (issue #96). RAW element.dispatchEvent — the
   // controller SHADOWS Stimulus's this.dispatch helper, so it must not be used.
   dispatch: (el, args) => {
@@ -418,6 +427,19 @@ function setHidden(el, hidden, args) {
 function guardAttr(name) {
   if (!attrRefused(name)) return true
   console.warn(`[phlex-reactive] refused client attr op on ${JSON.stringify(name)} — skipped`)
+  return false
+}
+
+// A cross-root mirror target must be a single ID selector (issue #159) — "#" +
+// a CSS identifier, nothing else. The client half of the two-sided default-deny
+// (reactive_compute's `mirror:` validates the SAME shape loudly at declare
+// time): a hand-built mirror attr must not widen a declared text mirror into a
+// page-wide selector write. A refused selector warns + skips (its siblings
+// still apply), matching the attr-allowlist posture.
+const MIRROR_ID_SELECTOR = /^#[A-Za-z_][\w-]*$/
+function guardMirrorSelector(selector) {
+  if (typeof selector === "string" && MIRROR_ID_SELECTOR.test(selector)) return true
+  console.warn(`[phlex-reactive] refused cross-root mirror target ${JSON.stringify(selector)} — skipped`)
   return false
 }
 
@@ -470,12 +492,16 @@ function applyOps(list, resolveTargets) {
 // selector with no root (no `target` attr on the stream) resolves document-wide
 // — a broadcast op anchored by a global selector (#bell) rather than a
 // component. Unlike the controller path there is no nested-reactive-root
-// ownership filter: a server-pushed op names its own scope explicitly.
+// ownership filter: a server-pushed op names its own scope explicitly —
+// including `global: true`, which opts a single op out of the target-root
+// scope to document-wide resolution (issue #159; the same escape the builder
+// documents for the controller path).
 function streamOpTargets(args, root) {
   const to = args.to
   if (root) {
     if (to === "@root") return [root]
     if (typeof to !== "string" || to === "") return []
+    if (args.global) return [...document.querySelectorAll(to)]
     return [...root.querySelectorAll(to)]
   }
   // No target root: document-scoped. "@root" is meaningless here (nothing to
@@ -759,9 +785,14 @@ export default class extends Controller {
     for (const name of inputs) this.#mirrorText(name, ownedField(name)?.value ?? "")
 
     const key = this.element.getAttribute("data-reactive-compute-reducer-param")
-    if (!key) return
-    const reduce = computeReducer(key)
-    if (!reduce) return
+    const reduce = key ? computeReducer(key) : null
+    if (!reduce) {
+      // No reducer registered: the identity pass above still ran, so declared
+      // cross-root mirrors of the INPUT names still paint (issue #159) — a
+      // reducer-less binding mirrors, exactly like the owned-text-node case.
+      this.#applyComputeMirrors({}, ownedField)
+      return
+    }
 
     const outputs = this.#parseComputeList("data-reactive-compute-outputs-param")
 
@@ -808,6 +839,10 @@ export default class extends Controller {
         this.#mirrorText(name, result[name])
       }
     }
+
+    // Cross-root text mirrors (issue #159) — AFTER the outputs are applied, so
+    // a mirror keyed on a just-written output paints the settled value.
+    this.#applyComputeMirrors(result, ownedField)
   }
 
   // Client-side list navigation (combobox keyboard nav, issue #72). Wired by
@@ -938,6 +973,47 @@ export default class extends Controller {
   #ownedTextNodes(name) {
     const nodes = this.element.querySelectorAll(`[data-reactive-text="${name}"]`)
     return Array.from(nodes).filter((el) => this.#ownsField(el))
+  }
+
+  // Cross-root text mirrors (issue #159): paint every DECLARED mirror name into
+  // its allowlisted document-wide id targets via textContent — the opt-in escape
+  // from root isolation (issue #15) for a recap OUTSIDE the computing root. The
+  // value is the reducer's result when it produced one, else the owned field's
+  // CURRENT value (an input identity mirror / a just-written output) — one
+  // declaration covers all three shapes. A name with NO value this pass is
+  // SKIPPED (a mirror never blanks a recap the reducer didn't feed). textContent
+  // only (never innerHTML), change-guarded, and NO input dispatch — same
+  // contract as #mirrorText. With no mirror declared this is one getAttribute
+  // and out — the shipped compute path never touches the document.
+  #applyComputeMirrors(result, ownedField) {
+    const mirror = this.#parseComputeMirror()
+    for (const [name, selectors] of Object.entries(mirror)) {
+      const value = name in result ? result[name] : ownedField(name)?.value
+      if (value === undefined || value === null) continue
+      const text = String(value)
+      for (const sel of Array.isArray(selectors) ? selectors : [selectors]) {
+        if (!guardMirrorSelector(sel)) continue
+        for (const node of document.querySelectorAll(sel)) {
+          if (node.textContent === text) continue
+          node.textContent = text
+        }
+      }
+    }
+  }
+
+  // The declared cross-root mirror map (issue #159): a JSON object of
+  // { name: [id selectors] } from data-reactive-compute-mirror-param (emitted by
+  // reactive_compute's `mirror:`). Absent/malformed degrades to {} — a bad
+  // binding must never throw on input.
+  #parseComputeMirror() {
+    const raw = this.element.getAttribute("data-reactive-compute-mirror-param")
+    if (!raw) return {}
+    try {
+      const parsed = JSON.parse(raw)
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}
+    } catch {
+      return {}
+    }
   }
 
   // Enqueue the action — debounced if a debounce window is set, else immediately.
