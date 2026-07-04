@@ -59,4 +59,13 @@
     cursor: default !important;
     background-color: transparent !important;
   }
+
+  /* Widen the sidebar past docs-kit's default w-72 (18rem) so the longest nav
+     labels ("File uploads & custom types", "Team inbox (flagship)") fit on one
+     line without clipping. The gem hardcodes w-72 on the DocsUI::Sidebar root
+     (the .bg-base-200 container) inside .drawer-side; widen just that container
+     on desktop, leaving the transparent overlay sibling alone. */
+  .lg\:drawer-open > .drawer-side > .bg-base-200 {
+    width: 20rem !important;
+  }
 }
