@@ -6,6 +6,7 @@ module Views
       class Security < DocsUI::Page
         title 'Security & threat model'
         eyebrow 'Guide'
+        description 'Secure phlex-reactive Rails actions: signed-identity tokens, default-deny actions, schema-coerced params, authorization, CSRF, and endpoint failure modes'
 
         def lead
           'Every reactive action is a browser-reachable RPC. phlex-reactive makes the safe path the ' \
@@ -31,6 +32,7 @@ module Views
 
         def signature_guarantees
           DocsUI::Section("What the signature guarantees (and what it doesn't)") do
+            render Components::Diagrams::TrustBoundary.new
             md <<~MD
               The DOM token is a `MessageVerifier`-signed payload:
 
