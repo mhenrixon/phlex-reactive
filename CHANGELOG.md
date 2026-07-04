@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Value-conditional visibility — `reactive_show` (#161).** The `x-show` /
+  `data-show` / `wire:show` case — show/hide an element from a form field's
+  **current value** — no longer needs a hand-written `change`-listener Stimulus
+  controller. Spread `reactive_show(:mode, not: "off")` onto the element to
+  show/hide (also `equals:` and `in: [...]`; `equals: true` reads a checkbox's
+  checked state, a radio group reads the checked radio's value) and the generic
+  controller toggles the `hidden` attribute on every `input`/`change` —
+  client-only, zero round trip, no token. The predicate is a **declared literal
+  match**, never an expression (no eval surface); exactly one predicate is
+  enforced loudly at render; a missing field or malformed wire attr is
+  warn-and-skipped (client-side default-deny). Visibility seeds at connect and
+  re-syncs after a `turbo:morph-element`; a `reactive_compute` output write
+  dispatches a real `input` event, so derived values drive visibility too.
+  Ownership follows the nested-root rules (#15). Roots without a binding pay
+  one connect-time probe — no new listeners, byte-identical wire.
+
 - **Cross-root text mirrors + the `text` client op (#159).** A derived value can
   now be painted into a text node **outside** the computing component's reactive
   root — the read-only recap in another tab pane that previously forced a
