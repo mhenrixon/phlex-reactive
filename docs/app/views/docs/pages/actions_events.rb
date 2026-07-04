@@ -10,6 +10,7 @@ module Views
       class ActionsEvents < DocsUI::Page
         title 'Actions & events'
         eyebrow 'Guide'
+        description 'Bind DOM events to default-deny reactive Phlex actions in Rails: declare on(...) handlers, coerce input via a param schema, add keyboard and timing modifiers'
 
         def lead
           'How a DOM event becomes a server action: `action` declares what the ' \

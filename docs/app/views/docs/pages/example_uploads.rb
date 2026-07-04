@@ -11,6 +11,7 @@ module Views
       class ExampleUploads < DocsUI::Page
         title 'File uploads & custom types'
         eyebrow 'Examples'
+        description 'Accept file uploads in a reactive Phlex action with :file and [:file] coercion over multipart FormData, plus nested params and custom Rails param types'
 
         def lead
           'Accept a file in a reactive action — attach a document, receipt, or ' \

@@ -6,6 +6,7 @@ module Views
       class ExampleNotifications < DocsUI::Page
         title 'Notifications / live badges (pure broadcast, no client action)'
         eyebrow 'Examples'
+        description 'Push live Rails notification badges with Streamable broadcasts and no client action — scope subscribers with visible_to and exclude the actor'
 
         def lead
           'Not every reactive component needs a client action — sometimes the server just pushes a re-render, ' \

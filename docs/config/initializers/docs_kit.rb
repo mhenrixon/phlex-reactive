@@ -33,5 +33,33 @@ Rails.application.config.to_prepare do
     # supplies #nav_items; the live Demos aren't authored .md pages, so they're
     # not indexed.
     c.nav_registries = { 'Docs' => Doc }
+
+    # Topbar: the brand clicks home; a GitHub link with the shipped brand mark.
+    c.brand_href    = '/'
+    c.topbar_links  = [
+      { href: 'https://github.com/mhenrixon/phlex-reactive', label: 'GitHub', icon: :github }
+    ]
+
+    # SEO / social sharing (docs-kit 1.0.2, DocsUI::MetaTags). Every page emits a
+    # full <head>: meta description, Open Graph, Twitter Card, canonical, favicon,
+    # theme-color. site_url absolutizes canonical/og:url even off-request (static
+    # renders); og_image resolves through Propshaft (image_url) to the digested
+    # /assets URL. The image is SITE content — app/assets/images/og/og.png is a
+    # hand-built 1200×630 card (regenerate a screenshot card with `bin/rails
+    # docs_kit:og` if you prefer). Per-page `description "..."` overrides the
+    # site default below and falls back to each page's #lead.
+    c.seo.description  = 'Server-driven reactive Phlex components for Rails — ' \
+                         'Livewire-style actions and live cross-tab updates, ' \
+                         'no bespoke JS. Signed identity, default-deny actions, ' \
+                         'pgbus-optional transport.'
+    c.seo.site_url     = 'https://phlex-reactive.zoolutions.llc'
+    c.seo.og_image     = 'og/og.png'
+    c.seo.og_type      = 'website'
+    c.seo.twitter_card = 'summary_large_image'
+    c.seo.locale       = 'en_US'
+    c.seo.theme_color  = '#1d232a' # daisyUI dark base-100 (themes.first)
+    # favicon href is used verbatim (not through the asset pipeline), so it's a
+    # public/ path served at a stable root URL — see public/favicon.svg.
+    c.seo.favicon      = '/favicon.svg'
   end
 end

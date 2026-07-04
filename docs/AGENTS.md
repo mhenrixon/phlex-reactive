@@ -67,11 +67,16 @@ end
   `Section("Title", description:)`, `Code(source, filename:)`,
   `Header("Title", eyebrow:)`.
 - **Wrappers that take no positional arg use lowercase page helpers** so a block
-  needs no parens: `md <<~'MD' … MD`, `prose { … }`, `example { |ex| … }`. (A bare
-  `DocsUI::Prose do` is a Ruby SyntaxError; the helpers sidestep it.)
+  needs no parens: `md <<~'MD' … MD`, `prose { … }`, `example { |ex| … }`,
+  `operation "operationId"`. (A bare `DocsUI::Prose do` is a Ruby SyntaxError; the
+  helpers sidestep it.)
 - **Reference material has dedicated helpers** — reach for these before prose:
   `DocsUI::PropTable`, `DocsUI::FieldTable`, `DocsUI::RequestExample`,
   `DocsUI::Callout(:note | :tip | :warning)`.
+- **OpenAPI-backed endpoints** (when `c.openapi` is set): `operation "createInvoice"`
+  renders a whole endpoint from the spec — badge, field/error tables, request tabs,
+  response — no hand-restatement. Append prose with a block; filter tabs with
+  `clients:`.
 
 ### Invariants — do not break
 
