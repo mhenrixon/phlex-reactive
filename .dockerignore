@@ -20,6 +20,8 @@ docs/storage/*
 **/*.sqlite3
 **/*.sqlite3-*
 docs/config/master.key
+docs/.env*
+!docs/.env*.erb
 .kamal/secrets*
 
 # Gem-side dev artifacts
@@ -31,7 +33,14 @@ spec/dummy/tmp
 spec/dummy/log
 spec/dummy/storage
 
-# Editor / OS
+# Test artifacts (both the gem and the docs app)
+**/coverage
+.rspec_status
+docs/spec/examples.txt
+
+# Editor / AI-assistant configs / OS
 .DS_Store
+**/.claude
+.ruby-lsp
 codedb.snapshot
 docs/codedb.snapshot
