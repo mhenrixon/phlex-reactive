@@ -49,15 +49,20 @@ COPY . /app/
 
 # Frozen is off: the path-gem's git-ls-files gemspec digest can't be pinned
 # across commits (see the CI note); the lock still pins every other gem.
+# Prune the bundler cache + any git-sourced gem checkouts afterwards so they
+# don't bloat the layer the final stage copies.
 RUN bundle config set frozen false && bundle install && \
-    rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache
+    rm -rf ~/.bundle/ "${BUNDLE_PATH}"/ruby/*/cache "${BUNDLE_PATH}"/ruby/*/bundler/gems/*/.git
 
 # Install JS deps (Tailwind CLI + daisyUI). assets:precompile is enhanced by the
 # css:build rake task (lib/tasks/build_css.rake), so it runs `bun run build:css`
 # — which shells to bin/build-css, resolving the daisyui + docs-kit gem @source
 # globs from `bundle show` — before propshaft fingerprints application.css.
 RUN bun install --frozen-lockfile
-RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile
+# Drop node_modules + the bun/asset caches after the precompile — only the built
+# CSS is kept, so the final stage's COPY of /app never carries the JS deps.
+RUN SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile && \
+    rm -rf node_modules /usr/local/bun tmp/cache
 
 
 # --- Final stage --------------------------------------------------------------
@@ -89,4 +94,12 @@ USER 1000:1000
 ENTRYPOINT ["/app/docs/bin/docker-entrypoint"]
 
 EXPOSE 3000
-CMD ["./bin/rails", "server", "-b", "0.0.0.0"]
+# Thruster fronts Puma (HTTP caching + compression + X-Sendfile). It listens on
+# HTTP_PORT and proxies to Puma on TARGET_PORT (it sets PORT for the child, which
+# config/puma.rb reads). HTTP_PORT MUST be the port traffic is routed to (Kamal's
+# `app_port: 3000` in config/deploy.yml, the EXPOSE above) — Thruster's default
+# is 80, which the non-root user can't reliably bind AND which kamal-proxy would
+# never route to, silently bypassing Thruster straight into Puma.
+ENV HTTP_PORT="3000" \
+    TARGET_PORT="3001"
+CMD ["./bin/thrust", "./bin/rails", "server"]

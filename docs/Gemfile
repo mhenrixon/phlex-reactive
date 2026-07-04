@@ -33,10 +33,10 @@ gem "daisyui", github: "mhenrixon/daisyui", require: "daisy_ui"
 
 # Shared docs-site chrome (Shell/Sidebar/Code/Page/...) — the single place the
 # layout/design lives, shared with the daisyUI docs site. Configured per-site via
-# DocsKit.configure (see config/initializers/docs_kit.rb). Referenced from GitHub
-# (not a local path) so the Docker build — whose context is THIS repo — can
-# resolve it; the gem lives in a sibling repo, outside the build context.
-gem "docs-kit", github: "mhenrixon/docs-kit", tag: "v1.0.2", require: "docs_kit"
+# DocsKit.configure (see config/initializers/docs_kit.rb). Pulled from RubyGems
+# now the gem is released there — the old GitHub ref (needed while the sibling
+# repo sat outside the Docker build context) is obsolete.
+gem "docs-kit", "~> 1.0.3", require: "docs_kit"
 
 # MCP — docs-kit's optional Model Context Protocol server (read-only, stateless).
 # Not a docs-kit gemspec dependency; present here so the /mcp endpoint (routes in

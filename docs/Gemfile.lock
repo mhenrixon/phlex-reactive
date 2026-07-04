@@ -6,24 +6,10 @@ GIT
       phlex (~> 2.0, >= 2.0.0)
       zeitwerk (~> 2.6)
 
-GIT
-  remote: https://github.com/mhenrixon/docs-kit.git
-  revision: 17f170b50014fa780b465f9d1148878104c95da8
-  tag: v1.0.2
-  specs:
-    docs-kit (1.0.2)
-      commonmarker (~> 2.0)
-      daisyui (>= 1.2, < 2)
-      nokogiri (>= 1.15, < 2)
-      phlex-rails (>= 2.0, < 3)
-      rails_icons (~> 1.1)
-      rouge (>= 4.0, < 5)
-      zeitwerk (~> 2.6)
-
 PATH
   remote: ..
   specs:
-    phlex-reactive (0.9.0)
+    phlex-reactive (0.9.1)
       globalid (~> 1.0)
       phlex-rails (>= 2.0, < 3)
       railties (>= 7.1, < 9.0)
@@ -180,6 +166,14 @@ GEM
       irb (~> 1.10)
       reline (>= 0.3.8)
     diff-lcs (1.6.2)
+    docs-kit (1.0.3)
+      commonmarker (~> 2.0)
+      daisyui (>= 1.2, < 2)
+      nokogiri (>= 1.15, < 2)
+      phlex-rails (>= 2.0, < 3)
+      rails_icons (~> 1.1)
+      rouge (>= 4.0, < 5)
+      zeitwerk (~> 2.6)
     drb (2.2.3)
     erb (6.0.4)
     erubi (1.13.1)
@@ -526,7 +520,7 @@ DEPENDENCIES
   capybara-playwright-driver
   daisyui!
   debug
-  docs-kit!
+  docs-kit (~> 1.0.3)
   falcon
   importmap-rails
   mcp
@@ -603,7 +597,7 @@ CHECKSUMS
   date (3.5.1) sha256=750d06384d7b9c15d562c76291407d89e368dda4d4fff957eb94962d325a0dc0
   debug (1.11.1) sha256=2e0b0ac6119f2207a6f8ac7d4a73ca8eb4e440f64da0a3136c30343146e952b6
   diff-lcs (1.6.2) sha256=9ae0d2cba7d4df3075fe8cd8602a8604993efc0dfa934cff568969efb1909962
-  docs-kit (1.0.2)
+  docs-kit (1.0.3) sha256=c647d5ac917f8c62d2e4488da297236f8634f4f476c9fec2264f08cb68b967a3
   drb (2.2.3) sha256=0b00d6fdb50995fe4a45dea13663493c841112e4068656854646f418fda13373
   erb (6.0.4) sha256=38e3803694be357fe2bfe312487c74beaf9fb4e5beb3e22498952fe1645b95d9
   erubi (1.13.1) sha256=a082103b0885dbc5ecf1172fede897f9ebdb745a4b97a5e8dc63953db1ee4ad9
@@ -668,7 +662,7 @@ CHECKSUMS
   pgmq-ruby (0.7.0) sha256=018a33e304b0c4513d3dc8cd06322ac767ebc0b475422738a71c198f066f2a76
   phlex (2.4.1) sha256=e596717fbfe38b5271840266758779ebe75092e02629f0c170287e6290a70b12
   phlex-rails (2.4.0) sha256=2bcddbd488681acb25753bab1887d3ac150e644244ff8ba307f2171a4d0195f5
-  phlex-reactive (0.9.0)
+  phlex-reactive (0.9.1)
   playwright-ruby-client (1.60.0) sha256=942242d6130e797b21213d9c49dc09d31235cab429a9edae73401ed112c94853
   pp (0.6.4) sha256=dfcb0fce700c41456265922884f9fe195d7fbb0674a3578e6c0f69588e82b570
   prettyprint (0.2.0) sha256=2bc9e15581a94742064a3cc8b0fb9d45aae3d03a1baa6ef80922627a0766f193
