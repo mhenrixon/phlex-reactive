@@ -12,7 +12,7 @@ RSpec.describe 'SEO meta tags', type: :request do
     before { get '/docs/security' }
 
     it 'renders the per-page meta description' do
-      expect(response.body).to match(%r{<meta name="description" content="Secure phlex-reactive[^"]+">})
+      expect(response.body).to match(/<meta name="description" content="Secure phlex-reactive[^"]+">/)
     end
 
     it 'renders the Open Graph card' do
@@ -26,7 +26,7 @@ RSpec.describe 'SEO meta tags', type: :request do
     end
 
     it 'resolves og:image to a digested /assets URL' do
-      m = response.body.match(%r{<meta property="og:image" content="([^"]+)">})
+      m = response.body.match(/<meta property="og:image" content="([^"]+)">/)
       expect(m).to be_present, 'no og:image tag'
       expect(m[1]).to match(%r{/assets/og/og-\w+\.png})
     end
@@ -42,7 +42,7 @@ RSpec.describe 'SEO meta tags', type: :request do
     before { get '/' }
 
     it 'renders a description and an og:image on the root' do
-      expect(response.body).to match(%r{<meta name="description" content="Reactive Phlex[^"]+">})
+      expect(response.body).to match(/<meta name="description" content="Reactive Phlex[^"]+">/)
       expect(response.body).to match(%r{<meta property="og:image" content="[^"]+/assets/og/og-\w+\.png">})
     end
   end

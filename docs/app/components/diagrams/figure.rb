@@ -12,18 +12,16 @@ module Components
         @label = label
       end
 
-      def view_template(&block)
-        figure(class: "not-prose my-6") do
+      def view_template(&)
+        figure(class: 'not-prose my-6') do
           div(
-            class: "overflow-x-auto rounded-box border border-base-300 bg-base-200/40 p-4 sm:p-6",
-            role: "img",
+            class: 'overflow-x-auto rounded-box border border-base-300 bg-base-200/40 p-4 sm:p-6',
+            role: 'img',
             aria: { label: @label || @caption }
           ) do
-            div(class: "min-w-[36rem]", &block)
+            div(class: 'min-w-[36rem]', &)
           end
-          if @caption
-            figcaption(class: "mt-2 text-sm text-base-content/60") { @caption }
-          end
+          figcaption(class: 'mt-2 text-sm text-base-content/60') { @caption } if @caption
         end
       end
     end
