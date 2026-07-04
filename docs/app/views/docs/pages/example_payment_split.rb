@@ -13,6 +13,7 @@ module Views
       class ExamplePaymentSplit < DocsUI::Page
         title 'Example: live payment split (sum-to-total rebalancer)'
         eyebrow 'Examples'
+        description 'Build a sum-to-total split form in Phlex: a server round-trip morphs the peers in place, and a reactive_compute reducer rebalances instantly on the client'
 
         def lead
           'Three amounts must always add up to a total. Editing one rebalances ' \

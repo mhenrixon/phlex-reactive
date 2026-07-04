@@ -6,6 +6,7 @@ module Views
       class ExampleFailure < DocsUI::Page
         title 'Example: failure surface'
         eyebrow 'Examples'
+        description 'How phlex-reactive surfaces a failed reactive action: a server-rendered error_flash, a CSS data-reactive-error hook, and 403, timeout, and offline handling'
 
         def lead
           'Reactive actions don’t only succeed. This shows what an adopter gets for ' \

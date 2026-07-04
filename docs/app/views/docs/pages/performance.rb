@@ -6,6 +6,7 @@ module Views
       class Performance < DocsUI::Page
         title 'Performance'
         eyebrow 'Guide'
+        description 'How phlex-reactive keeps the component re-render, identity-token signing, param coercion, and broadcast fan-out fast, plus how to benchmark them yourself'
 
         def lead
           'phlex-reactive aims to be fast in the places that run on every interaction — the re-render, ' \

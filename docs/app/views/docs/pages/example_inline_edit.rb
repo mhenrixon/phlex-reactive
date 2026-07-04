@@ -6,6 +6,7 @@ module Views
       class ExampleInlineEdit < DocsUI::Page
         title 'Example: inline edit + dirty tracking'
         eyebrow 'Examples'
+        description 'Build click-to-edit fields in reactive Phlex for Rails: Enter saves, Escape cancels, focus survives the morph, an Unsaved badge tracks dirty state'
 
         def lead
           'Click-to-edit that replaces a Stimulus controller plus three routes: ' \

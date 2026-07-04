@@ -10,7 +10,8 @@ module DocsNav
     'counter' => 'calculator',
     'payment-split' => 'scale',
     'todos' => 'list-checks',
-    'chat' => 'messages-square'
+    'chat' => 'messages-square',
+    'team-inbox' => 'inbox'
   }.freeze
 
   # A lucide icon per doc group.

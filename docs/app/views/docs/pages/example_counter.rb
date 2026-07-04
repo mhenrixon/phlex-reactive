@@ -6,6 +6,7 @@ module Views
       class ExampleCounter < DocsUI::Page
         title 'Example: counter (the smallest reactive component)'
         eyebrow 'Examples'
+        description 'Build the smallest reactive Phlex counter in Rails: signed reactive_state, a typed param schema, default-deny actions, and rapid-click concurrency handled'
 
         def lead
           'A record-less counter — the minimal thing that demonstrates ' \

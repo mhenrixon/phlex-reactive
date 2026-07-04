@@ -6,14 +6,11 @@ plugins:
 - rubocop-capybara
 - rubocop-thread_safety
 require:
-- "./lib/rubocop/cop/docs_kit/render_component_preferred.rb"
 - docs_kit/rubocop
 DocsKit/RenderComponentPreferred:
   Enabled: true
   Include:
   - app/**/*.rb
-  Exclude:
-  - lib/rubocop/cop/**/*.rb
 AllCops:
   TargetRubyVersion: 3.4
   NewCops: enable
@@ -31,22 +28,53 @@ AllCops:
   - tmp/**/*
   - vendor/**/*
   - storage/**/*
+# Declarative Phlex prose/markup (docs pages, diagram components, demo
+# components) reads better on one line than wrapped — a one-line SEO
+# `description` or a nav blurb is naturally past 120 chars. Match the house
+# style in the sibling apps (cosmos/zazu): raise the cap and exclude the
+# view/component trees, where a hard wrap fights the content.
+Layout/LineLength:
+  Max: 125
+  AllowHeredoc: true
+  AllowURI: true
+  AllowCopDirectives: true
+  AllowedPatterns:
+  - '\A\s*#\s*'
+  Exclude:
+  - app/views/**/*
+  - app/components/**/*
+  - app/reactive_components/**/*
 Metrics/MethodLength:
   Exclude:
   - app/views/**/*
+  - app/components/**/*
   - app/reactive_components/**/*
 Metrics/AbcSize:
   Exclude:
   - app/views/**/*
+  - app/components/**/*
   - app/reactive_components/**/*
 Metrics/BlockLength:
   Exclude:
   - app/views/**/*
+  - app/components/**/*
   - app/reactive_components/**/*
   - spec/**/*
+  - config/initializers/**/*
 Metrics/ClassLength:
   Exclude:
   - app/views/**/*
+  - app/components/**/*
+  - app/reactive_components/**/*
+Metrics/CyclomaticComplexity:
+  Exclude:
+  - app/views/**/*
+  - app/components/**/*
+  - app/reactive_components/**/*
+Metrics/PerceivedComplexity:
+  Exclude:
+  - app/views/**/*
+  - app/components/**/*
   - app/reactive_components/**/*
 ThreadSafety/ClassInstanceVariable:
   Exclude:
@@ -54,6 +82,14 @@ ThreadSafety/ClassInstanceVariable:
 Lint/MissingSuper:
   Exclude:
   - app/views/**/*
+  - app/components/**/*
+  - app/reactive_components/**/*
+# Short coordinate/builder params (x, y, s) are idiomatic in the SVG diagram
+# components — same house-style exclusion cosmos uses for views/components.
+Naming/MethodParameterName:
+  Exclude:
+  - app/views/**/*
+  - app/components/**/*
   - app/reactive_components/**/*
 Metrics/ParameterLists:
   CountKeywordArgs: false

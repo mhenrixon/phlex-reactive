@@ -6,6 +6,7 @@ module Views
       class Broadcasting < DocsUI::Page
         title 'Broadcasting & live updates'
         eyebrow 'Guide'
+        description 'Broadcast reactive Phlex component updates over Turbo Streams or pgbus in Rails, pushing live cross-tab morphs to every subscriber by component id'
 
         def lead
           "Reactive actions update the acting user's screen; broadcasts update everyone " \
@@ -34,6 +35,7 @@ module Views
 
         def pattern
           DocsUI::Section('The pattern') do
+            render Components::Diagrams::BroadcastFanout.new
             md <<~MD
               Reactive **actions** update the acting user's screen. **Broadcasts**
               update everyone else's. Both target the component by its `id`, so they

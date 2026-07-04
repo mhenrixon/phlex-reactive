@@ -6,6 +6,7 @@ module Views
       class TransportPgbus < DocsUI::Page
         title 'Transport: pgbus vs Action Cable'
         eyebrow 'Guide'
+        description 'Compare pgbus and Action Cable for phlex-reactive: transactional after_commit broadcasts, reconnect replay, and exclude:/visible_to: routing on one Postgres'
 
         def lead
           "phlex-reactive's client → server half is a plain HTTP POST. The server → " \

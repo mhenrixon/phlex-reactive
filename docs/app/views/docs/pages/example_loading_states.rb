@@ -6,6 +6,7 @@ module Views
       class ExampleLoadingStates < DocsUI::Page
         title 'Example: loading states'
         eyebrow 'Examples'
+        description 'Add Livewire-style loading states to reactive Phlex actions in Rails with disable_with, busy_on, and aria-busy CSS hooks that dedupe double-submits'
 
         def lead
           'Declarative pending affordances — `disable_with:` swaps a button label ' \

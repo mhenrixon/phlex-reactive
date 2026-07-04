@@ -26,10 +26,9 @@ module Site
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
     # Common ones are `templates`, `generators`, or `middleware`, for example.
-    # `rubocop` holds a custom cop (lib/rubocop/cop/...) loaded by RuboCop via
-    # .rubocop.yml `require:`, NOT app code — ignore it so Rails doesn't try to
-    # eager-load it (RuboCop::Cop::Base isn't available in the app runtime).
-    config.autoload_lib(ignore: %w[assets tasks rubocop])
+    # (The RuboCop cops now ship from the docs-kit gem — `docs_kit/rubocop` in
+    # .rubocop.yml `require:` — so there's no local lib/rubocop to ignore.)
+    config.autoload_lib(ignore: %w[assets tasks])
 
     # Configuration for the application, engines, and railties goes here.
     #

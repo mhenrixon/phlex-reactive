@@ -6,6 +6,7 @@ module Views
       class ExampleTeamInbox < DocsUI::Page
         title 'Example: Team inbox (the flagship)'
         eyebrow 'Examples'
+        description 'Build a live team inbox in reactive Phlex: reactive_collection rows, an optimistic archive that reverts on failure, cross-tab broadcasts, and error_flash'
 
         def lead
           'One believable UI that composes the whole toolkit: reactive_collection ' \

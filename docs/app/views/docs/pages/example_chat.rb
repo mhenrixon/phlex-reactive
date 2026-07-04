@@ -6,6 +6,7 @@ module Views
       class ExampleChat < DocsUI::Page
         title 'Cross-tab chat (the showcase)'
         eyebrow 'Examples'
+        description 'Build a live cross-tab chat in Rails with reactive Phlex components: a record-backed action plus one Turbo Streams broadcast, no Stimulus or Action Cable'
 
         def lead
           'A live chat where a message typed in one tab appears in every other subscribed tab — ' \

@@ -6,6 +6,7 @@ module Views
       class Testing < DocsUI::Page
         title 'Testing reactive components'
         eyebrow 'Guide'
+        description 'Test reactive Phlex components in Rails across three layers: fast unit tests for actions and signed identity, endpoint integration, and browser system tests'
 
         def lead
           'Reactive components are plain Ruby objects with a few extra class methods, so most testing is ' \

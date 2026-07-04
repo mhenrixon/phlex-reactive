@@ -1,0 +1,84 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#12171d"/>
+      <stop offset="0.55" stop-color="#1d232a"/>
+      <stop offset="1" stop-color="#0e1116"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c5cff"/>
+      <stop offset="0.5" stop-color="#4f8cff"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+    <linearGradient id="accentText" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#a78bfa"/>
+      <stop offset="0.5" stop-color="#60a5fa"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.82" cy="0.16" r="0.9">
+      <stop offset="0" stop-color="#4f8cff" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#4f8cff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+
+  <!-- backdrop -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+
+  <!-- faint node/edge motif: the "one re-render unit" fan-out, top-right -->
+  <g stroke="#4f8cff" stroke-opacity="0.16" stroke-width="2" fill="none">
+    <path d="M980 150 L1090 96"/>
+    <path d="M980 150 L1108 168"/>
+    <path d="M980 150 L1064 244"/>
+    <path d="M980 150 L1150 132"/>
+  </g>
+  <g fill="#60a5fa" fill-opacity="0.5">
+    <circle cx="1090" cy="96" r="6"/>
+    <circle cx="1108" cy="168" r="6"/>
+    <circle cx="1064" cy="244" r="6"/>
+    <circle cx="1150" cy="132" r="5"/>
+  </g>
+
+  <!-- accent hairline top -->
+  <rect x="0" y="0" width="1200" height="6" fill="url(#accent)"/>
+
+  <!-- brand mark: a rotated square (diamond) with an inner cut -->
+  <g transform="translate(96 92)">
+    <rect x="-6" y="-6" width="76" height="76" rx="16" transform="rotate(45 32 32)" fill="url(#accent)" filter="url(#soft)" opacity="0.55"/>
+    <rect x="0" y="0" width="64" height="64" rx="14" transform="rotate(45 32 32)" fill="url(#accent)"/>
+    <rect x="18" y="18" width="28" height="28" rx="7" transform="rotate(45 32 32)" fill="#12171d"/>
+  </g>
+  <text x="188" y="138" font-size="34" font-weight="700" fill="#e6edf3" letter-spacing="0.5">phlex-reactive</text>
+
+  <!-- headline -->
+  <text x="94" y="316" font-size="82" font-weight="800" fill="#f4f7fb" letter-spacing="-1.5">Reactive Phlex</text>
+  <text x="94" y="408" font-size="82" font-weight="800" letter-spacing="-1.5" fill="url(#accentText)">components for Rails</text>
+
+  <!-- subline -->
+  <text x="96" y="470" font-size="30" font-weight="400" fill="#aeb9c6">Livewire-style actions &amp; live cross-tab updates — no bespoke JS.</text>
+
+  <!-- feature chips -->
+  <g font-size="23" font-weight="600">
+    <g transform="translate(96 520)">
+      <rect x="0" y="0" width="250" height="52" rx="26" fill="#ffffff" fill-opacity="0.06" stroke="#4f8cff" stroke-opacity="0.35"/>
+      <circle cx="30" cy="26" r="6" fill="#a78bfa"/>
+      <text x="50" y="34" fill="#d6dee7">Signed identity</text>
+    </g>
+    <g transform="translate(366 520)">
+      <rect x="0" y="0" width="252" height="52" rx="26" fill="#ffffff" fill-opacity="0.06" stroke="#4f8cff" stroke-opacity="0.35"/>
+      <circle cx="30" cy="26" r="6" fill="#60a5fa"/>
+      <text x="50" y="34" fill="#d6dee7">Default-deny</text>
+    </g>
+    <g transform="translate(638 520)">
+      <rect x="0" y="0" width="300" height="52" rx="26" fill="#ffffff" fill-opacity="0.06" stroke="#4f8cff" stroke-opacity="0.35"/>
+      <circle cx="30" cy="26" r="6" fill="#22d3ee"/>
+      <text x="50" y="34" fill="#d6dee7">pgbus-optional</text>
+    </g>
+  </g>
+
+  <!-- url, bottom-right -->
+  <text x="1104" y="588" text-anchor="end" font-size="24" font-weight="500" fill="#7d8895">phlex-reactive.zoolutions.llc</text>
+</svg>

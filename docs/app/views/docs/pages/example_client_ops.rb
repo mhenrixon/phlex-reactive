@@ -6,6 +6,7 @@ module Views
       class ExampleClientOps < DocsUI::Page
         title 'Example: client-only ops'
         eyebrow 'Examples'
+        description 'Build tabs, outside-close menus, and accessible drawers with on_client — phlex-reactive runs a whitelist of local DOM ops, zero round trips, no custom JS'
 
         def lead
           'Some interactions never need the server — tabs, a menu that closes on an ' \

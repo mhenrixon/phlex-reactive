@@ -6,6 +6,7 @@ module Views
       class Installation < DocsUI::Page
         title 'Installation'
         eyebrow 'Guide'
+        description 'Install phlex-reactive in Rails: add the gem, run the installer, register the Stimulus controller for importmap, esbuild, or bun, then verify with the doctor'
 
         def lead
           'Add the gem, run the installer, register one Stimulus controller eagerly — ' \

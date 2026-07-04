@@ -6,6 +6,7 @@ module Views
       class ExampleCollections < DocsUI::Page
         title 'Example: reactive collections'
         eyebrow 'Examples'
+        description 'Build add/remove-row reactive collections in Rails Phlex: declare append, remove, count, and empty-state once, with optimistic dismiss and cross-tab sync'
 
         def lead
           'An add/remove-row list — line items, attachments, tags, a notifications ' \

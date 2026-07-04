@@ -6,6 +6,7 @@ module Views
       class Architecture < DocsUI::Page
         title 'Architecture'
         eyebrow 'Guide'
+        description 'See how reactive Phlex components reduce every click, broadcast, and morph to one re-render unit over Turbo Streams, with signed identity, not state'
 
         def lead
           'A component owns a stable DOM id. Everything — a click, a form change, ' \
@@ -27,6 +28,7 @@ module Views
 
         def mental_model
           DocsUI::Section('The mental model') do
+            render Components::Diagrams::ArchitectureFlow.new
             DocsUI::Prose() do
               p do
                 plain 'Client interactivity ('

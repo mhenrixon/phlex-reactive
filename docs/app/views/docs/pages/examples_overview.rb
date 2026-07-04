@@ -6,6 +6,7 @@ module Views
       class ExamplesOverview < DocsUI::Page
         title 'Examples'
         eyebrow 'Examples'
+        description 'Browse live, copy-pasteable reactive Phlex examples for Rails — counters, cross-tab chat, todo lists, broadcasts, optimistic UI, and the flagship team inbox'
 
         def lead
           'Concrete, copy-pasteable examples covering the common patterns. ' \

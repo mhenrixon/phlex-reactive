@@ -6,6 +6,7 @@ module Views
       class ExampleTodoList < DocsUI::Page
         title 'Example: live todo list'
         eyebrow 'Examples'
+        description 'Build a live Rails todo list from per-row reactive Phlex components: optimistic toggle and delete, inline rename via morph, and cross-tab Turbo Stream sync'
 
         def lead
           'Per-row reactive components with add / toggle / rename / archive — ' \
