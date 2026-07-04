@@ -443,6 +443,36 @@ function guardMirrorSelector(selector) {
   return false
 }
 
+// Evaluate a show binding's declared literal predicate (issue #161) against
+// the controlling field's current value. Exactly one of the three predicate
+// attrs decides: equals (value === literal), not (value !== literal), in
+// (value ∈ a JSON string list). The vocabulary is fixed and literal-only —
+// never an expression, so there is no eval surface (the reactive_show helper
+// enforces the same shape loudly at render; this is the client half of the
+// two-sided posture). Returns true/false for a decidable binding, or null for
+// a malformed/missing predicate — the caller SKIPS a null so a hand-built or
+// stale binding never flips visibility it doesn't understand (default-deny,
+// like the op whitelist).
+function showBindingMatches(el, value) {
+  const equals = el.getAttribute("data-reactive-show-equals")
+  if (equals !== null) return value === equals
+  const not = el.getAttribute("data-reactive-show-not")
+  if (not !== null) return value !== not
+  const inRaw = el.getAttribute("data-reactive-show-in")
+  if (inRaw !== null) {
+    try {
+      const list = JSON.parse(inRaw)
+      if (Array.isArray(list)) return list.includes(value)
+    } catch {
+      // fall through to the warn below — malformed JSON and a non-array both skip
+    }
+    console.warn(`[phlex-reactive] malformed reactive_show in: list ${JSON.stringify(inRaw)} — skipped`)
+    return null
+  }
+  console.warn("[phlex-reactive] a reactive_show binding declares no predicate — skipped")
+  return null
+}
+
 // The first focusable descendant of `el`, in document order — the natural
 // keyboard target inside an opened menu/dialog. Covers the standard focusable
 // set; :not([tabindex="-1"]) drops explicitly-removed nodes. Returns null when
@@ -535,6 +565,9 @@ export default class extends Controller {
   #boundScanDirty
   #boundBeforeUnload
   #boundBeforeVisit
+  // Show bindings (issue #161): the ONE delegated sync handler shared by the
+  // root's input/change/turbo:morph-element listeners, held for teardown.
+  #boundSyncShow
 
   // Mark that a reactive controller actually connected, so the registration
   // guard above knows the controller was registered (issue #26 part 2).
@@ -581,6 +614,23 @@ export default class extends Controller {
         this.#armUnsavedGuard()
       }
     }
+
+    // Show bindings (issue #161) — ONLY when this root owns one, so a component
+    // without any pays a single probe (the dirty-tracking gate precedent). ONE
+    // delegated listener pair on the root (input + change bubble from every
+    // owned field — no per-field wiring, and a reactive_compute output write
+    // dispatches a real input event, so computed values drive visibility too).
+    // The connect sync seeds the initial state — a plain replace re-connects —
+    // and turbo:morph-element re-syncs after an in-place morph (which keeps the
+    // element connected, fires no Stimulus lifecycle, and may preserve a
+    // user-edited field value the server's hidden attrs don't reflect).
+    if (this.#showSyncEnabled()) {
+      this.#boundSyncShow = () => this.#syncShow()
+      this.element.addEventListener?.("input", this.#boundSyncShow)
+      this.element.addEventListener?.("change", this.#boundSyncShow)
+      this.element.addEventListener?.("turbo:morph-element", this.#boundSyncShow)
+      this.#syncShow()
+    }
   }
 
   // Whether this root opts into dirty tracking (issue #103): track_dirty: puts the
@@ -605,6 +655,7 @@ export default class extends Controller {
     this.#clearAllDebounces()
     this.#clearAllThrottles()
     this.#teardownDirtyTracking()
+    this.#teardownShowSync()
   }
 
   // Serialize requests per component. Each round trip rewrites the signed
@@ -1771,6 +1822,76 @@ export default class extends Controller {
     }
     this.#boundBeforeUnload = undefined
     this.#boundBeforeVisit = undefined
+  }
+
+  // Whether this root owns a show binding (issue #161) — the connect() gate, so
+  // a component without one pays only this probe (the #dirtyTrackingEnabled
+  // precedent). A NESTED root's bindings don't count: its own controller
+  // instance syncs them (issue #15 ownership).
+  #showSyncEnabled() {
+    const nodes = this.element.querySelectorAll?.("[data-reactive-show-field]") ?? []
+    for (const el of nodes) if (this.#ownsField(el)) return true
+    return false
+  }
+
+  // Re-evaluate every OWNED show binding in one pass (issue #161): read the
+  // controlling field's current value, evaluate the declared literal predicate,
+  // toggle `hidden`. A full pass (not per-target) for the same reason as
+  // #scanDirty — a radio group's deselected radio fires no event — and because
+  // several bindings can hang off one field (the value read is memoized per
+  // pass). A binding whose field can't be resolved, or whose predicate is
+  // malformed, leaves visibility ALONE — a bad binding must never break or
+  // blank the page (client-side default-deny).
+  #syncShow() {
+    if (typeof this.element?.querySelectorAll !== "function") return
+
+    const owns = this.#ownershipFilter()
+    const values = new Map()
+    for (const el of this.element.querySelectorAll("[data-reactive-show-field]")) {
+      if (!owns(el)) continue // a nested root's binding is its own controller's job
+      const name = el.getAttribute("data-reactive-show-field")
+      if (!name) continue
+      if (!values.has(name)) values.set(name, this.#showFieldValue(name, owns))
+      const value = values.get(name)
+      if (value === null) continue // no owned field with that name — leave it be
+      const match = showBindingMatches(el, value)
+      if (match === null) continue // malformed predicate — warned + skipped
+      el.hidden = !match
+    }
+  }
+
+  // The current value of the OWNED field controlling a show binding, as the
+  // string the literal predicate compares against. Mirrors #collectFields'
+  // per-kind reads: a checkbox reports its checked state ("true"/"false" — its
+  // .value is the constant "on", and the checkbox wins over the hidden input
+  // Rails pairs with it); a radio group reports the CHECKED radio's value (""
+  // when none is); anything else reports .value first-wins. Returns null when
+  // no owned field carries the name — the caller then leaves visibility alone.
+  #showFieldValue(name, owns) {
+    let sawRadio = false
+    let first = null
+    for (const el of this.element.querySelectorAll(`[name="${name}"]`)) {
+      if (!owns(el)) continue
+      if (el.type === "checkbox") return el.checked ? "true" : "false"
+      if (el.type === "radio") {
+        if (el.checked) return el.value ?? ""
+        sawRadio = true
+        continue
+      }
+      first ??= el
+    }
+    if (first) return first.value ?? ""
+    return sawRadio ? "" : null
+  }
+
+  // Remove the show-sync listeners on disconnect, so a stray event after a
+  // Turbo morph/navigation never re-evaluates against a detached root.
+  #teardownShowSync() {
+    if (!this.#boundSyncShow) return
+    this.element.removeEventListener?.("input", this.#boundSyncShow)
+    this.element.removeEventListener?.("change", this.#boundSyncShow)
+    this.element.removeEventListener?.("turbo:morph-element", this.#boundSyncShow)
+    this.#boundSyncShow = undefined
   }
 
   // Build the multipart body (issue #34). `token`/`act` are flat fields the

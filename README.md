@@ -358,6 +358,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
 | `reactive_text(:name, initial)` | Mirror a compute output (or a declared input) into a **text node** — a live preview heading, a character counter, `"Hello, {name}"` — via `textContent` (XSS-safe). The text sibling of `reactive_field`; carries no `name`, so it's never POSTed. See [Client-side computes](#client-side-computes-reactive_compute--reactive_text). |
+| `reactive_show(:field, equals:/not:/in:)` | **Value-conditional visibility** (the `x-show`/`data-show` case): spread onto the element to show/hide — it toggles `hidden` from the named field's **current value**, client-only, zero round trip. One literal predicate: `equals:`, `not:`, or `in: [...]`; `equals: true` reads a checkbox's checked state. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
 | `reactive_compute :name, inputs: { title: :string, qty: :number }, outputs:` | **Typed** inputs: a `:string` reaches the JS reducer raw, a `:number` is coerced through `Number`. The array form (`inputs: %i[a b]`) stays all-numeric. |
 | `reactive_compute :name, ..., mirror: { sum: "#summary-sum" }` | **Cross-root text mirrors**: paint a compute value into declared, id-allowlisted nodes **outside** the reactive root (a recap in another tab pane) via `textContent` — no bespoke listener. See [Cross-root mirrors](#cross-root-mirrors-mirror--painting-a-recap-outside-the-root). |
 | `reactive_root(track_dirty: true, warn_unsaved: true)` / `reactive_field(:param, dirty: true)` | **Dirty tracking** against the DOM's own `defaultValue`/`defaultChecked`/`defaultSelected` — no client state. Marks changed fields + the root `data-reactive-dirty`; `warn_unsaved:` arms a `beforeunload`/`turbo:before-visit` guard. Style with `[data-reactive-dirty]`. See [Dirty-field tracking](#dirty-field-tracking-dirty--track_dirty--warn_unsaved). |
@@ -854,6 +855,57 @@ free as an ordinary action-param name (`on(:switch, key: "pgbus")` still passes
 > input — the second would overwrite the first's action name. Bind each key
 > trigger to its own element (the field saves on Enter; a Cancel button — or the
 > field's own blur — handles Escape), as above.
+
+### Value-conditional visibility (`reactive_show`)
+
+`on_client` covers the *unconditional* client-only interactions; the last gap
+was **show/hide from a form field's current value** — the Alpine `x-show` /
+Datastar `data-show` / Livewire `wire:show` case ("reveal the details panel
+*while* this select isn't `none`"). That used to force a hand-written
+`change`-listener Stimulus controller back into an otherwise declarative form.
+`reactive_show` closes it: spread it onto the element to show/hide, name the
+controlling field, declare **one literal predicate** — the generic controller
+toggles the `hidden` attribute from the field's current value on every
+`input`/`change`. Client-only, **no token, no POST, ever**:
+
+```ruby
+def view_template
+  div(**reactive_root) do
+    select(name: "mode") { shipping_options }
+    div(**reactive_show(:mode, not: "off", hidden: @order.mode == "off")) { shipping_details }
+
+    input(type: "checkbox", name: "gift")
+    div(**reactive_show(:gift, equals: true, hidden: true)) { gift_message_field }
+
+    select(name: "size") { size_options }
+    div(**reactive_show(:size, in: %w[l xl], hidden: true)) { surcharge_note }
+  end
+end
+```
+
+- **One predicate per binding** — `equals:`, `not:`, or `in:` (a list); zero or
+  two raise at render (a dead binding must not silently no-op). Values are
+  **stringified literals** matched against the field's value — never an
+  expression, so there is no eval surface.
+- **Field reads follow the collection rules**: a checkbox compares its
+  *checked* state as `"true"`/`"false"` (so `equals: true` is the checkbox
+  form — its `.value` is the constant `"on"`, and it wins over the hidden
+  input Rails pairs with it); a radio group reads the **checked** radio's
+  value (`""` when none is); everything else reads `.value`. Ownership is the
+  usual rule — a nested reactive component's fields and bindings belong to the
+  nested component.
+- **Initial state**: the client seeds visibility at connect and reconciles
+  after a morph, but render the initial `hidden:` yourself (from the same
+  server state that renders the field, as above) so the first paint doesn't
+  flash.
+- **Extra attrs ride through the helper** (`reactive_show(:mode, not: "off",
+  class: "panel", data: { testid: "details" })`) and deep-merge — a bare
+  `data:` spread *beside* it would clobber the binding, same as `on(...)`.
+- **Composes with computes**: a `reactive_compute` output write dispatches a
+  real `input` event, so a *derived* value can drive visibility too.
+- Presentational only, strictly weaker than the js ops: it reads an owned
+  field and toggles `hidden` on an owned element — no `innerHTML`, no
+  attribute freedom, no cross-root writes.
 
 ### Client-side computes (`reactive_compute` + `reactive_text`)
 

@@ -25,6 +25,7 @@ Rails.application.routes.draw do
   get "debounce" => "demos#debounce"
   get "dropdown" => "demos#dropdown"
   get "client_tabs" => "demos#client_tabs"
+  get "conditional_fieldset" => "demos#conditional_fieldset"
   get "confirm" => "demos#confirm"
   get "optimistic" => "demos#optimistic"
   get "loading_button" => "demos#loading_button"

@@ -19,6 +19,7 @@ module Views
           try_it
           how
           ops
+          value_conditional
           when_to_use
         end
 
@@ -88,6 +89,38 @@ module Views
                 or **persist** something.
               MD
             end
+          end
+        end
+
+        def value_conditional
+          DocsUI::Section('Value-conditional visibility (reactive_show)') do
+            md <<~MD
+              `on_client` ops are *unconditional* — they can't read the triggering
+              field's value to **decide** show vs hide. `reactive_show` (#161) covers
+              exactly that gap, the Alpine `x-show` / Datastar `data-show` / Livewire
+              `wire:show` case: spread it onto the element to show/hide, name the
+              controlling field, declare **one literal predicate** — and the generic
+              controller toggles the `hidden` attribute from the field's current
+              value on every `input`/`change`. Still client-only: no token, no POST.
+
+              ```ruby
+              div(**reactive_show(:mode, not: "off"))        { "shipping details" }
+              div(**reactive_show(:gift, equals: true))      { "gift message" }    # checkbox: checked
+              div(**reactive_show(:delivery, equals: "ship")) { "address fields" } # radio: checked value
+              div(**reactive_show(:size, in: %w[l xl]))      { "surcharge note" }
+              ```
+
+              The predicate is a **declared literal match** — `equals:`, `not:`, or
+              `in:` (a list) — never an expression, so there is no eval surface.
+              Exactly one predicate is enforced loudly at render; extra attrs
+              deep-merge through the helper. Render the initial `hidden:` yourself
+              from the same server state that renders the field, so the first paint
+              doesn't flash.
+            MD
+            render Views::Examples::LiveExample.new(
+              component: ConditionalFieldsetComponent.new,
+              filename: 'app/components/conditional_fieldset_component.rb'
+            )
           end
         end
 

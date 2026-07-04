@@ -182,6 +182,13 @@ class DemosController < ActionController::Base
     render html: component + extras.html_safe, layout: true
   end
 
+  # Value-conditional visibility (issue #161): reactive_show bindings driven by
+  # a select, a checkbox, and a radio group — all client-only. The spec's fetch
+  # spy proves no round trip ever fires.
+  def conditional_fieldset
+    render_component ConditionalFieldsetComponent.new
+  end
+
   def confirm
     render_component ConfirmComponent.new
   end

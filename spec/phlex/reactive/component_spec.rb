@@ -1368,6 +1368,106 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  # Issue #161: reactive_show — value-conditional visibility (the x-show /
+  # data-show equivalent). The TARGET element declares which owned field
+  # controls it plus ONE literal predicate; the client toggles `hidden` from
+  # the field's current value with no round trip. The predicate is a declared
+  # literal match (equals:/not:/in:) — never an expression — so there is no
+  # eval surface, and validation is loud at render time (exactly one predicate,
+  # a non-empty in: list).
+  describe "#reactive_show (value-conditional visibility, issue #161)" do
+    subject(:instance) { show_klass.new }
+
+    let(:show_klass) do
+      Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "ShowThing"
+
+        reactive_state :count
+        def initialize(count: 0) = @count = count
+      end
+    end
+
+    it "emits the field binding and the equals: predicate" do
+      attrs = instance.send(:reactive_show, :kind, equals: "premium")
+      expect(attrs[:data][:reactive_show_field]).to eq("kind")
+      expect(attrs[:data][:reactive_show_equals]).to eq("premium")
+    end
+
+    it "emits the not: predicate" do
+      attrs = instance.send(:reactive_show, :mode, not: "off")
+      expect(attrs[:data][:reactive_show_field]).to eq("mode")
+      expect(attrs[:data][:reactive_show_not]).to eq("off")
+    end
+
+    it "emits the in: predicate as a JSON array of strings" do
+      attrs = instance.send(:reactive_show, :size, in: [:l, "xl"])
+      expect(attrs[:data][:reactive_show_in]).to eq(%w[l xl].to_json)
+    end
+
+    it "stringifies a boolean equals: so a checkbox binding reads naturally" do
+      # A checkbox's .value is the constant "on"; the client compares its
+      # checked state as "true"/"false" — so equals: true is the checkbox form.
+      attrs = instance.send(:reactive_show, :gift, equals: true)
+      expect(attrs[:data][:reactive_show_equals]).to eq("true")
+    end
+
+    it "stringifies symbols and numbers in every predicate position" do
+      expect(instance.send(:reactive_show, :kind, equals: :premium)[:data][:reactive_show_equals])
+        .to eq("premium")
+      expect(instance.send(:reactive_show, :qty, not: 0)[:data][:reactive_show_not]).to eq("0")
+      expect(instance.send(:reactive_show, :size, in: [1, 2])[:data][:reactive_show_in])
+        .to eq(%w[1 2].to_json)
+    end
+
+    it "treats equals: nil as the empty string (visible while the field is blank)" do
+      attrs = instance.send(:reactive_show, :note, equals: nil)
+      expect(attrs[:data][:reactive_show_equals]).to eq("")
+    end
+
+    it "deep-merges extra attributes without clobbering the binding data" do
+      attrs = instance.send(:reactive_show, :kind, equals: "premium",
+        class: "panel", data: { testid: "p" })
+      expect(attrs[:class]).to eq("panel")
+      expect(attrs[:data][:testid]).to eq("p")
+      expect(attrs[:data][:reactive_show_field]).to eq("kind")
+      expect(attrs[:data][:reactive_show_equals]).to eq("premium")
+    end
+
+    it "raises without a predicate (a dead binding must fail at render)" do
+      expect { instance.send(:reactive_show, :kind) }
+        .to raise_error(ArgumentError, /exactly one predicate/)
+    end
+
+    it "raises with more than one predicate (ambiguous match)" do
+      expect { instance.send(:reactive_show, :kind, equals: "a", not: "b") }
+        .to raise_error(ArgumentError, /exactly one predicate/)
+    end
+
+    it "raises on an empty in: list (matches nothing — a dead binding)" do
+      expect { instance.send(:reactive_show, :size, in: []) }
+        .to raise_error(ArgumentError, /in: needs at least one value/)
+    end
+
+    it "renders the wire attributes onto the element" do
+      klass = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Component
+
+        def self.name = "ShowRender"
+
+        def view_template
+          div(**reactive_show(:mode, not: "off"), id: "details") { "d" }
+        end
+      end
+
+      html = klass.new.call
+      expect(html).to include('data-reactive-show-field="mode"')
+      expect(html).to include('data-reactive-show-not="off"')
+    end
+  end
+
   # Performance: reactive_token runs on EVERY render. It must produce a byte-
   # identical payload before/after caching the ivar symbols + class name. These
   # pin the payload SHAPE (decoded) so an allocation optimization can't silently

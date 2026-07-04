@@ -399,6 +399,54 @@ module Phlex
           span(**mix({ data: { reactive_text: name.to_s } }, attrs)) { initial }
         end
 
+        # Value-conditional visibility (issue #161) — the x-show / data-show /
+        # wire:show equivalent, entirely client-side. Spread onto the element to
+        # show/hide; it declares which OWNED field controls it plus ONE literal
+        # predicate, and the generic controller toggles the `hidden` attribute
+        # from the field's CURRENT value on every input/change — no round trip,
+        # no token, no bespoke Stimulus controller:
+        #
+        #   div(**reactive_show(:mode, not: "off"))        { "details" }
+        #   div(**reactive_show(:kind, equals: "premium")) { "premium panel" }
+        #   div(**reactive_show(:size, in: %w[l xl]))      { "surcharge note" }
+        #   div(**reactive_show(:gift, equals: true))      { "gift message" }
+        #
+        # Exactly one predicate — equals:, not:, or in: (a list) — and every
+        # value is STRINGIFIED for a literal match against the field's value
+        # (a checkbox compares its checked state as "true"/"false", so
+        # `equals: true` is the checkbox form; a radio group reads the checked
+        # radio's value). This is a DECLARED LITERAL MATCH, never an expression
+        # — there is no eval surface (default-deny, like the op vocabulary).
+        #
+        # Scope: presentational only, strictly less powerful than the js ops —
+        # it reads an owned field (#15 ownership) and toggles `hidden` on an
+        # owned element. The client seeds visibility at connect and reconciles
+        # after a morph; render the initial `hidden:` yourself (from the same
+        # server state that renders the field) to avoid a first-paint flash.
+        # Extra attrs deep-merge over the binding (mix), like reactive_field.
+        def reactive_show(field, **options)
+          predicates = options.slice(*SHOW_PREDICATE_KEYS)
+          attrs = options.except(*SHOW_PREDICATE_KEYS)
+          unless predicates.size == 1
+            raise ArgumentError,
+              "reactive_show(#{field.inspect}) needs exactly one predicate — equals:, not:, or " \
+              "in: — got #{predicates.keys.inspect}"
+          end
+
+          key, value = predicates.first
+          data = { reactive_show_field: field.to_s }
+          if key == :in
+            list = Array(value).map(&:to_s)
+            raise ArgumentError, "reactive_show(#{field.inspect}) in: needs at least one value" if list.empty?
+
+            data[:reactive_show_in] = list.to_json
+          else
+            data[:"reactive_show_#{key}"] = value.to_s
+          end
+
+          mix({ data: }, attrs)
+        end
+
         # Scoped busy indicator (issue #99). Marks an element so the generic
         # controller toggles `data-reactive-busy` on it ONLY while `action` is in
         # flight — the scoped sibling of the always-on `data-reactive-busy` the
@@ -484,6 +532,13 @@ module Phlex
         def nested_update!(association, attrs, **extra)
           reactive_record_for_nested.update!(**nested_attributes(association, attrs), **extra)
         end
+
+        # The declared reactive_show predicates (issue #161): a literal match on
+        # the controlling field's current value. Exactly one per binding —
+        # enforced loudly at render (a dead binding must not no-op in the
+        # browser). `not`/`in` are Ruby keywords, so they arrive via **options
+        # rather than named kwargs.
+        SHOW_PREDICATE_KEYS = %i[equals not in].freeze
 
         # The declared optimistic-hint class ops (issue #98): the cosmetic class
         # vocabulary the client applies instantly and reverts on failure. Enforced
