@@ -1284,6 +1284,17 @@ RSpec.describe Phlex::Reactive::Component do
         expect(compute_klass.reactive_compute(:payment_split).mirror).to be_nil
       end
 
+      it "rejects mirror: on the bare GETTER form LOUDLY (never silently drops it)" do
+        expect do
+          Class.new do
+            include Phlex::Reactive::Component
+
+            def self.name = "MirrorOnly"
+            reactive_compute :split, mirror: { sum: "#sum" }
+          end
+        end.to raise_error(ArgumentError, /mirror:.*inputs/m)
+      end
+
       it "rejects a non-id selector LOUDLY at declare time (class, attribute, *, compound)" do
         # rubocop:disable Style/ItBlockParameter -- `bad` is read inside the nested Class.new block, where `it` would rebind
         [".totals", "[data-x]", "*", "div#x", "#x .y", "#x,#y"].each do |bad|

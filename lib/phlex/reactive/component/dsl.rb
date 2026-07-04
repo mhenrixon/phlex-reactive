@@ -191,7 +191,19 @@ module Phlex
           # attribute/compound selector raises here (declared, not arbitrary;
           # the client interpreter re-checks the same shape).
           def reactive_compute(name, inputs: nil, outputs: nil, reducer: nil, mirror: nil)
-            return reactive_compute_def(name) if inputs.nil? && outputs.nil?
+            if inputs.nil? && outputs.nil?
+              # The bare form is the GETTER — a mirror: passed here would be
+              # silently dropped, so refuse it LOUDLY (declare-time validation,
+              # same posture as normalize_compute_mirror's selector check).
+              unless mirror.nil?
+                raise ArgumentError,
+                  "#{self}: reactive_compute(#{name.inspect}, mirror: ...) without inputs:/outputs: " \
+                  "is the getter form — the mirror would be silently dropped. Declare the mirror " \
+                  "alongside inputs:/outputs:."
+              end
+
+              return reactive_compute_def(name)
+            end
 
             input_names, input_types = normalize_compute_inputs(inputs)
             Registry.write_entry(
