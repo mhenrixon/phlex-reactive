@@ -275,6 +275,10 @@ data-reactive-ops="#{ERB::Util.html_escape(json)}"></turbo-stream>).html_safe
             list = Array(ops)
             raise ArgumentError, "js(...) got no ops — a dead reactive:js stream" if list.empty?
 
+            # The builder validates attr names at build time; a raw [op, args]
+            # list skips that, so re-apply the allowlist here (defense in depth —
+            # the client interpreter also refuses on*/URL/style attrs).
+            Phlex::Reactive::JS.assert_ops_allowed!(list)
             list.to_json
           end
         end

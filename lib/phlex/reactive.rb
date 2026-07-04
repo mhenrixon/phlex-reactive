@@ -446,6 +446,10 @@ module Phlex
       #     through the endpoint's existing `|| raise(InvalidToken)` → 400.
       def upgrade_token(payload)
         version = payload.fetch("v", 0)
+        # "v" is inside the signed blob, so only our own key could produce a
+        # malformed one — but fail closed rather than 500 on the comparison
+        # (String vs Integer) or silently treat a negative "v" as legacy.
+        return nil unless version.is_a?(::Integer) && version >= 0
         return payload if version == TOKEN_VERSION
         return nil if version > TOKEN_VERSION
 

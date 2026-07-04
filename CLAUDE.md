@@ -46,7 +46,27 @@ bundle exec rubocop                          # Lint (rubocop -A to autocorrect)
 bundle exec rake                             # spec + rubocop
 bundle exec rake bench                        # Performance micro-benches (render, token, coerce_params)
 bundle exec rake bench:request                # End-to-end request-cycle bench (derailed)
+rake build:js                                 # Rebuild the minified client (.min.js + .map) after editing reactive_controller.js
+rake build:js_check                           # CI drift guard: committed .min.js must match a fresh build
 ```
+
+### Editing the client runtime (`reactive_controller.js` / `confirm.js` / `compute.js`)
+
+The gem ships the **minified** build, and the browser suite runs that same
+minified build (the dummy vendors it). So a source edit is a THREE-file change:
+
+```bash
+rake build:js                                 # regenerate the .min.js + .map from source
+cp app/javascript/phlex/reactive/reactive_controller.min.js \
+   spec/dummy/public/vendor/reactive_controller.js   # re-sync the vendored copy (same for confirm/compute)
+bun test spec/javascript                      # JS unit suite
+```
+
+Commit the source, the rebuilt `.min.js`/`.map`, AND the re-synced vendored copy
+together. Two guards enforce it: `rake build:js_check` (committed min build matches
+a fresh build) and `spec/phlex/vendored_controller_sync_spec.rb` (vendored copy is
+byte-identical to the shipped `.min.js`). Its failure message prints the exact
+re-sync command.
 
 ## Slash Commands
 

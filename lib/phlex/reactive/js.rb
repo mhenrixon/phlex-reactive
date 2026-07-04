@@ -44,6 +44,44 @@ module Phlex
       URL_BEARING_ATTRS = %w[href src srcdoc action formaction xlink:href].freeze
       EVENT_HANDLER_ATTR = /\Aon/i
 
+      # The attr ops whose args carry a "name" the allowlist must gate. Used to
+      # re-validate a RAW [op, args] list (the js([...]) / broadcast_js_to([...])
+      # escape hatch) that skips the builder's build-time attr_args check.
+      ATTR_NAME_OPS = %w[set_attr remove_attr toggle_attr].freeze
+
+      # Validate a raw ops list ([[op, args], ...] as passed to js/broadcast_js_to
+      # without the builder) against the attribute allowlist, so the escape hatch
+      # gets the SAME server-side default-deny as the JS chain (defense in depth;
+      # the client also enforces it). Non-attr ops and malformed entries pass
+      # through untouched — the client interpreter default-denies unknown ops.
+      def self.assert_ops_allowed!(list)
+        Array(list).each do |op, args|
+          next unless ATTR_NAME_OPS.include?(op.to_s) && args.is_a?(::Hash)
+
+          name = args["name"] || args[:name]
+          assert_allowed_attr(name.to_s) if name
+        end
+      end
+
+      # The attribute-name allowlist (issue #96), case-insensitive. Refuses
+      # event-handler (on*), URL-bearing, and style attributes. Enforced at build
+      # time by the instance builder AND on the raw-list escape hatch — two-sided
+      # default-deny with the client interpreter.
+      def self.assert_allowed_attr(name)
+        lower = name.downcase
+        if name.match?(EVENT_HANDLER_ATTR)
+          raise ArgumentError,
+            "#{self}: attribute #{name.inspect} is an event handler (on*) — refused (XSS). " \
+            "Client attr ops target hidden/disabled/open/selected/aria-*/data-* and classes."
+        end
+        return unless URL_BEARING_ATTRS.include?(lower) || lower == "style"
+
+        raise ArgumentError,
+          "#{self}: attribute #{name.inspect} is refused — URL-bearing attributes " \
+          "(#{URL_BEARING_ATTRS.join(", ")}) and `style` can't be set from client ops " \
+          "(injection surface). Use classes for styling; target aria-*/data-*/boolean attrs."
+      end
+
       # The accumulated [name, args] op pairs, oldest first. Frozen.
       attr_reader :ops
 
@@ -169,21 +207,10 @@ module Phlex
         args.freeze
       end
 
-      # The attribute-name allowlist (issue #96), case-insensitive. Enforced here
-      # AND in the client interpreter — two-sided default-deny.
+      # Build-time attr-name allowlist for the instance builder — delegates to the
+      # shared class-method check (also used by the raw-list escape hatch).
       def assert_allowed_attr(name)
-        lower = name.downcase
-        if name.match?(EVENT_HANDLER_ATTR)
-          raise ArgumentError,
-            "#{self.class}: attribute #{name.inspect} is an event handler (on*) — refused (XSS). " \
-            "Client attr ops target hidden/disabled/open/selected/aria-*/data-* and classes."
-        end
-        return unless URL_BEARING_ATTRS.include?(lower) || lower == "style"
-
-        raise ArgumentError,
-          "#{self.class}: attribute #{name.inspect} is refused — URL-bearing attributes " \
-          "(#{URL_BEARING_ATTRS.join(", ")}) and `style` can't be set from client ops " \
-          "(injection surface). Use classes for styling; target aria-*/data-*/boolean attrs."
+        self.class.assert_allowed_attr(name)
       end
 
       # A transition must be exactly [during, from, to] class lists (strings).

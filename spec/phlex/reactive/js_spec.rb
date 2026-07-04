@@ -133,6 +133,41 @@ RSpec.describe Phlex::Reactive::JS do
     # rubocop:enable Style/ItBlockParameter
   end
 
+  # The raw [op, args] escape hatch (js([...]) / broadcast_js_to([...])) skips the
+  # builder, so the allowlist is re-applied via .assert_ops_allowed! — full
+  # server-side parity with the JS chain (defense in depth; the client also refuses).
+  describe ".assert_ops_allowed! (raw-list escape hatch)" do
+    it "rejects a raw set_attr op with an event-handler name" do
+      list = [["set_attr", { "to" => "#x", "name" => "onclick", "value" => "alert(1)" }]]
+      expect { described_class.assert_ops_allowed!(list) }.to raise_error(ArgumentError, /onclick/)
+    end
+
+    it "rejects a raw op with a URL-bearing name (case-insensitive)" do
+      list = [["set_attr", { "to" => "#x", "name" => "HREF", "value" => "javascript:evil()" }]]
+      expect { described_class.assert_ops_allowed!(list) }.to raise_error(ArgumentError, /href/i)
+    end
+
+    it "rejects a raw remove_attr/toggle_attr op with a style name" do
+      expect { described_class.assert_ops_allowed!([["toggle_attr", { "name" => "style" }]]) }
+        .to raise_error(ArgumentError, /style/)
+    end
+
+    it "accepts symbol-keyed args (name: ...) too" do
+      expect { described_class.assert_ops_allowed!([["set_attr", { name: "onmouseover" }]]) }
+        .to raise_error(ArgumentError, /onmouseover/)
+    end
+
+    it "leaves allowed attr ops and non-attr ops untouched" do
+      expect do
+        described_class.assert_ops_allowed!([
+          ["set_attr", { "to" => "#x", "name" => "aria-expanded", "value" => "true" }],
+          ["add_class", { "to" => "#x", "classes" => ["open"] }],
+          ["show", { "to" => "#x" }]
+        ])
+      end.not_to raise_error
+    end
+  end
+
   # --- Issue #96: focus ops ---
 
   describe "focus ops (#focus / #focus_first)" do
