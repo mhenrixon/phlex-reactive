@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
 Rails.application.routes.draw do
-  # Add your docs to an agent over MCP (needs `gem "mcp"`):
-  # post "/mcp" => "docs_kit/mcp#create"
-  # match "/mcp" => "docs_kit/mcp#method_not_allowed", via: %i[get delete]
+  # Add your docs to an agent over MCP (read-only, stateless — needs `gem "mcp"`).
+  # An agent connects with:  claude mcp add --transport http docs <site>/mcp
+  post "/mcp" => "docs_kit/mcp#create", as: :mcp
+  match "/mcp" => "docs_kit/mcp#method_not_allowed", via: %i[get delete]
   get "/llms-full.txt" => "docs_kit/llms#full", as: :llms_full
   get "/llms.txt" => "docs_kit/llms#index", as: :llms
   get "/docs/search" => "docs_kit/search#index", as: :docs_search

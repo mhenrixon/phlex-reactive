@@ -41,6 +41,31 @@ bundle exec rubocop
 The reactive round trip is proven under **both** real servers — Puma (sync) and
 Falcon (async) — exactly as the gem's own suite requires.
 
+## AI & tooling surfaces (docs-kit)
+
+Every reference page is machine-readable, not just human-readable — the docs-kit
+chrome exposes the whole site to agents with no extra authoring:
+
+- **`/llms.txt`** + **`/llms-full.txt`** — the [llmstxt.org](https://llmstxt.org)
+  index and the full concatenation, built from each page's Markdown twin.
+- **`<page>.md`** — every doc page has a Markdown twin (e.g.
+  `/docs/architecture.md`), derived from its own render so it can't drift. The
+  masthead **"Markdown"** action copies the page to the clipboard for pasting
+  into an LLM.
+- **`/docs/search`** — full-text search over the same twins, no external service.
+- **`/mcp`** — a read-only, stateless [MCP](https://modelcontextprotocol.io)
+  server exposing `list_pages`, `get_page`, and `search_docs` over the live
+  registry. Add it to an agent:
+
+  ```bash
+  claude mcp add --transport http docs https://phlex-reactive.zoolutions.llc/mcp
+  ```
+
+  It needs `gem "mcp"` (bundled here) and the `/mcp` route (drawn in
+  `config/routes.rb`); `c.mcp` defaults to on. The public AI endpoints
+  (`/mcp`, `/llms*`, `/docs/search`) are rate-limited per IP by Rack::Attack
+  (`config/initializers/rack_attack.rb`).
+
 ## How it dogfoods the gem
 
 The phlex-reactive engine auto-mounts `POST /reactive/actions` and auto-pins the
