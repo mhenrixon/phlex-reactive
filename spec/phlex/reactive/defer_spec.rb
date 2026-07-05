@@ -176,4 +176,65 @@ RSpec.describe Phlex::Reactive::Defer do
       expect(shell).not_to include("data-reactive-defer-token")
     end
   end
+
+  describe ".streams_for — the push (:stream) lane" do
+    before do
+      stub_push_capable!
+      ActiveJob::Base.queue_adapter = :test
+    end
+
+    it "emits a stream directive with the signed src + since-id 0 and NO defer token" do
+      directive = described_class.streams_for(segment, via: :stream).first
+
+      expect(directive).to include('action="reactive:defer"')
+      expect(directive).to include('data-reactive-defer-via="stream"')
+      expect(directive).to include('data-reactive-defer-since-id="0"')
+      expect(directive).to match(%r{data-reactive-defer-src="/pgbus/streams/signed-prdefer_\h{32}"})
+      expect(directive).not_to include("data-reactive-defer-token")
+    end
+
+    it "mints a one-shot key inside pgbus's 41-char [a-zA-Z0-9_] queue-name budget" do
+      directive = described_class.streams_for(segment, via: :stream).first
+      key = directive[/signed-(prdefer_\h{32})/, 1]
+
+      expect(key).to match(/\A[a-zA-Z0-9_]+\z/)
+      expect(key.length).to be <= 41
+    end
+
+    it "enqueues the render job with the identity payload, key, target and morph mode" do
+      expect do
+        described_class.streams_for(
+          described_class::Segment.new(component:, placeholder: nil, morph: true), via: :stream
+        )
+      end.to(have_enqueued_job(Phlex::Reactive::DeferredRenderJob).with do |klass, payload, key, target, morph|
+        expect(klass).to eq("CounterComponent")
+        expect(payload).to eq({ "c" => "CounterComponent", "s" => { "count" => 42 } })
+        expect(key).to match(/\Aprdefer_\h{32}\z/)
+        expect(target).to eq("counter")
+        expect(morph).to be(true)
+      end)
+    end
+
+    it "honors Pgbus.configuration.streams_path for the src base" do
+      Pgbus.define_singleton_method(:configuration) do
+        config = Object.new
+        config.define_singleton_method(:streams_path) { "/custom/streams" }
+        config
+      end
+      directive = described_class.streams_for(segment, via: :stream).first
+
+      expect(directive).to include('data-reactive-defer-src="/custom/streams/signed-prdefer_')
+    end
+
+    it "falls back to the FETCH directive when the enqueue fails (a committed action must still reply)" do
+      allow(Phlex::Reactive::DeferredRenderJob).to receive(:perform_later).and_raise(StandardError, "queue down")
+      allow(Rails.logger).to receive(:warn)
+
+      directive = described_class.streams_for(segment, via: :stream).first
+
+      expect(directive).to include('data-reactive-defer-via="fetch"')
+      expect(directive).to include("data-reactive-defer-token")
+      expect(Rails.logger).to have_received(:warn).with(/push/)
+    end
+  end
 end

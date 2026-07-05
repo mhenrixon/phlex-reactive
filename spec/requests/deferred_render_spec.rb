@@ -185,4 +185,46 @@ RSpec.describe "deferred renders", type: :request do
       expect(body).not_to include("reactive:defer")
     end
   end
+
+  describe "the push lane over the actions endpoint (pgbus doubles + :auto)" do
+    before do
+      pgbus = Module.new { def self.stream(*) = nil }
+      capable_stream = Class.new do
+        def broadcast(payload, visible_to: nil, durable: nil, exclude: nil, event: nil,
+                      coalesce: nil, target: nil)
+          [payload, visible_to, durable, exclude, event, coalesce, target]
+        end
+      end
+      stub_const("Pgbus", pgbus)
+      stub_const("Pgbus::Streams", Module.new)
+      stub_const("Pgbus::Streams::Stream", capable_stream)
+      stub_const("Pgbus::Streams::SignedName", Module.new do
+        def self.sign(name) = "signed-#{name}"
+      end)
+      ActiveJob::Base.queue_adapter = :test
+    end
+
+    it "emits a stream directive (src + since-id, NO token) and enqueues the render job" do
+      expect do
+        post_action(DeferDemoComponent, act: :bump, payload: { "s" => { "count" => 0 } })
+      end.to have_enqueued_job(Phlex::Reactive::DeferredRenderJob)
+
+      body = response.body
+      expect(body).to include('data-reactive-defer-via="stream"')
+      expect(body).to match(%r{data-reactive-defer-src="/pgbus/streams/signed-prdefer_\h{32}"})
+      expect(body).to include('data-reactive-defer-since-id="0"')
+      expect(body).not_to include("data-reactive-defer-token")
+      # The cheap companion + the actor's token refresh are lane-independent.
+      expect(body).to include('action="update" target="defer-count"')
+      expect(body).to include('action="reactive:token" target="defer-demo"')
+    end
+
+    it "a DENIED action enqueues NO job (the rescue path drops the whole reply)" do
+      expect do
+        post_action(DeferDemoComponent, act: :deny_after_defer, payload: { "s" => { "count" => 0 } })
+      end.not_to have_enqueued_job(Phlex::Reactive::DeferredRenderJob)
+
+      expect(response).to have_http_status(:forbidden)
+    end
+  end
 end

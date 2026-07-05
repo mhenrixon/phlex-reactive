@@ -109,6 +109,74 @@ target="#{ERB::Util.html_escape(target)}"#{directive_attrs(segment, via)}></turb
           %( data-reactive-defer-via="fetch" data-reactive-defer-token="#{ERB::Util.html_escape(token)}")
         end
 
+        # The push lane's directive: mint a one-shot stream key, sign its SSE
+        # src (server-side — no view context needed), enqueue the render job,
+        # and hand the client the subscription coordinates. since-id="0" on a
+        # FRESH key replays the job's durable broadcast even when it beats the
+        # client's subscription (the rails#52420-class race, closed by pgbus's
+        # connect-time read_after).
+        #
+        # Degrade, never break: this runs AFTER the action committed, so a
+        # signing/enqueue failure must not 500 a reply whose mutation already
+        # persisted — warn and fall back to the fetch directive instead (the
+        # pull lane needs nothing but our own endpoint).
+        def push_directive_attrs(segment)
+          key = one_shot_stream_key
+          src = signed_stream_src(key)
+          enqueue_push_render(segment, key)
+          %( data-reactive-defer-via="stream" data-reactive-defer-src="#{ERB::Util.html_escape(src)}" \
+data-reactive-defer-since-id="0")
+        rescue ::StandardError => e
+          warn_push_failed(e)
+          fetch_directive_attrs(segment)
+        end
+
+        # prdefer_<hex16> = 40 chars of [a-z0-9_] — inside pgbus's queue-name
+        # budget (47 − "pgbus" prefix − 1 = 41) and its [a-zA-Z0-9_] pattern.
+        # NEVER hyphens: pgbus's sanitizer STRIPS them, so two keys differing
+        # only by hyphen placement would collide.
+        def one_shot_stream_key
+          "prdefer_#{SecureRandom.hex(16)}"
+        end
+
+        # Replicates pgbus_stream_from's src minting off-view: the signed name
+        # rides the URL path; the base is the configured streams_path, the
+        # engine's mounted helper, or pgbus's documented default mount.
+        def signed_stream_src(key)
+          signed = ::Pgbus::Streams::SignedName.sign(key)
+          "#{pgbus_streams_base_path.delete_suffix("/")}/#{signed}"
+        end
+
+        def pgbus_streams_base_path
+          if ::Pgbus.respond_to?(:configuration) && (configured = ::Pgbus.configuration.streams_path)
+            return configured
+          end
+
+          ::Pgbus::Engine.routes.url_helpers.streams_path
+        rescue ::NameError
+          "/pgbus/streams"
+        end
+
+        def enqueue_push_render(segment, key)
+          component = segment.component
+          Phlex::Reactive::DeferredRenderJob.perform_later(
+            component.class.name,
+            component.send(:reactive_identity_payload),
+            key,
+            component.id,
+            segment.morph
+          )
+        end
+
+        def warn_push_failed(error)
+          return unless defined?(::Rails) && ::Rails.respond_to?(:logger) && ::Rails.logger
+
+          ::Rails.logger.warn(
+            "[phlex-reactive] defer push lane failed (#{error.class}: #{error.message}) — " \
+            "falling back to the fetch directive for this segment."
+          )
+        end
+
         # Sign the component's identity (the SAME payload shape as the action
         # token — reactive_identity_payload, so the families can't drift) under
         # the defer purpose + TTL. Private on the component; reached via send

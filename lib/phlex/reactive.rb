@@ -361,6 +361,16 @@ module Phlex
         @defer_transport = value
       end
 
+      # The ActiveJob queue the push lane's DeferredRenderJob runs on. Default
+      # "default"; point it at a fast queue in production — a deferred segment
+      # is a UX-latency render, and letting it starve behind heavy jobs defeats
+      # the point. nil resets to the default.
+      attr_writer :defer_job_queue
+
+      def defer_job_queue
+        @defer_job_queue ||= "default"
+      end
+
       # Signs a defer payload (issue #165): same shape + version stamp as the
       # identity token, but purpose-scoped to DEFER_PURPOSE and expiring after
       # defer_token_ttl. verify/verify_defer are therefore mutually exclusive
@@ -729,6 +739,11 @@ loader.ignore("#{lib}/phlex/reactive/test_helpers/matchers.rb")
 # The engine is required explicitly below (only when Rails is present) and must
 # not be eager-loaded before that.
 loader.do_not_eager_load("#{__dir__}/reactive/engine.rb")
+# The defer push-lane job subclasses ActiveJob::Base, which is NOT a gem
+# dependency — eager-loading it in an app without ActiveJob would raise at
+# boot. The constant autoloads on first reference, which only happens behind
+# Phlex::Reactive.defer_push_capable? (that gate requires ActiveJob::Base).
+loader.do_not_eager_load("#{__dir__}/reactive/deferred_render_job.rb")
 loader.setup
 
 require "phlex/reactive/engine" if defined?(Rails::Engine)
