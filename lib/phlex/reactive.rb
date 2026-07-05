@@ -385,20 +385,34 @@ module Phlex
       # actors. Unbound (no session — the ActionController::Base default) is the
       # documented today-behavior; `authorize!` in the action stays the real
       # authority in every case.
-      def sign_defer(payload)
-        verifier.generate(
-          payload.merge("v" => TOKEN_VERSION),
-          purpose: defer_purpose, expires_in: defer_token_ttl
-        )
+      # Sign a defer token. `unbound: true` (the reactive_lazy channel) mints
+      # under the PLAIN DEFER_PURPOSE, never the /binding suffix — because a
+      # lazy shell renders during the PAGE render, on a fresh visit where the
+      # session doesn't exist yet (Rails establishes it DURING that response),
+      # so it can't be bound; and it lives in the actor's own page, a small leak
+      # surface. reply.defer tokens (the default) mint under the current actor's
+      # binding — they live in an action HTTP response that can transit proxies/
+      # logs, the real cross-infrastructure leak vector. See docs/security +
+      # the README defer security note. `authorize!` in the action is the real
+      # authority for the harvested-action-token step in both cases.
+      def sign_defer(payload, unbound: false)
+        purpose = unbound ? DEFER_PURPOSE : defer_purpose
+        verifier.generate(payload.merge("v" => TOKEN_VERSION), purpose:, expires_in: defer_token_ttl)
       end
 
       # Returns the verified, version-upgraded defer payload, or nil when the
       # token is tampered, expired, carries the wrong purpose (an action token
-      # OR a token minted under a DIFFERENT actor binding), or a version this
-      # code doesn't understand — all fail closed through the endpoint's
-      # InvalidToken → 400 path.
+      # OR a BOUND token minted under a DIFFERENT actor binding), or a version
+      # this code doesn't understand — all fail closed through the endpoint's
+      # InvalidToken → 400 path. Tries the current-binding purpose first (the
+      # reply.defer, actor-bound case), then falls back to the plain
+      # DEFER_PURPOSE (the unbound lazy case) — so an unbound lazy token
+      # resolves under ANY binding, while a bound token minted under session-A
+      # still fails under session-B (it was signed with /session-A, which
+      # matches NEITHER /session-B nor the plain purpose).
       def verify_defer(token)
         payload = verifier.verified(token, purpose: defer_purpose)
+        payload ||= verifier.verified(token, purpose: DEFER_PURPOSE) if current_defer_binding
         payload && upgrade_token(payload)
       end
 
@@ -427,15 +441,25 @@ module Phlex
         Thread.current[:phlex_reactive_defer_binding] = previous
       end
 
-      # Resolve a request to its defer binding: the session id when a session is
-      # present, else nil (no session middleware — the gem's default — is a
-      # supported, unbound configuration). Tolerant of a session store that
-      # lazily raises: a binding we can't read degrades to nil (unbound), never
-      # a 500. Override to bind to your own actor identity (a user id, an API
-      # token digest) instead of the raw session id.
+      # Resolve a request to its defer binding: the id of an ALREADY-PERSISTED
+      # session, else nil. The `exists?` gate is load-bearing — a bare
+      # `session.id` LAZILY generates an id even for an empty, never-written
+      # session, and that id is NOT persisted (no Set-Cookie), so two requests
+      # for the same read-only page get DIFFERENT lazy ids and a bound token
+      # minted on one is rejected on the other. Only a persisted session (an
+      # authenticated app wrote one at login) has a stable id across the mint
+      # (page render / action) and the verify (defer endpoint) — exactly the
+      # case where cross-actor exchange is the real threat. A read-only page
+      # with no session mints + verifies UNBOUND consistently (the TTL +
+      # `authorize!` remain the bound). Tolerant of a store that lazily raises:
+      # degrade to nil (unbound), never a 500. Override to bind to your own
+      # actor identity (a stable user id, an API-token digest) — recommended for
+      # a token-authenticated API with no cookie session.
       def defer_binding_for(request)
         session = request.session
-        session&.id&.to_s
+        return nil unless session.respond_to?(:exists?) && session.exists?
+
+        session.id&.to_s
       rescue StandardError
         nil
       end

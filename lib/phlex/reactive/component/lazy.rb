@@ -46,7 +46,14 @@ module Phlex
             data: {
               controller: "reactive",
               reactive_defer_pending: "true",
-              reactive_defer_token: Phlex::Reactive.sign_defer(reactive_identity_payload)
+              # UNBOUND (issue #165 security): a lazy shell renders during the
+              # page render — on a fresh visit the session doesn't exist yet, so
+              # the token can't be actor-bound (it would 400 at the endpoint,
+              # which by then IS bound). It lives in the actor's own page (a
+              # small leak surface); the TTL + `authorize!` are its bound. Only
+              # reply.defer tokens (in action responses that can transit proxies)
+              # are actor-bound.
+              reactive_defer_token: Phlex::Reactive.sign_defer(reactive_identity_payload, unbound: true)
             }
           ) { render_deferred_placeholder_content }
         end

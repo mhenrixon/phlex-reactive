@@ -22,6 +22,7 @@ import { test, expect, mock, beforeAll, beforeEach } from "bun:test"
 
 let registerReactiveDefer
 let resetReactiveDefers
+let pendingDeferVia
 
 beforeAll(async () => {
   mock.module("@hotwired/stimulus", () => ({
@@ -32,10 +33,17 @@ beforeAll(async () => {
   const mod = await import("../../app/javascript/phlex/reactive/reactive_controller.js")
   registerReactiveDefer = mod.registerReactiveDefer
   resetReactiveDefers = mod.resetReactiveDefers
+  pendingDeferVia = mod.pendingDeferVia
 })
+
+function getPendingDeferVia(id) {
+  return pendingDeferVia(id)
+}
 
 beforeEach(() => {
   resetReactiveDefers()
+  // Reset cross-test global state (bun runs all files in one process).
+  delete globalThis.customElements
 })
 
 // A controllable promise, so tests decide exactly when a fetch settles.
@@ -71,6 +79,7 @@ function makeTargetEl(id) {
 function stubDocument({ byId = {}, metas = {} } = {}) {
   const created = []
   const appended = []
+  const listeners = {}
   globalThis.document = {
     getElementById: (id) => byId[id] ?? null,
     querySelector: (sel) => {
@@ -83,13 +92,22 @@ function stubDocument({ byId = {}, metas = {} } = {}) {
       el.removed = false
       el.remove = () => {
         el.removed = true
+        if (el.id) delete byId[el.id]
       }
       created.push(el)
       return el
     },
-    body: { appendChild: (el) => appended.push(el) },
+    // Appending a source element registers it by id, so supersedeDefer can
+    // re-find it (the real code no longer holds a strong ref to it).
+    body: {
+      appendChild: (el) => {
+        appended.push(el)
+        if (el.id) byId[el.id] = el
+      },
+    },
+    addEventListener: (name, fn) => (listeners[name] = fn),
   }
-  return { created, appended }
+  return { created, appended, listeners, byId }
 }
 
 function stubTurbo() {
@@ -375,6 +393,31 @@ test("stream lane: a newer stream directive removes the older source element (un
   expect(appended.length).toBe(2)
   expect(appended[0].removed).toBe(true)
   expect(appended[1].removed).toBe(false)
+})
+
+test("stream lane: the arriving broadcast settles the pendingDefers entry (no detached-node leak)", () => {
+  // Regression for the re-review finding: the stream-lane Map entry used to
+  // hold a strong ref to the source element and was never removed on arrival,
+  // leaking a detached node per target. Now: no srcEl ref, and a
+  // turbo:before-stream-render against the target (the job's replace) settles
+  // the entry.
+  const { actions } = stubTurbo()
+  const el = makeTargetEl("slow-totals")
+  const { listeners } = stubDocument({ byId: { "slow-totals": el } })
+  globalThis.customElements = { get: () => class {} }
+  registerReactiveDefer()
+
+  actions["reactive:defer"].call(
+    directiveEl({ target: "slow-totals", via: "stream", token: null, src: "/pgbus/streams/one" }),
+  )
+  expect(getPendingDeferVia("slow-totals")).toBe("stream")
+
+  // The job's broadcast: a turbo-stream that replaces #slow-totals fires
+  // turbo:before-stream-render with a stream element whose target is the id.
+  const streamEl = { getAttribute: (n) => (n === "target" ? "slow-totals" : null) }
+  listeners["turbo:before-stream-render"]?.({ target: streamEl })
+
+  expect(getPendingDeferVia("slow-totals")).toBeUndefined()
 })
 
 test("lazy mount: connect() probes data-reactive-defer-token on the root and enters the fetch path", async () => {

@@ -58,9 +58,14 @@ RSpec.describe "Phlex::Reactive defer token binding" do
       end
     end
 
-    it "REJECTS a token minted with NO binding when verified UNDER one (upgrade attempt)" do
+    it "ACCEPTS a token minted with no binding even when verified under one" do
+      # An unbound token (a lazy shell, or any sign_defer under no binding) uses
+      # the plain DEFER_PURPOSE; verify_defer falls back to it under a binding,
+      # so a fresh-visit lazy shell resolves. A BOUND token minted under a
+      # DIFFERENT binding still fails (covered above) — only the plain-purpose
+      # (unbound) token is accepted by the fallback.
       unbound = Phlex::Reactive.with_defer_binding(nil) { Phlex::Reactive.sign_defer(payload) }
-      expect(Phlex::Reactive.verify_defer(unbound)).to be_nil
+      expect(Phlex::Reactive.verify_defer(unbound)).not_to be_nil
     end
 
     it "still expires within the binding" do
@@ -71,21 +76,64 @@ RSpec.describe "Phlex::Reactive defer token binding" do
     end
   end
 
+  describe "unbound lazy tokens (the reactive_lazy channel)" do
+    let(:binding) { "session-A" }
+
+    # A lazy token is minted UNBOUND on purpose (it lives in the actor's own
+    # page, and can't be bound on a first visit — the session doesn't exist yet
+    # at page-render time). It verifies WITHOUT the binding even when the
+    # verifying request IS bound, so a fresh visit resolves instead of 400ing.
+    it "sign_defer(unbound: true) verifies under ANY binding" do
+      token = Phlex::Reactive.sign_defer(payload, unbound: true)
+
+      Phlex::Reactive.with_defer_binding("session-B") do
+        expect(Phlex::Reactive.verify_defer(token)).not_to be_nil
+      end
+      Phlex::Reactive.with_defer_binding(nil) do
+        expect(Phlex::Reactive.verify_defer(token)).not_to be_nil
+      end
+    end
+
+    it "an unbound token still expires (TTL is its bound)" do
+      token = Phlex::Reactive.sign_defer(payload, unbound: true)
+      travel(Phlex::Reactive.defer_token_ttl + 1) do
+        expect(Phlex::Reactive.verify_defer(token)).to be_nil
+      end
+    end
+
+    it "a BOUND reply.defer token is NOT accepted as unbound (the two are distinct purposes)" do
+      # A bound token minted under session-A must still fail under session-B —
+      # the unbound acceptance is ONLY for tokens minted unbound.
+      bound = Phlex::Reactive.sign_defer(payload)
+      Phlex::Reactive.with_defer_binding("session-B") do
+        expect(Phlex::Reactive.verify_defer(bound)).to be_nil
+      end
+    end
+  end
+
   describe ".defer_binding_for (the request → binding resolver)" do
-    it "returns nil for a request with no session (graceful default)" do
-      request = instance_double(ActionDispatch::Request, session: nil)
+    it "returns nil for a request whose session was never persisted (the read-only-page case)" do
+      # exists? false: a bare session.id would lazily mint an UNPERSISTED id that
+      # differs per request — so we must NOT bind to it.
+      session = instance_double(ActionDispatch::Request::Session, exists?: false)
+      request = instance_double(ActionDispatch::Request, session:)
       expect(Phlex::Reactive.defer_binding_for(request)).to be_nil
     end
 
-    it "derives a stable binding from the session id when present" do
-      session = instance_double(ActionDispatch::Request::Session, id: "abc123")
+    it "derives a stable binding from a PERSISTED session's id" do
+      session = instance_double(ActionDispatch::Request::Session, exists?: true, id: "abc123")
       request = instance_double(ActionDispatch::Request, session:)
       expect(Phlex::Reactive.defer_binding_for(request)).to eq("abc123")
     end
 
+    it "returns nil when the session doesn't respond to exists? (a bespoke store)" do
+      request = instance_double(ActionDispatch::Request, session: Object.new)
+      expect(Phlex::Reactive.defer_binding_for(request)).to be_nil
+    end
+
     it "tolerates a session that raises (some stores lazily fail) — nil, never crash" do
       session = Object.new
-      def session.id = raise("no store")
+      def session.exists? = raise("no store")
       request = instance_double(ActionDispatch::Request, session:)
       expect(Phlex::Reactive.defer_binding_for(request)).to be_nil
     end

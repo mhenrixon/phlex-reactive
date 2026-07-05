@@ -1362,18 +1362,33 @@ absent. Both lanes are invisible to your action code.
 > age-based sweep, or stay on `:fetch` until then.)
 
 **Security of the defer token.** The defer endpoint re-renders the real
-component, whose fresh root carries a normal (non-expiring) action token — so
-a defer token is, within its TTL, a render of that identity and a path to that
-identity's action token. Two things bound it: it is **actor-bound** (signed
-under the requesting session via `Phlex::Reactive.defer_binding_for(request)`,
-so a leaked defer token can't be redeemed in another session — override the
-resolver to bind to your own actor identity), and — as everywhere in
-phlex-reactive — **the signature proves identity, not permission**. Authorize
-every mutating action; the token, defer or otherwise, is never the authority.
-Apps with no session middleware (the `ActionController::Base` default) mint
-**unbound** defer tokens, so there the TTL + `authorize!` are the whole bound —
-set `Phlex::Reactive.base_controller_name` to a session-bearing controller to
-get actor binding.
+component, whose fresh root carries a normal (non-expiring) action token — so a
+defer token is, within its TTL, a render of that identity and a path to that
+identity's action token. What bounds the damage in every case: **the signature
+proves identity, not permission** — the harvested action token is useless
+against `authorize!` in the action, which re-checks the *current* actor.
+Authorize every mutating action; the token, defer or otherwise, is never the
+authority.
+
+The two defer-token channels are bound differently, by their leak surface:
+
+- **`reply.defer` tokens** ride an **action's HTTP response** (which can transit
+  a logging proxy, a shared HAR, an APM that captures bodies) — the real
+  cross-infrastructure leak vector. They are **actor-bound**: signed under the
+  requesting session (`Phlex::Reactive.defer_binding_for(request)`, the
+  persisted session id by default — override to bind to your own actor identity,
+  e.g. a user id), so a leaked one can't be redeemed in another session.
+- **`reactive_lazy` shell tokens** live in the **page HTML the actor already
+  fetched** over their own session (a small leak surface) — and *can't* be
+  actor-bound anyway, because the shell renders on a fresh visit before the
+  session exists (Rails establishes it during that response). They are minted
+  **unbound**; the TTL + `authorize!` are their bound.
+
+Apps with no persisted session (the `ActionController::Base` default, a
+token-auth API) mint every defer token unbound — there too the TTL +
+`authorize!` are the whole bound. Set `Phlex::Reactive.base_controller_name` to
+a session-bearing controller, or override `defer_binding_for`, to bind
+`reply.defer` tokens to your actor identity.
 
 **Lazy initial mount** — the same machinery for the *first* render
 (Livewire's `#[Lazy]`): declare `reactive_lazy` and the page ships the

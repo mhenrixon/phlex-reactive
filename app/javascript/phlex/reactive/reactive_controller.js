@@ -122,10 +122,22 @@ export function registerReactiveJs() {
 // keystrokes can never paint stale totals over fresh ones.
 const pendingDefers = new Map()
 
-// Test seam: clear the module-level registry between unit tests.
+// Test seam: clear the module-level registry between unit tests. Also resets
+// the one-shot settle-listener guard so a test's fresh document re-registers
+// the turbo:before-stream-render settler.
 export function resetReactiveDefers() {
   pendingDefers.clear()
+  deferStreamSettleRegistered = false
 }
+
+// Test seam: the `via` of a target's pending defer entry (or undefined) — lets
+// tests assert an entry was SETTLED (dropped) on arrival without exposing the
+// Map. Not used by the runtime.
+export function pendingDeferVia(targetId) {
+  return pendingDefers.get(targetId)?.via
+}
+
+let deferStreamSettleRegistered = false
 
 export function registerReactiveDefer() {
   const actions = window.Turbo?.StreamActions
@@ -141,6 +153,35 @@ export function registerReactiveDefer() {
     if (!token) return
     startFetchDefer(target, token)
   }
+
+  // Settle a STREAM-lane pendingDefers entry when its arrival lands: the job's
+  // broadcast is a turbo-stream that replaces the target (and removes the
+  // source). A document-level turbo:before-stream-render hook drops the Map
+  // entry for a stream target the moment a stream renders against it — so the
+  // entry never outlives the delivery (the fetch lane settles inline; the
+  // stream lane's arrival is a broadcast this controller doesn't await, so it
+  // needs this hook). Registered once; a no-op without document.
+  if (!deferStreamSettleRegistered && typeof document !== "undefined" && document.addEventListener) {
+    deferStreamSettleRegistered = true
+    document.addEventListener("turbo:before-stream-render", settleStreamDeferOnRender)
+  }
+}
+
+// Drop a stream-lane pendingDefers entry when a turbo-stream renders against
+// its target id (the job's replace) OR removes its source element. Keyed by the
+// stream's target so an unrelated stream never settles a defer. Pure Map
+// cleanup — the DOM apply is Turbo's; this only releases our bookkeeping.
+function settleStreamDeferOnRender(event) {
+  const streamEl = event.target
+  const target = streamEl?.getAttribute?.("target")
+  if (!target) return
+  // The arrival replaces #<target>; the source removal targets
+  // reactive-defer-src-<target>. Either signals the stream delivered.
+  const targetId = target.startsWith("reactive-defer-src-")
+    ? target.slice("reactive-defer-src-".length)
+    : target
+  const entry = pendingDefers.get(targetId)
+  if (entry?.via === "stream") pendingDefers.delete(targetId)
 }
 
 // The pull lane: mark the target pending and POST the signed defer token to
@@ -192,12 +233,24 @@ function startStreamDefer(targetId, directive) {
   const source = document.createElement("pgbus-stream-source")
   // Deterministic id: the JOB's broadcast removes it by this exact id — the
   // subscription tears itself down with the payload it delivered.
-  source.id = `reactive-defer-src-${targetId}`
+  source.id = deferSourceId(targetId)
   source.setAttribute("src", src)
   source.setAttribute("since-id", directive.getAttribute("data-reactive-defer-since-id") ?? "0")
   source.setAttribute("hidden", "")
   document.body.appendChild(source)
-  pendingDefers.set(targetId, { via: "stream", srcEl: source })
+  // Record only { via } — NOT a strong ref to the source element. The job's
+  // broadcast removes the source by its deterministic id (its
+  // disconnectedCallback closes the SSE), so holding srcEl here would pin the
+  // detached node in this module-level Map forever (a leak). Supersession
+  // re-finds the element by id instead. The entry is dropped on
+  // supersession or when the arriving broadcast replaces the target (a
+  // turbo:before-stream-render hook, below).
+  pendingDefers.set(targetId, { via: "stream" })
+}
+
+// The deterministic id of a target's one-shot <pgbus-stream-source>.
+function deferSourceId(targetId) {
+  return `reactive-defer-src-${targetId}`
 }
 
 async function performDeferFetch(targetId, entry, token) {
@@ -278,7 +331,10 @@ function supersedeDefer(targetId) {
   if (!existing) return
   pendingDefers.delete(targetId)
   if (existing.via === "fetch") existing.abort.abort()
-  else existing.srcEl?.remove?.()
+  // Stream lane: re-find the old source by its deterministic id and remove it
+  // (unsubscribe) — we deliberately don't hold a strong ref to the detached
+  // node. Its disconnectedCallback closes the SSE.
+  else document.getElementById(deferSourceId(targetId))?.remove?.()
 }
 
 function markDeferPending(el) {

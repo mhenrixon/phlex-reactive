@@ -22,10 +22,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deferred render — no stale paint), and interactive on arrival (fresh action
   token). Delivery is transport-adaptive (`Phlex::Reactive.defer_transport`,
   default `:auto`): a parallel fetch to the new `POST /reactive/defer`
-  endpoint everywhere (purpose-scoped, short-TTL, **actor-bound** defer
-  token — `defer_token_ttl`, default 120s; signed under the requesting
-  session so a leaked token can't be redeemed elsewhere, never
-  interchangeable with action tokens),
+  endpoint everywhere (purpose-scoped, short-TTL defer token —
+  `defer_token_ttl`, default 120s; `reply.defer` tokens are **actor-bound**
+  to the requesting session so a leaked one can't be redeemed elsewhere,
+  `reactive_lazy` shell tokens are unbound by necessity — they render
+  before a session exists — with the TTL + `authorize!` as their bound;
+  never interchangeable with action tokens),
   or a **durable pgbus one-shot stream + `DeferredRenderJob`** when pgbus's
   reactive Streams and ActiveJob are present (`defer_job_queue` config; the
   durable since-id replay closes the broadcast-before-subscribe race, and the
