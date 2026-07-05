@@ -835,8 +835,8 @@ loader.tag = "phlex-reactive"
 lib = File.expand_path("..", __dir__)
 loader.push_dir(lib)
 # js.rb defines JS and component/dsl.rb defines Component::DSL (acronyms), not
-# the default-inflected `Js`/`Dsl`.
-loader.inflector.inflect("js" => "JS", "dsl" => "DSL")
+# the default-inflected `Js`/`Dsl`. mcp.rb defines MCP (issue #168).
+loader.inflector.inflect("js" => "JS", "dsl" => "DSL", "mcp" => "MCP")
 # The gem-name shim (`require "phlex-reactive"`) is a plain require, not a
 # managed file.
 loader.ignore("#{lib}/phlex-reactive.rb")
@@ -853,6 +853,13 @@ loader.ignore("#{lib}/generators")
 # Zeitwerk's naming — test_helpers.rb requires it explicitly (only when RSpec is
 # present), and the loader must ignore it.
 loader.ignore("#{lib}/phlex/reactive/test_helpers/matchers.rb")
+# The MCP diagnostic tool tree (issue #168) subclasses the OPTIONAL `mcp` gem's
+# constants (MCP::Tool) at class-definition time, so the whole mcp/ subdirectory
+# must stay out of the autoloader — Phlex::Reactive::MCP.load! requires it in
+# dependency order only when the gem is present. mcp.rb itself (the load! entry
+# point) references no gem constant at load time, so Zeitwerk autoloads it
+# normally (inflected MCP above); only the gem-dependent subtree is ignored.
+loader.ignore("#{lib}/phlex/reactive/mcp")
 # The engine is required explicitly below (only when Rails is present) and must
 # not be eager-loaded before that.
 loader.do_not_eager_load("#{__dir__}/reactive/engine.rb")
