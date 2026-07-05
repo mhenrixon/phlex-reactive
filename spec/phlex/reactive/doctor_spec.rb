@@ -185,6 +185,99 @@ RSpec.describe Phlex::Reactive::Doctor do
     end
   end
 
+  describe "the advisory authorization check (issue #168)" do
+    # ADVISORY only (:unknown, never a hard fail) — the presence-side static
+    # heuristic that complements the runtime verify_authorized guard. It flags a
+    # non-skipped action whose component defines none of the configured
+    # authorization methods in its ancestry AND whose body (Prism-scanned) makes
+    # no authorization / mark_authorized! call.
+
+    it "flags a mutating action with no authorization method anywhere and no auth call" do
+      unguarded = Class.new(ApplicationComponent) do
+        include Phlex::Reactive::Component
+
+        def self.name = "Phlex::Reactive::DoctorSpec::Unguarded"
+        reactive_record :todo
+        action :destroy
+        def initialize(todo:) = (@todo = todo)
+        def destroy = @todo.destroy!
+      end
+      stub_const(unguarded.name, unguarded)
+
+      check = doctor.authorization_check([unguarded])
+      expect(check.status).to eq(:unknown)
+      expect(check.message).to include("destroy")
+    end
+
+    it "does NOT flag an action that calls an authorization method (Prism-detected)" do
+      guarded = Class.new(ApplicationComponent) do
+        include Phlex::Reactive::Component
+
+        def self.name = "Phlex::Reactive::DoctorSpec::Guarded"
+        reactive_record :todo
+        action :destroy
+        def initialize(todo:) = (@todo = todo)
+
+        def destroy
+          authorize! @todo, :destroy?
+          @todo.destroy!
+        end
+      end
+      stub_const(guarded.name, guarded)
+
+      expect(doctor.authorization_check([guarded])).to be_ok
+    end
+
+    it "does NOT flag an action covered by skip_verify_authorized" do
+      skipped = Class.new(ApplicationComponent) do
+        include Phlex::Reactive::Component
+
+        def self.name = "Phlex::Reactive::DoctorSpec::Skipped"
+        reactive_state :n
+        skip_verify_authorized
+        action :bump
+        def initialize(n: 0) = (@n = n)
+        def id = "skipped"
+        def bump = @n += 1
+      end
+      stub_const(skipped.name, skipped)
+
+      expect(doctor.authorization_check([skipped])).to be_ok
+    end
+
+    it "does NOT flag a component that defines an authorization method in its ancestry" do
+      authz_base = Class.new(ApplicationComponent) do
+        include Phlex::Reactive::Component
+
+        def authorize!(*) = true # rubocop:disable Naming/PredicateMethod
+      end
+      via_helper = Class.new(authz_base) do
+        def self.name = "Phlex::Reactive::DoctorSpec::ViaHelper"
+        reactive_state :n
+        action :bump
+        def initialize(n: 0) = (@n = n)
+        def id = "via-helper"
+        # Authorizes indirectly through a helper the Prism scan can't see, but the
+        # component HAS an authorization method defined — advisory stays quiet.
+        def bump = do_the_thing
+
+        def do_the_thing
+          authorize!
+          @n += 1
+        end
+      end
+      stub_const(via_helper.name, via_helper)
+
+      expect(doctor.authorization_check([via_helper])).to be_ok
+    end
+
+    it "is included in the full check list as advisory when the dummy runs" do
+      Rails.application.eager_load!
+      names = doctor.checks.map(&:name)
+      expect(names).to include(:authorization)
+    end
+  end
+
   describe "output rendering" do
     before { Rails.application.eager_load! }
 

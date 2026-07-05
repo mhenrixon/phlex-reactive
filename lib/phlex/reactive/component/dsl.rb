@@ -135,6 +135,41 @@ module Phlex
             reactive_actions.key?(name.to_sym)
           end
 
+          # Opt out of the default-ON verify_authorized guard (issue #168).
+          # Bare skips the WHOLE component (a public counter, a client-only
+          # filter); with names skips just those actions:
+          #
+          #   skip_verify_authorized                 # every action
+          #   skip_verify_authorized :filter, :page  # only these
+          #
+          # Registry #6 — resolves through the superclass at read time like the
+          # other five, so a child inherits a parent's skips (and a child's bare
+          # skip covers everything). Marks nothing else; a non-skipped action
+          # still needs a real authorization call or mark_authorized!.
+          def skip_verify_authorized(*names)
+            if names.empty?
+              Registry.write_scalar(self, :skip_all, true)
+            else
+              Registry.append(self, :skip_actions, names.map(&:to_sym))
+            end
+          end
+
+          def reactive_skip_all_authorization?
+            Registry.resolve_scalar(self, :skip_all, :reactive_skip_all_authorization?) == true
+          end
+
+          def reactive_skip_authorization_actions
+            Registry.resolve_list(self, :skip_actions, :reactive_skip_authorization_actions)
+          end
+
+          # Is verify_authorized skipped for `action_name`? True under a bare
+          # component skip OR when the action is in the named list — resolved
+          # through Registry so inheritance matches every other declaration.
+          def skip_verify_authorized?(action_name)
+            reactive_skip_all_authorization? ||
+              reactive_skip_authorization_actions.include?(action_name.to_sym)
+          end
+
           # Declare an add/remove-row collection (issue #35) — the list contract
           # in one place, so actions append/prepend/remove a row WITHOUT
           # re-deriving the container id, count, and empty-state in every action:

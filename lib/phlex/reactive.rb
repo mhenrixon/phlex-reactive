@@ -56,6 +56,16 @@ module Phlex
     # the stdlib one an app catches.
     class UnknownParamType < ::ArgumentError; end
 
+    # Raised when the default-ON verify_authorized guard (issue #168) finds an
+    # action completed WITHOUT any authorization call — the fail-closed
+    # presence-side complement to authorization_errors. It fires INSIDE the
+    # action's transaction, so the mutation rolls back, and it is NOT rescued
+    # into a 4xx: it bubbles as a developer error (a 500 your error tracker
+    # must see) because a missing authorize! is a bug, not a client fault. The
+    # message names the component#action and all three remedies (call an
+    # authorization method / mark_authorized! / declare skip_verify_authorized).
+    class AuthorizationNotVerified < Error; end
+
     # Purpose string bound into every identity token's signature so a token
     # minted for phlex-reactive can't be replayed against another verifier use.
     IDENTITY_PURPOSE = "phlex-reactive/identity"
@@ -179,6 +189,37 @@ module Phlex
         return @debug if defined?(@debug)
 
         false
+      end
+
+      # verify_authorized (issue #168): the default-ON runtime guard. When true,
+      # an action that completes without any authorization call raises
+      # AuthorizationNotVerified inside its transaction (fail-closed — the
+      # mutation rolls back). Default ON is a deliberate, pre-1.0 breaking change:
+      # a forgotten authorize! becomes a loud 500, not a silent hole. Opt out per
+      # component with `skip_verify_authorized`, mark a bespoke check with
+      # `mark_authorized!`, or turn it off globally here. The `defined?` guard
+      # (not `||=`) makes an explicit `= false` stick.
+      attr_writer :verify_authorized
+
+      def verify_authorized
+        return @verify_authorized if defined?(@verify_authorized)
+
+        true
+      end
+
+      # The method names verify_authorized's interceptor wraps to detect an
+      # authorization call (issue #168). Defaults to the common set across
+      # authorization libraries — Pundit (`authorize`), CanCanCan (`authorize!`),
+      # ActionPolicy (`authorize!`/`allowed_to?`). Set in an initializer to match
+      # your app's helper. `mark_authorized!` always counts, regardless of this
+      # list. The `defined?` guard makes an explicit override (including a
+      # narrower list) stick.
+      attr_writer :authorization_methods
+
+      def authorization_methods
+        return @authorization_methods if defined?(@authorization_methods)
+
+        %i[authorize! authorize allowed_to?]
       end
 
       # Register an app-defined param type (issue #109). The block receives the

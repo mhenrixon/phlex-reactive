@@ -51,7 +51,12 @@ module Phlex
           collections: :@reactive_own_collections,
           computes: :@reactive_own_computes,
           record_key: :@reactive_own_record_key,
-          lazy: :@reactive_own_lazy
+          # Deferred reply segments — reactive_lazy (issue #165).
+          lazy: :@reactive_own_lazy,
+          # verify_authorized opt-out (issue #168): a scalar bare flag (skip the
+          # WHOLE component) plus a list of named actions.
+          skip_all: :@reactive_own_skip_all,
+          skip_actions: :@reactive_own_skip_actions
         }.freeze
 
         # The identity-side hot-path memos swept by bump! (see the contract

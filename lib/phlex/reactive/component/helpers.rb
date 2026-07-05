@@ -28,6 +28,23 @@ module Phlex
           Phlex::Reactive.current_connection_id
         end
 
+        # Manually satisfy the verify_authorized guard (issue #168) for a bespoke
+        # authorization check the interceptor can't see — a hand-rolled policy, a
+        # feature flag, an ownership comparison that doesn't go through one of
+        # Phlex::Reactive.authorization_methods:
+        #
+        #   def publish
+        #     raise NotAllowed unless @post.author == Current.user
+        #     mark_authorized!
+        #     @post.update!(published: true)
+        #   end
+        #
+        # Call it only AFTER your check passes — it asserts "I have authorized
+        # this action." A no-op when verify_authorized is off.
+        def mark_authorized!
+          Phlex::Reactive::Authorization.mark!
+        end
+
         # Subject-bound reply builder — the preferred way to control an action's
         # reply. `reply.replace.flash(:error, msg)` reads cleaner than
         # `Phlex::Reactive::Response.replace(self).flash(:error, msg)`: the

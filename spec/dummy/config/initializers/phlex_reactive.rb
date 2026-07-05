@@ -5,6 +5,13 @@
 Rails.application.config.after_initialize do
   Phlex::Reactive.renderer = DemosController
 
+  # The dummy deliberately has no authorization layer — most of its components
+  # are demos with no user/policy. verify_authorized (issue #168) is default-ON,
+  # so disable it globally here; the dedicated verify_authorized feature specs
+  # re-enable it around their examples and drive purpose-built fixtures
+  # (AuthorizedTodoComponent, PublicCounterComponent).
+  Phlex::Reactive.verify_authorized = false
+
   # Register the optimistic demo's authorization error so a DECLARED, slow-failing
   # action returns a clean 403 (issue #98 system spec) — mirroring how a real app
   # registers Pundit::NotAuthorizedError. Lets the failing-revert spec observe the
@@ -19,4 +26,9 @@ Rails.application.config.after_initialize do
   # observe. Registering the errors maps them to that 403.
   Phlex::Reactive.authorization_errors << CounterComponent::Denied
   Phlex::Reactive.authorization_errors << FailureSurfaceComponent::Denied
+
+  # verify_authorized fixture (issue #168): AuthorizedTodoComponent#rename_denied
+  # raises this so the request spec proves a genuine denial still 403s through
+  # authorization_errors — NOT the verify guard's 500.
+  Phlex::Reactive.authorization_errors << AuthorizedTodoComponent::Denied
 end

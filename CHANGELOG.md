@@ -6,7 +6,57 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: `verify_authorized` is ON by default (#168).** A reactive action
+  that completes **without any authorization call now raises**
+  `Phlex::Reactive::AuthorizationNotVerified` — **rolling back the transaction**
+  (fail-closed, stronger than Pundit's after-the-fact check). This is the
+  presence-side complement to `authorization_errors`: a forgotten `authorize!`
+  becomes a loud 500 your error tracker sees, not a silent hole. The guard
+  detects a call to any `Phlex::Reactive.authorization_methods` name
+  (default `%i[authorize! authorize allowed_to?]` — Pundit/CanCanCan/ActionPolicy)
+  **or** `mark_authorized!`, made anywhere during the action (a helper the action
+  calls counts too). **Three remedies** for each action:
+  1. call your authorization method (`authorize! @record, :update?`);
+  2. call `mark_authorized!` after a bespoke check the interceptor can't see;
+  3. declare `skip_verify_authorized` (whole component) or
+     `skip_verify_authorized :action_name` (specific actions) for an
+     intentionally public action.
+  Turn it off globally with `Phlex::Reactive.verify_authorized = false` (the
+  install-generator initializer documents the knob). The `action.phlex_reactive`
+  instrumentation event gains a new `:unverified` outcome. A new **advisory**
+  doctor check flags mutating actions with no detected authorization call
+  (heuristic — a helper may authorize indirectly; never a hard fail).
+
 ### Added
+
+- **verify_authorized runtime guard (#168).** New
+  `Phlex::Reactive::Authorization` (fiber-local tracking window, method
+  interception, the enforcement decision), `mark_authorized!` instance helper,
+  the `skip_verify_authorized` DSL (registry #6, inherits like the other five),
+  and `Phlex::Reactive.verify_authorized` / `authorization_methods` config
+  (`defined?`-guarded so an explicit override sticks). See the breaking note
+  above for the behavior and remedies.
+
+- **Action inventory — `Phlex::Reactive::Inspector` + rake tasks (#168).** A new
+  read-only introspection layer that answers "what reactive actions exist in this
+  app, where are they defined, and is each authorized?" without grepping.
+  `Phlex::Reactive::Inspector.components` discovers every constant-backed reactive
+  component from the loaded `Streamable` registry; `.find(query)` fuzzy-matches
+  one (exact > prefix > substring > subsequence, on both the demodulized and the
+  full name). Each action reports its declared param schema, `file:line`, the full
+  `def … end` source (extracted with **Prism**, degrading to `nil` on an
+  unreadable/unparseable file — never raising), and a **heuristic** authorization
+  status (a Prism scan for a configured authorization method or
+  `mark_authorized!` in the body — advisory only, since a helper may authorize
+  indirectly). Two shipped rake tasks surface it: `bin/rails
+  phlex_reactive:actions` (plain-text table, `FORMAT=json` for tooling) and
+  `bin/rails "phlex_reactive:find[query]"` (ranked matches; top match in detail
+  with each action's method source). Output is names/paths/schemas only — never
+  tokens, secrets, or runtime state (the instrumentation privacy contract
+  extended to tooling). `Doctor` now delegates its `constant_backed_component?`
+  filter to the Inspector so the endpoint-rebuild predicate lives in one place.
 
 - **Deferred reply segments — `reply.defer` (#165).** An expensive part of a
   reply (a cross-aggregate rollup, a report) no longer stalls the actor's
@@ -55,18 +105,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **pgbus capability gates.** `Phlex::Reactive.pgbus?` and `.pgbus_streams?`
   (the documented broadcast-accepts-`:exclude` probe, now actually
   implemented) plus `.defer_push_capable?` for the defer push lane.
-
-### Performance
-
-- The defer machinery adds nothing measurable to the existing hot paths
-  (same-machine, same-checkout before/after vs `main`): `to_stream_replace`
-  14.4k → 14.2k i/s (within ±3.7% noise), identity token 199.9k → 196.7k i/s
-  (state-backed) / 93.7k → 93.5k (record-backed), allocations byte-identical.
-  New `benchmark/micro/defer_token.rb`: `sign_defer` ~120k i/s, `verify_defer`
-  ~99k i/s, full fetch-lane directive build ~11 µs/segment, 0 retained. Defer
-  is a **latency-shape** change, not a throughput one — the A/B spec
-  (`spec/requests/deferred_latency_spec.rb`) pins that a 120 ms segment cost
-  moves OFF the actor's reply and onto the deferred leg; it never disappears.
 
 - **Client-side option filtering — `reactive_filter` (#163).** The other half
   of #72's combobox: **preload the options, type to narrow — zero round
@@ -146,6 +184,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `global: true` is now honored on the `reactive:js` stream path: a single op
     can opt out of the reply's target-root scope to document-wide resolution
     (previously it was silently ignored when a `target` was set).
+
+### Performance
+
+- The defer machinery adds nothing measurable to the existing hot paths
+  (same-machine, same-checkout before/after vs `main`): `to_stream_replace`
+  14.4k → 14.2k i/s (within ±3.7% noise), identity token 199.9k → 196.7k i/s
+  (state-backed) / 93.7k → 93.5k (record-backed), allocations byte-identical.
+  New `benchmark/micro/defer_token.rb`: `sign_defer` ~120k i/s, `verify_defer`
+  ~99k i/s, full fetch-lane directive build ~11 µs/segment, 0 retained. Defer
+  is a **latency-shape** change, not a throughput one — the A/B spec
+  (`spec/requests/deferred_latency_spec.rb`) pins that a 120 ms segment cost
+  moves OFF the actor's reply and onto the deferred leg; it never disappears.
 
 ## [0.9.0] - 2026-07-03
 
