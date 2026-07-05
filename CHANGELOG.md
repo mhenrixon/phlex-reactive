@@ -31,6 +31,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Read-only diagnostic MCP server (#168).** `bin/rails phlex_reactive:mcp`
+  starts a stdio [MCP](https://modelcontextprotocol.io) server exposing five
+  read-only tools — `phlex_reactive_doctor`, `phlex_reactive_components`,
+  `phlex_reactive_actions` (optional `component:` filter), `phlex_reactive_find`
+  (fuzzy search + Prism method source), `phlex_reactive_config` (redacted) — so
+  Claude Code inside a host app can introspect the live reactive registry when
+  debugging. The `mcp` gem is **optional and lazy**: it is NOT a gemspec runtime
+  dependency; `Phlex::Reactive::MCP.load!` requires it on demand with a helpful
+  message when missing (the pgbus pattern), and the gem-dependent tool tree stays
+  out of the Zeitwerk autoloader — a host app without `mcp` boots and eager-loads
+  unaffected. Every tool is read-only and non-destructive (no arbitrary-query or
+  mutation tool) and reports names/paths/schemas only — never a token, secret, or
+  runtime state; `phlex_reactive_config` never emits the verifier or
+  `secret_key_base`. Consumer `.mcp.json`:
+  `{ "mcpServers": { "phlex-reactive": { "command": "bin/rails", "args": ["phlex_reactive:mcp"] } } }`.
+  Known constraint: stdio MCP needs a clean stdout — an initializer that `puts`
+  breaks the transport (same caveat as pgbus).
+
 - **verify_authorized runtime guard (#168).** New
   `Phlex::Reactive::Authorization` (fiber-local tracking window, method
   interception, the enforcement decision), `mark_authorized!` instance helper,

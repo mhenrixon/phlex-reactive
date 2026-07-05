@@ -28,4 +28,15 @@ namespace :phlex_reactive do
     query = args[:query].to_s
     puts Phlex::Reactive::Inspector::Report.find(Phlex::Reactive::Inspector.find(query), query)
   end
+
+  desc "Run the read-only diagnostic MCP server over stdio (needs the optional `mcp` gem) — issue #168"
+  task mcp: :environment do
+    # Lazy-load the optional mcp gem + the tool tree (a helpful error if the gem
+    # is missing), then drive the stdio transport. eager_load! so the tools see
+    # every component. NOTHING may write to stdout but the JSON-RPC frames — the
+    # runner documents this; keep initializers quiet on $stdout.
+    Phlex::Reactive::MCP.load!
+    Rails.application.eager_load!
+    Phlex::Reactive::MCP::Runner.run
+  end
 end

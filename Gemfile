@@ -66,4 +66,11 @@ group :development, :test do
     gem "pgbus", ">= 0.9.4", require: false
   end
   gem "pg", "~> 1.5", require: false # pgbus needs PostgreSQL
+
+  # The read-only diagnostic MCP server (issue #168) is OPTIONAL and lazy — it is
+  # NOT a gemspec runtime dependency (Phlex::Reactive::MCP.load! requires it on
+  # demand with a helpful message when missing, the pgbus pattern). Here only so
+  # the mcp_spec and `bin/rails phlex_reactive:mcp` can exercise it; a host app
+  # adds `gem "mcp"` itself when it wants the server.
+  gem "mcp", require: false
 end
