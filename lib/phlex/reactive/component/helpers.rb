@@ -433,16 +433,9 @@ module Phlex
               "in: — got #{predicates.keys.inspect}"
           end
 
-          key, value = predicates.first
+          key, value = normalize_show_predicate(predicates, "reactive_show(#{field.inspect})").first
           data = { reactive_show_field: field.to_s }
-          if key == :in
-            list = Array(value).map(&:to_s)
-            raise ArgumentError, "reactive_show(#{field.inspect}) in: needs at least one value" if list.empty?
-
-            data[:reactive_show_in] = list.to_json
-          else
-            data[:"reactive_show_#{key}"] = value.to_s
-          end
+          data[:"reactive_show_#{key}"] = key == "in" ? value.to_json : value
 
           mix({ data: }, attrs)
         end
@@ -505,6 +498,61 @@ module Phlex
               reactive_listnav_option_param: filter_selector!(:selector, option_selector)
             }
           }
+        end
+
+        # CROSS-ROOT value-conditional visibility (issue #164) — the visibility
+        # parallel to reactive_compute's `mirror:` (#159). A plain reactive_show
+        # is root-scoped by design (#15), so it can't express "this control
+        # drives elements ELSEWHERE on the page" — a nav tab, a panel in another
+        # tab pane, a sidebar note. reactive_show_targets is the declared,
+        # id-allowlisted escape: the component that OWNS the field declares
+        # which outside ids it governs. Spread it on the ROOT (mix alongside
+        # reactive_root — the client reads it off the controller element):
+        #
+        #   div(**mix(reactive_root, reactive_show_targets(:mode,
+        #     "#advanced-tab"   => { equals: "advanced" },
+        #     "#advanced-panel" => { equals: "advanced" },
+        #     "#basic-note"     => { not: "advanced" })))
+        #
+        # Same posture as mirror: — opt-in and declared, never implicit (a plain
+        # reactive_show stays root-isolated); targets are SINGLE ID SELECTORS
+        # only, enforced here at declare time AND warn-and-skipped by the client
+        # interpreter (two-sided default-deny); the predicate is the same
+        # literal-only reactive_show vocabulary (exactly one of equals:/not:/
+        # in:, no expressions); and the toggle is `hidden` only — no innerHTML,
+        # no attribute freedom. The FIELD read stays owned (#15): you can only
+        # drive outside visibility from a field this root owns. A target id not
+        # on the page is silently skipped (an unrendered tab pane is normal).
+        #
+        # ONE call per root. Phlex `mix` space-joins duplicate STRING data
+        # values, so a second call's JSON would concatenate into an unparseable
+        # attr and the client would drop BOTH maps (it warns when that
+        # happens). Several fields therefore go in ONE call via the hash form:
+        #
+        #   reactive_show_targets(mode: { "#advanced-tab" => { equals: "advanced" } },
+        #                         kind: { "#premium-note" => { not: "basic" } })
+        def reactive_show_targets(field, targets = nil)
+          field_maps = targets.nil? ? field : { field => targets }
+          unless field_maps.is_a?(Hash) && field_maps.any?
+            raise ArgumentError,
+              "reactive_show_targets needs at least one target " \
+              "(:field, \"#id\" => { equals:/not:/in: ... }), got #{field_maps.inspect}"
+          end
+
+          normalized = field_maps.to_h do |name, map|
+            # Catch the forgotten-field-name misuse — reactive_show_targets(
+            # "#id" => {…}) — before the per-target validation turns it into a
+            # baffling "predicate" error.
+            if name.to_s.start_with?("#")
+              raise ArgumentError,
+                "reactive_show_targets: #{name.inspect} looks like a target selector, not a field " \
+                "name — call reactive_show_targets(:field, #{name.inspect} => { ... })"
+            end
+
+            [name.to_s, normalize_show_target_map(name, map)]
+          end
+
+          { data: { reactive_show_targets: normalized.to_json } }
         end
 
         # Scoped busy indicator (issue #99). Marks an element so the generic
@@ -621,6 +669,52 @@ module Phlex
           end
 
           selector
+        end
+
+        # Normalize + validate ONE field's target map (issue #164): each key a
+        # single id selector (loud raise — the declare-time half of the
+        # two-sided default-deny), each value one literal predicate. Shared by
+        # both reactive_show_targets call forms.
+        def normalize_show_target_map(field, targets)
+          unless targets.is_a?(Hash) && targets.any?
+            raise ArgumentError,
+              "reactive_show_targets(#{field.inspect}) needs at least one target " \
+              "(\"#id\" => { equals:/not:/in: ... }), got #{targets.inspect}"
+          end
+
+          targets.to_h do |selector, predicate|
+            selector = selector.to_s
+            unless selector.match?(DSL::MIRROR_ID_SELECTOR)
+              raise ArgumentError,
+                "reactive_show_targets(#{field.inspect}) target #{selector.inspect} must be a single " \
+                "ID selector (\"#id\") — cross-root visibility is id-allowlisted, like mirror: (#159)"
+            end
+
+            context = "reactive_show_targets(#{field.inspect}) target #{selector.inspect}"
+            [selector, normalize_show_predicate(predicate.is_a?(Hash) ? predicate : {}, context)]
+          end
+        end
+
+        # Validate ONE declared literal show predicate (issues #161/#164) and
+        # return its wire form — { "equals" => "v" } / { "not" => "v" } /
+        # { "in" => ["a", …] } (a real array: reactive_show JSON-encodes it into
+        # its own attr; the reactive_show_targets map embeds it directly).
+        # Shared by both helpers so the vocabulary and the loud validation can
+        # never drift. `context` names the call site in the error.
+        def normalize_show_predicate(predicates, context)
+          unless predicates.size == 1 && SHOW_PREDICATE_KEYS.include?(predicates.keys.first)
+            raise ArgumentError,
+              "#{context} needs exactly one predicate — equals:, not:, or in: — " \
+              "got #{predicates.keys.inspect}"
+          end
+
+          key, value = predicates.first
+          return { key.to_s => value.to_s } unless key == :in
+
+          list = Array(value).map(&:to_s)
+          raise ArgumentError, "#{context} in: needs at least one value" if list.empty?
+
+          { "in" => list }
         end
 
         # True when the hint declares checked: :keep — the click-bound
