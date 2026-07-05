@@ -338,6 +338,52 @@ test("stream lane: a newer stream directive removes the older source element (un
   expect(appended[1].removed).toBe(false)
 })
 
+test("lazy mount: connect() probes data-reactive-defer-token on the root and enters the fetch path", async () => {
+  const { rendered } = stubTurbo()
+  const mod = await import("../../app/javascript/phlex/reactive/reactive_controller.js")
+  const Controller = mod.default
+
+  const root = makeTargetEl("lazy-stats")
+  root.attrs["data-reactive-defer-token"] = "lazy-token"
+  // connect() touches these on every root — minimal stubs, like the other
+  // controller unit tests.
+  root.querySelectorAll = () => []
+  root.addEventListener = () => {}
+  stubDocument({ byId: { "lazy-stats": root } })
+  const calls = stubFetch()
+
+  const controller = new Controller()
+  controller.element = root
+  controller.connect()
+
+  expect(calls.length).toBe(1)
+  expect(calls[0].url).toBe("/reactive/defer")
+  expect(JSON.parse(calls[0].options.body)).toEqual({ token: "lazy-token" })
+  expect(root.attrs["data-reactive-defer-pending"]).toBe("true")
+
+  calls[0].gate.resolve(okResponse("<turbo-stream><template>stats</template></turbo-stream>"))
+  await flush()
+  expect(rendered).toEqual(["<turbo-stream><template>stats</template></turbo-stream>"])
+})
+
+test("connect() without the token attribute never touches the defer path", async () => {
+  stubTurbo()
+  const mod = await import("../../app/javascript/phlex/reactive/reactive_controller.js")
+  const Controller = mod.default
+
+  const root = makeTargetEl("plain")
+  root.querySelectorAll = () => []
+  root.addEventListener = () => {}
+  stubDocument({ byId: { plain: root } })
+  const calls = stubFetch()
+
+  const controller = new Controller()
+  controller.element = root
+  controller.connect()
+
+  expect(calls.length).toBe(0)
+})
+
 test("stream lane: an unregistered pgbus element is a loud no-op (no insert, no throw)", () => {
   const { actions } = stubTurbo()
   const el = makeTargetEl("slow-totals")

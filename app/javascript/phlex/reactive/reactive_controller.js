@@ -812,6 +812,15 @@ export default class extends Controller {
       )
     }
 
+    // Lazy initial mount (issue #165): a reactive_lazy shell carries its defer
+    // token as a ROOT attribute — enter the SAME module-level fetch path a
+    // reply directive uses (supersession, pending markers, error handling
+    // included). The attribute deliberately STAYS on the shell: the arrival
+    // replaces the whole element (fresh root, no attr), and a Turbo cache
+    // restoration that re-shows the placeholder shell re-fires the fetch.
+    const lazyDeferToken = this.element.getAttribute?.("data-reactive-defer-token")
+    if (lazyDeferToken && this.element.id) startFetchDefer(this.element.id, lazyDeferToken)
+
     // Dirty tracking (issue #103) — ONLY when this root opts in (track_dirty: or a
     // reactive_field(dirty:)), so a component that never uses it pays nothing (no
     // baseline scan, no morph listener on every broadcast). A plain (outerHTML)

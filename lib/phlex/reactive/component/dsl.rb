@@ -58,6 +58,19 @@ module Phlex
             Registry.resolve_list(self, :state_keys, :reactive_state_keys)
           end
 
+          # Lazy initial mount (issue #165): the FIRST (page-embedded) render
+          # emits the placeholder shell + a defer token on the root; the client
+          # fetches the real content on connect. Reactive machinery renders
+          # (replies, broadcasts, the defer endpoint/job) stay REAL. Inherited
+          # by subclasses. See Component::Lazy.
+          def reactive_lazy
+            Registry.write_scalar(self, :lazy, true)
+          end
+
+          def reactive_lazy?
+            Registry.resolve_scalar(self, :lazy, :reactive_lazy?) ? true : false
+          end
+
           # Declare a client-invokable action with an optional param schema.
           #   action :increment
           #   action :rename, params: { title: :string }

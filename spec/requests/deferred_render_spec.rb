@@ -86,6 +86,14 @@ RSpec.describe "deferred renders", type: :request do
       expect(response).to have_http_status(:bad_request)
     end
 
+    it "renders a reactive_lazy component's REAL content (the shell must never echo back)" do
+      post_defer(defer_token_for({ "c" => "LazyStatsComponent", "s" => { "scope" => "week" } }))
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("stats:week")
+      expect(response.body).not_to include("reactive-defer-placeholder")
+    end
+
     it "204s (clear pending, keep content) when the component's render? is false" do
       SlowTotalsComponent.suppressed = true
       post_defer(defer_token_for({ "c" => "SlowTotalsComponent", "s" => { "value" => 7 } }))

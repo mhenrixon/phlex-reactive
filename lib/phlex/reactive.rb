@@ -461,7 +461,10 @@ module Phlex
       # access (dom_id/url_for/t/csrf). Used for a Phlex component embedded as
       # Response#with content.
       def render(component)
-        component.render_in(off_request_view_context)
+        # A machinery render (issue #165): a reactive_lazy component embedded
+        # in a Response/flash renders its REAL template — the lazy shell is
+        # for the page-embedded initial mount only.
+        Phlex::Reactive::Defer.with_real_render { component.render_in(off_request_view_context) }
       end
 
       # A Turbo::Streams::TagBuilder bound to an off-request view context, used

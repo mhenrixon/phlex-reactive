@@ -209,10 +209,12 @@ RSpec/DescribeClass:
     # emitted from several class methods, not one class under test (issue #107).
     - spec/phlex/reactive/instrumentation_spec.rb
     # The defer surface (issue #165) cuts across the module config (token,
-    # transport, gates) and the Response#defer facade — string subjects.
+    # transport, gates), the Response#defer facade, and the reactive_lazy
+    # render interception — string subjects.
     - spec/phlex/reactive/defer_token_spec.rb
     - spec/phlex/reactive/defer_capability_spec.rb
     - spec/phlex/reactive/response_defer_spec.rb
+    - spec/phlex/reactive/lazy_mount_spec.rb
 
 # The `describe Klass, "label"` form uses the second arg as a context label
 # (e.g. `describe Component, "reactive_collection"`), not a method name.

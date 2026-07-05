@@ -30,7 +30,27 @@ module Phlex
       # The custom turbo-stream action the client's defer handler registers.
       DIRECTIVE_ACTION = "reactive:defer"
 
+      # Thread/fiber-local flag marking a REAL reactive-machinery render —
+      # inside it a reactive_lazy component renders its actual template instead
+      # of the placeholder shell. Set by Streamable.render_component (replies,
+      # broadcasts, the defer endpoint/job, the class stream builders) and
+      # Phlex::Reactive.render; a page-embedded initial mount never passes
+      # through either, so it gets the shell.
+      REAL_RENDER_KEY = :phlex_reactive_defer_real_render
+
       class << self
+        def real_render?
+          Thread.current[REAL_RENDER_KEY] ? true : false
+        end
+
+        def with_real_render
+          previous = Thread.current[REAL_RENDER_KEY]
+          Thread.current[REAL_RENDER_KEY] = true
+          yield
+        ensure
+          Thread.current[REAL_RENDER_KEY] = previous
+        end
+
         # Which lane deferred segments take, resolved PER REPLY (capability is
         # probed live — cheap: without pgbus it's one defined? short-circuit).
         # :fetch forces pull; :stream requests push and DEGRADES to pull with a
