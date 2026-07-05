@@ -41,6 +41,30 @@
 #   <meta name="phlex-reactive-action-path" content="<%%= Phlex::Reactive.action_path %>">
 # Phlex::Reactive.action_path = "/_r/actions"
 
+# --- Deferred reply segments (reply.defer + reactive_lazy, issue #165) ------
+# PROFILE FIRST: an app-side N+1 looks exactly like framework lag — make the
+# synchronous path cheap before deferring a segment.
+#
+# How the deferred render reaches the actor (default :auto — a durable pgbus
+# one-shot stream + ActiveJob when both are available, else a parallel fetch to
+# the defer endpoint; :fetch forces the fetch lane, :stream requests push and
+# degrades to fetch with a warning when the capability is absent):
+# Phlex::Reactive.defer_transport = :auto
+#
+# Defer tokens are purpose-scoped and short-lived — the TTL only needs to cover
+# the reply→fetch gap (default 120 seconds):
+# Phlex::Reactive.defer_token_ttl = 120
+#
+# The push lane's render job queue (default "default"). Point it at a FAST
+# queue in production — a deferred segment is a UX-latency render; letting it
+# starve behind heavy jobs defeats the point:
+# Phlex::Reactive.defer_job_queue = "latency"
+#
+# Change the defer endpoint path (default "/reactive/defer"). If you change it,
+# expose it to the client with:
+#   <meta name="phlex-reactive-defer-path" content="<%%= Phlex::Reactive.defer_path %>">
+# Phlex::Reactive.defer_path = "/_r/defer"
+
 # Client request timeout (default 30s). There is NO server-side setting — a hung
 # request aborts client-side after this window (reactive:error kind "timeout"),
 # so the per-component queue never wedges. Override in your layout head:

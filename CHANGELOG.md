@@ -8,6 +8,53 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Deferred reply segments — `reply.defer` (#165).** An expensive part of a
+  reply (a cross-aggregate rollup, a report) no longer stalls the actor's
+  interaction: `reply.streams(cheap).defer(SessionTotals.new(workout:))`
+  returns the cheap streams immediately and streams the real render to the
+  SAME actor when it finishes. Keep-content default (the stale value stays
+  visible, marked `data-reactive-defer-pending` + `aria-busy` for CSS
+  shimmer); `placeholder: true` / a component swaps a skeleton in;
+  `morph: true` morphs the arrival (the mode rides INSIDE the signed token).
+  Transactional (the directive rides the post-commit reply — a rollback or a
+  denied action leaks nothing), actor-scoped (peers keep `broadcast_*_to`),
+  superseding (a newer action for the same target aborts the in-flight
+  deferred render — no stale paint), and interactive on arrival (fresh action
+  token). Delivery is transport-adaptive (`Phlex::Reactive.defer_transport`,
+  default `:auto`): a parallel fetch to the new `POST /reactive/defer`
+  endpoint everywhere (purpose-scoped, short-TTL defer token —
+  `defer_token_ttl`, default 120s; never interchangeable with action tokens),
+  or a **durable pgbus one-shot stream + `DeferredRenderJob`** when pgbus's
+  reactive Streams and ActiveJob are present (`defer_job_queue` config; the
+  durable since-id replay closes the broadcast-before-subscribe race, and the
+  broadcast tears down its own subscription). Every capability gap degrades to
+  the fetch lane — the Action-Cable-or-pgbus invariant holds. **Profile
+  first:** an app-side N+1 looks exactly like framework lag; defer is for
+  segments that are genuinely expensive after the synchronous path is cheap.
+
+- **Lazy initial mount — `reactive_lazy` (#165).** The same machinery for the
+  FIRST render (Livewire `#[Lazy]`): the page ships the component's
+  placeholder shell (`deferred_placeholder`, or a built-in pending shell) with
+  the defer token on the root; the client fetches the real content on connect.
+  Reactive-machinery renders (an action's self-replace, broadcasts, the defer
+  endpoint/job) stay REAL, so actions never pay two round trips.
+
+- **pgbus capability gates.** `Phlex::Reactive.pgbus?` and `.pgbus_streams?`
+  (the documented broadcast-accepts-`:exclude` probe, now actually
+  implemented) plus `.defer_push_capable?` for the defer push lane.
+
+### Performance
+
+- The defer machinery adds nothing measurable to the existing hot paths
+  (same-machine, same-checkout before/after vs `main`): `to_stream_replace`
+  14.4k → 14.2k i/s (within ±3.7% noise), identity token 199.9k → 196.7k i/s
+  (state-backed) / 93.7k → 93.5k (record-backed), allocations byte-identical.
+  New `benchmark/micro/defer_token.rb`: `sign_defer` ~120k i/s, `verify_defer`
+  ~99k i/s, full fetch-lane directive build ~11 µs/segment, 0 retained. Defer
+  is a **latency-shape** change, not a throughput one — the A/B spec
+  (`spec/requests/deferred_latency_spec.rb`) pins that a 120 ms segment cost
+  moves OFF the actor's reply and onto the deferred leg; it never disappears.
+
 - **Value-conditional visibility — `reactive_show` (#161).** The `x-show` /
   `data-show` / `wire:show` case — show/hide an element from a form field's
   **current value** — no longer needs a hand-written `change`-listener Stimulus
