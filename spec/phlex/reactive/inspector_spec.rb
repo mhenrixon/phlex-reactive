@@ -190,6 +190,30 @@ RSpec.describe Phlex::Reactive::Inspector do
       bump = info.actions.find { it.name == :bump }
       expect(bump.authorization_call_detected?).to be(true)
     end
+
+    # A misconfigured Phlex::Reactive.authorization_methods (nil, or a single
+    # symbol) must not raise inside authorization_method_names — the caller's
+    # rescue would swallow it and silently report "no authorization" everywhere.
+    # Array() coerces both, falling back to the default set on nil.
+    describe "resilience to a misconfigured authorization_methods" do
+      it "falls back to the default set when authorization_methods is nil" do
+        allow(Phlex::Reactive).to receive(:respond_to?).and_call_original
+        allow(Phlex::Reactive).to receive(:respond_to?).with(:authorization_methods).and_return(true)
+        allow(Phlex::Reactive).to receive(:authorization_methods).and_return(nil)
+
+        names = described_class.authorization_method_names
+        expect(names).to include(:authorize!, :mark_authorized!)
+      end
+
+      it "coerces a single-symbol authorization_methods without raising" do
+        allow(Phlex::Reactive).to receive(:respond_to?).and_call_original
+        allow(Phlex::Reactive).to receive(:respond_to?).with(:authorization_methods).and_return(true)
+        allow(Phlex::Reactive).to receive(:authorization_methods).and_return(:can?)
+
+        expect { described_class.authorization_method_names }.not_to raise_error
+        expect(described_class.authorization_method_names).to include(:can?, :mark_authorized!)
+      end
+    end
   end
 
   describe ".find (fuzzy match)" do
