@@ -7,9 +7,9 @@ require "system_helper"
 # fetches the real content through the defer machinery, and the arrival lands
 # without a reload — carrying a fresh action token (interactive).
 RSpec.describe "Lazy initial mount (issue #165)", type: :system do
-  around do |example|
+  around do
     SlowTotalsComponent.render_delay_ms = 300
-    example.run
+    it.run
   ensure
     SlowTotalsComponent.render_delay_ms = 0
   end
@@ -28,7 +28,7 @@ RSpec.describe "Lazy initial mount (issue #165)", type: :system do
 
     # The arrival is a REAL reactive root: controller mounted, fresh token.
     token = page.evaluate_script(
-      %(document.getElementById("lazy-stats").getAttribute("data-reactive-token-value")),
+      %(document.getElementById("lazy-stats").getAttribute("data-reactive-token-value"))
     )
     expect(token).to be_a(String)
     expect(token.length).to be > 20

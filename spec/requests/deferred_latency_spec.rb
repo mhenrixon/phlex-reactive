@@ -15,11 +15,13 @@ require "rails_helper"
 # This spec pins the second half; the deferred fetch itself is exercised in
 # deferred_render_spec.rb.
 RSpec.describe "deferred reply latency (A/B)", type: :request do
-  DELAY_MS = 120
+  # The dialed render cost — big enough to dominate CI noise, small enough to
+  # keep the suite fast.
+  def delay_ms = 120
 
-  around do |example|
-    SlowTotalsComponent.render_delay_ms = DELAY_MS
-    example.run
+  around do
+    SlowTotalsComponent.render_delay_ms = delay_ms
+    it.run
   ensure
     SlowTotalsComponent.render_delay_ms = 0
   end
@@ -46,8 +48,8 @@ RSpec.describe "deferred reply latency (A/B)", type: :request do
     # The sync reply must carry at least the render delay; the deferred reply
     # must dodge most of it. Both margins leave ~half the delay of headroom for
     # CI noise — the claim is "the cost moved off the reply", not a timing.
-    expect(sync_ms).to be >= DELAY_MS
-    expect(deferred_ms).to be < sync_ms - (DELAY_MS / 2)
+    expect(sync_ms).to be >= delay_ms
+    expect(deferred_ms).to be < sync_ms - (delay_ms / 2)
   end
 
   it "the deferred FETCH pays the render cost off the actor's critical path (the trade is visible)" do
@@ -59,6 +61,6 @@ RSpec.describe "deferred reply latency (A/B)", type: :request do
       expect(response).to have_http_status(:ok)
     end
 
-    expect(fetch_ms).to be >= DELAY_MS # the cost didn't vanish — it moved
+    expect(fetch_ms).to be >= delay_ms # the cost didn't vanish — it moved
   end
 end

@@ -9,9 +9,9 @@ require "system_helper"
 # skeleton variant swaps the placeholder in. Waiting matchers are the barrier
 # for every async hop — never a snapshot right after a click.
 RSpec.describe "Deferred reply segments (issue #165)", type: :system do
-  around do |example|
+  around do
     SlowTotalsComponent.render_delay_ms = 300
-    example.run
+    it.run
   ensure
     SlowTotalsComponent.render_delay_ms = 0
   end
@@ -73,7 +73,7 @@ RSpec.describe "Deferred reply segments (issue #165)", type: :system do
     expect(page).to have_css("[data-testid='totals-value']", text: "2")
 
     token = page.evaluate_script(
-      %(document.getElementById("slow-totals").getAttribute("data-reactive-token-value")),
+      %(document.getElementById("slow-totals").getAttribute("data-reactive-token-value"))
     )
     expect(token).to be_a(String)
     expect(token.length).to be > 20
