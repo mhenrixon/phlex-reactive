@@ -15,7 +15,15 @@ RSpec.describe Phlex::Reactive::Defer do
   after { Phlex::Reactive.defer_transport = nil }
 
   def stub_push_capable!
-    pgbus = Module.new { def self.stream(*) = nil }
+    # A configuration double exposing queue_prefix (default "pgbus"), so the key
+    # minter can budget against it exactly as pgbus does.
+    config = Object.new
+    config.define_singleton_method(:queue_prefix) { "pgbus" }
+    config.define_singleton_method(:streams_path) { nil }
+    pgbus = Module.new do
+      def self.stream(*) = nil
+    end
+    pgbus.define_singleton_method(:configuration) { config }
     capable_stream = Class.new do
       def broadcast(payload, visible_to: nil, durable: nil, exclude: nil, event: nil,
                     coalesce: nil, target: nil)
@@ -183,22 +191,46 @@ RSpec.describe Phlex::Reactive::Defer do
       ActiveJob::Base.queue_adapter = :test
     end
 
-    it "emits a stream directive with the signed src + since-id 0 and NO defer token" do
+    it "emits a stream directive with the signed src + since-id 0 + a fallback token" do
       directive = described_class.streams_for(segment, via: :stream).first
 
       expect(directive).to include('action="reactive:defer"')
       expect(directive).to include('data-reactive-defer-via="stream"')
       expect(directive).to include('data-reactive-defer-since-id="0"')
-      expect(directive).to match(%r{data-reactive-defer-src="/pgbus/streams/signed-prdefer_\h{32}"})
-      expect(directive).not_to include("data-reactive-defer-token")
+      expect(directive).to match(%r{data-reactive-defer-src="/pgbus/streams/signed-prdefer_[a-f0-9]+"})
+      # A fallback token rides alongside so the client degrades to the fetch lane
+      # when the pgbus client isn't loaded (no dead-end shimmer).
+      expect(directive).to include("data-reactive-defer-token")
     end
 
-    it "mints a one-shot key inside pgbus's 41-char [a-zA-Z0-9_] queue-name budget" do
+    it "the stream directive's fallback token round-trips to the deferred component's identity" do
       directive = described_class.streams_for(segment, via: :stream).first
-      key = directive[/signed-(prdefer_\h{32})/, 1]
+      raw = directive[/data-reactive-defer-token="([^"]+)"/, 1]
+
+      payload = Phlex::Reactive.verify_defer(CGI.unescapeHTML(raw))
+      expect(payload["c"]).to eq("CounterComponent")
+    end
+
+    it "mints a one-shot key inside pgbus's default 41-char [a-zA-Z0-9_] queue-name budget" do
+      directive = described_class.streams_for(segment, via: :stream).first
+      key = directive[/signed-(prdefer_[a-f0-9]+)/, 1]
 
       expect(key).to match(/\A[a-zA-Z0-9_]+\z/)
       expect(key.length).to be <= 41
+    end
+
+    it "fits the key to a NON-default queue_prefix (a longer prefix would overflow a fixed 40)" do
+      # pgbus's budget is 47 - queue_prefix.length - 1. A 10-char prefix leaves
+      # 36; a fixed prdefer_<hex16> (40) would raise StreamNameTooLong in the
+      # JOB, AFTER the directive already shipped — the shimmer would hang. The
+      # key must be minted against the LIVE budget.
+      Pgbus.configuration.define_singleton_method(:queue_prefix) { "tenant_abc" } # 10 chars
+      directive = described_class.streams_for(segment, via: :stream).first
+      key = directive[/signed-(prdefer_[a-f0-9]+)/, 1]
+
+      expect(key).not_to be_nil
+      expect(key.length).to be <= (47 - "tenant_abc".length - 1) # 36
+      expect(key).to match(/\Aprdefer_[a-f0-9]+\z/)
     end
 
     it "enqueues the render job with the identity payload, key, target and morph mode" do
@@ -209,7 +241,7 @@ RSpec.describe Phlex::Reactive::Defer do
       end.to(have_enqueued_job(Phlex::Reactive::DeferredRenderJob).with do |klass, payload, key, target, morph|
         expect(klass).to eq("CounterComponent")
         expect(payload).to eq({ "c" => "CounterComponent", "s" => { "count" => 42 } })
-        expect(key).to match(/\Aprdefer_\h{32}\z/)
+        expect(key).to match(/\Aprdefer_[a-f0-9]+\z/)
         expect(target).to eq("counter")
         expect(morph).to be(true)
       end)

@@ -30,6 +30,18 @@ module Phlex
       # The custom turbo-stream action the client's defer handler registers.
       DIRECTIVE_ACTION = "reactive:defer"
 
+      # The stable marker every one-shot push-lane stream key starts with — how
+      # pgbus's orphan sweep and an operator recognize a phlex-reactive defer
+      # queue (issue #165).
+      DEFER_KEY_MARKER = "prdefer_"
+      # Minimum random hex chars on the key (64 bits) — collision-safe.
+      DEFER_KEY_MIN_SUFFIX = 16
+      # pgbus's MAX_QUEUE_NAME_LENGTH (its QueueNameValidator); the live
+      # queue_prefix is subtracted from it to get the usable budget.
+      PGBUS_MAX_QUEUE_NAME = 47
+      # pgbus's default queue_prefix, used when the live one can't be read.
+      DEFAULT_PGBUS_QUEUE_PREFIX = "pgbus"
+
       # Thread/fiber-local flag marking a REAL reactive-machinery render —
       # inside it a reactive_lazy component renders its actual template instead
       # of the placeholder shell. Set by Streamable.render_component (replies,
@@ -144,19 +156,50 @@ target="#{ERB::Util.html_escape(target)}"#{directive_attrs(segment, via)}></turb
           key = one_shot_stream_key
           src = signed_stream_src(key)
           enqueue_push_render(segment, key)
+          # A fallback defer token rides ALONGSIDE the stream src: the server
+          # picks push on SERVER-side capability alone, but the browser may not
+          # have the pgbus client loaded (no <pgbus-stream-source>). Rather than
+          # dead-end the shimmer, the client degrades to the fetch lane with this
+          # token. It's the same purpose-scoped, actor-bound, short-TTL token the
+          # fetch lane uses — redeeming it at the defer endpoint is identical.
+          token = mint_token(segment)
           %( data-reactive-defer-via="stream" data-reactive-defer-src="#{ERB::Util.html_escape(src)}" \
-data-reactive-defer-since-id="0")
+data-reactive-defer-since-id="0" data-reactive-defer-token="#{ERB::Util.html_escape(token)}")
         rescue ::StandardError => e
           warn_push_failed(e)
           fetch_directive_attrs(segment)
         end
 
-        # prdefer_<hex16> = 40 chars of [a-z0-9_] — inside pgbus's queue-name
-        # budget (47 − "pgbus" prefix − 1 = 41) and its [a-zA-Z0-9_] pattern.
-        # NEVER hyphens: pgbus's sanitizer STRIPS them, so two keys differing
-        # only by hyphen placement would collide.
+        # A one-shot key that FITS pgbus's live queue-name budget. pgbus computes
+        # 47 − queue_prefix.length − 1 (default prefix "pgbus" → 41); a longer
+        # app-configured prefix shrinks it, and a FIXED-width key would raise
+        # StreamNameTooLong in the JOB — after the directive already shipped, so
+        # the shimmer would hang forever. We size the random suffix to the live
+        # budget instead. The stable DEFER_KEY_MARKER is kept (it's how the
+        # orphan sweep / an operator recognizes these), and the suffix is hex
+        # ([a-f0-9] — never hyphens: pgbus's sanitizer STRIPS them, colliding two
+        # keys that differ only by hyphen). A floor keeps the suffix wide enough
+        # to stay collision-safe even under an unusually long prefix.
         def one_shot_stream_key
-          "prdefer_#{SecureRandom.hex(16)}"
+          budget = PGBUS_MAX_QUEUE_NAME - pgbus_queue_prefix_length - 1
+          suffix_chars = [budget - DEFER_KEY_MARKER.length, DEFER_KEY_MIN_SUFFIX].max
+          # SecureRandom.hex(n) yields 2n chars; halve (ceil) then trim to fit.
+          "#{DEFER_KEY_MARKER}#{SecureRandom.hex((suffix_chars / 2.0).ceil)[0, suffix_chars]}"
+        end
+
+        # The live queue-name prefix length pgbus budgets against (default
+        # "pgbus" → 5). Read defensively — an old pgbus without the accessor
+        # falls back to the documented default.
+        def pgbus_queue_prefix_length
+          if ::Pgbus.respond_to?(:configuration) &&
+             ::Pgbus.configuration.respond_to?(:queue_prefix) &&
+             (prefix = ::Pgbus.configuration.queue_prefix)
+            return prefix.to_s.length
+          end
+
+          DEFAULT_PGBUS_QUEUE_PREFIX.length
+        rescue ::StandardError
+          DEFAULT_PGBUS_QUEUE_PREFIX.length
         end
 
         # Replicates pgbus_stream_from's src minting off-view: the signed name

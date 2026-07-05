@@ -172,9 +172,18 @@ function startStreamDefer(targetId, directive) {
   const src = directive.getAttribute("data-reactive-defer-src")
   if (!src) return
   if (!globalThis.customElements?.get?.("pgbus-stream-source")) {
+    // The server chose push on server-side capability, but this page has no
+    // pgbus client. Degrade to the fetch lane using the fallback token the push
+    // directive carries — rather than dead-end the shimmer. No token (an app on
+    // a bespoke transport) is a loud no-op.
+    const fallbackToken = directive.getAttribute("data-reactive-defer-token")
+    if (fallbackToken) {
+      startFetchDefer(targetId, fallbackToken)
+      return
+    }
     console.error(
-      "[phlex-reactive] reactive:defer via=stream but <pgbus-stream-source> is not registered — " +
-        "is the pgbus client loaded on this page?",
+      "[phlex-reactive] reactive:defer via=stream but <pgbus-stream-source> is not registered " +
+        "and no fallback token was provided — is the pgbus client loaded on this page?",
     )
     return
   }
@@ -200,6 +209,10 @@ async function performDeferFetch(targetId, entry, token) {
     entry.abort.abort()
   }, deferTimeoutMs())
 
+  // The timeout is cleared ONLY after the body is fully read (below), not the
+  // moment headers arrive — a server that streams headers then stalls the body
+  // must still abort, or the shimmer hangs forever (the abort signal covers the
+  // whole fetch + body read, mirroring #perform's AbortSignal.timeout).
   let response
   try {
     response = await fetch(deferPath(), {
@@ -220,15 +233,19 @@ async function performDeferFetch(targetId, entry, token) {
     failDefer(targetId, token)
     return
   }
-  clearTimeout(timer)
-  if (pendingDefers.get(targetId) !== entry) return // superseded mid-flight
+  if (pendingDefers.get(targetId) !== entry) {
+    clearTimeout(timer)
+    return // superseded mid-flight
+  }
 
   if (response.status === 204) {
+    clearTimeout(timer)
     // render? false — keep the current content, just clear the pending state.
     settleDefer(targetId)
     return
   }
   if (!response.ok) {
+    clearTimeout(timer)
     console.error(`[phlex-reactive] deferred render failed: HTTP ${response.status}`)
     failDefer(targetId, token, response.status)
     return
@@ -238,11 +255,13 @@ async function performDeferFetch(targetId, entry, token) {
   try {
     html = await response.text()
   } catch (error) {
+    clearTimeout(timer)
     if (pendingDefers.get(targetId) !== entry) return
     console.error("[phlex-reactive] deferred render failed reading the body", error)
     failDefer(targetId, token)
     return
   }
+  clearTimeout(timer)
   if (pendingDefers.get(targetId) !== entry) return // superseded during read
 
   settleDefer(targetId)

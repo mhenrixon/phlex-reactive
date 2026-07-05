@@ -29,10 +29,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   or a **durable pgbus one-shot stream + `DeferredRenderJob`** when pgbus's
   reactive Streams and ActiveJob are present (`defer_job_queue` config; the
   durable since-id replay closes the broadcast-before-subscribe race, and the
-  broadcast tears down its own subscription). Every capability gap degrades to
-  the fetch lane — the Action-Cable-or-pgbus invariant holds. **Profile
-  first:** an app-side N+1 looks exactly like framework lag; defer is for
-  segments that are genuinely expensive after the synchronous path is cheap.
+  broadcast tears down its own subscription). The push lane's one-shot queue is
+  reclaimed by pgbus's orphan-stream sweep (run the Dispatcher with
+  `streams_orphan_threshold` set); we never eager-drop it (that would reopen
+  the delivery race). The one-shot key is sized to the live pgbus
+  `queue_prefix` budget, so a non-default prefix can't overflow it; the render
+  job broadcasts a cleanup on ANY failure so the actor's pending state always
+  resolves. Every capability gap degrades to the fetch lane — the
+  Action-Cable-or-pgbus invariant holds. **Profile first:** an app-side N+1
+  looks exactly like framework lag; defer is for segments that are genuinely
+  expensive after the synchronous path is cheap.
 
 - **Lazy initial mount — `reactive_lazy` (#165).** The same machinery for the
   FIRST render (Livewire `#[Lazy]`): the page ships the component's

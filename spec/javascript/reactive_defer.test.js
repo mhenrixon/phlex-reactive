@@ -301,6 +301,45 @@ test("a network failure (fetch rejects) also marks + emits, and a SUPERSEDED abo
   expect(el.dispatched.length).toBe(1)
 })
 
+test("the timeout aborts a stalled BODY read, not just the headers (marks error, clears pending)", async () => {
+  // Regression: clearTimeout used to fire the instant headers arrived, leaving
+  // response.text() unbounded. With a tiny timeout meta, a response whose
+  // headers resolve but whose body hangs must still abort → error + pending
+  // cleared. The fetch here honors the AbortSignal for BOTH the fetch and the
+  // body read, so if the fix regressed (timer cleared early) this test hangs
+  // and fails instead of aborting.
+  const { actions } = stubTurbo()
+  const el = makeTargetEl("slow-totals")
+  stubDocument({ byId: { "slow-totals": el }, metas: { "phlex-reactive-timeout": "20" } })
+
+  globalThis.fetch = (_url, options) =>
+    Promise.resolve({
+      ok: true,
+      status: 200,
+      headers: { get: () => "text/vnd.turbo-stream.html" },
+      // Body that NEVER settles on its own — only the abort signal ends it.
+      text: () =>
+        new Promise((_res, rej) => {
+          if (options.signal.aborted) return rej(named("AbortError"))
+          options.signal.addEventListener("abort", () => rej(named("AbortError")))
+        }),
+    })
+  registerReactiveDefer()
+
+  actions["reactive:defer"].call(directiveEl({ target: "slow-totals" }))
+  // Wait past the 20ms timeout for the abort to fire and the body read to reject.
+  await new Promise((r) => setTimeout(r, 60))
+
+  expect(el.attrs["data-reactive-defer-pending"]).toBeUndefined()
+  expect(el.attrs["data-reactive-error"]).toBe("defer")
+})
+
+function named(name) {
+  const e = new Error(name)
+  e.name = name
+  return e
+}
+
 test("stream lane: inserts a pgbus-stream-source with the deterministic id, src and since-id", () => {
   const { actions } = stubTurbo()
   const el = makeTargetEl("slow-totals")
@@ -384,10 +423,38 @@ test("connect() without the token attribute never touches the defer path", async
   expect(calls.length).toBe(0)
 })
 
-test("stream lane: an unregistered pgbus element is a loud no-op (no insert, no throw)", () => {
+test("stream lane: an unregistered pgbus element FALLS BACK to the fetch lane when a fallback token is present", () => {
+  // The server chose push on server-side capability alone; if the pgbus client
+  // isn't loaded here, a stream directive would dead-end (shimmer forever). The
+  // directive carries a fallback token so the client degrades to the fetch lane.
   const { actions } = stubTurbo()
   const el = makeTargetEl("slow-totals")
   const { appended } = stubDocument({ byId: { "slow-totals": el } })
+  const calls = stubFetch()
+  globalThis.customElements = { get: () => undefined }
+  registerReactiveDefer()
+
+  actions["reactive:defer"].call(
+    directiveEl({
+      target: "slow-totals",
+      via: "stream",
+      token: "fallback-token",
+      src: "/pgbus/streams/signed",
+    }),
+  )
+
+  expect(appended.length).toBe(0) // no source element inserted
+  expect(calls.length).toBe(1) // fell back to the fetch lane
+  expect(calls[0].url).toBe("/reactive/defer")
+  expect(JSON.parse(calls[0].options.body)).toEqual({ token: "fallback-token" })
+  expect(el.attrs["data-reactive-defer-pending"]).toBe("true")
+})
+
+test("stream lane: an unregistered pgbus element with NO fallback token is a loud no-op", () => {
+  const { actions } = stubTurbo()
+  const el = makeTargetEl("slow-totals")
+  const { appended } = stubDocument({ byId: { "slow-totals": el } })
+  const calls = stubFetch()
   globalThis.customElements = { get: () => undefined }
   registerReactiveDefer()
 
@@ -395,4 +462,5 @@ test("stream lane: an unregistered pgbus element is a loud no-op (no insert, no 
     directiveEl({ target: "slow-totals", via: "stream", token: null, src: "/pgbus/streams/signed" }),
   )
   expect(appended.length).toBe(0)
+  expect(calls.length).toBe(0)
 })

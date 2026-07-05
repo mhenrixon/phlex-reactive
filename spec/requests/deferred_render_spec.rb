@@ -168,7 +168,7 @@ RSpec.describe "deferred renders", type: :request do
       expect(Phlex::Reactive.verify_defer(CGI.unescapeHTML(raw))["m"]).to eq("morph")
     end
 
-    it "reply.defer with no prior verb still self-replaces (render_self guarantee)" do
+    it "reply.defer with no prior verb refreshes the token WITHOUT a synchronous self-render (#165 fix)" do
       component = Class.new(ApplicationComponent) do
         include Phlex::Reactive::Streamable
         include Phlex::Reactive::Component
@@ -186,7 +186,32 @@ RSpec.describe "deferred renders", type: :request do
       post_action(component, act: :go, payload: { "s" => { "n" => 0 } })
 
       body = response.body
-      expect(body).to include('action="replace" target="bare-defer"')
+      # Token rolls forward via the tiny token-only stream, NOT a full replace —
+      # deferring must not pay the acting component's render on the request thread.
+      expect(body).to include('action="reactive:token" target="bare-defer"')
+      expect(body).not_to include('action="replace" target="bare-defer"')
+      expect(body).to include('action="reactive:defer" target="slow-totals"')
+    end
+
+    it "reply.replace.defer DOES synchronously re-render self (explicit opt-in)" do
+      component = Class.new(ApplicationComponent) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "EagerDeferComponent"
+        reactive_state :n
+        action :go
+        def initialize(n: 0) = @n = n
+        def id = "eager-defer"
+        def go = reply.replace.defer(SlowTotalsComponent.new(value: 1))
+        def view_template = div(id:, **reactive_attrs) { @n.to_s }
+      end
+      stub_const("EagerDeferComponent", component)
+
+      post_action(component, act: :go, payload: { "s" => { "n" => 0 } })
+
+      body = response.body
+      expect(body).to include('action="replace" target="eager-defer"')
       expect(body).to include('action="reactive:defer" target="slow-totals"')
     end
 
@@ -225,16 +250,18 @@ RSpec.describe "deferred renders", type: :request do
       ActiveJob::Base.queue_adapter = :test
     end
 
-    it "emits a stream directive (src + since-id, NO token) and enqueues the render job" do
+    it "emits a stream directive (src + since-id + fallback token) and enqueues the render job" do
       expect do
         post_action(DeferDemoComponent, act: :bump, payload: { "s" => { "count" => 0 } })
       end.to have_enqueued_job(Phlex::Reactive::DeferredRenderJob)
 
       body = response.body
       expect(body).to include('data-reactive-defer-via="stream"')
-      expect(body).to match(%r{data-reactive-defer-src="/pgbus/streams/signed-prdefer_\h{32}"})
+      expect(body).to match(%r{data-reactive-defer-src="/pgbus/streams/signed-prdefer_[a-f0-9]+"})
       expect(body).to include('data-reactive-defer-since-id="0"')
-      expect(body).not_to include("data-reactive-defer-token")
+      # The fallback token lets the client degrade to the fetch lane if the
+      # pgbus client isn't loaded (no dead-end shimmer).
+      expect(body).to include("data-reactive-defer-token")
       # The cheap companion + the actor's token refresh are lane-independent.
       expect(body).to include('action="update" target="defer-count"')
       expect(body).to include('action="reactive:token" target="defer-demo"')
