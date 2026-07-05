@@ -41,6 +41,52 @@
 #   <meta name="phlex-reactive-action-path" content="<%%= Phlex::Reactive.action_path %>">
 # Phlex::Reactive.action_path = "/_r/actions"
 
+# --- Deferred reply segments (reply.defer + reactive_lazy, issue #165) ------
+# PROFILE FIRST: an app-side N+1 looks exactly like framework lag — make the
+# synchronous path cheap before deferring a segment.
+#
+# How the deferred render reaches the actor (default :auto — a durable pgbus
+# one-shot stream + ActiveJob when both are available, else a parallel fetch to
+# the defer endpoint; :fetch forces the fetch lane, :stream requests push and
+# degrades to fetch with a warning when the capability is absent):
+# Phlex::Reactive.defer_transport = :auto
+#
+# Defer tokens are purpose-scoped and short-lived — the TTL only needs to cover
+# the reply→fetch gap (default 120 seconds):
+# Phlex::Reactive.defer_token_ttl = 120
+#
+# reply.defer tokens are ACTOR-BOUND: signed under the requesting session so a
+# leaked token can't be redeemed in another session. The default binding is the
+# session id; override to bind to your own actor identity (a user id, an API
+# token digest). Apps with no session middleware mint UNBOUND tokens — their
+# bound is then the TTL plus any authorization your component enforces AT RENDER
+# TIME. Note the defer endpoint runs NO action and calls NO authorize! itself
+# (it's a read); protection comes from the component raising a registered
+# authorization error from from_identity/render, or returning false from
+# render?, when it's rebuilt at the defer endpoint.
+# Phlex::Reactive.singleton_class.class_eval do
+#   def defer_binding_for(request) = Current.user&.id&.to_s
+# end
+#
+# The push lane's render job queue (default "default"). Point it at a FAST
+# queue in production — a deferred segment is a UX-latency render; letting it
+# starve behind heavy jobs defeats the point:
+# Phlex::Reactive.defer_job_queue = "latency"
+#
+# PUSH LANE QUEUE LIFECYCLE: each deferred segment on the push lane mints a
+# durable one-shot pgbus stream. Its queue is reclaimed by pgbus's age-based
+# orphan-stream sweep (pgbus >= 0.9.10) — make sure the pgbus Dispatcher runs
+# with streams_orphan_threshold set. We never drop it from the job (an eager
+# drop would destroy an unconsumed message and reopen the broadcast-before-
+# subscribe race). On pgbus <= 0.9.9, or if you don't run the reaper, force the
+# (universal, cleanup-free) fetch lane:
+# Phlex::Reactive.defer_transport = :fetch
+#
+# Change the defer endpoint path (default "/reactive/defer"). If you change it,
+# expose it to the client with:
+#   <meta name="phlex-reactive-defer-path" content="<%%= Phlex::Reactive.defer_path %>">
+# Phlex::Reactive.defer_path = "/_r/defer"
+
 # Client request timeout (default 30s). There is NO server-side setting — a hung
 # request aborts client-side after this window (reactive:error kind "timeout"),
 # so the per-component queue never wedges. Override in your layout head:

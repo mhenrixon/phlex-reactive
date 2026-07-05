@@ -56,6 +56,14 @@ group :development, :test do
   # event: forwarding through the Turbo broadcast helpers — both shipped in
   # pgbus 0.9.4. phlex-reactive 0.2.0's actor-echo suppression needs them.
   #
+  # 0.9.4 is the CAPABILITY floor (Streams primitives). The reply.defer PUSH
+  # lane (issue #165) additionally wants pgbus >= 0.9.10 for the age-based
+  # orphan-stream sweep that reclaims its durable one-shot queues; on older
+  # pgbus those queues leak (the docs steer to defer_transport = :fetch). We
+  # don't raise the floor here — phlex-reactive still works on 0.9.4+, and the
+  # push-lane queue lifecycle is an operational (Dispatcher) concern, not a
+  # code dependency.
+  #
   # For fast local iteration against your own checkout, set PGBUS_PATH:
   #   PGBUS_PATH=~/Code/mhenrixon/pgbus bundle install
   #

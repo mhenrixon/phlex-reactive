@@ -54,6 +54,16 @@ module Phlex
         end
       end
 
+      # The defer endpoint / render leg (issue #165). Like #action, an
+      # :invalid_token event carries no TRUSTED component name — omit it.
+      def defer(event)
+        return unless logger.debug?
+
+        payload = event.payload
+        subject = [payload[:component], payload[:outcome]].compact.join(" ")
+        debug { "[reactive] defer #{subject} (#{round(event.duration)}ms)" }
+      end
+
       private
 
       def round(duration_ms)

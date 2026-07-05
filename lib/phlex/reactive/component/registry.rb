@@ -50,7 +50,8 @@ module Phlex
           state_keys: :@reactive_own_state_keys,
           collections: :@reactive_own_collections,
           computes: :@reactive_own_computes,
-          record_key: :@reactive_own_record_key
+          record_key: :@reactive_own_record_key,
+          lazy: :@reactive_own_lazy
         }.freeze
 
         # The identity-side hot-path memos swept by bump! (see the contract
