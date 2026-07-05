@@ -1350,16 +1350,15 @@ requests push and degrades to fetch with a warning when the capability is
 absent. Both lanes are invisible to your action code.
 
 > **The push lane's queue lifecycle.** Each deferred segment on the push lane
-> mints a durable one-shot pgbus stream. The pull lane (the universal default)
-> needs no such cleanup, so if you don't run pgbus's stream reaper, prefer
-> `defer_transport = :fetch`. On the push lane, the one-shot queue is reclaimed
-> by pgbus's orphan-stream sweep — ensure the pgbus **Dispatcher is running**
-> with `streams_orphan_threshold` set (its default). We do **not** drop the
-> queue from the render job: an eager drop would destroy a not-yet-consumed
-> message and reopen the very broadcast-before-subscribe race the durable lane
-> exists to close. (pgbus ≤ 0.9.9 only reaps *empty* stream queues, which a
-> durable stream never becomes — track the pgbus release that adds the
-> age-based sweep, or stay on `:fetch` until then.)
+> mints a durable one-shot pgbus stream. Its queue is reclaimed by pgbus's
+> **age-based orphan-stream sweep** (pgbus **≥ 0.9.10**) — ensure the pgbus
+> **Dispatcher is running** with `streams_orphan_threshold` set (its default).
+> We do **not** drop the queue from the render job: an eager drop would destroy
+> a not-yet-consumed message and reopen the very broadcast-before-subscribe race
+> the durable lane exists to close. On pgbus ≤ 0.9.9 the sweep only reaped
+> *empty* queues (which a durable stream never becomes), so a one-shot queue
+> leaked — upgrade to ≥ 0.9.10, or stay on the pull lane
+> (`defer_transport = :fetch`, the universal default, which needs no cleanup).
 
 **Security of the defer token.** The defer endpoint re-renders the real
 component, whose fresh root carries a normal (non-expiring) action token — so a

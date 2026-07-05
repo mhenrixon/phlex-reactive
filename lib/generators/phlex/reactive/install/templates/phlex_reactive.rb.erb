@@ -70,11 +70,12 @@
 # Phlex::Reactive.defer_job_queue = "latency"
 #
 # PUSH LANE QUEUE LIFECYCLE: each deferred segment on the push lane mints a
-# durable one-shot pgbus stream. Its queue is reclaimed by pgbus's orphan-stream
-# sweep — make sure the pgbus Dispatcher runs with streams_orphan_threshold set.
-# We never drop it from the job (an eager drop would destroy an unconsumed
-# message and reopen the broadcast-before-subscribe race). If you don't run the
-# reaper, force the (universal, cleanup-free) fetch lane:
+# durable one-shot pgbus stream. Its queue is reclaimed by pgbus's age-based
+# orphan-stream sweep (pgbus >= 0.9.10) — make sure the pgbus Dispatcher runs
+# with streams_orphan_threshold set. We never drop it from the job (an eager
+# drop would destroy an unconsumed message and reopen the broadcast-before-
+# subscribe race). On pgbus <= 0.9.9, or if you don't run the reaper, force the
+# (universal, cleanup-free) fetch lane:
 # Phlex::Reactive.defer_transport = :fetch
 #
 # Change the defer endpoint path (default "/reactive/defer"). If you change it,
