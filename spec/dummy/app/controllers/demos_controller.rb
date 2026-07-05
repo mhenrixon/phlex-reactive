@@ -209,6 +209,21 @@ class DemosController < ActionController::Base
     render_component LoadingButtonComponent.new(count: 0)
   end
 
+  # Deferred reply segments (issue #165): the driver component + the expensive
+  # rollup on one page. Specs dial SlowTotalsComponent.render_delay_ms (same
+  # process as this Capybara server) to make the pending window observable.
+  def defer
+    html = render_to_string(DeferDemoComponent.new(count: 0), layout: false) +
+           render_to_string(SlowTotalsComponent.new(value: 0), layout: false)
+    render html: html.html_safe, layout: true
+  end
+
+  # Lazy initial mount (issue #165): the page ships the placeholder shell; the
+  # client fetches the real content on connect via the defer machinery.
+  def lazy_stats
+    render_component LazyStatsComponent.new(scope: "week")
+  end
+
   def morph_grid
     render_component MorphGridComponent.new(account: Account.find(params[:id]))
   end
