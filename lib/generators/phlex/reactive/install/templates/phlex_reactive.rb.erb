@@ -15,6 +15,16 @@
 # Phlex::Reactive.authorization_errors = [Pundit::NotAuthorizedError]
 # Phlex::Reactive.authorization_errors = [ActionPolicy::Unauthorized]
 
+# verify_authorized (ON by default): an action that completes WITHOUT any
+# authorization call raises Phlex::Reactive::AuthorizationNotVerified inside the
+# transaction — the mutation rolls back (fail-closed). Satisfy it by calling one
+# of authorization_methods, calling `mark_authorized!` after a bespoke check, or
+# declaring `skip_verify_authorized` on a genuinely public component/action.
+# Set the method names to match your authorization library:
+# Phlex::Reactive.authorization_methods = %i[authorize! authorize allowed_to?]
+# Turn the guard off entirely (not recommended — you lose the fail-closed net):
+# Phlex::Reactive.verify_authorized = false
+
 # Diagnostic endpoint error bodies + dropped-param logging (statuses never
 # change). Defaults to Rails.env.local? — on in development AND test, off in production.
 # Phlex::Reactive.verbose_errors = true

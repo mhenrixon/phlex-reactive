@@ -6,7 +6,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: `verify_authorized` is ON by default (#168).** A reactive action
+  that completes **without any authorization call now raises**
+  `Phlex::Reactive::AuthorizationNotVerified` — **rolling back the transaction**
+  (fail-closed, stronger than Pundit's after-the-fact check). This is the
+  presence-side complement to `authorization_errors`: a forgotten `authorize!`
+  becomes a loud 500 your error tracker sees, not a silent hole. The guard
+  detects a call to any `Phlex::Reactive.authorization_methods` name
+  (default `%i[authorize! authorize allowed_to?]` — Pundit/CanCanCan/ActionPolicy)
+  **or** `mark_authorized!`, made anywhere during the action (a helper the action
+  calls counts too). **Three remedies** for each action:
+  1. call your authorization method (`authorize! @record, :update?`);
+  2. call `mark_authorized!` after a bespoke check the interceptor can't see;
+  3. declare `skip_verify_authorized` (whole component) or
+     `skip_verify_authorized :action_name` (specific actions) for an
+     intentionally public action.
+  Turn it off globally with `Phlex::Reactive.verify_authorized = false` (the
+  install-generator initializer documents the knob). The `action.phlex_reactive`
+  instrumentation event gains a new `:unverified` outcome. A new **advisory**
+  doctor check flags mutating actions with no detected authorization call
+  (heuristic — a helper may authorize indirectly; never a hard fail).
+
 ### Added
+
+- **verify_authorized runtime guard (#168).** New
+  `Phlex::Reactive::Authorization` (fiber-local tracking window, method
+  interception, the enforcement decision), `mark_authorized!` instance helper,
+  the `skip_verify_authorized` DSL (registry #6, inherits like the other five),
+  and `Phlex::Reactive.verify_authorized` / `authorization_methods` config
+  (`defined?`-guarded so an explicit override sticks). See the breaking note
+  above for the behavior and remedies.
 
 - **Action inventory — `Phlex::Reactive::Inspector` + rake tasks (#168).** A new
   read-only introspection layer that answers "what reactive actions exist in this

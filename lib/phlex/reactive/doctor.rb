@@ -74,7 +74,8 @@ module Phlex
           verifier_check,
           base_controller_check,
           action_check(components),
-          id_check(components)
+          id_check(components),
+          authorization_check(components)
         ]
       end
 
@@ -180,6 +181,23 @@ module Phlex
                "derive a default id from.")
       end
 
+      # ADVISORY (issue #168): the presence-side static heuristic complementing
+      # the runtime verify_authorized guard. Flags a non-skipped action whose
+      # component defines NONE of Phlex::Reactive.authorization_methods anywhere
+      # in its ancestry AND whose body (Prism-scanned via the Inspector) makes no
+      # authorization / mark_authorized! call. It is :unknown, NEVER a hard fail:
+      # a helper may authorize indirectly, so this is a hint, not a verdict.
+      def authorization_check(components)
+        suspects = components.flat_map { unauthorized_action_labels(it) }
+        return Check.new(:ok, "every mutating action appears to authorize", name: :authorization) if suspects.empty?
+
+        Check.new(:unknown, "actions with no detected authorization call: #{suspects.join(", ")}",
+          name: :authorization,
+          fix: "This is a heuristic (a helper may authorize indirectly). If each is intentional, " \
+               "confirm it authorizes; if an action is genuinely public, declare " \
+               "`skip_verify_authorized`. See the Debugging & tooling docs page.")
+      end
+
       # --- rendering --------------------------------------------------------
 
       # The full plain-text report: a line per check, plus an indented fix under
@@ -256,6 +274,42 @@ module Phlex
           !(klass.respond_to?(:reactive_record_key) && klass.reactive_record_key)
       rescue StandardError
         false
+      end
+
+      # "Klass#action" for every declared action on `klass` that (advisory)
+      # appears unauthorized: the component defines no authorization method in its
+      # ancestry, the action isn't skipped, and the Prism scan (via the shared
+      # Inspector) finds no authorization / mark_authorized! call in its body.
+      def unauthorized_action_labels(klass)
+        return [] if component_defines_authorization_method?(klass)
+
+        info = Phlex::Reactive::Inspector.components.find { it.klass == klass }
+        return [] unless info
+
+        info.actions
+          .reject { skips_authorization?(klass, it.name) }
+          .reject(&:authorization_call_detected?)
+          .map { "#{klass}##{it.name}" }
+      rescue StandardError
+        []
+      end
+
+      # Does the class define any CONFIGURED authorization method anywhere in its
+      # ancestry (public or private)? If so, it plausibly authorizes through a
+      # helper the static scan can't follow — stay quiet. Deliberately reads
+      # Phlex::Reactive.authorization_methods and NOT the Inspector's set, which
+      # folds in mark_authorized! — every component inherits that instance helper,
+      # so including it would silence the check for everything.
+      def component_defines_authorization_method?(klass)
+        Phlex::Reactive.authorization_methods.any? do
+          klass.method_defined?(it) || klass.private_method_defined?(it)
+        end
+      rescue StandardError
+        false
+      end
+
+      def skips_authorization?(klass, action_name)
+        klass.respond_to?(:skip_verify_authorized?) && klass.skip_verify_authorized?(action_name)
       end
 
       def stimulus_missing_check

@@ -50,7 +50,11 @@ module Phlex
           state_keys: :@reactive_own_state_keys,
           collections: :@reactive_own_collections,
           computes: :@reactive_own_computes,
-          record_key: :@reactive_own_record_key
+          record_key: :@reactive_own_record_key,
+          # verify_authorized opt-out (issue #168, registry #6): a scalar bare
+          # flag (skip the WHOLE component) plus a list of named actions.
+          skip_all: :@reactive_own_skip_all,
+          skip_actions: :@reactive_own_skip_actions
         }.freeze
 
         # The identity-side hot-path memos swept by bump! (see the contract
