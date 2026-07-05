@@ -31,7 +31,7 @@ module Phlex
           )
 
           def self.call(component: nil, server_context: nil) # rubocop:disable Lint/UnusedMethodArgument
-            ::Rails.application.eager_load! if defined?(::Rails) && ::Rails.application
+            eager_load_app!
             infos = Phlex::Reactive::Inspector.components
             infos = infos.select { it.name == component } if component
             json_response(components: infos.map { Phlex::Reactive::Inspector::Report.component_hash(it) })

@@ -43,6 +43,13 @@ module Phlex
           def error_response(message)
             ::MCP::Tool::Response.new([{ type: "text", text: message }], error: true)
           end
+
+          # Populate the Streamable registry the Inspector/Doctor read — the
+          # tools call this before introspecting so every app component is
+          # loaded. Guarded for a non-Rails / not-yet-booted context.
+          def eager_load_app!
+            ::Rails.application.eager_load! if defined?(::Rails) && ::Rails.application
+          end
         end
       end
     end

@@ -51,20 +51,19 @@ module Phlex
           # Is pgbus present and stream-capable? Delegates to the config readers
           # when they exist; otherwise probes directly (defined? + respond_to?),
           # so the report is correct regardless of pgbus version.
+          # Delegate to the gem's own capability gates (issue #165) — the
+          # canonical runtime probes (`pgbus_streams?` inspects
+          # Pgbus::Streams::Stream#broadcast's parameters directly, never a live
+          # stream call). Reported as plain booleans; degrade to false if the
+          # readers ever raise.
           def self.pgbus?
-            return Phlex::Reactive.pgbus? if Phlex::Reactive.respond_to?(:pgbus?)
-
-            !!(defined?(::Pgbus) && ::Pgbus.respond_to?(:stream))
+            !!Phlex::Reactive.pgbus?
           rescue StandardError
             false
           end
 
           def self.pgbus_streams?
-            return Phlex::Reactive.pgbus_streams? if Phlex::Reactive.respond_to?(:pgbus_streams?)
-            return false unless pgbus?
-
-            broadcast = ::Pgbus.stream("").method(:broadcast)
-            broadcast.parameters.any? { |_type, name| name == :exclude }
+            !!Phlex::Reactive.pgbus_streams?
           rescue StandardError
             false
           end

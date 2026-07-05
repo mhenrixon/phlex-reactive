@@ -20,7 +20,7 @@ module Phlex
           input_schema(properties: {}, required: [])
 
           def self.call(server_context: nil) # rubocop:disable Lint/UnusedMethodArgument
-            ::Rails.application.eager_load! if defined?(::Rails) && ::Rails.application
+            eager_load_app!
             components = Phlex::Reactive::Inspector.components.map do
               {
                 name: it.name,
