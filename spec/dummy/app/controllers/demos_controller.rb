@@ -184,9 +184,14 @@ class DemosController < ActionController::Base
 
   # Value-conditional visibility (issue #161): reactive_show bindings driven by
   # a select, a checkbox, and a radio group — all client-only. The spec's fetch
-  # spy proves no round trip ever fires.
+  # spy proves no round trip ever fires. The badge lives OUTSIDE the component's
+  # root — the #164 cross-root target the component declares by id.
   def conditional_fieldset
-    render_component ConditionalFieldsetComponent.new
+    component = render_to_string(ConditionalFieldsetComponent.new, layout: false)
+    outside = <<~HTML
+      <span id="cf-mode-badge" hidden data-testid="mode-badge">Shipping enabled</span>
+    HTML
+    render html: component + outside.html_safe, layout: true
   end
 
   def confirm

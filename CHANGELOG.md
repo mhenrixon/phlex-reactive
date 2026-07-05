@@ -8,6 +8,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Cross-root `reactive_show` targets — `reactive_show_targets` (#164).** A
+  field can now drive the visibility of declared elements **outside** its
+  reactive root — the nav tab, the panel in another tab pane, the sidebar note
+  a mode selector governs — the visibility parallel to the #159 cross-root
+  text mirror. The component that **owns** the field declares which outside
+  ids it governs, spread on the root:
+  `mix(reactive_root, reactive_show_targets(:mode, "#advanced-tab" =>
+  { equals: "advanced" }, "#basic-note" => { not: "advanced" }))`. Same
+  posture as `mirror:`: opt-in and declared, never implicit (a plain
+  `reactive_show` stays root-isolated, #15 untouched); targets are **single id
+  selectors only** — a class/compound selector raises at declare time AND is
+  warn-and-skipped by the client (two-sided default-deny); the predicate is
+  the same literal-only `reactive_show` vocabulary; the toggle is `hidden`
+  only. The field read stays **owned** — you can only drive outside visibility
+  from a field the declaring root owns. A target id not on the page is
+  silently skipped (an unrendered tab pane is normal); the cross-root pass
+  shares the owned-binding pass's field-read memo (one read per field per
+  sync). No map declared → one `getAttribute` and out. **One call per root**:
+  Phlex `mix` space-joins duplicate string data values, so a second call's
+  JSON would corrupt the attr (the client warns and ignores it) — several
+  fields go in one call via the hash form
+  (`reactive_show_targets(mode: { … }, kind: { … })`).
+
 - **Value-conditional visibility — `reactive_show` (#161).** The `x-show` /
   `data-show` / `wire:show` case — show/hide an element from a form field's
   **current value** — no longer needs a hand-written `change`-listener Stimulus

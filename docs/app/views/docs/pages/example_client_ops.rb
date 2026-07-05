@@ -116,6 +116,22 @@ module Views
               deep-merge through the helper. Render the initial `hidden:` yourself
               from the same server state that renders the field, so the first paint
               doesn't flash.
+
+              A plain `reactive_show` is root-scoped by design. When the dependents
+              live **outside** the control's root — a nav tab, a panel in another
+              tab pane, a sidebar note — `reactive_show_targets` (#164) is the
+              declared escape, the visibility parallel of the cross-root text
+              mirror: the component that **owns** the field declares which outside
+              ids it governs, spread on the root. Id selectors only (raise at
+              render, warn-and-skip on the client — two-sided default-deny), same
+              literal predicates, `hidden` only; a target id not on the page is
+              silently skipped.
+
+              ```ruby
+              div(**mix(reactive_root, reactive_show_targets(:mode,
+                "#advanced-tab" => { equals: "advanced" },
+                "#basic-note"   => { not: "advanced" })))
+              ```
             MD
             render Views::Examples::LiveExample.new(
               component: ConditionalFieldsetComponent.new,

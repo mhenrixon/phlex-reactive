@@ -14,7 +14,11 @@ class ConditionalFieldsetComponent < ApplicationComponent
   def id = "conditional-fieldset"
 
   def view_template
-    div(**reactive_root) do
+    # Cross-root show targets (issue #164): the mode select ALSO drives a badge
+    # that lives OUTSIDE this root (the demos controller renders it after the
+    # component) — declared on the root, id-only, same literal predicates.
+    div(**mix(reactive_root,
+      reactive_show_targets(:mode, "#cf-mode-badge" => { not: "off" }))) do
       shipping_mode
       gift_option
       delivery_choice
