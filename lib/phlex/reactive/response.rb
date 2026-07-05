@@ -312,15 +312,28 @@ data-reactive-ops="#{ERB::Util.html_escape(json)}"></turbo-stream>).html_safe
       # NOT trip refresh_token? — it exists only to default #js's target to the
       # bound component's id, so reply.morph.js(js.focus("@root")) scopes to the
       # morphed root without the caller repeating the id.
+      # No deferred segments — the shared default so the common (non-defer)
+      # reply never allocates an empty array per Response.
+      NO_SEGMENTS = [].freeze
+
       def initialize(streams: [], redirect_url: nil, render_self: true, token_component: nil,
-                     subject_component: nil)
+                     subject_component: nil, deferred_segments: NO_SEGMENTS)
         @streams = streams.freeze
         @redirect_url = redirect_url
         @render_self = render_self
         @token_component = token_component
         @subject_component = subject_component
+        @deferred_segments = deferred_segments.freeze
         freeze
       end
+
+      # The recorded reply.defer segments (issue #165), in call order. The
+      # Response only RECORDS them; the endpoint (via the Defer module) builds
+      # the placeholder + directive streams AFTER the action's transaction
+      # committed and picks the delivery lane.
+      attr_reader :deferred_segments
+
+      def deferred? = !@deferred_segments.empty?
 
       # Append extra turbo-stream strings (a sibling component, a flash).
       # Returns a NEW Response (immutable).
@@ -330,7 +343,39 @@ data-reactive-ops="#{ERB::Util.html_escape(json)}"></turbo-stream>).html_safe
           redirect_url: @redirect_url,
           render_self: @render_self,
           token_component: @token_component,
-          subject_component: @subject_component
+          subject_component: @subject_component,
+          deferred_segments: @deferred_segments
+        )
+      end
+
+      # Record a DEFERRED segment (issue #165): `component`'s render is taken
+      # off the actor's critical path — the reply carries a pending marker (or
+      # `placeholder:`) plus a delivery directive, and the real HTML reaches
+      # the SAME actor when the render completes (pull fetch or pgbus push,
+      # picked at the endpoint). `morph: true` makes the arrival morph in place.
+      # Returns a NEW Response (immutable). Chain it like any other verb:
+      #
+      #   reply.streams(volume_cell_stream).defer(SessionTotals.new(workout:))
+      #
+      # Dead constructs fail HERE, loudly: defer on a redirect (the client is
+      # navigating away), a non-reactive component (its identity could never be
+      # rebuilt at render time), a bogus placeholder type.
+      def defer(component, placeholder: nil, morph: false)
+        if redirect?
+          raise Phlex::Reactive::Error,
+            "reply.defer on a redirect reply is dead — the client is navigating away, " \
+            "so the deferred render could never land"
+        end
+        Phlex::Reactive::Defer.validate_segment!(component, placeholder)
+
+        self.class.new(
+          streams: @streams,
+          redirect_url: @redirect_url,
+          render_self: @render_self,
+          token_component: @token_component,
+          subject_component: @subject_component,
+          deferred_segments: @deferred_segments +
+            [Phlex::Reactive::Defer::Segment.new(component:, placeholder:, morph:)]
         )
       end
 

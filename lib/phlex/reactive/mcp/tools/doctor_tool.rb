@@ -22,7 +22,7 @@ module Phlex
           input_schema(properties: {}, required: [])
 
           def self.call(server_context: nil) # rubocop:disable Lint/UnusedMethodArgument
-            ::Rails.application.eager_load! if defined?(::Rails) && ::Rails.application
+            eager_load_app!
             doctor = Phlex::Reactive::Doctor.new
             checks = doctor.checks.map do
               { name: it.name, status: it.status, message: it.message, fix: it.fix }
