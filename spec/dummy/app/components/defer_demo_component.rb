@@ -15,6 +15,8 @@ class DeferDemoComponent < ApplicationComponent
   action :bump_skeleton
   action :bump_morph
   action :bump_sync
+  action :bump_bare
+  action :bump_eager
   action :deny_after_defer
 
   def initialize(count: 0)
@@ -46,6 +48,22 @@ class DeferDemoComponent < ApplicationComponent
   def bump_sync
     @count += 1
     reply.streams(mirror_stream).also_replace(SlowTotalsComponent.new(value: @count * 2))
+  end
+
+  # reply.defer with NO prior verb: the token rolls forward via a tiny
+  # token-only stream (Response.streams), NOT a full synchronous self-render —
+  # so deferring your own subject doesn't pay the acting component's render on
+  # the request thread (issue #165 review fix).
+  def bump_bare
+    @count += 1
+    reply.defer(SlowTotalsComponent.new(value: @count * 2))
+  end
+
+  # reply.replace.defer: the explicit opt-in to ALSO re-render self
+  # synchronously alongside the deferred segment.
+  def bump_eager
+    @count += 1
+    reply.replace.defer(SlowTotalsComponent.new(value: @count * 2))
   end
 
   # Defers, then denies (a registered authorization error): the endpoint's

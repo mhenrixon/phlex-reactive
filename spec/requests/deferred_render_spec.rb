@@ -168,50 +168,27 @@ RSpec.describe "deferred renders", type: :request do
       expect(Phlex::Reactive.verify_defer(CGI.unescapeHTML(raw))["m"]).to eq("morph")
     end
 
+    # Uses the stable DeferDemoComponent#bump_bare fixture (NOT an anonymous +
+    # stub_const class): an anonymous component's Registry memos live on a
+    # GC-able class object and interact unpredictably with stub_const, which
+    # produced a rare CI-only flake (the acting root rendered as a lazy shell).
+    # A real, eager-loaded dummy has stable Registry state.
     it "reply.defer with no prior verb refreshes the token WITHOUT a synchronous self-render (#165 fix)" do
-      component = Class.new(ApplicationComponent) do
-        include Phlex::Reactive::Streamable
-        include Phlex::Reactive::Component
-
-        def self.name = "BareDeferComponent"
-        reactive_state :n
-        action :go
-        def initialize(n: 0) = @n = n
-        def id = "bare-defer"
-        def go = reply.defer(SlowTotalsComponent.new(value: 1))
-        def view_template = div(id:, **reactive_attrs) { @n.to_s }
-      end
-      stub_const("BareDeferComponent", component)
-
-      post_action(component, act: :go, payload: { "s" => { "n" => 0 } })
+      post_action(DeferDemoComponent, act: :bump_bare, payload: { "s" => { "count" => 0 } })
 
       body = response.body
       # Token rolls forward via the tiny token-only stream, NOT a full replace —
       # deferring must not pay the acting component's render on the request thread.
-      expect(body).to include('action="reactive:token" target="bare-defer"')
-      expect(body).not_to include('action="replace" target="bare-defer"')
+      expect(body).to include('action="reactive:token" target="defer-demo"')
+      expect(body).not_to include('action="replace" target="defer-demo"')
       expect(body).to include('action="reactive:defer" target="slow-totals"')
     end
 
     it "reply.replace.defer DOES synchronously re-render self (explicit opt-in)" do
-      component = Class.new(ApplicationComponent) do
-        include Phlex::Reactive::Streamable
-        include Phlex::Reactive::Component
-
-        def self.name = "EagerDeferComponent"
-        reactive_state :n
-        action :go
-        def initialize(n: 0) = @n = n
-        def id = "eager-defer"
-        def go = reply.replace.defer(SlowTotalsComponent.new(value: 1))
-        def view_template = div(id:, **reactive_attrs) { @n.to_s }
-      end
-      stub_const("EagerDeferComponent", component)
-
-      post_action(component, act: :go, payload: { "s" => { "n" => 0 } })
+      post_action(DeferDemoComponent, act: :bump_eager, payload: { "s" => { "count" => 0 } })
 
       body = response.body
-      expect(body).to include('action="replace" target="eager-defer"')
+      expect(body).to include('action="replace" target="defer-demo"')
       expect(body).to include('action="reactive:defer" target="slow-totals"')
     end
 
