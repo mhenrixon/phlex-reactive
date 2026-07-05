@@ -70,6 +70,20 @@ module Phlex
     # minted for phlex-reactive can't be replayed against another verifier use.
     IDENTITY_PURPOSE = "phlex-reactive/identity"
 
+    # Purpose string for DEFER tokens (issue #165) — the short-TTL identity a
+    # reply.defer directive carries so the client can fetch the expensive
+    # render off the actor's critical path. A distinct purpose makes the two
+    # token families non-interchangeable BY SIGNATURE: an action token is
+    # rejected at the defer endpoint (it must not become a render oracle) and a
+    # defer token can never invoke an action (it carries no action grant).
+    DEFER_PURPOSE = "phlex-reactive/defer"
+
+    # The defer_transport values (issue #165): :auto picks push (pgbus durable
+    # one-shot stream + ActiveJob) when capable, else pull (parallel fetch);
+    # :fetch forces pull; :stream requests push but still degrades to pull with
+    # a warning when the capability is absent (degrade, never break).
+    DEFER_TRANSPORTS = %i[auto fetch stream].freeze
+
     # The current identity-token payload version (issue #111), stamped into every
     # signed token under the "v" key. It exists so the NEXT breaking shape change
     # (a rename, per-token expiry, a nonce) can upgrade tokens already in flight
@@ -348,6 +362,186 @@ module Phlex
         instance.view_context
       end
 
+      # --- Deferred reply segments (issue #165) --------------------------
+
+      # Lifetime (seconds) of a defer token. It only needs to cover the
+      # reply→fetch gap (or reply→job→SSE on the push lane), so it stays short:
+      # a leaked defer token is a render oracle for exactly one component
+      # identity until this expires. nil resets to the default.
+      attr_writer :defer_token_ttl
+
+      def defer_token_ttl
+        @defer_token_ttl ||= 120
+      end
+
+      # The path the defer endpoint is mounted at (the pull lane's target).
+      # Default "/reactive/defer"; set before boot if it collides.
+      attr_writer :defer_path
+
+      def defer_path
+        @defer_path ||= "/reactive/defer"
+      end
+
+      # How deferred segments reach the actor: :auto (push iff capable, else
+      # pull), :fetch (always pull), :stream (push; degrades to pull with a
+      # warning when the capability is absent). Validated at assignment — a
+      # typo'd transport must fail at the initializer, not silently at reply
+      # time. nil resets to the default.
+      def defer_transport
+        @defer_transport ||= :auto
+      end
+
+      def defer_transport=(value)
+        value = value&.to_sym
+        unless value.nil? || DEFER_TRANSPORTS.include?(value)
+          raise ::ArgumentError,
+            "Phlex::Reactive.defer_transport must be one of #{DEFER_TRANSPORTS.map(&:inspect).join(", ")} " \
+            "(got #{value.inspect})"
+        end
+
+        @defer_transport = value
+      end
+
+      # The ActiveJob queue the push lane's DeferredRenderJob runs on. Default
+      # "default"; point it at a fast queue in production — a deferred segment
+      # is a UX-latency render, and letting it starve behind heavy jobs defeats
+      # the point. nil resets to the default.
+      attr_writer :defer_job_queue
+
+      def defer_job_queue
+        @defer_job_queue ||= "default"
+      end
+
+      # Signs a defer payload (issue #165): same shape + version stamp as the
+      # identity token, but purpose-scoped to DEFER_PURPOSE and expiring after
+      # defer_token_ttl. verify/verify_defer are therefore mutually exclusive
+      # by construction — see the DEFER_PURPOSE comment.
+      # SECURITY (the leaked-token exchange): the defer endpoint re-renders the
+      # real component, whose root carries a fresh NON-expiring identity (action)
+      # token — so a leaked defer token replayed by ANOTHER actor within its TTL
+      # would hand that actor a permanent action token for the same identity.
+      # The purpose is therefore ALSO scoped to the minting actor's binding (the
+      # session id, via with_defer_binding), so a defer token minted under
+      # binding A fails verification under binding B — the exchange can't cross
+      # actors. Unbound (no session — the ActionController::Base default) is the
+      # documented today-behavior; `authorize!` in the action stays the real
+      # authority in every case.
+      # Sign a defer token. `unbound: true` (the reactive_lazy channel) mints
+      # under the PLAIN DEFER_PURPOSE, never the /binding suffix — because a
+      # lazy shell renders during the PAGE render, on a fresh visit where the
+      # session doesn't exist yet (Rails establishes it DURING that response),
+      # so it can't be bound; and it lives in the actor's own page, a small leak
+      # surface. reply.defer tokens (the default) mint under the current actor's
+      # binding — they live in an action HTTP response that can transit proxies/
+      # logs, the real cross-infrastructure leak vector. See docs/security +
+      # the README defer security note. `authorize!` in the action is the real
+      # authority for the harvested-action-token step in both cases.
+      def sign_defer(payload, unbound: false)
+        purpose = unbound ? DEFER_PURPOSE : defer_purpose
+        verifier.generate(payload.merge("v" => TOKEN_VERSION), purpose:, expires_in: defer_token_ttl)
+      end
+
+      # Returns the verified, version-upgraded defer payload, or nil when the
+      # token is tampered, expired, carries the wrong purpose (an action token
+      # OR a BOUND token minted under a DIFFERENT actor binding), or a version
+      # this code doesn't understand — all fail closed through the endpoint's
+      # InvalidToken → 400 path. Tries the current-binding purpose first (the
+      # reply.defer, actor-bound case), then falls back to the plain
+      # DEFER_PURPOSE (the unbound lazy case) — so an unbound lazy token
+      # resolves under ANY binding, while a bound token minted under session-A
+      # still fails under session-B (it was signed with /session-A, which
+      # matches NEITHER /session-B nor the plain purpose).
+      def verify_defer(token)
+        payload = verifier.verified(token, purpose: defer_purpose)
+        payload ||= verifier.verified(token, purpose: DEFER_PURPOSE) if current_defer_binding
+        payload && upgrade_token(payload)
+      end
+
+      # The purpose string for the CURRENT actor's defer tokens: the base
+      # DEFER_PURPOSE, plus the binding when one is present. Binding is folded
+      # into the PURPOSE (not the payload) so it's part of the signature's
+      # domain separation — a mismatched binding is a verification failure, not
+      # a value the endpoint must remember to compare.
+      def defer_purpose
+        binding = current_defer_binding
+        binding ? "#{DEFER_PURPOSE}/#{binding}" : DEFER_PURPOSE
+      end
+
+      # The acting client's defer binding during a request, or nil. Set by the
+      # ActionsController from defer_binding_for(request) — threaded exactly
+      # like current_connection_id.
+      def current_defer_binding
+        Thread.current[:phlex_reactive_defer_binding]
+      end
+
+      def with_defer_binding(binding)
+        previous = Thread.current[:phlex_reactive_defer_binding]
+        Thread.current[:phlex_reactive_defer_binding] = binding.presence
+        yield
+      ensure
+        Thread.current[:phlex_reactive_defer_binding] = previous
+      end
+
+      # Resolve a request to its defer binding: the id of an ALREADY-PERSISTED
+      # session, else nil. The `exists?` gate is load-bearing — a bare
+      # `session.id` LAZILY generates an id even for an empty, never-written
+      # session, and that id is NOT persisted (no Set-Cookie), so two requests
+      # for the same read-only page get DIFFERENT lazy ids and a bound token
+      # minted on one is rejected on the other. Only a persisted session (an
+      # authenticated app wrote one at login) has a stable id across the mint
+      # (page render / action) and the verify (defer endpoint) — exactly the
+      # case where cross-actor exchange is the real threat. A read-only page
+      # with no session mints + verifies UNBOUND consistently (the TTL +
+      # `authorize!` remain the bound). Tolerant of a store that lazily raises:
+      # degrade to nil (unbound), never a 500. Override to bind to your own
+      # actor identity (a stable user id, an API-token digest) — recommended for
+      # a token-authenticated API with no cookie session.
+      def defer_binding_for(request)
+        session = request.session
+        return nil unless session.respond_to?(:exists?) && session.exists?
+
+        session.id&.to_s
+      rescue StandardError
+        nil
+      end
+
+      # --- pgbus capability gates (issue #165) ---------------------------
+      # Runtime capability detection, never `defined?(Pgbus)` alone or a
+      # version string (the core optionality invariant): pgbus < 0.9.2 also
+      # defines ::Pgbus, so the Streams gate probes the ACTUAL keyword.
+
+      # Necessary but NOT sufficient — the Streams entrypoint exists.
+      def pgbus?
+        return false unless defined?(::Pgbus)
+
+        ::Pgbus.respond_to?(:stream)
+      end
+
+      # The reactive-Streams capability: Stream#broadcast accepts :exclude
+      # (the pgbus >= 0.9.2 shape). This is the gate that prevents
+      # `ArgumentError: unknown keyword :exclude` on an old pgbus.
+      def pgbus_streams?
+        return false unless pgbus?
+        return false unless defined?(::Pgbus::Streams::Stream)
+
+        ::Pgbus::Streams::Stream.instance_method(:broadcast)
+          .parameters.any? { |_type, name| name == :exclude }
+      rescue ::NameError
+        false
+      end
+
+      # Everything the defer PUSH lane needs at runtime: streams-capable pgbus,
+      # server-side signed-src minting (SignedName.sign — the element's src is
+      # built off-request), and ActiveJob to run the render off the request
+      # thread. Anything missing → the pull lane (which is always available).
+      def defer_push_capable?
+        return false unless pgbus_streams?
+        return false unless defined?(::Pgbus::Streams::SignedName) &&
+                            ::Pgbus::Streams::SignedName.respond_to?(:sign)
+
+        defined?(::ActiveJob::Base) ? true : false
+      end
+
       # DOM id of the host-app container a Response#flash appends into.
       # Default "flash"; override to match your layout's flash region.
       def flash_target
@@ -381,7 +575,10 @@ module Phlex
       # access (dom_id/url_for/t/csrf). Used for a Phlex component embedded as
       # Response#with content.
       def render(component)
-        component.render_in(off_request_view_context)
+        # A machinery render (issue #165): a reactive_lazy component embedded
+        # in a Response/flash renders its REAL template — the lazy shell is
+        # for the page-embedded initial mount only.
+        Phlex::Reactive::Defer.with_real_render { component.render_in(off_request_view_context) }
       end
 
       # A Turbo::Streams::TagBuilder bound to an off-request view context, used
@@ -659,6 +856,11 @@ loader.ignore("#{lib}/phlex/reactive/test_helpers/matchers.rb")
 # The engine is required explicitly below (only when Rails is present) and must
 # not be eager-loaded before that.
 loader.do_not_eager_load("#{__dir__}/reactive/engine.rb")
+# The defer push-lane job subclasses ActiveJob::Base, which is NOT a gem
+# dependency — eager-loading it in an app without ActiveJob would raise at
+# boot. The constant autoloads on first reference, which only happens behind
+# Phlex::Reactive.defer_push_capable? (that gate requires ActiveJob::Base).
+loader.do_not_eager_load("#{__dir__}/reactive/deferred_render_job.rb")
 loader.setup
 
 require "phlex/reactive/engine" if defined?(Rails::Engine)

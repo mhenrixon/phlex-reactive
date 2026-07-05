@@ -35,12 +35,82 @@ module Phlex
         # #82/#87); we only ADD the outcome finalizer. `action` is safe to read
         # up front (it comes from the request, not the verified token).
         event = { component: nil, action: reactive_action_name.to_s, outcome: nil }
-        Phlex::Reactive.instrument("action", event) do
-          create_action(event)
+        # Mint any reply.defer directive tokens UNDER the actor's binding (issue
+        # #165 security), so the defer endpoint accepts them ONLY back from this
+        # same actor. The defer token is built in response_streams (inside this
+        # block via the Defer builder), so the binding must be established here.
+        Phlex::Reactive.with_defer_binding(Phlex::Reactive.defer_binding_for(request)) do
+          Phlex::Reactive.instrument("action", event) do
+            create_action(event)
+          end
+        end
+      end
+
+      # The defer endpoint (issue #165) — the pull lane's render leg. Verifies
+      # the purpose-scoped, short-TTL defer token (an ACTION token is rejected
+      # here by signature — purpose confusion fails closed), rebuilds the
+      # component from its signed identity, and returns its replace (or morph,
+      # per the SIGNED mode) stream. No action runs and no transaction opens —
+      # this is a read. Authorization: the base controller's auth applies as on
+      # every reactive request; a component that guards visibility can raise a
+      # registered authorization error from from_identity/render (→ 403) or
+      # return false from render? (→ 204: keep content, clear pending).
+      def deferred
+        event = { component: nil, outcome: nil }
+        # Verify UNDER the actor's binding (issue #165 security): a defer token
+        # minted for another actor's session fails the binding-scoped purpose,
+        # so a leaked token can't be exchanged here for this actor's render (and
+        # its embedded fresh identity token). Unbound requests (no session) are
+        # unchanged.
+        Phlex::Reactive.with_defer_binding(Phlex::Reactive.defer_binding_for(request)) do
+          Phlex::Reactive.instrument("defer", event) do
+            deferred_action(event)
+          end
         end
       end
 
       private
+
+      # The defer body, mirroring create_action's shape: fill the event payload
+      # on every exit path, reuse the shared rescue → reactive_error plumbing.
+      def deferred_action(event)
+        payload = verified_defer_payload
+        component_class = resolve_component(payload["c"])
+        event[:component] = component_class.name
+        component = component_class.from_identity(payload)
+
+        if component.respond_to?(:render?) && !component.render?
+          event[:outcome] = :no_content
+          return head :no_content
+        end
+
+        event[:outcome] = :ok
+        stream = payload["m"] == "morph" ? component.to_stream_morph : component.to_stream_replace
+        render turbo_stream: stream
+      rescue Phlex::Reactive::InvalidToken => e
+        event[:outcome] = :invalid_token
+        reactive_error(:bad_request, e.message, kind: e.diagnostic || :tampered)
+      rescue ActiveRecord::RecordNotFound
+        event[:outcome] = :not_found
+        reactive_error(:not_found, record_not_found_message(payload), kind: :not_found)
+      rescue *authorization_errors => e
+        event[:outcome] = :unauthorized
+        reactive_error(:forbidden, deferred_authorization_message(e, component_class), kind: :forbidden)
+      end
+
+      def verified_defer_payload
+        token = params.require(:token)
+        Phlex::Reactive.verify_defer(token) || raise(Phlex::Reactive::InvalidToken.new(
+          "defer token invalid — expired (defer_token_ttl is #{Phlex::Reactive.defer_token_ttl}s), " \
+          "tampered, or an ACTION token posted to the defer endpoint (the purposes are disjoint)",
+          diagnostic: :tampered
+        ))
+      end
+
+      def deferred_authorization_message(error, component_class)
+        "#{error.class.name} raised rebuilding/rendering #{component_class&.name} for a deferred " \
+          "segment — the signature proves identity, not permission"
+      end
 
       # The action body, run inside the instrument block so its payload (`event`)
       # can be finalized on every exit path. Kept separate so `create` stays a
@@ -236,9 +306,11 @@ module Phlex
         # the dedupe is scoped to the actor's own target, NOT a global substring,
         # so a partial reply that legitimately includes another reactive
         # component's stream (which carries its OWN token) still refreshes ours.
+        #
+        # (refresh_token? implies render_self? is false — .streams/collections set
+        # both — so folding this into the if/elsif below is behavior-preserving.)
         if result.refresh_token? && !carries_token_for?(streams, result.token_component)
-          return [*streams, result.token_component.to_stream_token]
-        end
+          streams = [*streams, result.token_component.to_stream_token]
 
         # Guarantee the component's signed identity token is refreshed unless the
         # Response opted out (remove/redirect navigate away — handled above). The
@@ -256,10 +328,26 @@ module Phlex
         # ground-truth flag (rx_carries_token?), a raw string from a substring
         # scan. Deliberately NOT rx_refreshes_token_for? (target-scoped): scoping
         # this guard would regress update/morph of self on an aliased id.
-        if result.render_self? && streams.none? { stream_carries_token?(it) }
+        elsif result.render_self? && streams.none? { stream_carries_token?(it) }
           streams = [component.to_stream_replace, *streams]
         end
-        streams
+
+        append_deferred_streams(streams, result)
+      end
+
+      # Deferred segments (issue #165) ride LAST — after every render stream and
+      # after the reactive:js op stream — so their placeholder/directive apply
+      # to the fully-updated DOM (Turbo applies in document order) and delivery
+      # kicks off only once the reply's own paints are in flight. This runs
+      # AFTER run_action returned, i.e. after the action's transaction
+      # COMMITTED — a rolled-back action takes the rescue paths and no directive
+      # (or push-lane enqueue) can ever leak. The common non-defer reply pays
+      # one empty? check.
+      def append_deferred_streams(streams, result)
+        return streams unless result.deferred?
+
+        via = Phlex::Reactive::Defer.resolve_via
+        [*streams, *result.deferred_segments.flat_map { Phlex::Reactive::Defer.streams_for(it, via:) }]
       end
 
       # GUARD 2 predicate. A Stream with intact metadata answers structurally

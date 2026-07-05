@@ -30,6 +30,8 @@ Rails.application.routes.draw do
   get "confirm" => "demos#confirm"
   get "optimistic" => "demos#optimistic"
   get "loading_button" => "demos#loading_button"
+  get "defer" => "demos#defer"
+  get "lazy_stats" => "demos#lazy_stats"
   get "morph_grid/:id" => "demos#morph_grid"
   get "js_focus/:id" => "demos#js_focus"
   get "partial_grid/:id" => "demos#partial_grid"

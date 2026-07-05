@@ -55,6 +55,15 @@ module Phlex
         # declared, the token carries just {c} — enough to mount, but with no
         # identity to round-trip, so declare reactive_state for a draft you sync.
         def reactive_token
+          Phlex::Reactive.sign(reactive_identity_payload)
+        end
+
+        # The UNSIGNED identity payload — extracted from reactive_token (issue
+        # #165) so the defer machinery mints its purpose-scoped defer tokens
+        # from the exact same shape and the two token families can never drift.
+        # Still THE hot path (reactive_token calls it on every render); the
+        # split adds one method dispatch, verified flat by the token bench.
+        def reactive_identity_payload
           klass = self.class
           payload = { "c" => klass.name }
 
@@ -75,7 +84,7 @@ module Phlex
             payload["s"] = state
           end
 
-          Phlex::Reactive.sign(payload)
+          payload
         end
 
         # A record's gid is signable unless it is an unsaved AR-like draft

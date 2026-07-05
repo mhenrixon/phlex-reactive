@@ -114,6 +114,7 @@ module Phlex
       include DSL
       include Identity
       include Helpers
+      include Lazy
     end
   end
 end
