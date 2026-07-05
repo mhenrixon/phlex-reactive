@@ -79,6 +79,12 @@ class DemosController < ActionController::Base
     render_component ComboboxComponent.new(query: params[:q].to_s)
   end
 
+  # Client-side option filtering (issue #163): the whole catalog preloads and
+  # typing narrows it in-browser — the spec's fetch spy proves zero POSTs.
+  def filter_combobox
+    render_component FilterComboboxComponent.new
+  end
+
   # A NEW (unsaved) order: the split recomputes in-browser via reactive_compute,
   # no round trip. total=500 seeds the three-way split. The page also carries a
   # read-only recap OUTSIDE the reactive root (issue #159) — the component's

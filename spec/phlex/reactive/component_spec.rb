@@ -1468,6 +1468,124 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  # Issue #163: reactive_filter — client-side option filtering for the
+  # searchable combobox. The ROOT declares which input drives the filter and
+  # which elements are the options (plus optional group/empty selectors); the
+  # client shows/hides options by their data-reactive-filter-text haystack on
+  # every input — no round trip, no bespoke per-feature controller. Validation
+  # is loud at render time: blank selectors are dead bindings.
+  describe "#reactive_filter (client-side option filtering, issue #163)" do
+    subject(:instance) { filter_klass.new }
+
+    let(:filter_klass) do
+      Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "FilterThing"
+      end
+    end
+
+    it "emits the input and option selectors as root data attributes" do
+      attrs = instance.send(:reactive_filter, input: "#search", option: "[role=option]")
+      expect(attrs[:data][:reactive_filter_input]).to eq("#search")
+      expect(attrs[:data][:reactive_filter_option]).to eq("[role=option]")
+    end
+
+    it "omits group/empty entirely when not given (byte-stable wire)" do
+      attrs = instance.send(:reactive_filter, input: "#search", option: "[role=option]")
+      expect(attrs[:data]).not_to have_key(:reactive_filter_group)
+      expect(attrs[:data]).not_to have_key(:reactive_filter_empty)
+    end
+
+    it "emits the optional group and empty selectors when given" do
+      attrs = instance.send(:reactive_filter,
+        input: "#search", option: "[role=option]",
+        group: "[data-filter-group]", empty: "#no-matches")
+      expect(attrs[:data][:reactive_filter_group]).to eq("[data-filter-group]")
+      expect(attrs[:data][:reactive_filter_empty]).to eq("#no-matches")
+    end
+
+    it "raises on a blank input selector (a dead binding must fail at render)" do
+      expect { instance.send(:reactive_filter, input: "", option: "[role=option]") }
+        .to raise_error(ArgumentError, /input:/)
+    end
+
+    it "raises on a blank option selector" do
+      expect { instance.send(:reactive_filter, input: "#search", option: " ") }
+        .to raise_error(ArgumentError, /option:/)
+    end
+
+    it "raises on an explicitly blank group/empty selector" do
+      expect { instance.send(:reactive_filter, input: "#s", option: "[role=option]", group: "") }
+        .to raise_error(ArgumentError, /group:/)
+      expect { instance.send(:reactive_filter, input: "#s", option: "[role=option]", empty: "") }
+        .to raise_error(ArgumentError, /empty:/)
+    end
+
+    it "renders the wire attributes onto the root element" do
+      klass = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Component
+
+        def self.name = "FilterRender"
+
+        def view_template
+          div(**reactive_filter(input: "#search", option: "[role=option]", empty: "#none"), id: "combo") { "c" }
+        end
+      end
+
+      html = klass.new.call
+      expect(html).to include('data-reactive-filter-input="#search"')
+      expect(html).to include('data-reactive-filter-option="[role=option]"')
+      expect(html).to include('data-reactive-filter-empty="#none"')
+    end
+  end
+
+  # Issue #163 (the compose half): reactive_listnav — the STANDALONE keyboard-nav
+  # wiring for an input that fires no action. on(..., listnav:) requires a
+  # declared action (a POST per keystroke); a preload-and-filter combobox input
+  # is pure client, so it needs the same Arrow/Enter/Escape wiring without the
+  # dispatch descriptor.
+  describe "#reactive_listnav (standalone keyboard nav, issue #163)" do
+    subject(:instance) { state_klass.new }
+
+    it "emits ONLY the listnav keyboard actions (no dispatch — no POST)" do
+      attrs = instance.send(:reactive_listnav, "[role=option]")
+      expect(attrs[:data][:action]).to eq(
+        "keydown.down->reactive#listnavNext " \
+        "keydown.up->reactive#listnavPrev " \
+        "keydown.enter->reactive#listnavPick " \
+        "keydown.esc->reactive#listnavClose"
+      )
+      expect(attrs[:data][:action]).not_to include("reactive#dispatch")
+    end
+
+    it "emits the option selector as the same Stimulus param on() uses" do
+      attrs = instance.send(:reactive_listnav, "[role=option]")
+      expect(attrs[:data][:reactive_listnav_option_param]).to eq("[role=option]")
+    end
+
+    it "raises on a blank selector (a dead binding must fail at render)" do
+      expect { instance.send(:reactive_listnav, "") }.to raise_error(ArgumentError, /selector/)
+    end
+
+    it "deep-merges with extra attrs via mix (data-action survives)" do
+      # mix is Phlex::HTML's (render-context-free) helper, so this example needs
+      # a Phlex-based component — state_klass is a plain class.
+      phlex_instance = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Component
+
+        def self.name = "ListnavMix"
+      end.new
+
+      attrs = phlex_instance.instance_eval do
+        mix(reactive_listnav("[role=option]"), data: { testid: "q" })
+      end
+      expect(attrs[:data][:action]).to include("reactive#listnavNext")
+      expect(attrs[:data][:testid]).to eq("q")
+    end
+  end
+
   # Performance: reactive_token runs on EVERY render. It must produce a byte-
   # identical payload before/after caching the ivar symbols + class name. These
   # pin the payload SHAPE (decoded) so an allocation optimization can't silently

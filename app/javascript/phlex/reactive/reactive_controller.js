@@ -568,6 +568,9 @@ export default class extends Controller {
   // Show bindings (issue #161): the ONE delegated sync handler shared by the
   // root's input/change/turbo:morph-element listeners, held for teardown.
   #boundSyncShow
+  // Option filtering (issue #163): the ONE delegated sync handler shared by the
+  // root's input/turbo:morph-element listeners, held for teardown.
+  #boundSyncFilter
 
   // Mark that a reactive controller actually connected, so the registration
   // guard above knows the controller was registered (issue #26 part 2).
@@ -631,6 +634,26 @@ export default class extends Controller {
       this.element.addEventListener?.("turbo:morph-element", this.#boundSyncShow)
       this.#syncShow()
     }
+
+    // Option filtering (issue #163) — ONLY when the root declares the binding
+    // (reactive_filter emits both attrs together), so a component without one
+    // pays two attribute reads. ONE delegated input listener on the root — the
+    // handler re-filters only for events from the NAMED input, so keystrokes in
+    // unrelated fields on a wide form never pay a filter pass. The connect sync
+    // seeds from the input's current value (a plain replace re-connects; back
+    // navigation may restore typed text), and turbo:morph-element re-applies
+    // after an in-place morph (which keeps the element connected, fires no
+    // Stimulus lifecycle, and may preserve the user's typed query while the
+    // server re-rendered every option visible).
+    if (this.#filterEnabled()) {
+      this.#boundSyncFilter = (event) => {
+        if (event?.type === "input" && !this.#filterInputEvent(event)) return
+        this.#syncFilter()
+      }
+      this.element.addEventListener?.("input", this.#boundSyncFilter)
+      this.element.addEventListener?.("turbo:morph-element", this.#boundSyncFilter)
+      this.#syncFilter()
+    }
   }
 
   // Whether this root opts into dirty tracking (issue #103): track_dirty: puts the
@@ -656,6 +679,7 @@ export default class extends Controller {
     this.#clearAllThrottles()
     this.#teardownDirtyTracking()
     this.#teardownShowSync()
+    this.#teardownFilterSync()
   }
 
   // Serialize requests per component. Each round trip rewrites the signed
@@ -951,7 +975,9 @@ export default class extends Controller {
   // unset. Falls back to the root for a directly-invoked call (unit tests). The
   // ownership predicate is hoisted ONCE per keypress (issue #117) — in the common
   // no-nested-root case it is a constant true, skipping a closest() walk per
-  // option.
+  // option. Hidden options are excluded (issue #163): a reactive_filter (or any
+  // `hidden` toggle) removes a row from the keyboard path too, so an Arrow can't
+  // highlight — and Enter can't pick — an invisible option.
   #listnavOptions(event) {
     const trigger = event?.currentTarget ?? event?.target ?? this.element
     const selector =
@@ -959,7 +985,7 @@ export default class extends Controller {
       this.element.getAttribute("data-reactive-listnav-option-param")
     if (!selector) return []
     const owns = this.#ownershipFilter()
-    return Array.from(this.element.querySelectorAll(selector)).filter(owns)
+    return Array.from(this.element.querySelectorAll(selector)).filter((el) => !el.hidden && owns(el))
   }
 
   // Parse a JSON string list from a root data attr; [] on absence/parse error so
@@ -1892,6 +1918,84 @@ export default class extends Controller {
     this.element.removeEventListener?.("change", this.#boundSyncShow)
     this.element.removeEventListener?.("turbo:morph-element", this.#boundSyncShow)
     this.#boundSyncShow = undefined
+  }
+
+  // Whether this root declares an option filter (issue #163) — the connect()
+  // gate. reactive_filter always emits input + option together, so requiring
+  // BOTH also default-denies a half-built hand-authored binding.
+  #filterEnabled() {
+    return !!(
+      this.element.getAttribute?.("data-reactive-filter-input") &&
+      this.element.getAttribute?.("data-reactive-filter-option")
+    )
+  }
+
+  // Whether a delegated input event came from the NAMED filter input (issue
+  // #163). Anything else — another field's keystroke, a target without
+  // matches() — skips the filter pass (the morph re-sync path bypasses this).
+  #filterInputEvent(event) {
+    const selector = this.element.getAttribute("data-reactive-filter-input")
+    return !!selector && typeof event.target?.matches === "function" && event.target.matches(selector)
+  }
+
+  // Re-apply the filter in one pass (issue #163): lowercase the named input's
+  // current value, toggle `hidden` on every OWNED option by a substring match
+  // against its haystack (data-reactive-filter-text, falling back to the
+  // option's own text), collapse any group whose every contained option is
+  // hidden, and reveal the empty target at 0 visible. A filtered-out option
+  // also loses its listnav highlight so Enter can never pick an invisible row.
+  // No owned input → leave visibility ALONE — a binding that can't resolve
+  // must never break or blank the page (client-side default-deny). All
+  // selectors resolve within this root, skipping nested reactive roots'
+  // elements (issue #15 ownership; the predicate is hoisted once per pass).
+  #syncFilter() {
+    if (typeof this.element?.querySelectorAll !== "function") return
+    const inputSelector = this.element.getAttribute("data-reactive-filter-input")
+    const optionSelector = this.element.getAttribute("data-reactive-filter-option")
+    if (!inputSelector || !optionSelector) return
+
+    const owns = this.#ownershipFilter()
+    const input = [...this.element.querySelectorAll(inputSelector)].find(owns)
+    if (!input) return
+
+    const query = (input.value ?? "").trim().toLowerCase()
+    let visible = 0
+    for (const el of this.element.querySelectorAll(optionSelector)) {
+      if (!owns(el)) continue // a nested root's option is its own controller's job
+      const haystack = (el.getAttribute("data-reactive-filter-text") ?? el.textContent ?? "").toLowerCase()
+      const hidden = query !== "" && !haystack.includes(query)
+      el.hidden = hidden
+      if (hidden) el.removeAttribute("data-reactive-highlighted")
+      else visible++
+    }
+
+    const groupSelector = this.element.getAttribute("data-reactive-filter-group")
+    if (groupSelector) {
+      for (const group of this.element.querySelectorAll(groupSelector)) {
+        if (!owns(group)) continue
+        const contained = [...group.querySelectorAll(optionSelector)].filter(owns)
+        // A group with no options isn't this filter's to decide — server state
+        // stands (it may be a header the app toggles by other means).
+        if (contained.length === 0) continue
+        group.hidden = contained.every((el) => el.hidden)
+      }
+    }
+
+    const emptySelector = this.element.getAttribute("data-reactive-filter-empty")
+    if (emptySelector) {
+      for (const el of this.element.querySelectorAll(emptySelector)) {
+        if (owns(el)) el.hidden = visible > 0
+      }
+    }
+  }
+
+  // Remove the filter-sync listeners on disconnect, so a stray event after a
+  // Turbo morph/navigation never re-filters against a detached root.
+  #teardownFilterSync() {
+    if (!this.#boundSyncFilter) return
+    this.element.removeEventListener?.("input", this.#boundSyncFilter)
+    this.element.removeEventListener?.("turbo:morph-element", this.#boundSyncFilter)
+    this.#boundSyncFilter = undefined
   }
 
   // Build the multipart body (issue #34). `token`/`act` are flat fields the
