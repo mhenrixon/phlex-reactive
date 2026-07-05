@@ -8,6 +8,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Action inventory — `Phlex::Reactive::Inspector` + rake tasks (#168).** A new
+  read-only introspection layer that answers "what reactive actions exist in this
+  app, where are they defined, and is each authorized?" without grepping.
+  `Phlex::Reactive::Inspector.components` discovers every constant-backed reactive
+  component from the loaded `Streamable` registry; `.find(query)` fuzzy-matches
+  one (exact > prefix > substring > subsequence, on both the demodulized and the
+  full name). Each action reports its declared param schema, `file:line`, the full
+  `def … end` source (extracted with **Prism**, degrading to `nil` on an
+  unreadable/unparseable file — never raising), and a **heuristic** authorization
+  status (a Prism scan for a configured authorization method or
+  `mark_authorized!` in the body — advisory only, since a helper may authorize
+  indirectly). Two shipped rake tasks surface it: `bin/rails
+  phlex_reactive:actions` (plain-text table, `FORMAT=json` for tooling) and
+  `bin/rails "phlex_reactive:find[query]"` (ranked matches; top match in detail
+  with each action's method source). Output is names/paths/schemas only — never
+  tokens, secrets, or runtime state (the instrumentation privacy contract
+  extended to tooling). `Doctor` now delegates its `constant_backed_component?`
+  filter to the Inspector so the endpoint-rebuild predicate lives in one place.
+
 - **Client-side option filtering — `reactive_filter` (#163).** The other half
   of #72's combobox: **preload the options, type to narrow — zero round
   trips.** Spread `reactive_filter(input:, option:, group:, empty:)` onto the

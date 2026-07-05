@@ -1,0 +1,224 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+# The Inspector is the ONE read-only introspection layer (issue #168) consumed by
+# the rake tasks, the MCP tools, and Doctor. It discovers every constant-backed
+# reactive component and, per declared action, its param schema, source location,
+# full method-definition source (via Prism), and a heuristic authorization
+# status. It reports NAMES/paths/schemas only — never tokens, secrets, or state.
+RSpec.describe Phlex::Reactive::Inspector do
+  # A real, constant-backed dummy component the whole-app scan must surface.
+  # CounterComponent declares many actions (increment, set with params, boom).
+  before { Rails.application.eager_load! }
+
+  describe ".components" do
+    subject(:components) { described_class.components }
+
+    it "returns ComponentInfo objects" do
+      expect(components).to all(be_a(Phlex::Reactive::Inspector::ComponentInfo))
+    end
+
+    it "includes a constant-backed dummy component (CounterComponent)" do
+      names = components.map(&:name)
+      expect(names).to include("CounterComponent")
+    end
+
+    it "excludes anonymous classes (name nil)" do
+      Class.new(ApplicationComponent) do
+        include Phlex::Reactive::Component
+
+        reactive_state :n
+        def initialize(n: 0) = (@n = n)
+        def id = "anon"
+      end
+
+      expect(described_class.components.map(&:klass)).not_to include(
+        satisfy { it.name.nil? }
+      )
+    end
+
+    it "excludes a class whose faked self.name does not resolve to itself" do
+      Class.new(ApplicationComponent) do
+        include Phlex::Reactive::Component
+
+        # not a real constant
+        def self.name = "Phantom::StateWidget"
+        reactive_state :n
+        action :ghost
+        def initialize(n: 0) = (@n = n)
+      end
+
+      expect(described_class.components.map(&:name)).not_to include("Phantom::StateWidget")
+    end
+
+    describe "a ComponentInfo" do
+      subject(:info) { described_class.components.find { it.name == "CounterComponent" } }
+
+      it "carries the class, name, source path, and action list" do
+        expect(info.klass).to eq(CounterComponent)
+        expect(info.name).to eq("CounterComponent")
+        expect(info.path).to be_an(Array) # [file, line] from const_source_location
+        expect(info.path.first).to end_with("counter_component.rb")
+        expect(info.path.last).to be_a(Integer)
+        expect(info.actions).to all(be_a(Phlex::Reactive::Inspector::ActionInfo))
+      end
+
+      it "reports the state keys for a state-backed component" do
+        expect(info.state_keys).to include(:count)
+        expect(info.record_key).to be_nil
+      end
+
+      it "reports the record key for a record-backed component" do
+        todo_info = described_class.components.find { it.name == "TodoItemComponent" }
+        expect(todo_info.record_key).to eq(:todo)
+      end
+    end
+  end
+
+  describe "an ActionInfo" do
+    subject(:info) { described_class.components.find { it.name == "CounterComponent" } }
+
+    let(:increment) { info.actions.find { it.name == :increment } }
+    let(:set_action) { info.actions.find { it.name == :set } }
+
+    it "carries the action name and declared params" do
+      expect(increment.name).to eq(:increment)
+      expect(increment.params).to eq({})
+      expect(set_action.params).to eq({ count: :integer })
+    end
+
+    it "locates the method definition via instance_method(name).source_location" do
+      expect(increment.source_location).to be_an(Array)
+      expect(increment.source_location.first).to end_with("counter_component.rb")
+      expect(increment.source_location.last).to be_a(Integer)
+    end
+
+    it "extracts the full `def ... end` source with Prism" do
+      # `def set(count:) = @count = count` — an endless method def.
+      expect(set_action.definition).to include("def set(count:)")
+      # `def increment = @count += 1`
+      expect(increment.definition).to include("def increment")
+    end
+
+    it "has a nil source_location and definition for a declared-but-missing method" do
+      klass = Class.new(ApplicationComponent) do
+        include Phlex::Reactive::Component
+
+        def self.name = "Phlex::Reactive::InspectorSpec::MissingMethod"
+        reactive_state :n
+        action :ghost # no `def ghost`
+        def initialize(n: 0) = (@n = n)
+        def id = "missing"
+      end
+      stub_const(klass.name, klass)
+
+      info = described_class.components.find { it.klass == klass }
+      ghost = info.actions.find { it.name == :ghost }
+      expect(ghost.source_location).to be_nil
+      expect(ghost.definition).to be_nil
+    end
+
+    it "degrades definition to nil (never raises) when the source file is unreadable" do
+      # extract_definition is fed the method's real [file, line]; when that file
+      # can't be read/parsed it must return nil, never raise. Drive the private
+      # helper directly with a nonexistent path — the public path can't easily
+      # forge an unreadable source_location for a real in-memory method.
+      definition = described_class.send(:extract_definition, ["/no/such/file.rb", 1])
+      expect(definition).to be_nil
+    end
+  end
+
+  describe "authorization heuristic (Prism scan of the method body)" do
+    it "flags an action whose body calls a configured authorization method" do
+      klass = Class.new(ApplicationComponent) do
+        include Phlex::Reactive::Component
+
+        def self.name = "Phlex::Reactive::InspectorSpec::Authorized"
+        reactive_record :todo
+        action :rename, params: { title: :string }
+        def initialize(todo:) = (@todo = todo)
+
+        def rename(title:)
+          authorize! @todo, :update?
+          @todo.update!(title:)
+        end
+      end
+      stub_const(klass.name, klass)
+
+      info = described_class.components.find { it.klass == klass }
+      rename = info.actions.find { it.name == :rename }
+      expect(rename.authorization_call_detected?).to be(true)
+    end
+
+    it "does not flag an action with no authorization call" do
+      klass = Class.new(ApplicationComponent) do
+        include Phlex::Reactive::Component
+
+        def self.name = "Phlex::Reactive::InspectorSpec::Unauthorized"
+        reactive_state :n
+        action :bump
+        def initialize(n: 0) = (@n = n)
+        def id = "unauth"
+        def bump = @n += 1
+      end
+      stub_const(klass.name, klass)
+
+      info = described_class.components.find { it.klass == klass }
+      bump = info.actions.find { it.name == :bump }
+      expect(bump.authorization_call_detected?).to be(false)
+    end
+
+    it "flags mark_authorized! as an authorization call" do
+      klass = Class.new(ApplicationComponent) do
+        include Phlex::Reactive::Component
+
+        def self.name = "Phlex::Reactive::InspectorSpec::MarkAuthorized"
+        reactive_state :n
+        action :bump
+        def initialize(n: 0) = (@n = n)
+        def id = "mark"
+
+        def bump
+          mark_authorized!
+          @n += 1
+        end
+      end
+      stub_const(klass.name, klass)
+
+      info = described_class.components.find { it.klass == klass }
+      bump = info.actions.find { it.name == :bump }
+      expect(bump.authorization_call_detected?).to be(true)
+    end
+  end
+
+  describe ".find (fuzzy match)" do
+    it "returns an empty array when nothing matches" do
+      expect(described_class.find("zzz_no_such_component_zzz")).to eq([])
+    end
+
+    it "finds a component by its demodulized name (case-insensitive)" do
+      results = described_class.find("counter")
+      expect(results.map(&:name)).to include("CounterComponent")
+    end
+
+    it "ranks an exact demodulized match above a mere substring match" do
+      # "CounterComponent" (contains "counter") should outrank a component that
+      # only contains the query as a subsequence.
+      results = described_class.find("CounterComponent")
+      expect(results.first.name).to eq("CounterComponent")
+    end
+
+    it "ranks a prefix match above a scattered subsequence match" do
+      # Query "coun" is a prefix of CounterComponent — it should be the top hit
+      # over any component that only contains c…o…u…n scattered.
+      results = described_class.find("coun")
+      expect(results.first.name).to eq("CounterComponent")
+    end
+
+    it "matches on the full namespaced name too" do
+      results = described_class.find("TodoItem")
+      expect(results.map(&:name)).to include("TodoItemComponent")
+    end
+  end
+end

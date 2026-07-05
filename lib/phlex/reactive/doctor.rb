@@ -224,20 +224,20 @@ module Phlex
       # name.safe_constantize is the class itself — which also excludes anonymous
       # classes (name nil) and test fixtures that fake `def self.name` without a
       # matching constant, keeping the whole-app scan honest.
+      #
+      # The predicate lives in Inspector (issue #168) — the one read layer shared
+      # by the rake tasks, the MCP tools, and this Doctor — so it stays in sync
+      # with resolve_component's rebuild path in exactly one place.
       def registered_components
         Phlex::Reactive::Streamable.registered_classes.select { constant_backed_component?(it) }
       end
 
       def constant_backed_component?(klass)
-        reactive_component?(klass) && klass.name && klass.name.safe_constantize.equal?(klass)
-      rescue StandardError
-        false
+        Phlex::Reactive::Inspector.constant_backed_component?(klass)
       end
 
       def reactive_component?(klass)
-        klass.respond_to?(:reactive_actions) && klass.include?(Phlex::Reactive::Component)
-      rescue StandardError
-        false
+        Phlex::Reactive::Inspector.reactive_component?(klass)
       end
 
       # "Klass#action" for every declared action on `klass` that has no public
