@@ -177,6 +177,15 @@ RSpec.describe "deferred renders", type: :request do
       post_action(DeferDemoComponent, act: :bump_bare, payload: { "s" => { "count" => 0 } })
 
       body = response.body
+      # TEMP DIAGNOSTIC (remove after CI capture): dump the full body + state so
+      # the CI-only flake's actual output is visible.
+      unless body.include?('action="reactive:token" target="defer-demo"')
+        warn "=== DEFER-FLAKE DIAG ==="
+        warn "lazy?=#{DeferDemoComponent.reactive_lazy?} real_render?=#{Phlex::Reactive::Defer.real_render?}"
+        warn "defer_transport=#{Phlex::Reactive.defer_transport} binding=#{Phlex::Reactive.current_defer_binding.inspect}"
+        warn "BODY: #{body}"
+        warn "=== /DEFER-FLAKE DIAG ==="
+      end
       # Token rolls forward via the tiny token-only stream, NOT a full replace —
       # deferring must not pay the acting component's render on the request thread.
       expect(body).to include('action="reactive:token" target="defer-demo"')
