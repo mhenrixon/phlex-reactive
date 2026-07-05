@@ -107,6 +107,227 @@ export function registerReactiveJs() {
   }
 }
 
+// --- Deferred reply segments (issue #165) ----------------------------------
+// The client half of reply.defer: the server's reply carries a
+// `<turbo-stream action="reactive:defer" target="<id>">` directive and the
+// real render reaches the SAME actor later — via a parallel fetch (pull) or a
+// pgbus one-shot stream (push). Everything here is MODULE-level, deliberately
+// OFF the per-controller request queue: the whole point is that the expensive
+// segment never blocks the actor's next action.
+//
+// Supersession is the correctness core: pendingDefers keys one in-flight
+// delivery per target id. A newer directive for the same target aborts the
+// older fetch (or removes the older stream source), and an arrival applies
+// ONLY while its entry is still current — so a fast typist's debounced
+// keystrokes can never paint stale totals over fresh ones.
+const pendingDefers = new Map()
+
+// Test seam: clear the module-level registry between unit tests.
+export function resetReactiveDefers() {
+  pendingDefers.clear()
+}
+
+export function registerReactiveDefer() {
+  const actions = window.Turbo?.StreamActions
+  if (!actions || actions["reactive:defer"]) return
+  actions["reactive:defer"] = function () {
+    const target = this.getAttribute("target")
+    if (!target) return
+    if (this.getAttribute("data-reactive-defer-via") === "stream") {
+      startStreamDefer(target, this)
+      return
+    }
+    const token = this.getAttribute("data-reactive-defer-token")
+    if (!token) return
+    startFetchDefer(target, token)
+  }
+}
+
+// The pull lane: mark the target pending and POST the signed defer token to
+// the defer endpoint, in parallel with everything else the page is doing.
+function startFetchDefer(targetId, token) {
+  const el = document.getElementById(targetId)
+  if (!el) {
+    console.warn(`[phlex-reactive] reactive:defer target #${targetId} is not on the page — skipped`)
+    return
+  }
+  supersedeDefer(targetId)
+  markDeferPending(el)
+  const entry = { via: "fetch", abort: new AbortController(), timedOut: false }
+  pendingDefers.set(targetId, entry)
+  performDeferFetch(targetId, entry, token)
+}
+
+// The push lane: subscribe a <pgbus-stream-source> to the server-signed
+// one-shot stream. Arrival + teardown need no client logic — the job's
+// broadcast carries the replace AND a remove of this source element (its
+// disconnectedCallback closes the SSE connection). since-id=0 on a fresh key
+// replays a broadcast that beat the subscription (the durable-lane guarantee).
+function startStreamDefer(targetId, directive) {
+  const el = document.getElementById(targetId)
+  if (!el) {
+    console.warn(`[phlex-reactive] reactive:defer target #${targetId} is not on the page — skipped`)
+    return
+  }
+  const src = directive.getAttribute("data-reactive-defer-src")
+  if (!src) return
+  if (!globalThis.customElements?.get?.("pgbus-stream-source")) {
+    console.error(
+      "[phlex-reactive] reactive:defer via=stream but <pgbus-stream-source> is not registered — " +
+        "is the pgbus client loaded on this page?",
+    )
+    return
+  }
+  supersedeDefer(targetId)
+  markDeferPending(el)
+  const source = document.createElement("pgbus-stream-source")
+  // Deterministic id: the JOB's broadcast removes it by this exact id — the
+  // subscription tears itself down with the payload it delivered.
+  source.id = `reactive-defer-src-${targetId}`
+  source.setAttribute("src", src)
+  source.setAttribute("since-id", directive.getAttribute("data-reactive-defer-since-id") ?? "0")
+  source.setAttribute("hidden", "")
+  document.body.appendChild(source)
+  pendingDefers.set(targetId, { via: "stream", srcEl: source })
+}
+
+async function performDeferFetch(targetId, entry, token) {
+  // Bound the wait like the action fetch (issue #101) — a hung defer must not
+  // shimmer forever. A manual timer (not AbortSignal.timeout) so the catch can
+  // tell a TIMEOUT (fail loudly) from a SUPERSEDED abort (stay silent).
+  const timer = setTimeout(() => {
+    entry.timedOut = true
+    entry.abort.abort()
+  }, deferTimeoutMs())
+
+  let response
+  try {
+    response = await fetch(deferPath(), {
+      method: "POST",
+      headers: {
+        Accept: "text/vnd.turbo-stream.html",
+        "Content-Type": "application/json",
+        "X-CSRF-Token": deferCsrfToken(),
+      },
+      body: JSON.stringify({ token }),
+      credentials: "same-origin",
+      signal: entry.abort.signal,
+    })
+  } catch (error) {
+    clearTimeout(timer)
+    if (pendingDefers.get(targetId) !== entry) return // superseded — silent
+    console.error("[phlex-reactive] deferred render failed", error)
+    failDefer(targetId, token)
+    return
+  }
+  clearTimeout(timer)
+  if (pendingDefers.get(targetId) !== entry) return // superseded mid-flight
+
+  if (response.status === 204) {
+    // render? false — keep the current content, just clear the pending state.
+    settleDefer(targetId)
+    return
+  }
+  if (!response.ok) {
+    console.error(`[phlex-reactive] deferred render failed: HTTP ${response.status}`)
+    failDefer(targetId, token, response.status)
+    return
+  }
+
+  let html
+  try {
+    html = await response.text()
+  } catch (error) {
+    if (pendingDefers.get(targetId) !== entry) return
+    console.error("[phlex-reactive] deferred render failed reading the body", error)
+    failDefer(targetId, token)
+    return
+  }
+  if (pendingDefers.get(targetId) !== entry) return // superseded during read
+
+  settleDefer(targetId)
+  // A normal replace/morph of the target — the fresh root carries no pending
+  // markers and a fresh action token, so the component lands interactive.
+  window.Turbo.renderStreamMessage(html)
+}
+
+// Abort/unsubscribe whatever delivery is in flight for this target. The
+// deleted entry makes every late arrival fail its identity check — stale
+// content can never paint.
+function supersedeDefer(targetId) {
+  const existing = pendingDefers.get(targetId)
+  if (!existing) return
+  pendingDefers.delete(targetId)
+  if (existing.via === "fetch") existing.abort.abort()
+  else existing.srcEl?.remove?.()
+}
+
+function markDeferPending(el) {
+  el.setAttribute("data-reactive-defer-pending", "true")
+  el.setAttribute("aria-busy", "true")
+}
+
+function clearDeferPending(el) {
+  el.removeAttribute("data-reactive-defer-pending")
+  el.removeAttribute("aria-busy")
+}
+
+// Success/204: drop the registry entry, clear pending, and clear any prior
+// defer failure marker (recovery resets error-driven CSS, issue #100 style).
+function settleDefer(targetId) {
+  pendingDefers.delete(targetId)
+  const el = document.getElementById(targetId)
+  if (!el) return
+  clearDeferPending(el)
+  el.removeAttribute("data-reactive-error")
+}
+
+// Failure: clear pending (the shimmer must not lie), mark the root
+// (data-reactive-error="defer" — style it in pure CSS), and emit a bubbling
+// reactive:error whose retry() re-enters the defer fetch with the SAME token
+// (still valid inside the TTL; an expired token 400s into this same path).
+function failDefer(targetId, token, status) {
+  pendingDefers.delete(targetId)
+  const el = document.getElementById(targetId)
+  if (!el) return
+  clearDeferPending(el)
+  el.setAttribute("data-reactive-error", "defer")
+  const retry = () => {
+    const fresh = document.getElementById(targetId)
+    if (!fresh) {
+      console.warn("[phlex-reactive] defer retry() ignored — the target left the DOM")
+      return
+    }
+    fresh.removeAttribute("data-reactive-error")
+    startFetchDefer(targetId, token)
+  }
+  el.dispatchEvent(
+    new CustomEvent("reactive:error", {
+      bubbles: true,
+      composed: true,
+      detail: { kind: "defer", target: targetId, status, retry },
+    }),
+  )
+}
+
+function deferPath() {
+  return document.querySelector('meta[name="phlex-reactive-defer-path"]')?.content || "/reactive/defer"
+}
+
+// CSRF is read LIVE per request (Rails can rotate it) — same contract as the
+// controller's #csrfToken.
+function deferCsrfToken() {
+  return document.querySelector('meta[name="csrf-token"]')?.content ?? ""
+}
+
+// Same page-stable meta + default as the controller's #timeoutMs (issue #101),
+// parsed defensively so a typo'd meta can never disable the bound.
+function deferTimeoutMs() {
+  const raw = document.querySelector('meta[name="phlex-reactive-timeout"]')?.content
+  const ms = Number(raw)
+  return Number.isFinite(ms) && ms > 0 ? ms : 30000
+}
+
 // Document-level self-dismissing flashes (issue #100). A flash rendered with
 // dismiss_after: carries data-reactive-dismiss-after="<ms>"; after the timeout
 // it removes itself. This is deliberately NOT a Stimulus controller — the flash
@@ -265,6 +486,7 @@ export function registerReactiveActions() {
   registerReactiveVisit()
   registerReactiveToken()
   registerReactiveJs()
+  registerReactiveDefer()
   registerReactiveDismiss()
   registerReactiveOffline()
   attachLatencyHandle()
