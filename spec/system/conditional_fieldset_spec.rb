@@ -21,18 +21,23 @@ RSpec.describe "Value-conditional visibility (issue #161 — reactive_show)", ty
     page.execute_script("window.__noReload = 'alive'")
     install_fetch_spy
 
-    # Initial state: every dependent section is server-rendered hidden.
+    # Initial state: every dependent section is server-rendered hidden — the
+    # in-root sections AND the cross-root badge outside the component (#164).
     expect(page).to have_css("[data-testid='mode-details']", visible: :hidden)
     expect(page).to have_css("[data-testid='gift-note']", visible: :hidden)
     expect(page).to have_css("[data-testid='address']", visible: :hidden)
+    expect(page).to have_css("[data-testid='mode-badge']", visible: :hidden)
 
-    # Select: visible WHILE mode != "off" (the not: predicate)…
+    # Select: visible WHILE mode != "off" (the not: predicate) — the in-root
+    # panel AND the declared cross-root badge toggle from the same change.
     select "Express", from: "mode"
     expect(page).to have_css("[data-testid='mode-details']", text: "Shipping details")
+    expect(page).to have_css("[data-testid='mode-badge']", text: "Shipping enabled")
 
-    # …and hidden again when the value returns to the literal.
+    # …and hidden again when the value returns to the literal — both of them.
     select "No shipping", from: "mode"
     expect(page).to have_css("[data-testid='mode-details']", visible: :hidden)
+    expect(page).to have_css("[data-testid='mode-badge']", visible: :hidden)
 
     # Checkbox: equals: true compares the CHECKED state, not the constant "on".
     find("[data-testid='gift']").check

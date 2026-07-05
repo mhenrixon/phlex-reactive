@@ -359,6 +359,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
 | `reactive_text(:name, initial)` | Mirror a compute output (or a declared input) into a **text node** — a live preview heading, a character counter, `"Hello, {name}"` — via `textContent` (XSS-safe). The text sibling of `reactive_field`; carries no `name`, so it's never POSTed. See [Client-side computes](#client-side-computes-reactive_compute--reactive_text). |
 | `reactive_show(:field, equals:/not:/in:)` | **Value-conditional visibility** (the `x-show`/`data-show` case): spread onto the element to show/hide — it toggles `hidden` from the named field's **current value**, client-only, zero round trip. One literal predicate: `equals:`, `not:`, or `in: [...]`; `equals: true` reads a checkbox's checked state. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
+| `reactive_show_targets(:field, "#id" => { equals: … })` | **Cross-root visibility**: the component that owns the field declares which **outside**, id-allowlisted elements it governs (a nav tab, a panel in another pane) — the visibility parallel of `mirror:`. Spread on the **root** via `mix(reactive_root, …)`. Id selectors only (raise at render + client warn-skip); same literal predicates; toggles `hidden` only. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
 | `reactive_compute :name, inputs: { title: :string, qty: :number }, outputs:` | **Typed** inputs: a `:string` reaches the JS reducer raw, a `:number` is coerced through `Number`. The array form (`inputs: %i[a b]`) stays all-numeric. |
 | `reactive_compute :name, ..., mirror: { sum: "#summary-sum" }` | **Cross-root text mirrors**: paint a compute value into declared, id-allowlisted nodes **outside** the reactive root (a recap in another tab pane) via `textContent` — no bespoke listener. See [Cross-root mirrors](#cross-root-mirrors-mirror--painting-a-recap-outside-the-root). |
 | `reactive_root(track_dirty: true, warn_unsaved: true)` / `reactive_field(:param, dirty: true)` | **Dirty tracking** against the DOM's own `defaultValue`/`defaultChecked`/`defaultSelected` — no client state. Marks changed fields + the root `data-reactive-dirty`; `warn_unsaved:` arms a `beforeunload`/`turbo:before-visit` guard. Style with `[data-reactive-dirty]`. See [Dirty-field tracking](#dirty-field-tracking-dirty--track_dirty--warn_unsaved). |
@@ -905,7 +906,35 @@ end
   real `input` event, so a *derived* value can drive visibility too.
 - Presentational only, strictly weaker than the js ops: it reads an owned
   field and toggles `hidden` on an owned element — no `innerHTML`, no
-  attribute freedom, no cross-root writes.
+  attribute freedom. Cross-root writes take the **declared** escape below.
+
+**Cross-root targets (`reactive_show_targets`).** A plain `reactive_show` is
+root-scoped by design — but "a mode selector reveals dependent sections
+elsewhere on the page" (a nav tab, a panel in a *different* tab pane, a sticky
+sidebar note) routinely puts the dependents **outside** the control's root.
+`reactive_show_targets` is the declared escape, the visibility parallel of the
+[cross-root text mirror](#cross-root-mirrors-mirror--painting-a-recap-outside-the-root):
+the component that **owns** the field declares which outside ids it governs,
+spread on the **root**:
+
+```ruby
+div(**mix(reactive_root, reactive_show_targets(:mode,
+  "#advanced-tab"   => { equals: "advanced" },
+  "#advanced-panel" => { equals: "advanced" },
+  "#basic-note"     => { not: "advanced" }))) do
+  select(name: "mode") { mode_options }
+  # …
+end
+```
+
+Same posture as `mirror:`: **opt-in and declared, never implicit** — a plain
+`reactive_show` stays root-isolated; targets are **single id selectors only**
+(a class/compound selector raises at render AND is warn-and-skipped by the
+client — two-sided default-deny); the predicate is the same literal-only
+vocabulary; and the toggle is `hidden` only. The field read stays **owned** —
+you can only drive outside visibility from a field the declaring root owns. A
+target id not on the page is silently skipped, so a target inside an
+unrendered tab pane is fine.
 
 ### Client-side computes (`reactive_compute` + `reactive_text`)
 

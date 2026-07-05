@@ -1468,6 +1468,95 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  # Issue #164: reactive_show_targets — CROSS-ROOT value-conditional visibility,
+  # the visibility parallel to #159's cross-root text mirrors. The component
+  # that OWNS the field declares which outside, id-allowlisted elements it
+  # governs (spread on the root, alongside reactive_root). Same posture as
+  # mirror:: opt-in and declared, id selectors only (raise at declare time,
+  # warn-and-skip client-side — two-sided default-deny), literal predicates
+  # only (the reactive_show vocabulary, validated identically).
+  describe "#reactive_show_targets (cross-root visibility, issue #164)" do
+    subject(:instance) { targets_klass.new }
+
+    let(:targets_klass) do
+      Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "ShowTargetsThing"
+
+        reactive_state :count
+        def initialize(count: 0) = @count = count
+        def id = "show-targets-thing"
+      end
+    end
+
+    def targets_json(attrs)
+      JSON.parse(attrs[:data][:reactive_show_targets])
+    end
+
+    it "emits the declared map as one JSON wire attr keyed by field" do
+      attrs = instance.send(:reactive_show_targets, :mode,
+        "#advanced-tab" => { equals: "advanced" },
+        "#basic-note" => { not: "advanced" })
+
+      expect(targets_json(attrs)).to eq(
+        "mode" => {
+          "#advanced-tab" => { "equals" => "advanced" },
+          "#basic-note" => { "not" => "advanced" }
+        }
+      )
+    end
+
+    it "stringifies predicate values and keeps in: as an array of strings" do
+      attrs = instance.send(:reactive_show_targets, :gift,
+        "#gift-note" => { equals: true },
+        "#size-note" => { in: [:l, 2] })
+
+      expect(targets_json(attrs)["gift"]).to eq(
+        "#gift-note" => { "equals" => "true" },
+        "#size-note" => { "in" => %w[l 2] }
+      )
+    end
+
+    it "raises for a non-id selector (class, compound, descendant — declare-time default-deny)" do
+      [".panel", "#a b", "div#a", "*"].each do
+        expect do
+          instance.send(:reactive_show_targets, :mode, it => { equals: "x" })
+        end.to raise_error(ArgumentError, /must be a single ID selector/)
+      end
+    end
+
+    it "raises for an empty target map (a dead declaration)" do
+      expect { instance.send(:reactive_show_targets, :mode, {}) }
+        .to raise_error(ArgumentError, /at least one target/)
+    end
+
+    it "raises without exactly one predicate per target (same rule as reactive_show)" do
+      expect do
+        instance.send(:reactive_show_targets, :mode, "#a" => {})
+      end.to raise_error(ArgumentError, /exactly one predicate/)
+
+      expect do
+        instance.send(:reactive_show_targets, :mode, "#a" => { equals: "x", not: "y" })
+      end.to raise_error(ArgumentError, /exactly one predicate/)
+    end
+
+    it "raises on an empty in: list (same rule as reactive_show)" do
+      expect do
+        instance.send(:reactive_show_targets, :mode, "#a" => { in: [] })
+      end.to raise_error(ArgumentError, /in: needs at least one value/)
+    end
+
+    it "deep-merges with reactive_root via mix (no data: clobber)" do
+      attrs = instance.send(:mix,
+        instance.send(:reactive_root),
+        instance.send(:reactive_show_targets, :mode, "#a" => { equals: "x" }))
+      expect(attrs[:data][:controller]).to eq("reactive")
+      expect(attrs[:data][:reactive_show_targets]).to be_a(String)
+    end
+  end
+
   # Performance: reactive_token runs on EVERY render. It must produce a byte-
   # identical payload before/after caching the ivar symbols + class name. These
   # pin the payload SHAPE (decoded) so an allocation optimization can't silently

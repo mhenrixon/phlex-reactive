@@ -433,18 +433,56 @@ module Phlex
               "in: — got #{predicates.keys.inspect}"
           end
 
-          key, value = predicates.first
+          key, value = normalize_show_predicate(predicates, "reactive_show(#{field.inspect})").first
           data = { reactive_show_field: field.to_s }
-          if key == :in
-            list = Array(value).map(&:to_s)
-            raise ArgumentError, "reactive_show(#{field.inspect}) in: needs at least one value" if list.empty?
-
-            data[:reactive_show_in] = list.to_json
-          else
-            data[:"reactive_show_#{key}"] = value.to_s
-          end
+          data[:"reactive_show_#{key}"] = key == "in" ? value.to_json : value
 
           mix({ data: }, attrs)
+        end
+
+        # CROSS-ROOT value-conditional visibility (issue #164) — the visibility
+        # parallel to reactive_compute's `mirror:` (#159). A plain reactive_show
+        # is root-scoped by design (#15), so it can't express "this control
+        # drives elements ELSEWHERE on the page" — a nav tab, a panel in another
+        # tab pane, a sidebar note. reactive_show_targets is the declared,
+        # id-allowlisted escape: the component that OWNS the field declares
+        # which outside ids it governs. Spread it on the ROOT (mix alongside
+        # reactive_root — the client reads it off the controller element):
+        #
+        #   div(**mix(reactive_root, reactive_show_targets(:mode,
+        #     "#advanced-tab"   => { equals: "advanced" },
+        #     "#advanced-panel" => { equals: "advanced" },
+        #     "#basic-note"     => { not: "advanced" })))
+        #
+        # Same posture as mirror: — opt-in and declared, never implicit (a plain
+        # reactive_show stays root-isolated); targets are SINGLE ID SELECTORS
+        # only, enforced here at declare time AND warn-and-skipped by the client
+        # interpreter (two-sided default-deny); the predicate is the same
+        # literal-only reactive_show vocabulary (exactly one of equals:/not:/
+        # in:, no expressions); and the toggle is `hidden` only — no innerHTML,
+        # no attribute freedom. The FIELD read stays owned (#15): you can only
+        # drive outside visibility from a field this root owns. A target id not
+        # on the page is silently skipped (an unrendered tab pane is normal).
+        def reactive_show_targets(field, targets)
+          unless targets.is_a?(Hash) && targets.any?
+            raise ArgumentError,
+              "reactive_show_targets(#{field.inspect}) needs at least one target " \
+              "(\"#id\" => { equals:/not:/in: ... }), got #{targets.inspect}"
+          end
+
+          normalized = targets.to_h do |selector, predicate|
+            selector = selector.to_s
+            unless selector.match?(DSL::MIRROR_ID_SELECTOR)
+              raise ArgumentError,
+                "reactive_show_targets(#{field.inspect}) target #{selector.inspect} must be a single " \
+                "ID selector (\"#id\") — cross-root visibility is id-allowlisted, like mirror: (#159)"
+            end
+
+            context = "reactive_show_targets(#{field.inspect}) target #{selector.inspect}"
+            [selector, normalize_show_predicate(predicate.is_a?(Hash) ? predicate : {}, context)]
+          end
+
+          { data: { reactive_show_targets: { field.to_s => normalized }.to_json } }
         end
 
         # Scoped busy indicator (issue #99). Marks an element so the generic
@@ -548,6 +586,28 @@ module Phlex
         OPTIMISTIC_CLASS_OPS = %w[toggle_class add_class remove_class].freeze
 
         private
+
+        # Validate ONE declared literal show predicate (issues #161/#164) and
+        # return its wire form — { "equals" => "v" } / { "not" => "v" } /
+        # { "in" => ["a", …] } (a real array: reactive_show JSON-encodes it into
+        # its own attr; the reactive_show_targets map embeds it directly).
+        # Shared by both helpers so the vocabulary and the loud validation can
+        # never drift. `context` names the call site in the error.
+        def normalize_show_predicate(predicates, context)
+          unless predicates.size == 1 && SHOW_PREDICATE_KEYS.include?(predicates.keys.first)
+            raise ArgumentError,
+              "#{context} needs exactly one predicate — equals:, not:, or in: — " \
+              "got #{predicates.keys.inspect}"
+          end
+
+          key, value = predicates.first
+          return { key.to_s => value.to_s } unless key == :in
+
+          list = Array(value).map(&:to_s)
+          raise ArgumentError, "#{context} in: needs at least one value" if list.empty?
+
+          { "in" => list }
+        end
 
         # True when the hint declares checked: :keep — the click-bound
         # checkbox/radio case that must SKIP the forced type="button" so the native
