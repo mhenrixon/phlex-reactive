@@ -60,10 +60,21 @@ module Phlex
         component = component_class.from_identity(payload)
         coerced = coerce_params(action_def, component_class:, action_name: action_def.name)
 
+        # verify_authorized (issue #168): instrument the class ONCE (idempotent,
+        # per class object) so its authorization methods mark the tracking cell.
+        # Only when the feature is on — zero cost otherwise.
+        Phlex::Reactive::Authorization.instrument!(component_class) if Phlex::Reactive.verify_authorized
+
         result = run_action(component, action_def, coerced)
 
         event[:outcome] = :ok
         render turbo_stream: response_streams(result, component)
+      rescue Phlex::Reactive::AuthorizationNotVerified
+        # A developer error (a forgotten authorize!), NOT a client fault — it
+        # bubbles as a 500 so error trackers fire, but we tag the event first so
+        # the action.phlex_reactive outcome stays accurate, then re-raise.
+        event[:outcome] = :unverified
+        raise
       rescue Phlex::Reactive::InvalidToken => e
         # The component name here came from an UNVERIFIED token — do NOT report it
         # as trusted. Leave event[:component] nil.
@@ -153,10 +164,21 @@ module Phlex
         Phlex::Reactive.with_connection_id(request.headers["X-Pgbus-Connection"]) do
           with_around_actions(component, action_def, coerced) do
             transaction_wrapper do
-              if coerced.any?
-                component.public_send(action_def.name, **coerced)
-              else
-                component.public_send(action_def.name)
+              # verify_authorized (issue #168): open the tracking window, run the
+              # action, then verify INSIDE the transaction so an unverified action
+              # rolls its mutation back (fail-closed). with_tracking is a bare
+              # yield's-worth of overhead; verify! is a no-op when the feature is
+              # off / the action is skipped / something marked. The interceptor
+              # (create_action's instrument!) marks the window on a real
+              # authorization call.
+              Phlex::Reactive::Authorization.with_tracking do
+                result = if coerced.any?
+                           component.public_send(action_def.name, **coerced)
+                         else
+                           component.public_send(action_def.name)
+                         end
+                Phlex::Reactive::Authorization.verify!(component.class, action_def)
+                result
               end
             end
           end
