@@ -15,8 +15,13 @@ module Phlex
             Fuzzy-find reactive components by name (exact > prefix > substring >
             subsequence, on both the demodulized and full name). Returns the ranked
             matches, each with its actions' param schema, source location,
-            authorization heuristic, and the full method-definition source
+            authorization heuristic, and the full method-definition SOURCE
             (extracted with Prism). Read-only.
+
+            NOTE: unlike the other tools (which report names/paths/schemas only),
+            this one returns the action's source code verbatim — so anything
+            hardcoded in an action body is surfaced too. Don't embed secrets or
+            credentials in action definitions (read them from ENV/credentials).
           DESC
 
           input_schema(
@@ -27,7 +32,7 @@ module Phlex
           )
 
           def self.call(query:, server_context: nil) # rubocop:disable Lint/UnusedMethodArgument
-            ::Rails.application.eager_load! if defined?(::Rails) && ::Rails.application
+            eager_load_app!
             matches = Phlex::Reactive::Inspector.find(query).map { match_hash(it) }
             json_response(query: query, matches: matches)
           end
@@ -48,6 +53,9 @@ module Phlex
               params: action.params,
               source_location: Phlex::Reactive::Inspector::Report.location_str(action.source_location),
               authorization_call_detected: action.authorization_call_detected?,
+              # The full method SOURCE — this is the one field that exposes an
+              # action body verbatim (see the tool description). A secret hardcoded
+              # in an action would surface here; keep secrets out of action bodies.
               definition: action.definition
             }
           end

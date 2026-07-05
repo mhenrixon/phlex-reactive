@@ -21,6 +21,7 @@ module Views
           before_change
           numbers
           verify_and_sign
+          deferred_segments
           client_numbers
           ci
           every_change
@@ -639,6 +640,45 @@ module Views
                 code { 'Phlex::Reactive.verifier = ActiveSupport::MessageVerifier.new(secret, digest: "SHA256")' }
                 plain ' — but the measurement says you will not need it. The question is closed until ' \
                       'the numbers say otherwise.'
+              end
+            end
+          end
+        end
+
+        def deferred_segments
+          DocsUI::Section('Deferred segments (reply.defer) — a latency shape, not a throughput win') do
+            DocsUI::Prose() do
+              p do
+                code { 'reply.defer' }
+                plain ' (#165) moves an expensive reply segment OFF the actor\'s critical path. Be precise ' \
+                      'about what that buys: the actor\'s reply latency improves by roughly the deferred ' \
+                      'segment\'s render cost, while time-to-full-content gets slightly WORSE (one extra ' \
+                      'hop). The cost moves; it never disappears. The request-level A/B spec ('
+                code { 'spec/requests/deferred_latency_spec.rb' }
+                plain ') pins exactly that: with a 120 ms segment, the sync reply pays ≥ 120 ms, the ' \
+                      'deferred reply dodges it, and the deferred fetch pays it instead.'
+              end
+              p do
+                plain 'The machinery itself stays off the hot paths — the same-machine, same-checkout ' \
+                      'before/after against main held '
+                code { 'to_stream_replace' }
+                plain ' at 14.4k → 14.2k i/s (within ±3.7% noise) and the identity token at ' \
+                      '199.9k → 196.7k i/s (state-backed), allocations byte-identical. Per deferred ' \
+                      'segment the reply pays one purpose-scoped '
+                code { 'sign_defer' }
+                plain ' (~120k i/s) and the directive build (~11 μs, 0 retained); the defer endpoint ' \
+                      'pays one '
+                code { 'verify_defer' }
+                plain ' (~99k i/s). '
+                code { 'benchmark/micro/defer_token.rb' }
+                plain ' isolates all three.'
+              end
+              DocsUI::Callout(:warning) do
+                plain 'Profile FIRST. An app-side N+1 or a missing eager-load looks exactly like ' \
+                      'framework lag — the feature\'s own origin story was a scoreboard that "felt slow" ' \
+                      'per keystroke and turned out to be 2+N queries fixed by one eager load. Make the ' \
+                      'synchronous path cheap before making it async; defer only a segment that is ' \
+                      'GENUINELY expensive.'
               end
             end
           end

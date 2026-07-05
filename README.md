@@ -1291,6 +1291,7 @@ def update(quantity:, price:) = (@item.update!(quantity:, price:); reply.streams
 | `reply.redirect(url)` | client-side `Turbo.visit` (pass a `*_url`); rides a `reactive:visit` turbo-stream, not an HTTP 3xx |
 | `reply.streams(*streams)` | **partial update** — emit exactly these streams (no full-self replace) + a tiny token-only refresh, so live inputs survive; for per-field grid editing (issue #30) |
 | `.js(ops, target: …)` | also push **client DOM ops** (focus, dispatch, class/attr toggles) over a `reactive:js` stream, applied AFTER the render — `reply.morph.js(js.focus("[name=next]"))` focuses the morphed field (issue #97) |
+| `.defer(component, placeholder:, morph:)` | take an **expensive segment off the actor's critical path** (issue #165) — the reply returns immediately and the real render streams to the SAME actor when ready; see [Deferred segments](#deferred-segments-replydefer--reactive_lazy) |
 | `reply.with(*streams)` / `#stream(*more)` | multi-stream (self re-render still injected for the token) |
 
 `.flash`/`.stream`/`.also_*` are additive on a self-replace, so the component's
@@ -1299,6 +1300,155 @@ the rule: it deliberately skips the full-self replace (so your hand-built stream
 update only the targets you name) and refreshes the token via a tiny inert
 `reactive:token` stream instead — the token rolls forward without re-rendering
 (and clobbering) the component's live inputs.
+
+#### Deferred segments (`reply.defer` + `reactive_lazy`)
+
+> **Profile first.** An app-side N+1 or a missing eager-load *looks exactly
+> like framework lag* — a scoreboard re-rendering on every debounced keystroke
+> once "felt slow" here, and the real cause was `2 + N` queries per keystroke,
+> fixed with one eager load and no gem change. Make the synchronous path cheap
+> before you make it async; reach for `defer` only when a reply segment is
+> **genuinely** expensive (a cross-aggregate rollup, a report, an external call).
+
+Everything in a `reply` renders synchronously on the request thread, so one
+expensive segment stalls the actor's whole interaction. `reply.defer` takes it
+off the critical path — the actor's reply returns immediately and the real
+HTML streams to **that same actor** the moment the render finishes:
+
+```ruby
+action :update, params: { weight_kg: :float, reps: :integer, rpe: :float }
+def update(weight_kg:, reps:, rpe:)
+  authorize! @set, :update?
+  @set.update!(weight_kg:, reps:, rpe:)
+
+  reply
+    .streams(volume_cell_stream)                  # instant, cheap — synchronous
+    .defer(SessionTotals.new(workout: @workout))  # expensive — deferred
+end
+```
+
+Be honest about the trade: **defer improves the actor's reply latency and makes
+time-to-full-content slightly worse** (one extra hop). It moves cost off the
+critical path; it never removes it.
+
+While the deferred render is pending, the target keeps its current (stale)
+content and carries `data-reactive-defer-pending` + `aria-busy` — style the
+window in pure CSS:
+
+```css
+[data-reactive-defer-pending] { opacity: .5; }
+```
+
+Options:
+
+```ruby
+reply.defer(comp)                             # keep-content default (above)
+reply.defer(comp, placeholder: true)          # comp's deferred_placeholder, or a built-in shell
+reply.defer(comp, placeholder: Skeleton.new)  # explicit skeleton (component, or an html_safe string)
+reply.defer(comp, morph: true)                # arrival morphs in place (mode rides INSIDE the signed token)
+```
+
+`deferred_placeholder` (optional, on the deferred component) returns a Phlex
+component instance, an `html_safe` string, or a plain string (escaped — data,
+not markup).
+
+Semantics you can rely on:
+
+- **Transactional** — the directive rides the reply, which only renders after
+  the action's transaction committed; a rollback or a denied action leaks no
+  deferred render (and enqueues no job).
+- **Actor-scoped** — the deferred render reaches only the actor; peers keep
+  getting updates via `broadcast_*_to` (use both when both need the value).
+- **Superseding** — a newer action for the same target aborts the in-flight
+  deferred render; a fast typist never gets stale totals painted over fresh ones.
+- **Interactive on arrival** — the streamed root carries a fresh action token.
+- **Failure-visible** — a failed deferred fetch clears the pending state, sets
+  `data-reactive-error="defer"`, and emits `reactive:error` with a `retry()`;
+  `render?` false resolves to a 204 (pending cleared, content kept).
+
+**Delivery** is transport-adaptive (`Phlex::Reactive.defer_transport`, default
+`:auto`): a parallel authenticated fetch to `POST /reactive/defer` everywhere
+(carrying a purpose-scoped, short-TTL signed identity token —
+`defer_token_ttl`, default 120s; an action token is rejected at the defer
+endpoint and vice versa), or — when pgbus's reactive Streams **and** ActiveJob
+are present — a **durable one-shot pgbus stream** rendered by
+`Phlex::Reactive::DeferredRenderJob` off the request thread
+(`defer_job_queue` config; the durable replay closes the
+broadcast-before-subscribe race). `:fetch` forces the fetch lane; `:stream`
+requests push and degrades to fetch with a warning when the capability is
+absent. Both lanes are invisible to your action code.
+
+> **The push lane's queue lifecycle.** Each deferred segment on the push lane
+> mints a durable one-shot pgbus stream. Its queue is reclaimed by pgbus's
+> **age-based orphan-stream sweep** (pgbus **≥ 0.9.10**) — ensure the pgbus
+> **Dispatcher is running** with `streams_orphan_threshold` set (its default).
+> We do **not** drop the queue from the render job: an eager drop would destroy
+> a not-yet-consumed message and reopen the very broadcast-before-subscribe race
+> the durable lane exists to close. On pgbus ≤ 0.9.9 the sweep only reaped
+> *empty* queues (which a durable stream never becomes), so a one-shot queue
+> leaked — upgrade to ≥ 0.9.10, or stay on the pull lane
+> (`defer_transport = :fetch`, the universal default, which needs no cleanup).
+
+**Security of the defer token.** The defer endpoint re-renders the real
+component, whose fresh root carries a normal (non-expiring) action token — so a
+defer token is, within its TTL, a render of that identity and a path to that
+identity's action token. What bounds the damage in every case: **the signature
+proves identity, not permission** — the harvested action token is useless
+against `authorize!` in the action, which re-checks the *current* actor.
+Authorize every mutating action; the token, defer or otherwise, is never the
+authority.
+
+The two defer-token channels are bound differently, by their leak surface:
+
+- **`reply.defer` tokens** ride an **action's HTTP response** (which can transit
+  a logging proxy, a shared HAR, an APM that captures bodies) — the real
+  cross-infrastructure leak vector. They are **actor-bound**: signed under the
+  requesting session (`Phlex::Reactive.defer_binding_for(request)`, the
+  persisted session id by default — override to bind to your own actor identity,
+  e.g. a user id), so a leaked one can't be redeemed in another session.
+- **`reactive_lazy` shell tokens** live in the **page HTML the actor already
+  fetched** over their own session (a small leak surface) — and *can't* be
+  actor-bound anyway, because the shell renders on a fresh visit before the
+  session exists (Rails establishes it during that response). They are minted
+  **unbound**; the TTL + `authorize!` are their bound.
+
+Apps with no persisted session (the `ActionController::Base` default, a
+token-auth API) mint every defer token unbound — there too the TTL +
+`authorize!` are the whole bound. Set `Phlex::Reactive.base_controller_name` to
+a session-bearing controller, or override `defer_binding_for`, to bind
+`reply.defer` tokens to your actor identity.
+
+**Lazy initial mount** — the same machinery for the *first* render
+(Livewire's `#[Lazy]`): declare `reactive_lazy` and the page ships the
+placeholder shell; the client fetches the real content on connect. Every
+reactive-machinery render (an action's self-replace, broadcasts, the defer
+endpoint) stays REAL, so actions never pay two round trips:
+
+```ruby
+class SessionTotals < ApplicationComponent
+  include Phlex::Reactive::Component
+
+  reactive_record :workout
+  reactive_lazy                       # first render = placeholder shell
+  # reactive_lazy tag: :tr            # for a <tr>/<li> root the shell must match
+
+  def deferred_placeholder = TotalsSkeleton.new   # optional
+end
+```
+
+The lazy shell's `<div>` root would be invalid inside `<tbody>`/`<ul>`, so a
+component whose real root is a `<tr>`/`<li>` sets `reactive_lazy tag: :tr` (etc.)
+to ship a matching shell element. The client re-fetches the real content both on
+connect AND after a Turbo page-refresh **morph** (which re-shows the shell while
+keeping the element connected), so a lazy component survives a `turbo:reload`.
+
+> **One edge case:** a `reply.defer(placeholder:)` shell (the action-driven,
+> not page-mount, form) carries no token of its own — the transient directive
+> owns its delivery. If a page is snapshotted by Turbo mid-defer and later
+> restored from cache, that placeholder can appear stuck (the directive that
+> would have filled it is long gone). It self-corrects on the next action;
+> deferred **content** is never lost server-side. Lazy mounts (which carry the
+> token on the shell) don't have this — they re-fetch on restore.
 
 #### Flash levels
 

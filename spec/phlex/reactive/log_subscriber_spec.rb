@@ -44,6 +44,17 @@ RSpec.describe Phlex::Reactive::LogSubscriber do
     expect(line).to match(/\[reactive\] broadcast replace Counter →2 \(\d/)
   end
 
+  it "formats a deferred-render line (issue #165)" do
+    line = line_for("defer.phlex_reactive", component: "SlowTotals", outcome: :ok)
+    expect(line).to match(/\[reactive\] defer SlowTotals ok \(\d/)
+  end
+
+  it "formats an invalid-token defer line without a trusted component name" do
+    line = line_for("defer.phlex_reactive", component: nil, outcome: :invalid_token)
+    expect(line).to include("invalid_token")
+    expect(line).not_to include("SlowTotals")
+  end
+
   it "logs nothing when the level is above DEBUG" do
     io = StringIO.new
     logger = Logger.new(io)

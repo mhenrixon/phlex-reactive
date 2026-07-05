@@ -99,6 +99,24 @@ module Phlex
       def streams(*strings)
         Response.streams(@component, *strings)
       end
+
+      # Defer an expensive segment (issue #165): `reply.defer(Totals.new(...))`.
+      #
+      # With NO prior verb, the bound component's token is refreshed via a tiny
+      # token-only stream (Response.streams), NOT a full self-replace: a full
+      # replace would re-render the acting component SYNCHRONOUSLY on the request
+      # thread — and if you defer your OWN subject (`reply.defer(self)`), that is
+      # the very render you meant to move OFF the critical path, so the defer
+      # would be silently defeated (a double render). The token-only refresh
+      # rolls the signed identity forward without any synchronous render; the
+      # deferred segment's directive rides alongside. Chain off a verb when you
+      # DO want a synchronous piece too:
+      #
+      #   reply.streams(volume_cell).defer(SessionTotals.new(workout: @workout))
+      #   reply.replace.defer(Totals.new(order: @order))   # explicit self re-render
+      def defer(component, placeholder: nil, morph: false)
+        Response.streams(@component).defer(component, placeholder:, morph:)
+      end
     end
   end
 end
