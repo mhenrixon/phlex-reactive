@@ -5,6 +5,7 @@
     "paths": {
       "phlex/reactive/confirm": ["./app/javascript/phlex/reactive/confirm.js"],
       "phlex/reactive/compute": ["./app/javascript/phlex/reactive/compute.js"],
+      "phlex/reactive/inspect": ["./app/javascript/phlex/reactive/inspect.js"],
       "@hotwired/stimulus": ["./benchmark/client/support/stimulus_shim.js"]
     }
   }

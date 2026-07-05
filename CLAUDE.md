@@ -50,7 +50,7 @@ rake build:js                                 # Rebuild the minified client (.mi
 rake build:js_check                           # CI drift guard: committed .min.js must match a fresh build
 ```
 
-### Editing the client runtime (`reactive_controller.js` / `confirm.js` / `compute.js`)
+### Editing the client runtime (`reactive_controller.js` / `confirm.js` / `compute.js` / `inspect.js`)
 
 The gem ships the **minified** build, and the browser suite runs that same
 minified build (the dummy vendors it). So a source edit is a THREE-file change:
@@ -58,7 +58,7 @@ minified build (the dummy vendors it). So a source edit is a THREE-file change:
 ```bash
 rake build:js                                 # regenerate the .min.js + .map from source
 cp app/javascript/phlex/reactive/reactive_controller.min.js \
-   spec/dummy/public/vendor/reactive_controller.js   # re-sync the vendored copy (same for confirm/compute)
+   spec/dummy/public/vendor/reactive_controller.js   # re-sync the vendored copy (same for confirm/compute/inspect)
 bun test spec/javascript                      # JS unit suite
 ```
 

@@ -34,6 +34,8 @@ module Phlex
             phlex/reactive/confirm.min.js.map
             phlex/reactive/compute.min.js
             phlex/reactive/compute.min.js.map
+            phlex/reactive/inspect.min.js
+            phlex/reactive/inspect.min.js.map
           ]
         end
       end
@@ -70,6 +72,15 @@ module Phlex
             "phlex/reactive/compute",
             to: "phlex/reactive/compute.min.js",
             preload: true
+          )
+          # The on-demand client inspector (issue #168). NOT preloaded — it is a
+          # dev/debugging tool loaded only when you `import("phlex/reactive/inspect")`
+          # from the console, so no page pays for it. The pin makes that dynamic
+          # import resolve without any app wiring.
+          it.importmap.pin(
+            "phlex/reactive/inspect",
+            to: "phlex/reactive/inspect.min.js",
+            preload: false
           )
         end
       end

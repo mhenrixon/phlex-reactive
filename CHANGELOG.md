@@ -31,6 +31,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **On-demand client inspector — `phlex/reactive/inspect` (#168).** A standalone
+  JS module (the `confirm.js`/`compute.js` precedent — **zero hot-path cost**, no
+  edit to `reactive_controller.js`, loaded only when imported) that scans the live
+  DOM and maps every reactive root + bound trigger back to the server
+  `Component#action` names. From the browser console:
+  `(await import("phlex/reactive/inspect")).report()` prints a `console.table` of
+  every reactive root — its `id`, decoded token payload (component class, gid,
+  state keys, token version — try/catch base64+JSON decode, degrading to
+  `{ opaque: true }` on a Marshal-serialized payload), status attrs, triggers
+  (action + event + params + debounce/throttle/confirm), client-only ops,
+  computes, the `name`d fields the dispatch would collect, and the
+  show/filter/text binding families. Triggers are scoped to the **nearest** root,
+  so nested roots aren't double-attributed. The server↔client mapping is
+  by-name: `scan()`'s `component` + trigger `action` strings are exactly the
+  identifiers `phlex_reactive:actions` and the MCP tools list. Pinned by the
+  engine (not preloaded); pure read, never mutates the page.
+
 - **Read-only diagnostic MCP server (#168).** `bin/rails phlex_reactive:mcp`
   starts a stdio [MCP](https://modelcontextprotocol.io) server exposing five
   read-only tools — `phlex_reactive_doctor`, `phlex_reactive_components`,
