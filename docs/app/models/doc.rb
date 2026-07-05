@@ -14,6 +14,7 @@ class Doc
     { slug: 'transport-pgbus',       title: 'Transport: pgbus',        group: 'Guide',    view: 'TransportPgbus' },
     { slug: 'testing',               title: 'Testing',                 group: 'Guide',    view: 'Testing' },
     { slug: 'performance',           title: 'Performance',             group: 'Guide',    view: 'Performance' },
+    { slug: 'tooling',               title: 'Debugging & tooling',     group: 'Guide',    view: 'Tooling' },
     { slug: 'examples',              title: 'Examples overview',       group: 'Examples', view: 'ExamplesOverview' },
     { slug: 'example-counter',       title: 'Counter',                 group: 'Examples', view: 'ExampleCounter' },
     { slug: 'example-payment-split', title: 'Payment split',           group: 'Examples',

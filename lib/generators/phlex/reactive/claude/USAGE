@@ -1,0 +1,15 @@
+Description:
+    Installs the phlex-reactive debugging toolkit for Claude Code:
+    copies the `phlex-reactive-debugging` skill into .claude/skills/ (the
+    debugging runbook — doctor → inventory → find → browser scan → MCP) and adds
+    the read-only diagnostic MCP server to .mcp.json (only when absent; it never
+    rewrites an existing .mcp.json — it prints the snippet instead).
+
+    The MCP server needs the optional `mcp` gem (`gem "mcp"`); the skill and rake
+    tasks work without it.
+
+Example:
+    bin/rails generate phlex:reactive:claude
+
+    Creates .claude/skills/phlex-reactive-debugging/ and, when absent, .mcp.json
+    with the phlex-reactive server entry.

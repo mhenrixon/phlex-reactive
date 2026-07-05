@@ -16,6 +16,7 @@ module Views
         def content
           signature_guarantees
           authorize_rule
+          verify_authorized_rule
           default_deny_rule
           params_rule
           secrets_rule
@@ -82,6 +83,47 @@ module Views
               it's provably harmless (a view-mode toggle on already-visible data). Consider a
               RuboCop rule or a code-review checklist for `action`-declared methods.
             MD
+          end
+        end
+
+        def verify_authorized_rule
+          DocsUI::Section('verify_authorized — the fail-closed enforcement of Rule 1') do
+            md <<~MD
+              Rule 1 is a discipline; **`verify_authorized` enforces it at runtime**,
+              ON by default. An action that completes **without any authorization
+              call** raises `Phlex::Reactive::AuthorizationNotVerified` **inside the
+              transaction** — so the mutation **rolls back** (fail-closed, stronger
+              than Pundit's after-the-fact check, which runs post-commit). A
+              forgotten `authorize!` becomes a loud 500 your error tracker sees, not
+              a silent hole.
+
+              It detects a call to any configured authorization method **or**
+              `mark_authorized!`, made anywhere during the action (a helper the
+              action calls counts). Three ways to satisfy it:
+            MD
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
+              def rename(title:)
+                authorize! @todo, :update?   # 1. an authorization method (detected)
+                @todo.update!(title:)
+              end
+
+              def publish
+                raise NotAllowed unless @post.author == Current.user
+                mark_authorized!             # 2. a bespoke check the interceptor can't see
+                @post.update!(published: true)
+              end
+
+              skip_verify_authorized          # 3. a genuinely public component/action
+            RUBY
+            md <<~MD
+              Match the method names to your library, or disable the guard (not
+              recommended — you lose the fail-closed net). See the **Debugging &
+              tooling** guide for the full workflow.
+            MD
+            DocsUI::Code(<<~RUBY, lexer: :ruby, filename: 'config/initializers/phlex_reactive.rb')
+              Phlex::Reactive.authorization_methods = %i[authorize! authorize allowed_to?]
+              # Phlex::Reactive.verify_authorized = false
+            RUBY
           end
         end
 
