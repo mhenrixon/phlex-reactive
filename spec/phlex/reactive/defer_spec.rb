@@ -22,6 +22,15 @@ RSpec.describe Phlex::Reactive::Defer do
     config.define_singleton_method(:streams_path) { nil }
     pgbus = Module.new do
       def self.stream(*) = nil
+
+      # Mirror pgbus's own budget guard: return the key when it fits, raise
+      # otherwise (pgbus does NOT shrink an arbitrary string — key.rb:101).
+      def self.stream_key!(key)
+        budget = Pgbus::Streams::Key.queue_name_budget
+        raise ArgumentError, "over budget" if key.length > budget
+
+        key
+      end
     end
     pgbus.define_singleton_method(:configuration) { config }
     capable_stream = Class.new do
@@ -30,9 +39,14 @@ RSpec.describe Phlex::Reactive::Defer do
         [payload, visible_to, durable, exclude, event, coalesce, target]
       end
     end
+    key_module = Module.new do
+      # pgbus's own formula: MAX(47) - queue_prefix - 1.
+      def self.queue_name_budget = 47 - Pgbus.configuration.queue_prefix.length - 1
+    end
     stub_const("Pgbus", pgbus)
     stub_const("Pgbus::Streams", Module.new)
     stub_const("Pgbus::Streams::Stream", capable_stream)
+    stub_const("Pgbus::Streams::Key", key_module)
     stub_const("Pgbus::Streams::SignedName", Module.new do
       def self.sign(name) = "signed-#{name}"
     end)
@@ -233,6 +247,22 @@ RSpec.describe Phlex::Reactive::Defer do
       expect(key).to match(/\Aprdefer_[a-f0-9]+\z/)
     end
 
+    it "DEGRADES to the fetch lane when the prefix is so long the collision-safe key can't fit" do
+      # budget = 47 - prefix - 1. A 24-char prefix leaves budget 22 < the
+      # marker (8) + collision-safe floor (16) = 24 → no safe key fits. Rather
+      # than mint an overflowing key that raises StreamNameTooLong in the JOB
+      # (after the directive shipped → hung shimmer), we fall back to :fetch.
+      Pgbus.configuration.define_singleton_method(:queue_prefix) { "a" * 24 }
+      allow(Rails.logger).to receive(:warn)
+
+      directive = described_class.streams_for(segment, via: :stream).first
+
+      expect(directive).to include('data-reactive-defer-via="fetch"')
+      expect(directive).to include("data-reactive-defer-token")
+      expect(directive).not_to include('data-reactive-defer-via="stream"')
+      expect(Rails.logger).to have_received(:warn).with(/push/)
+    end
+
     it "enqueues the render job with the identity payload, key, target and morph mode" do
       expect do
         described_class.streams_for(
@@ -251,6 +281,7 @@ RSpec.describe Phlex::Reactive::Defer do
       Pgbus.define_singleton_method(:configuration) do
         config = Object.new
         config.define_singleton_method(:streams_path) { "/custom/streams" }
+        config.define_singleton_method(:queue_prefix) { "pgbus" }
         config
       end
       directive = described_class.streams_for(segment, via: :stream).first

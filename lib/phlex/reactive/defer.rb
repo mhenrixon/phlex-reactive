@@ -178,13 +178,51 @@ data-reactive-defer-since-id="0" data-reactive-defer-token="#{ERB::Util.html_esc
         # budget instead. The stable DEFER_KEY_MARKER is kept (it's how the
         # orphan sweep / an operator recognizes these), and the suffix is hex
         # ([a-f0-9] — never hyphens: pgbus's sanitizer STRIPS them, colliding two
-        # keys that differ only by hyphen). A floor keeps the suffix wide enough
-        # to stay collision-safe even under an unusually long prefix.
+        # keys that differ only by hyphen).
+        #
+        # When the prefix is so long the COLLISION-SAFE minimum can't fit the
+        # budget (budget < marker + min-suffix), we RAISE rather than clamp to a
+        # too-long key: push_directive_attrs' rescue then degrades to :fetch
+        # (a working lane) instead of enqueuing a doomed push that raises
+        # StreamNameTooLong in the job once the directive is already on the wire.
+        #
+        # The budget is pgbus's OWN formula (Key.queue_name_budget), not a
+        # hardcoded 47 − prefix − 1 — the single source of truth, so a future
+        # change to MAX_QUEUE_NAME_LENGTH or the prefix is tracked automatically.
+        # The minted key is finally gated through Pgbus.stream_key! (which does
+        # NOT shrink — pgbus only auto-fits AR records, not random strings — it
+        # returns the key unchanged when it fits and raises loudly otherwise), so
+        # a sizing mistake degrades to :fetch here instead of surfacing later.
         def one_shot_stream_key
-          budget = PGBUS_MAX_QUEUE_NAME - pgbus_queue_prefix_length - 1
-          suffix_chars = [budget - DEFER_KEY_MARKER.length, DEFER_KEY_MIN_SUFFIX].max
+          budget = pgbus_queue_name_budget
+          suffix_chars = budget - DEFER_KEY_MARKER.length
+          if suffix_chars < DEFER_KEY_MIN_SUFFIX
+            raise Phlex::Reactive::Error,
+              "pgbus queue_prefix is too long (budget #{budget}) for a collision-safe defer key — " \
+              "deferring via :fetch instead"
+          end
+
           # SecureRandom.hex(n) yields 2n chars; halve (ceil) then trim to fit.
-          "#{DEFER_KEY_MARKER}#{SecureRandom.hex((suffix_chars / 2.0).ceil)[0, suffix_chars]}"
+          key = "#{DEFER_KEY_MARKER}#{SecureRandom.hex((suffix_chars / 2.0).ceil)[0, suffix_chars]}"
+          # Validate against pgbus itself (raises if our sizing is ever wrong).
+          ::Pgbus.respond_to?(:stream_key!) ? ::Pgbus.stream_key!(key) : key
+        end
+
+        # pgbus's live queue-name budget: prefer its own formula (single source
+        # of truth), fall back to computing it from the prefix, then to the
+        # documented default — each guarded so an older pgbus without the newer
+        # API still degrades cleanly rather than raising.
+        def pgbus_queue_name_budget
+          return ::Pgbus::Streams::Key.queue_name_budget if pgbus_key_budget_available?
+
+          PGBUS_MAX_QUEUE_NAME - pgbus_queue_prefix_length - 1
+        rescue ::StandardError
+          PGBUS_MAX_QUEUE_NAME - DEFAULT_PGBUS_QUEUE_PREFIX.length - 1
+        end
+
+        def pgbus_key_budget_available?
+          defined?(::Pgbus::Streams::Key) &&
+            ::Pgbus::Streams::Key.respond_to?(:queue_name_budget)
         end
 
         # The live queue-name prefix length pgbus budgets against (default

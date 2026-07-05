@@ -55,11 +55,15 @@
 # the reply→fetch gap (default 120 seconds):
 # Phlex::Reactive.defer_token_ttl = 120
 #
-# Defer tokens are ACTOR-BOUND: signed under the requesting session so a leaked
-# token can't be redeemed in another session. The default binding is the
+# reply.defer tokens are ACTOR-BOUND: signed under the requesting session so a
+# leaked token can't be redeemed in another session. The default binding is the
 # session id; override to bind to your own actor identity (a user id, an API
-# token digest). Apps with no session middleware mint UNBOUND tokens — the TTL
-# and your in-action authorize! are then the whole bound.
+# token digest). Apps with no session middleware mint UNBOUND tokens — their
+# bound is then the TTL plus any authorization your component enforces AT RENDER
+# TIME. Note the defer endpoint runs NO action and calls NO authorize! itself
+# (it's a read); protection comes from the component raising a registered
+# authorization error from from_identity/render, or returning false from
+# render?, when it's rebuilt at the defer endpoint.
 # Phlex::Reactive.singleton_class.class_eval do
 #   def defer_binding_for(request) = Current.user&.id&.to_s
 # end
