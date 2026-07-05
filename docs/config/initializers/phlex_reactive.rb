@@ -4,6 +4,12 @@
 # ActionController::Base, base_controller = ActionController::Base) already make
 # the record-backed demos work; this only wires the failure-surface example.
 Rails.application.config.after_initialize do
+  # The docs app's demo components (chat, counters, the team inbox) are showcases
+  # with no authorization layer, so the default-ON verify_authorized guard (#168)
+  # would raise on every unauthorized demo action. Disable it here — the same
+  # posture as the gem's dummy app; a real app leaves it on and authorizes.
+  Phlex::Reactive.verify_authorized = false
+
   # Register the failure-surface demo's authorization error so a DECLARED action
   # that denies returns a clean 403 (client kind=http) — mirroring how a real app
   # registers Pundit::NotAuthorizedError. The page still renders under the
