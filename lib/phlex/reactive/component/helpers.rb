@@ -440,6 +440,66 @@ module Phlex
           mix({ data: }, attrs)
         end
 
+        # Client-side option filtering for the searchable combobox (issue #163)
+        # — the "preload + type to narrow" half of #72's keyboard nav, entirely
+        # client-side. Spread onto the ROOT (mix with reactive_root); it names
+        # the input whose value drives the filter and the option elements to
+        # show/hide, and the generic controller toggles `hidden` on every
+        # keystroke by substring-matching each option's haystack — no round
+        # trip, no token, no bespoke per-feature controller:
+        #
+        #   div(**mix(reactive_root, reactive_filter(
+        #     input:  "#exercise-search",
+        #     option: "[role=option]",
+        #     group:  "[data-filter-group]",   # optional: collapse empty group headers
+        #     empty:  "#no-matches"            # optional: reveal when 0 match
+        #   ))) { … }
+        #
+        # Each option's haystack is its `data-reactive-filter-text` attribute
+        # (server-rendered — pack in synonyms/categories), falling back to the
+        # option's own text. Matching is a case-folded substring test — a
+        # DECLARED literal match, never an expression (no eval surface, the
+        # reactive_show posture). `group:` hides any group element whose every
+        # contained option is hidden; `empty:` reveals the no-matches node when
+        # 0 options are visible. The client seeds at connect and re-syncs after
+        # a morph; selectors resolve WITHIN this root only (#15 ownership).
+        #
+        # Filtering composes with reactive_listnav (Arrow/Enter/Escape skip
+        # hidden options) and each option's own on(:select, …) trigger —
+        # selection still round-trips as a signed action; only FILTERING is
+        # local. Blank selectors raise: a dead binding must fail at render.
+        def reactive_filter(input:, option:, group: nil, empty: nil)
+          data = {
+            reactive_filter_input: filter_selector!(:input, input),
+            reactive_filter_option: filter_selector!(:option, option)
+          }
+          data[:reactive_filter_group] = filter_selector!(:group, group) if group
+          data[:reactive_filter_empty] = filter_selector!(:empty, empty) if empty
+
+          { data: }
+        end
+
+        # STANDALONE combobox keyboard navigation (issue #163) — the same
+        # Arrow/Enter/Escape wiring `on(…, listnav:)` appends, without the
+        # dispatch descriptor. A preload-and-filter combobox input fires NO
+        # action (filtering is pure client), so it can't carry on(); spread
+        # this onto the input instead:
+        #
+        #   input(id: "search", type: "search", **reactive_listnav("[role=option]"))
+        #
+        # Arrow keys move the client-side highlight among the (visible) options,
+        # Enter picks the highlighted one by clicking its own reactive trigger
+        # (selection stays a signed action), Escape clears. Combine with other
+        # attrs via mix so a caller's data-action token-joins, not clobbers.
+        def reactive_listnav(option_selector)
+          {
+            data: {
+              action: LISTNAV_ACTIONS.join(" "),
+              reactive_listnav_option_param: filter_selector!(:selector, option_selector)
+            }
+          }
+        end
+
         # CROSS-ROOT value-conditional visibility (issue #164) — the visibility
         # parallel to reactive_compute's `mirror:` (#159). A plain reactive_show
         # is root-scoped by design (#15), so it can't express "this control
@@ -596,6 +656,20 @@ module Phlex
         OPTIMISTIC_CLASS_OPS = %w[toggle_class add_class remove_class].freeze
 
         private
+
+        # A reactive_filter/reactive_listnav selector, validated non-blank and
+        # stringified (issue #163). A blank selector is a dead binding — the
+        # client would silently match nothing — so it fails loudly at render,
+        # like reactive_show's predicate validation.
+        def filter_selector!(name, value)
+          selector = value.to_s
+          if selector.strip.empty?
+            raise ArgumentError,
+              "reactive_filter/reactive_listnav #{name}: needs a CSS selector, got #{value.inspect}"
+          end
+
+          selector
+        end
 
         # Normalize + validate ONE field's target map (issue #164): each key a
         # single id selector (loud raise — the declare-time half of the
