@@ -95,12 +95,18 @@ RSpec.describe "Phlex::Reactive::Response#defer" do
   end
 
   describe "reply.defer (the bound facade)" do
-    it "reply.defer alone keeps render_self so the endpoint injects the self replace" do
+    # Review finding (#165): reply.defer with no prior verb must NOT keep
+    # render_self — that made GUARD 2 inject a full synchronous to_stream_replace
+    # of the acting component, so deferring silently paid the render on the
+    # critical path anyway (a double-render when the deferred segment IS self).
+    # The bound component's token is refreshed via a tiny token-only stream
+    # instead (like reply.streams), so it rolls forward with NO full self-render.
+    it "reply.defer alone refreshes the token WITHOUT a full self-render (no double render)" do
       response = counter.reply.defer(totals)
 
       expect(response).to be_a(Phlex::Reactive::Response)
-      expect(response.render_self?).to be(true)
-      expect(response.streams).to be_empty # self replace is the endpoint's guarantee
+      expect(response.render_self?).to be(false)
+      expect(response.token_component).to equal(counter)
       expect(response.deferred_segments.first.component).to equal(totals)
     end
 
