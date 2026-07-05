@@ -79,6 +79,12 @@ class DemosController < ActionController::Base
     render_component ComboboxComponent.new(query: params[:q].to_s)
   end
 
+  # Client-side option filtering (issue #163): the whole catalog preloads and
+  # typing narrows it in-browser — the spec's fetch spy proves zero POSTs.
+  def filter_combobox
+    render_component FilterComboboxComponent.new
+  end
+
   # A NEW (unsaved) order: the split recomputes in-browser via reactive_compute,
   # no round trip. total=500 seeds the three-way split. The page also carries a
   # read-only recap OUTSIDE the reactive root (issue #159) — the component's
@@ -184,9 +190,14 @@ class DemosController < ActionController::Base
 
   # Value-conditional visibility (issue #161): reactive_show bindings driven by
   # a select, a checkbox, and a radio group — all client-only. The spec's fetch
-  # spy proves no round trip ever fires.
+  # spy proves no round trip ever fires. The badge lives OUTSIDE the component's
+  # root — the #164 cross-root target the component declares by id.
   def conditional_fieldset
-    render_component ConditionalFieldsetComponent.new
+    component = render_to_string(ConditionalFieldsetComponent.new, layout: false)
+    outside = <<~HTML
+      <span id="cf-mode-badge" hidden data-testid="mode-badge">Shipping enabled</span>
+    HTML
+    render html: component + outside.html_safe, layout: true
   end
 
   def confirm

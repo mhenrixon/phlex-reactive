@@ -359,6 +359,9 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
 | `reactive_text(:name, initial)` | Mirror a compute output (or a declared input) into a **text node** — a live preview heading, a character counter, `"Hello, {name}"` — via `textContent` (XSS-safe). The text sibling of `reactive_field`; carries no `name`, so it's never POSTed. See [Client-side computes](#client-side-computes-reactive_compute--reactive_text). |
 | `reactive_show(:field, equals:/not:/in:)` | **Value-conditional visibility** (the `x-show`/`data-show` case): spread onto the element to show/hide — it toggles `hidden` from the named field's **current value**, client-only, zero round trip. One literal predicate: `equals:`, `not:`, or `in: [...]`; `equals: true` reads a checkbox's checked state. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
+| `reactive_show_targets(:field, "#id" => { equals: … })` | **Cross-root visibility**: the component that owns the field declares which **outside**, id-allowlisted elements it governs (a nav tab, a panel in another pane) — the visibility parallel of `mirror:`. Spread on the **root** via `mix(reactive_root, …)`, **once per root** — several fields go in one call via the hash form (`reactive_show_targets(mode: { … }, kind: { … })`). Id selectors only (raise at render + client warn-skip); same literal predicates; toggles `hidden` only. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
+| `reactive_filter(input:, option:, group: nil, empty: nil)` | **Client-side option filtering** for a preloaded combobox: spread onto the root — typing in the named input shows/hides the options by their `data-reactive-filter-text` haystack, **zero round trips**. Optional `group:` collapses an all-hidden group header; `empty:` reveals a no-matches node. See [Client-side option filtering](#client-side-option-filtering-reactive_filter). |
+| `reactive_listnav("[role=option]")` | The **standalone** combobox keyboard wiring (Arrow/Enter/Escape) for an input that fires **no action** — the preload-and-filter case. Same behavior as `on(…, listnav:)`, minus the POST. |
 | `reactive_compute :name, inputs: { title: :string, qty: :number }, outputs:` | **Typed** inputs: a `:string` reaches the JS reducer raw, a `:number` is coerced through `Number`. The array form (`inputs: %i[a b]`) stays all-numeric. |
 | `reactive_compute :name, ..., mirror: { sum: "#summary-sum" }` | **Cross-root text mirrors**: paint a compute value into declared, id-allowlisted nodes **outside** the reactive root (a recap in another tab pane) via `textContent` — no bespoke listener. See [Cross-root mirrors](#cross-root-mirrors-mirror--painting-a-recap-outside-the-root). |
 | `reactive_root(track_dirty: true, warn_unsaved: true)` / `reactive_field(:param, dirty: true)` | **Dirty tracking** against the DOM's own `defaultValue`/`defaultChecked`/`defaultSelected` — no client state. Marks changed fields + the root `data-reactive-dirty`; `warn_unsaved:` arms a `beforeunload`/`turbo:before-visit` guard. Style with `[data-reactive-dirty]`. See [Dirty-field tracking](#dirty-field-tracking-dirty--track_dirty--warn_unsaved). |
@@ -905,7 +908,45 @@ end
   real `input` event, so a *derived* value can drive visibility too.
 - Presentational only, strictly weaker than the js ops: it reads an owned
   field and toggles `hidden` on an owned element — no `innerHTML`, no
-  attribute freedom, no cross-root writes.
+  attribute freedom. Cross-root writes take the **declared** escape below.
+
+**Cross-root targets (`reactive_show_targets`).** A plain `reactive_show` is
+root-scoped by design — but "a mode selector reveals dependent sections
+elsewhere on the page" (a nav tab, a panel in a *different* tab pane, a sticky
+sidebar note) routinely puts the dependents **outside** the control's root.
+`reactive_show_targets` is the declared escape, the visibility parallel of the
+[cross-root text mirror](#cross-root-mirrors-mirror--painting-a-recap-outside-the-root):
+the component that **owns** the field declares which outside ids it governs,
+spread on the **root**:
+
+```ruby
+div(**mix(reactive_root, reactive_show_targets(:mode,
+  "#advanced-tab"   => { equals: "advanced" },
+  "#advanced-panel" => { equals: "advanced" },
+  "#basic-note"     => { not: "advanced" }))) do
+  select(name: "mode") { mode_options }
+  # …
+end
+```
+
+Same posture as `mirror:`: **opt-in and declared, never implicit** — a plain
+`reactive_show` stays root-isolated; targets are **single id selectors only**
+(a class/compound selector raises at render AND is warn-and-skipped by the
+client — two-sided default-deny); the predicate is the same literal-only
+vocabulary; and the toggle is `hidden` only. The field read stays **owned** —
+you can only drive outside visibility from a field the declaring root owns. A
+target id not on the page is silently skipped, so a target inside an
+unrendered tab pane is fine.
+
+**One call per root.** Phlex `mix` space-joins duplicate string `data:`
+values, so a *second* `reactive_show_targets` call on the same root would
+concatenate two JSON payloads into an unparseable attribute (the client warns
+and ignores it). Several fields go in **one call** via the hash form:
+
+```ruby
+reactive_show_targets(mode: { "#advanced-tab" => { equals: "advanced" } },
+                      kind: { "#premium-note" => { not: "basic" } })
+```
 
 ### Client-side computes (`reactive_compute` + `reactive_text`)
 
@@ -1022,6 +1063,58 @@ Enter **clicks the highlighted option** — so selection runs through its normal
 `on(:select)` reactive action (signed, default-deny, authorized like any other);
 Escape clears the highlight. Only the highlight is client-side — the selection
 stays a real signed action, and the highlight is never shipped as trusted state.
+
+### Client-side option filtering (`reactive_filter`)
+
+`listnav:` is the keyboard half of a combobox; `reactive_filter` is the other
+half: **preload the options, type to narrow — zero round trips.** For a small,
+static catalog a server search per keystroke is pure latency (the data was
+already known at first paint), and a bespoke hide/show Stimulus controller is
+exactly the per-feature JS this gem exists to remove. Declare the filter on the
+root instead:
+
+```ruby
+div(**mix(reactive_root, reactive_filter(
+  input:  "#exercise-search",       # the input whose value drives the filter
+  option: "[role=option]",          # the elements to show/hide
+  group:  "[data-filter-group]",    # optional: collapse a header when all its options hide
+  empty:  "#no-matches"             # optional: reveal when 0 options match
+))) do
+  # STANDALONE keyboard nav — no action on the input, so typing never POSTs.
+  input(id: "exercise-search", type: "search", **reactive_listnav("[role=option]"))
+
+  categories.each do |category, exercises|
+    div(data: { filter_group: "" }) do
+      h3 { category }
+      exercises.each do |exercise|
+        # The haystack is server-rendered — pack in synonyms/categories.
+        button(**mix(
+          on(:select, id: exercise.id),
+          role: "option",
+          data: { reactive_filter_text: exercise.search_text }
+        )) { exercise.name }
+      end
+    end
+  end
+
+  div(id: "no-matches", hidden: true) { "No matches" }
+end
+```
+
+On every keystroke the generic controller lowercases the input's value and
+toggles `hidden` on each option by a **substring match** against its
+`data-reactive-filter-text` haystack (falling back to the option's own text) —
+a declared literal match, never an expression, so there is no eval surface. A
+group whose every contained option is hidden collapses with them; the empty
+node reveals at 0 visible. Everything resolves **within this root only** and
+re-applies after a morph.
+
+It composes: `reactive_listnav` gives the input Arrow/Enter/Escape **without an
+action** (Arrow keys skip filtered-out options; `on(…, listnav:)` requires a
+dispatching trigger — wrong for an input that must never POST), and each option
+stays its own signed `on(:select)` trigger. Only *filtering* is client-side —
+selection still round-trips as a real signed action. Blank selectors raise at
+render: a dead binding must fail loudly, not no-op in the browser.
 
 **Combining `on(...)` / `reactive_attrs` with your own attributes.** Both return
 a hash that includes a `data:` key. Spreading them *and* passing another `data:`

@@ -1468,6 +1468,251 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  # Issue #163: reactive_filter — client-side option filtering for the
+  # searchable combobox. The ROOT declares which input drives the filter and
+  # which elements are the options (plus optional group/empty selectors); the
+  # client shows/hides options by their data-reactive-filter-text haystack on
+  # every input — no round trip, no bespoke per-feature controller. Validation
+  # is loud at render time: blank selectors are dead bindings.
+  describe "#reactive_filter (client-side option filtering, issue #163)" do
+    subject(:instance) { filter_klass.new }
+
+    let(:filter_klass) do
+      Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "FilterThing"
+      end
+    end
+
+    it "emits the input and option selectors as root data attributes" do
+      attrs = instance.send(:reactive_filter, input: "#search", option: "[role=option]")
+      expect(attrs[:data][:reactive_filter_input]).to eq("#search")
+      expect(attrs[:data][:reactive_filter_option]).to eq("[role=option]")
+    end
+
+    it "omits group/empty entirely when not given (byte-stable wire)" do
+      attrs = instance.send(:reactive_filter, input: "#search", option: "[role=option]")
+      expect(attrs[:data]).not_to have_key(:reactive_filter_group)
+      expect(attrs[:data]).not_to have_key(:reactive_filter_empty)
+    end
+
+    it "emits the optional group and empty selectors when given" do
+      attrs = instance.send(:reactive_filter,
+        input: "#search", option: "[role=option]",
+        group: "[data-filter-group]", empty: "#no-matches")
+      expect(attrs[:data][:reactive_filter_group]).to eq("[data-filter-group]")
+      expect(attrs[:data][:reactive_filter_empty]).to eq("#no-matches")
+    end
+
+    it "raises on a blank input selector (a dead binding must fail at render)" do
+      expect { instance.send(:reactive_filter, input: "", option: "[role=option]") }
+        .to raise_error(ArgumentError, /input:/)
+    end
+
+    it "raises on a blank option selector" do
+      expect { instance.send(:reactive_filter, input: "#search", option: " ") }
+        .to raise_error(ArgumentError, /option:/)
+    end
+
+    it "raises on an explicitly blank group/empty selector" do
+      expect { instance.send(:reactive_filter, input: "#s", option: "[role=option]", group: "") }
+        .to raise_error(ArgumentError, /group:/)
+      expect { instance.send(:reactive_filter, input: "#s", option: "[role=option]", empty: "") }
+        .to raise_error(ArgumentError, /empty:/)
+    end
+
+    it "renders the wire attributes onto the root element" do
+      klass = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Component
+
+        def self.name = "FilterRender"
+
+        def view_template
+          div(**reactive_filter(input: "#search", option: "[role=option]", empty: "#none"), id: "combo") { "c" }
+        end
+      end
+
+      html = klass.new.call
+      expect(html).to include('data-reactive-filter-input="#search"')
+      expect(html).to include('data-reactive-filter-option="[role=option]"')
+      expect(html).to include('data-reactive-filter-empty="#none"')
+    end
+  end
+
+  # Issue #163 (the compose half): reactive_listnav — the STANDALONE keyboard-nav
+  # wiring for an input that fires no action. on(..., listnav:) requires a
+  # declared action (a POST per keystroke); a preload-and-filter combobox input
+  # is pure client, so it needs the same Arrow/Enter/Escape wiring without the
+  # dispatch descriptor.
+  describe "#reactive_listnav (standalone keyboard nav, issue #163)" do
+    subject(:instance) { state_klass.new }
+
+    it "emits ONLY the listnav keyboard actions (no dispatch — no POST)" do
+      attrs = instance.send(:reactive_listnav, "[role=option]")
+      expect(attrs[:data][:action]).to eq(
+        "keydown.down->reactive#listnavNext " \
+        "keydown.up->reactive#listnavPrev " \
+        "keydown.enter->reactive#listnavPick " \
+        "keydown.esc->reactive#listnavClose"
+      )
+      expect(attrs[:data][:action]).not_to include("reactive#dispatch")
+    end
+
+    it "emits the option selector as the same Stimulus param on() uses" do
+      attrs = instance.send(:reactive_listnav, "[role=option]")
+      expect(attrs[:data][:reactive_listnav_option_param]).to eq("[role=option]")
+    end
+
+    it "raises on a blank selector (a dead binding must fail at render)" do
+      expect { instance.send(:reactive_listnav, "") }.to raise_error(ArgumentError, /selector/)
+    end
+
+    it "deep-merges with extra attrs via mix (data-action survives)" do
+      # mix is Phlex::HTML's (render-context-free) helper, so this example needs
+      # a Phlex-based component — state_klass is a plain class.
+      phlex_instance = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Component
+
+        def self.name = "ListnavMix"
+      end.new
+
+      attrs = phlex_instance.instance_eval do
+        mix(reactive_listnav("[role=option]"), data: { testid: "q" })
+      end
+      expect(attrs[:data][:action]).to include("reactive#listnavNext")
+      expect(attrs[:data][:testid]).to eq("q")
+    end
+  end
+
+  # Issue #164: reactive_show_targets — CROSS-ROOT value-conditional visibility,
+  # the visibility parallel to #159's cross-root text mirrors. The component
+  # that OWNS the field declares which outside, id-allowlisted elements it
+  # governs (spread on the root, alongside reactive_root). Same posture as
+  # mirror:: opt-in and declared, id selectors only (raise at declare time,
+  # warn-and-skip client-side — two-sided default-deny), literal predicates
+  # only (the reactive_show vocabulary, validated identically).
+  describe "#reactive_show_targets (cross-root visibility, issue #164)" do
+    subject(:instance) { targets_klass.new }
+
+    let(:targets_klass) do
+      Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "ShowTargetsThing"
+
+        reactive_state :count
+        def initialize(count: 0) = @count = count
+        def id = "show-targets-thing"
+      end
+    end
+
+    def targets_json(attrs)
+      JSON.parse(attrs[:data][:reactive_show_targets])
+    end
+
+    it "emits the declared map as one JSON wire attr keyed by field" do
+      attrs = instance.send(:reactive_show_targets, :mode,
+        "#advanced-tab" => { equals: "advanced" },
+        "#basic-note" => { not: "advanced" })
+
+      expect(targets_json(attrs)).to eq(
+        "mode" => {
+          "#advanced-tab" => { "equals" => "advanced" },
+          "#basic-note" => { "not" => "advanced" }
+        }
+      )
+    end
+
+    it "stringifies predicate values and keeps in: as an array of strings" do
+      attrs = instance.send(:reactive_show_targets, :gift,
+        "#gift-note" => { equals: true },
+        "#size-note" => { in: [:l, 2] })
+
+      expect(targets_json(attrs)["gift"]).to eq(
+        "#gift-note" => { "equals" => "true" },
+        "#size-note" => { "in" => %w[l 2] }
+      )
+    end
+
+    it "raises for a non-id selector (class, compound, descendant — declare-time default-deny)" do
+      # Explicit |selector| param, NOT `it`: the reference sits inside the
+      # nested `expect` block, where `it` resolves to THAT block's (absent)
+      # parameter — nil — so the loop would test "" four times and pass for the
+      # wrong reason. The cop's autocorrect is what introduced exactly that bug
+      # here, hence the targeted disable. Asserting the selector in the message
+      # proves each value actually reaches the validation.
+      # rubocop:disable Style/ItBlockParameter
+      [".panel", "#a b", "div#a", "*"].each do |selector|
+        expect do
+          instance.send(:reactive_show_targets, :mode, selector => { equals: "x" })
+        end.to raise_error(ArgumentError, /target #{Regexp.escape(selector.inspect)} must be a single ID selector/)
+      end
+      # rubocop:enable Style/ItBlockParameter
+    end
+
+    it "raises for an empty target map (a dead declaration)" do
+      expect { instance.send(:reactive_show_targets, :mode, {}) }
+        .to raise_error(ArgumentError, /at least one target/)
+    end
+
+    # Phlex `mix` space-joins duplicate STRING data values, so TWO
+    # reactive_show_targets calls on one root would concatenate two JSON
+    # strings into an unparseable attr and silently kill both maps. The
+    # multi-field HASH form exists so there is never a reason to call twice:
+    # one call, one attr, several fields.
+    it "accepts the multi-field hash form in ONE call (mix-collision-proof)" do
+      attrs = instance.send(:reactive_show_targets,
+        mode: { "#advanced-tab" => { equals: "advanced" } },
+        kind: { "#premium-note" => { not: "basic" } })
+
+      expect(targets_json(attrs)).to eq(
+        "mode" => { "#advanced-tab" => { "equals" => "advanced" } },
+        "kind" => { "#premium-note" => { "not" => "basic" } }
+      )
+    end
+
+    it "validates each field's map in the multi-field form (id-only still raises)" do
+      expect do
+        instance.send(:reactive_show_targets,
+          mode: { "#ok" => { equals: "x" } },
+          kind: { ".panel" => { equals: "y" } })
+      end.to raise_error(ArgumentError, /must be a single ID selector/)
+    end
+
+    it "raises helpfully when a targets map is passed where a field belongs" do
+      # reactive_show_targets("#a" => {…}) — the caller forgot the field name.
+      expect { instance.send(:reactive_show_targets, "#advanced-tab" => { equals: "x" }) }
+        .to raise_error(ArgumentError, /looks like a target selector, not a field name/)
+    end
+
+    it "raises without exactly one predicate per target (same rule as reactive_show)" do
+      expect do
+        instance.send(:reactive_show_targets, :mode, "#a" => {})
+      end.to raise_error(ArgumentError, /exactly one predicate/)
+
+      expect do
+        instance.send(:reactive_show_targets, :mode, "#a" => { equals: "x", not: "y" })
+      end.to raise_error(ArgumentError, /exactly one predicate/)
+    end
+
+    it "raises on an empty in: list (same rule as reactive_show)" do
+      expect do
+        instance.send(:reactive_show_targets, :mode, "#a" => { in: [] })
+      end.to raise_error(ArgumentError, /in: needs at least one value/)
+    end
+
+    it "deep-merges with reactive_root via mix (no data: clobber)" do
+      attrs = instance.send(:mix,
+        instance.send(:reactive_root),
+        instance.send(:reactive_show_targets, :mode, "#a" => { equals: "x" }))
+      expect(attrs[:data][:controller]).to eq("reactive")
+      expect(attrs[:data][:reactive_show_targets]).to be_a(String)
+    end
+  end
+
   # Performance: reactive_token runs on EVERY render. It must produce a byte-
   # identical payload before/after caching the ivar symbols + class name. These
   # pin the payload SHAPE (decoded) so an allocation optimization can't silently

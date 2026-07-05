@@ -695,6 +695,32 @@ function showBindingMatches(el, value) {
   return null
 }
 
+// Evaluate an ALREADY-PARSED show predicate object (issue #164) — the
+// reactive_show_targets map embeds { equals/not/in } directly in its JSON, so
+// unlike showBindingMatches there are no attrs to read or re-parse. The same
+// literal-only vocabulary; anything else (empty, unknown keys, a non-array
+// in:) returns null and the caller warn-skips that target (default-deny — a
+// hand-built map entry must never flip visibility it doesn't declare).
+function showPredicateMatches(pred, value) {
+  if (!pred || typeof pred !== "object") return null
+  if (typeof pred.equals === "string") return value === pred.equals
+  if (typeof pred.not === "string") return value !== pred.not
+  if (Array.isArray(pred.in)) return pred.in.includes(value)
+  return null
+}
+
+// A cross-root show target must be a single ID selector (issue #164) — the
+// SAME shape the #159 mirror enforces (one shared regex), with its own warn so
+// a refused show target is distinguishable in the console. The client half of
+// the two-sided default-deny: reactive_show_targets raises at declare time; a
+// hand-built wire attr must not widen the escape to class/compound selectors.
+// A refused selector warns + skips — its siblings still apply.
+function guardShowTargetSelector(selector) {
+  if (typeof selector === "string" && MIRROR_ID_SELECTOR.test(selector)) return true
+  console.warn(`[phlex-reactive] refused cross-root show target ${JSON.stringify(selector)} — skipped`)
+  return false
+}
+
 // The first focusable descendant of `el`, in document order — the natural
 // keyboard target inside an opened menu/dialog. Covers the standard focusable
 // set; :not([tabindex="-1"]) drops explicitly-removed nodes. Returns null when
@@ -790,6 +816,9 @@ export default class extends Controller {
   // Show bindings (issue #161): the ONE delegated sync handler shared by the
   // root's input/change/turbo:morph-element listeners, held for teardown.
   #boundSyncShow
+  // Option filtering (issue #163): the ONE delegated sync handler shared by the
+  // root's input/turbo:morph-element listeners, held for teardown.
+  #boundSyncFilter
 
   // Mark that a reactive controller actually connected, so the registration
   // guard above knows the controller was registered (issue #26 part 2).
@@ -862,6 +891,26 @@ export default class extends Controller {
       this.element.addEventListener?.("turbo:morph-element", this.#boundSyncShow)
       this.#syncShow()
     }
+
+    // Option filtering (issue #163) — ONLY when the root declares the binding
+    // (reactive_filter emits both attrs together), so a component without one
+    // pays two attribute reads. ONE delegated input listener on the root — the
+    // handler re-filters only for events from the NAMED input, so keystrokes in
+    // unrelated fields on a wide form never pay a filter pass. The connect sync
+    // seeds from the input's current value (a plain replace re-connects; back
+    // navigation may restore typed text), and turbo:morph-element re-applies
+    // after an in-place morph (which keeps the element connected, fires no
+    // Stimulus lifecycle, and may preserve the user's typed query while the
+    // server re-rendered every option visible).
+    if (this.#filterEnabled()) {
+      this.#boundSyncFilter = (event) => {
+        if (event?.type === "input" && !this.#filterInputEvent(event)) return
+        this.#syncFilter()
+      }
+      this.element.addEventListener?.("input", this.#boundSyncFilter)
+      this.element.addEventListener?.("turbo:morph-element", this.#boundSyncFilter)
+      this.#syncFilter()
+    }
   }
 
   // Whether this root opts into dirty tracking (issue #103): track_dirty: puts the
@@ -887,6 +936,7 @@ export default class extends Controller {
     this.#clearAllThrottles()
     this.#teardownDirtyTracking()
     this.#teardownShowSync()
+    this.#teardownFilterSync()
   }
 
   // Serialize requests per component. Each round trip rewrites the signed
@@ -1182,7 +1232,9 @@ export default class extends Controller {
   // unset. Falls back to the root for a directly-invoked call (unit tests). The
   // ownership predicate is hoisted ONCE per keypress (issue #117) — in the common
   // no-nested-root case it is a constant true, skipping a closest() walk per
-  // option.
+  // option. Hidden options are excluded (issue #163): a reactive_filter (or any
+  // `hidden` toggle) removes a row from the keyboard path too, so an Arrow can't
+  // highlight — and Enter can't pick — an invisible option.
   #listnavOptions(event) {
     const trigger = event?.currentTarget ?? event?.target ?? this.element
     const selector =
@@ -1190,7 +1242,7 @@ export default class extends Controller {
       this.element.getAttribute("data-reactive-listnav-option-param")
     if (!selector) return []
     const owns = this.#ownershipFilter()
-    return Array.from(this.element.querySelectorAll(selector)).filter(owns)
+    return Array.from(this.element.querySelectorAll(selector)).filter((el) => !el.hidden && owns(el))
   }
 
   // Parse a JSON string list from a root data attr; [] on absence/parse error so
@@ -2055,11 +2107,14 @@ export default class extends Controller {
     this.#boundBeforeVisit = undefined
   }
 
-  // Whether this root owns a show binding (issue #161) — the connect() gate, so
-  // a component without one pays only this probe (the #dirtyTrackingEnabled
-  // precedent). A NESTED root's bindings don't count: its own controller
-  // instance syncs them (issue #15 ownership).
+  // Whether this root owns a show binding (issue #161) or declares cross-root
+  // show targets (issue #164) — the connect() gate, so a component with
+  // neither pays only this probe (the #dirtyTrackingEnabled precedent). A
+  // NESTED root's bindings don't count: its own controller instance syncs them
+  // (issue #15 ownership). The targets attr is checked FIRST — one
+  // getAttribute, cheaper than the binding walk.
   #showSyncEnabled() {
+    if (this.element.getAttribute?.("data-reactive-show-targets")) return true
     const nodes = this.element.querySelectorAll?.("[data-reactive-show-field]") ?? []
     for (const el of nodes) if (this.#ownsField(el)) return true
     return false
@@ -2089,6 +2144,63 @@ export default class extends Controller {
       if (match === null) continue // malformed predicate — warned + skipped
       el.hidden = !match
     }
+
+    // The cross-root pass (issue #164) shares the same owned-field memo, so a
+    // field driving both an owned binding and an outside target reads once.
+    this.#syncShowTargets(owns, values)
+  }
+
+  // Apply the declared cross-root show targets (issue #164) — the visibility
+  // parallel of #applyComputeMirrors. For each declared field: read the OWNED
+  // field's current value (never a nested root's — you can only drive outside
+  // visibility from a field this root owns), then for each "#id" → predicate
+  // entry: guard the selector id-only (warn-and-skip; the Ruby helper raised
+  // at declare time — two-sided default-deny), resolve it DOCUMENT-WIDE, and
+  // toggle `hidden`. A target id not on the page is silently skipped (an
+  // unrendered tab pane is normal); a malformed predicate warn-skips its one
+  // target while siblings still apply. With no map declared this is one
+  // getAttribute and out.
+  #syncShowTargets(owns, values) {
+    const map = this.#parseShowTargets()
+    for (const [name, targets] of Object.entries(map)) {
+      if (!targets || typeof targets !== "object" || Array.isArray(targets)) continue
+      if (!values.has(name)) values.set(name, this.#showFieldValue(name, owns))
+      const value = values.get(name)
+      if (value === null) continue // no owned field with that name — leave them be
+      for (const [selector, pred] of Object.entries(targets)) {
+        if (!guardShowTargetSelector(selector)) continue
+        const match = showPredicateMatches(pred, value)
+        if (match === null) {
+          console.warn(`[phlex-reactive] malformed reactive_show_targets predicate for ${selector} — skipped`)
+          continue
+        }
+        for (const node of document.querySelectorAll(selector)) node.hidden = !match
+      }
+    }
+  }
+
+  // The declared cross-root show-target map (issue #164): a JSON object of
+  // { field: { "#id": predicate } } from data-reactive-show-targets (emitted
+  // by reactive_show_targets on the root). Absent degrades to {}; malformed
+  // degrades to {} WITH a warn — never a throw (the #parseComputeMirror
+  // contract), but never silent either: the likeliest cause is TWO
+  // reactive_show_targets calls on one root, whose JSON strings Phlex `mix`
+  // space-joined into an unparseable attr. The warn names the fix.
+  #parseShowTargets() {
+    const raw = this.element.getAttribute?.("data-reactive-show-targets")
+    if (!raw) return {}
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed
+    } catch {
+      // fall through to the shared warn below
+    }
+    console.warn(
+      "[phlex-reactive] malformed data-reactive-show-targets — ignored. " +
+        "Did two reactive_show_targets calls collide on one root? Declare every field in ONE call: " +
+        "reactive_show_targets(mode: { ... }, kind: { ... })"
+    )
+    return {}
   }
 
   // The current value of the OWNED field controlling a show binding, as the
@@ -2123,6 +2235,84 @@ export default class extends Controller {
     this.element.removeEventListener?.("change", this.#boundSyncShow)
     this.element.removeEventListener?.("turbo:morph-element", this.#boundSyncShow)
     this.#boundSyncShow = undefined
+  }
+
+  // Whether this root declares an option filter (issue #163) — the connect()
+  // gate. reactive_filter always emits input + option together, so requiring
+  // BOTH also default-denies a half-built hand-authored binding.
+  #filterEnabled() {
+    return !!(
+      this.element.getAttribute?.("data-reactive-filter-input") &&
+      this.element.getAttribute?.("data-reactive-filter-option")
+    )
+  }
+
+  // Whether a delegated input event came from the NAMED filter input (issue
+  // #163). Anything else — another field's keystroke, a target without
+  // matches() — skips the filter pass (the morph re-sync path bypasses this).
+  #filterInputEvent(event) {
+    const selector = this.element.getAttribute("data-reactive-filter-input")
+    return !!selector && typeof event.target?.matches === "function" && event.target.matches(selector)
+  }
+
+  // Re-apply the filter in one pass (issue #163): lowercase the named input's
+  // current value, toggle `hidden` on every OWNED option by a substring match
+  // against its haystack (data-reactive-filter-text, falling back to the
+  // option's own text), collapse any group whose every contained option is
+  // hidden, and reveal the empty target at 0 visible. A filtered-out option
+  // also loses its listnav highlight so Enter can never pick an invisible row.
+  // No owned input → leave visibility ALONE — a binding that can't resolve
+  // must never break or blank the page (client-side default-deny). All
+  // selectors resolve within this root, skipping nested reactive roots'
+  // elements (issue #15 ownership; the predicate is hoisted once per pass).
+  #syncFilter() {
+    if (typeof this.element?.querySelectorAll !== "function") return
+    const inputSelector = this.element.getAttribute("data-reactive-filter-input")
+    const optionSelector = this.element.getAttribute("data-reactive-filter-option")
+    if (!inputSelector || !optionSelector) return
+
+    const owns = this.#ownershipFilter()
+    const input = [...this.element.querySelectorAll(inputSelector)].find(owns)
+    if (!input) return
+
+    const query = (input.value ?? "").trim().toLowerCase()
+    let visible = 0
+    for (const el of this.element.querySelectorAll(optionSelector)) {
+      if (!owns(el)) continue // a nested root's option is its own controller's job
+      const haystack = (el.getAttribute("data-reactive-filter-text") ?? el.textContent ?? "").toLowerCase()
+      const hidden = query !== "" && !haystack.includes(query)
+      el.hidden = hidden
+      if (hidden) el.removeAttribute("data-reactive-highlighted")
+      else visible++
+    }
+
+    const groupSelector = this.element.getAttribute("data-reactive-filter-group")
+    if (groupSelector) {
+      for (const group of this.element.querySelectorAll(groupSelector)) {
+        if (!owns(group)) continue
+        const contained = [...group.querySelectorAll(optionSelector)].filter(owns)
+        // A group with no options isn't this filter's to decide — server state
+        // stands (it may be a header the app toggles by other means).
+        if (contained.length === 0) continue
+        group.hidden = contained.every((el) => el.hidden)
+      }
+    }
+
+    const emptySelector = this.element.getAttribute("data-reactive-filter-empty")
+    if (emptySelector) {
+      for (const el of this.element.querySelectorAll(emptySelector)) {
+        if (owns(el)) el.hidden = visible > 0
+      }
+    }
+  }
+
+  // Remove the filter-sync listeners on disconnect, so a stray event after a
+  // Turbo morph/navigation never re-filters against a detached root.
+  #teardownFilterSync() {
+    if (!this.#boundSyncFilter) return
+    this.element.removeEventListener?.("input", this.#boundSyncFilter)
+    this.element.removeEventListener?.("turbo:morph-element", this.#boundSyncFilter)
+    this.#boundSyncFilter = undefined
   }
 
   // Build the multipart body (issue #34). `token`/`act` are flat fields the

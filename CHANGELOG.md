@@ -55,6 +55,48 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`spec/requests/deferred_latency_spec.rb`) pins that a 120 ms segment cost
   moves OFF the actor's reply and onto the deferred leg; it never disappears.
 
+- **Client-side option filtering — `reactive_filter` (#163).** The other half
+  of #72's combobox: **preload the options, type to narrow — zero round
+  trips.** Spread `reactive_filter(input:, option:, group:, empty:)` onto the
+  root and the generic controller shows/hides each option on every keystroke by
+  a case-folded substring match against its `data-reactive-filter-text`
+  haystack (falling back to the option's own text) — no POST, no token, no
+  bespoke per-feature Stimulus controller. Optional `group:` collapses a header
+  whose every contained option is hidden; optional `empty:` reveals a
+  no-matches node at 0 visible. Selectors resolve within the root only (nested
+  reactive roots untouched), state seeds at connect and re-applies after a
+  morph, and blank selectors raise at render (a dead binding must fail loudly).
+  Composes with keyboard nav and per-row selection: a filtered-out option also
+  drops out of the Arrow-key path and loses its highlight, so Enter can never
+  pick an invisible row — selection itself stays a signed `on(:select)` action.
+- **Standalone combobox keyboard nav — `reactive_listnav` (#163).** The same
+  Arrow/Enter/Escape wiring `on(…, listnav:)` appends, without the dispatch
+  descriptor — for the preload-and-filter input that fires **no** action (an
+  `on()` trigger would POST per keystroke). Spread
+  `reactive_listnav("[role=option]")` onto the input; Enter still picks by
+  clicking the highlighted option's own signed trigger.
+- **Cross-root `reactive_show` targets — `reactive_show_targets` (#164).** A
+  field can now drive the visibility of declared elements **outside** its
+  reactive root — the nav tab, the panel in another tab pane, the sidebar note
+  a mode selector governs — the visibility parallel to the #159 cross-root
+  text mirror. The component that **owns** the field declares which outside
+  ids it governs, spread on the root:
+  `mix(reactive_root, reactive_show_targets(:mode, "#advanced-tab" =>
+  { equals: "advanced" }, "#basic-note" => { not: "advanced" }))`. Same
+  posture as `mirror:`: opt-in and declared, never implicit (a plain
+  `reactive_show` stays root-isolated, #15 untouched); targets are **single id
+  selectors only** — a class/compound selector raises at declare time AND is
+  warn-and-skipped by the client (two-sided default-deny); the predicate is
+  the same literal-only `reactive_show` vocabulary; the toggle is `hidden`
+  only. The field read stays **owned** — you can only drive outside visibility
+  from a field the declaring root owns. A target id not on the page is
+  silently skipped (an unrendered tab pane is normal); the cross-root pass
+  shares the owned-binding pass's field-read memo (one read per field per
+  sync). No map declared → one `getAttribute` and out. **One call per root**:
+  Phlex `mix` space-joins duplicate string data values, so a second call's
+  JSON would corrupt the attr (the client warns and ignores it) — several
+  fields go in one call via the hash form
+  (`reactive_show_targets(mode: { … }, kind: { … })`).
 - **Value-conditional visibility — `reactive_show` (#161).** The `x-show` /
   `data-show` / `wire:show` case — show/hide an element from a form field's
   **current value** — no longer needs a hand-written `change`-listener Stimulus

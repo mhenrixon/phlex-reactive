@@ -433,18 +433,126 @@ module Phlex
               "in: — got #{predicates.keys.inspect}"
           end
 
-          key, value = predicates.first
+          key, value = normalize_show_predicate(predicates, "reactive_show(#{field.inspect})").first
           data = { reactive_show_field: field.to_s }
-          if key == :in
-            list = Array(value).map(&:to_s)
-            raise ArgumentError, "reactive_show(#{field.inspect}) in: needs at least one value" if list.empty?
-
-            data[:reactive_show_in] = list.to_json
-          else
-            data[:"reactive_show_#{key}"] = value.to_s
-          end
+          data[:"reactive_show_#{key}"] = key == "in" ? value.to_json : value
 
           mix({ data: }, attrs)
+        end
+
+        # Client-side option filtering for the searchable combobox (issue #163)
+        # — the "preload + type to narrow" half of #72's keyboard nav, entirely
+        # client-side. Spread onto the ROOT (mix with reactive_root); it names
+        # the input whose value drives the filter and the option elements to
+        # show/hide, and the generic controller toggles `hidden` on every
+        # keystroke by substring-matching each option's haystack — no round
+        # trip, no token, no bespoke per-feature controller:
+        #
+        #   div(**mix(reactive_root, reactive_filter(
+        #     input:  "#exercise-search",
+        #     option: "[role=option]",
+        #     group:  "[data-filter-group]",   # optional: collapse empty group headers
+        #     empty:  "#no-matches"            # optional: reveal when 0 match
+        #   ))) { … }
+        #
+        # Each option's haystack is its `data-reactive-filter-text` attribute
+        # (server-rendered — pack in synonyms/categories), falling back to the
+        # option's own text. Matching is a case-folded substring test — a
+        # DECLARED literal match, never an expression (no eval surface, the
+        # reactive_show posture). `group:` hides any group element whose every
+        # contained option is hidden; `empty:` reveals the no-matches node when
+        # 0 options are visible. The client seeds at connect and re-syncs after
+        # a morph; selectors resolve WITHIN this root only (#15 ownership).
+        #
+        # Filtering composes with reactive_listnav (Arrow/Enter/Escape skip
+        # hidden options) and each option's own on(:select, …) trigger —
+        # selection still round-trips as a signed action; only FILTERING is
+        # local. Blank selectors raise: a dead binding must fail at render.
+        def reactive_filter(input:, option:, group: nil, empty: nil)
+          data = {
+            reactive_filter_input: filter_selector!(:input, input),
+            reactive_filter_option: filter_selector!(:option, option)
+          }
+          data[:reactive_filter_group] = filter_selector!(:group, group) if group
+          data[:reactive_filter_empty] = filter_selector!(:empty, empty) if empty
+
+          { data: }
+        end
+
+        # STANDALONE combobox keyboard navigation (issue #163) — the same
+        # Arrow/Enter/Escape wiring `on(…, listnav:)` appends, without the
+        # dispatch descriptor. A preload-and-filter combobox input fires NO
+        # action (filtering is pure client), so it can't carry on(); spread
+        # this onto the input instead:
+        #
+        #   input(id: "search", type: "search", **reactive_listnav("[role=option]"))
+        #
+        # Arrow keys move the client-side highlight among the (visible) options,
+        # Enter picks the highlighted one by clicking its own reactive trigger
+        # (selection stays a signed action), Escape clears. Combine with other
+        # attrs via mix so a caller's data-action token-joins, not clobbers.
+        def reactive_listnav(option_selector)
+          {
+            data: {
+              action: LISTNAV_ACTIONS.join(" "),
+              reactive_listnav_option_param: filter_selector!(:selector, option_selector)
+            }
+          }
+        end
+
+        # CROSS-ROOT value-conditional visibility (issue #164) — the visibility
+        # parallel to reactive_compute's `mirror:` (#159). A plain reactive_show
+        # is root-scoped by design (#15), so it can't express "this control
+        # drives elements ELSEWHERE on the page" — a nav tab, a panel in another
+        # tab pane, a sidebar note. reactive_show_targets is the declared,
+        # id-allowlisted escape: the component that OWNS the field declares
+        # which outside ids it governs. Spread it on the ROOT (mix alongside
+        # reactive_root — the client reads it off the controller element):
+        #
+        #   div(**mix(reactive_root, reactive_show_targets(:mode,
+        #     "#advanced-tab"   => { equals: "advanced" },
+        #     "#advanced-panel" => { equals: "advanced" },
+        #     "#basic-note"     => { not: "advanced" })))
+        #
+        # Same posture as mirror: — opt-in and declared, never implicit (a plain
+        # reactive_show stays root-isolated); targets are SINGLE ID SELECTORS
+        # only, enforced here at declare time AND warn-and-skipped by the client
+        # interpreter (two-sided default-deny); the predicate is the same
+        # literal-only reactive_show vocabulary (exactly one of equals:/not:/
+        # in:, no expressions); and the toggle is `hidden` only — no innerHTML,
+        # no attribute freedom. The FIELD read stays owned (#15): you can only
+        # drive outside visibility from a field this root owns. A target id not
+        # on the page is silently skipped (an unrendered tab pane is normal).
+        #
+        # ONE call per root. Phlex `mix` space-joins duplicate STRING data
+        # values, so a second call's JSON would concatenate into an unparseable
+        # attr and the client would drop BOTH maps (it warns when that
+        # happens). Several fields therefore go in ONE call via the hash form:
+        #
+        #   reactive_show_targets(mode: { "#advanced-tab" => { equals: "advanced" } },
+        #                         kind: { "#premium-note" => { not: "basic" } })
+        def reactive_show_targets(field, targets = nil)
+          field_maps = targets.nil? ? field : { field => targets }
+          unless field_maps.is_a?(Hash) && field_maps.any?
+            raise ArgumentError,
+              "reactive_show_targets needs at least one target " \
+              "(:field, \"#id\" => { equals:/not:/in: ... }), got #{field_maps.inspect}"
+          end
+
+          normalized = field_maps.to_h do |name, map|
+            # Catch the forgotten-field-name misuse — reactive_show_targets(
+            # "#id" => {…}) — before the per-target validation turns it into a
+            # baffling "predicate" error.
+            if name.to_s.start_with?("#")
+              raise ArgumentError,
+                "reactive_show_targets: #{name.inspect} looks like a target selector, not a field " \
+                "name — call reactive_show_targets(:field, #{name.inspect} => { ... })"
+            end
+
+            [name.to_s, normalize_show_target_map(name, map)]
+          end
+
+          { data: { reactive_show_targets: normalized.to_json } }
         end
 
         # Scoped busy indicator (issue #99). Marks an element so the generic
@@ -548,6 +656,66 @@ module Phlex
         OPTIMISTIC_CLASS_OPS = %w[toggle_class add_class remove_class].freeze
 
         private
+
+        # A reactive_filter/reactive_listnav selector, validated non-blank and
+        # stringified (issue #163). A blank selector is a dead binding — the
+        # client would silently match nothing — so it fails loudly at render,
+        # like reactive_show's predicate validation.
+        def filter_selector!(name, value)
+          selector = value.to_s
+          if selector.strip.empty?
+            raise ArgumentError,
+              "reactive_filter/reactive_listnav #{name}: needs a CSS selector, got #{value.inspect}"
+          end
+
+          selector
+        end
+
+        # Normalize + validate ONE field's target map (issue #164): each key a
+        # single id selector (loud raise — the declare-time half of the
+        # two-sided default-deny), each value one literal predicate. Shared by
+        # both reactive_show_targets call forms.
+        def normalize_show_target_map(field, targets)
+          unless targets.is_a?(Hash) && targets.any?
+            raise ArgumentError,
+              "reactive_show_targets(#{field.inspect}) needs at least one target " \
+              "(\"#id\" => { equals:/not:/in: ... }), got #{targets.inspect}"
+          end
+
+          targets.to_h do |selector, predicate|
+            selector = selector.to_s
+            unless selector.match?(DSL::MIRROR_ID_SELECTOR)
+              raise ArgumentError,
+                "reactive_show_targets(#{field.inspect}) target #{selector.inspect} must be a single " \
+                "ID selector (\"#id\") — cross-root visibility is id-allowlisted, like mirror: (#159)"
+            end
+
+            context = "reactive_show_targets(#{field.inspect}) target #{selector.inspect}"
+            [selector, normalize_show_predicate(predicate.is_a?(Hash) ? predicate : {}, context)]
+          end
+        end
+
+        # Validate ONE declared literal show predicate (issues #161/#164) and
+        # return its wire form — { "equals" => "v" } / { "not" => "v" } /
+        # { "in" => ["a", …] } (a real array: reactive_show JSON-encodes it into
+        # its own attr; the reactive_show_targets map embeds it directly).
+        # Shared by both helpers so the vocabulary and the loud validation can
+        # never drift. `context` names the call site in the error.
+        def normalize_show_predicate(predicates, context)
+          unless predicates.size == 1 && SHOW_PREDICATE_KEYS.include?(predicates.keys.first)
+            raise ArgumentError,
+              "#{context} needs exactly one predicate — equals:, not:, or in: — " \
+              "got #{predicates.keys.inspect}"
+          end
+
+          key, value = predicates.first
+          return { key.to_s => value.to_s } unless key == :in
+
+          list = Array(value).map(&:to_s)
+          raise ArgumentError, "#{context} in: needs at least one value" if list.empty?
+
+          { "in" => list }
+        end
 
         # True when the hint declares checked: :keep — the click-bound
         # checkbox/radio case that must SKIP the forced type="button" so the native
