@@ -107,6 +107,302 @@ export function registerReactiveJs() {
   }
 }
 
+// --- Deferred reply segments (issue #165) ----------------------------------
+// The client half of reply.defer: the server's reply carries a
+// `<turbo-stream action="reactive:defer" target="<id>">` directive and the
+// real render reaches the SAME actor later — via a parallel fetch (pull) or a
+// pgbus one-shot stream (push). Everything here is MODULE-level, deliberately
+// OFF the per-controller request queue: the whole point is that the expensive
+// segment never blocks the actor's next action.
+//
+// Supersession is the correctness core: pendingDefers keys one in-flight
+// delivery per target id. A newer directive for the same target aborts the
+// older fetch (or removes the older stream source), and an arrival applies
+// ONLY while its entry is still current — so a fast typist's debounced
+// keystrokes can never paint stale totals over fresh ones.
+const pendingDefers = new Map()
+
+// Test seam: clear the module-level registry between unit tests. Also resets
+// the one-shot settle-listener guard so a test's fresh document re-registers
+// the turbo:before-stream-render settler.
+export function resetReactiveDefers() {
+  pendingDefers.clear()
+  deferStreamSettleRegistered = false
+}
+
+// Test seam: the `via` of a target's pending defer entry (or undefined) — lets
+// tests assert an entry was SETTLED (dropped) on arrival without exposing the
+// Map. Not used by the runtime.
+export function pendingDeferVia(targetId) {
+  return pendingDefers.get(targetId)?.via
+}
+
+let deferStreamSettleRegistered = false
+
+export function registerReactiveDefer() {
+  const actions = window.Turbo?.StreamActions
+  if (!actions || actions["reactive:defer"]) return
+  actions["reactive:defer"] = function () {
+    const target = this.getAttribute("target")
+    if (!target) return
+    if (this.getAttribute("data-reactive-defer-via") === "stream") {
+      startStreamDefer(target, this)
+      return
+    }
+    const token = this.getAttribute("data-reactive-defer-token")
+    if (!token) return
+    startFetchDefer(target, token)
+  }
+
+  // Settle a STREAM-lane pendingDefers entry when its arrival lands: the job's
+  // broadcast is a turbo-stream that replaces the target (and removes the
+  // source). A document-level turbo:before-stream-render hook drops the Map
+  // entry for a stream target the moment a stream renders against it — so the
+  // entry never outlives the delivery (the fetch lane settles inline; the
+  // stream lane's arrival is a broadcast this controller doesn't await, so it
+  // needs this hook). Registered once; a no-op without document.
+  if (!deferStreamSettleRegistered && typeof document !== "undefined" && document.addEventListener) {
+    deferStreamSettleRegistered = true
+    document.addEventListener("turbo:before-stream-render", settleStreamDeferOnRender)
+  }
+}
+
+// Drop a stream-lane pendingDefers entry when a turbo-stream renders against
+// its target id (the job's replace) OR removes its source element. Keyed by the
+// stream's target so an unrelated stream never settles a defer. Pure Map
+// cleanup — the DOM apply is Turbo's; this only releases our bookkeeping.
+function settleStreamDeferOnRender(event) {
+  const streamEl = event.target
+  const target = streamEl?.getAttribute?.("target")
+  if (!target) return
+  // The arrival replaces #<target>; the source removal targets
+  // reactive-defer-src-<target>. Either signals the stream delivered.
+  const targetId = target.startsWith("reactive-defer-src-")
+    ? target.slice("reactive-defer-src-".length)
+    : target
+  const entry = pendingDefers.get(targetId)
+  if (entry?.via === "stream") pendingDefers.delete(targetId)
+}
+
+// The pull lane: mark the target pending and POST the signed defer token to
+// the defer endpoint, in parallel with everything else the page is doing.
+function startFetchDefer(targetId, token) {
+  const el = document.getElementById(targetId)
+  if (!el) {
+    console.warn(`[phlex-reactive] reactive:defer target #${targetId} is not on the page — skipped`)
+    return
+  }
+  supersedeDefer(targetId)
+  markDeferPending(el)
+  const entry = { via: "fetch", abort: new AbortController(), timedOut: false }
+  pendingDefers.set(targetId, entry)
+  performDeferFetch(targetId, entry, token)
+}
+
+// The push lane: subscribe a <pgbus-stream-source> to the server-signed
+// one-shot stream. Arrival + teardown need no client logic — the job's
+// broadcast carries the replace AND a remove of this source element (its
+// disconnectedCallback closes the SSE connection). since-id=0 on a fresh key
+// replays a broadcast that beat the subscription (the durable-lane guarantee).
+function startStreamDefer(targetId, directive) {
+  const el = document.getElementById(targetId)
+  if (!el) {
+    console.warn(`[phlex-reactive] reactive:defer target #${targetId} is not on the page — skipped`)
+    return
+  }
+  const src = directive.getAttribute("data-reactive-defer-src")
+  if (!src) return
+  if (!globalThis.customElements?.get?.("pgbus-stream-source")) {
+    // The server chose push on server-side capability, but this page has no
+    // pgbus client. Degrade to the fetch lane using the fallback token the push
+    // directive carries — rather than dead-end the shimmer. No token (an app on
+    // a bespoke transport) is a loud no-op.
+    const fallbackToken = directive.getAttribute("data-reactive-defer-token")
+    if (fallbackToken) {
+      startFetchDefer(targetId, fallbackToken)
+      return
+    }
+    console.error(
+      "[phlex-reactive] reactive:defer via=stream but <pgbus-stream-source> is not registered " +
+        "and no fallback token was provided — is the pgbus client loaded on this page?",
+    )
+    return
+  }
+  supersedeDefer(targetId)
+  markDeferPending(el)
+  const source = document.createElement("pgbus-stream-source")
+  // Deterministic id: the JOB's broadcast removes it by this exact id — the
+  // subscription tears itself down with the payload it delivered.
+  source.id = deferSourceId(targetId)
+  source.setAttribute("src", src)
+  source.setAttribute("since-id", directive.getAttribute("data-reactive-defer-since-id") ?? "0")
+  source.setAttribute("hidden", "")
+  document.body.appendChild(source)
+  // Record only { via } — NOT a strong ref to the source element. The job's
+  // broadcast removes the source by its deterministic id (its
+  // disconnectedCallback closes the SSE), so holding srcEl here would pin the
+  // detached node in this module-level Map forever (a leak). Supersession
+  // re-finds the element by id instead. The entry is dropped on
+  // supersession or when the arriving broadcast replaces the target (a
+  // turbo:before-stream-render hook, below).
+  pendingDefers.set(targetId, { via: "stream" })
+}
+
+// The deterministic id of a target's one-shot <pgbus-stream-source>.
+function deferSourceId(targetId) {
+  return `reactive-defer-src-${targetId}`
+}
+
+async function performDeferFetch(targetId, entry, token) {
+  // Bound the wait like the action fetch (issue #101) — a hung defer must not
+  // shimmer forever. A manual timer (not AbortSignal.timeout) so the catch can
+  // tell a TIMEOUT (fail loudly) from a SUPERSEDED abort (stay silent).
+  const timer = setTimeout(() => {
+    entry.timedOut = true
+    entry.abort.abort()
+  }, deferTimeoutMs())
+
+  // The timeout is cleared ONLY after the body is fully read (below), not the
+  // moment headers arrive — a server that streams headers then stalls the body
+  // must still abort, or the shimmer hangs forever (the abort signal covers the
+  // whole fetch + body read, mirroring #perform's AbortSignal.timeout).
+  let response
+  try {
+    response = await fetch(deferPath(), {
+      method: "POST",
+      headers: {
+        Accept: "text/vnd.turbo-stream.html",
+        "Content-Type": "application/json",
+        "X-CSRF-Token": deferCsrfToken(),
+      },
+      body: JSON.stringify({ token }),
+      credentials: "same-origin",
+      signal: entry.abort.signal,
+    })
+  } catch (error) {
+    clearTimeout(timer)
+    if (pendingDefers.get(targetId) !== entry) return // superseded — silent
+    console.error("[phlex-reactive] deferred render failed", error)
+    failDefer(targetId, token)
+    return
+  }
+  if (pendingDefers.get(targetId) !== entry) {
+    clearTimeout(timer)
+    return // superseded mid-flight
+  }
+
+  if (response.status === 204) {
+    clearTimeout(timer)
+    // render? false — keep the current content, just clear the pending state.
+    settleDefer(targetId)
+    return
+  }
+  if (!response.ok) {
+    clearTimeout(timer)
+    console.error(`[phlex-reactive] deferred render failed: HTTP ${response.status}`)
+    failDefer(targetId, token, response.status)
+    return
+  }
+
+  let html
+  try {
+    html = await response.text()
+  } catch (error) {
+    clearTimeout(timer)
+    if (pendingDefers.get(targetId) !== entry) return
+    console.error("[phlex-reactive] deferred render failed reading the body", error)
+    failDefer(targetId, token)
+    return
+  }
+  clearTimeout(timer)
+  if (pendingDefers.get(targetId) !== entry) return // superseded during read
+
+  settleDefer(targetId)
+  // A normal replace/morph of the target — the fresh root carries no pending
+  // markers and a fresh action token, so the component lands interactive.
+  window.Turbo.renderStreamMessage(html)
+}
+
+// Abort/unsubscribe whatever delivery is in flight for this target. The
+// deleted entry makes every late arrival fail its identity check — stale
+// content can never paint.
+function supersedeDefer(targetId) {
+  const existing = pendingDefers.get(targetId)
+  if (!existing) return
+  pendingDefers.delete(targetId)
+  if (existing.via === "fetch") existing.abort.abort()
+  // Stream lane: re-find the old source by its deterministic id and remove it
+  // (unsubscribe) — we deliberately don't hold a strong ref to the detached
+  // node. Its disconnectedCallback closes the SSE.
+  else document.getElementById(deferSourceId(targetId))?.remove?.()
+}
+
+function markDeferPending(el) {
+  el.setAttribute("data-reactive-defer-pending", "true")
+  el.setAttribute("aria-busy", "true")
+}
+
+function clearDeferPending(el) {
+  el.removeAttribute("data-reactive-defer-pending")
+  el.removeAttribute("aria-busy")
+}
+
+// Success/204: drop the registry entry, clear pending, and clear any prior
+// defer failure marker (recovery resets error-driven CSS, issue #100 style).
+function settleDefer(targetId) {
+  pendingDefers.delete(targetId)
+  const el = document.getElementById(targetId)
+  if (!el) return
+  clearDeferPending(el)
+  el.removeAttribute("data-reactive-error")
+}
+
+// Failure: clear pending (the shimmer must not lie), mark the root
+// (data-reactive-error="defer" — style it in pure CSS), and emit a bubbling
+// reactive:error whose retry() re-enters the defer fetch with the SAME token
+// (still valid inside the TTL; an expired token 400s into this same path).
+function failDefer(targetId, token, status) {
+  pendingDefers.delete(targetId)
+  const el = document.getElementById(targetId)
+  if (!el) return
+  clearDeferPending(el)
+  el.setAttribute("data-reactive-error", "defer")
+  const retry = () => {
+    const fresh = document.getElementById(targetId)
+    if (!fresh) {
+      console.warn("[phlex-reactive] defer retry() ignored — the target left the DOM")
+      return
+    }
+    fresh.removeAttribute("data-reactive-error")
+    startFetchDefer(targetId, token)
+  }
+  el.dispatchEvent(
+    new CustomEvent("reactive:error", {
+      bubbles: true,
+      composed: true,
+      detail: { kind: "defer", target: targetId, status, retry },
+    }),
+  )
+}
+
+function deferPath() {
+  return document.querySelector('meta[name="phlex-reactive-defer-path"]')?.content || "/reactive/defer"
+}
+
+// CSRF is read LIVE per request (Rails can rotate it) — same contract as the
+// controller's #csrfToken.
+function deferCsrfToken() {
+  return document.querySelector('meta[name="csrf-token"]')?.content ?? ""
+}
+
+// Same page-stable meta + default as the controller's #timeoutMs (issue #101),
+// parsed defensively so a typo'd meta can never disable the bound.
+function deferTimeoutMs() {
+  const raw = document.querySelector('meta[name="phlex-reactive-timeout"]')?.content
+  const ms = Number(raw)
+  return Number.isFinite(ms) && ms > 0 ? ms : 30000
+}
+
 // Document-level self-dismissing flashes (issue #100). A flash rendered with
 // dismiss_after: carries data-reactive-dismiss-after="<ms>"; after the timeout
 // it removes itself. This is deliberately NOT a Stimulus controller — the flash
@@ -265,6 +561,7 @@ export function registerReactiveActions() {
   registerReactiveVisit()
   registerReactiveToken()
   registerReactiveJs()
+  registerReactiveDefer()
   registerReactiveDismiss()
   registerReactiveOffline()
   attachLatencyHandle()
@@ -597,6 +894,9 @@ export default class extends Controller {
   // Option filtering (issue #163): the ONE delegated sync handler shared by the
   // root's input/turbo:morph-element listeners, held for teardown.
   #boundSyncFilter
+  // Lazy initial mount (issue #165): the bound re-probe attached to
+  // turbo:morph-element so a Turbo page-refresh morph re-fires the defer fetch.
+  #boundProbeLazyDefer
 
   // Mark that a reactive controller actually connected, so the registration
   // guard above knows the controller was registered (issue #26 part 2).
@@ -617,6 +917,25 @@ export default class extends Controller {
           "Put id: on the SAME element as reactive_attrs — use div(**reactive_root) (emits id + token together), " +
           "or div(id:, **reactive_attrs). The id: must NOT be on a child. See the README."
       )
+    }
+
+    // Lazy initial mount (issue #165): a reactive_lazy shell carries its defer
+    // token as a ROOT attribute — enter the SAME module-level fetch path a
+    // reply directive uses (supersession, pending markers, error handling
+    // included). Probe on connect (a plain replace / cache restoration
+    // re-connects) AND on turbo:morph-element: a Turbo page-refresh MORPH
+    // re-shows the shell while keeping the element CONNECTED and firing no
+    // Stimulus lifecycle, so a connect-only probe would leave the morphed-in
+    // shell shimmering forever. The supersession registry makes a duplicate
+    // probe a no-op (same target id), so re-probing is safe. The attribute
+    // stays on the shell precisely so a re-appearance re-fires.
+    // Only wire the morph re-probe for a root that IS a lazy shell (carries the
+    // token) — a component that never uses reactive_lazy pays nothing (no
+    // listener), matching the dirty-tracking / show-sync gating precedent.
+    if (this.element.getAttribute?.("data-reactive-defer-token")) {
+      this.#probeLazyDefer()
+      this.#boundProbeLazyDefer = () => this.#probeLazyDefer()
+      this.element.addEventListener?.("turbo:morph-element", this.#boundProbeLazyDefer)
     }
 
     // Dirty tracking (issue #103) — ONLY when this root opts in (track_dirty: or a
@@ -706,6 +1025,25 @@ export default class extends Controller {
     this.#teardownDirtyTracking()
     this.#teardownShowSync()
     this.#teardownFilterSync()
+    if (this.#boundProbeLazyDefer) {
+      this.element.removeEventListener?.("turbo:morph-element", this.#boundProbeLazyDefer)
+    }
+  }
+
+  // Lazy initial mount probe (issue #165): fetch the real content when THIS
+  // root is a reactive_lazy shell that still carries its defer token AND the
+  // pending marker. Gating on the pending marker is what makes a re-probe (a
+  // Turbo morph re-showing the shell) fire while a re-probe of an already
+  // RESOLVED root (real content, no token, no marker) is a no-op. The
+  // module-level supersession registry dedupes a duplicate in-flight fetch for
+  // the same id, so calling this on both connect and every morph is safe.
+  #probeLazyDefer() {
+    const el = this.element
+    if (!el?.id) return
+    const token = el.getAttribute?.("data-reactive-defer-token")
+    if (!token) return
+    if (el.getAttribute?.("data-reactive-defer-pending") !== "true") return
+    startFetchDefer(el.id, token)
   }
 
   // Serialize requests per component. Each round trip rewrites the signed

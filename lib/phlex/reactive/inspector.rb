@@ -113,15 +113,18 @@ module Phlex
 
         # The configured authorization method names plus the manual mark, as a
         # Set of symbols. Reads Phlex::Reactive.authorization_methods when it
-        # exists (phase 2), else the default set.
+        # exists (phase 2), else the default set. Guarded: a misconfigured
+        # authorization_methods (nil, or a single symbol) is coerced through
+        # Array() rather than raising `.map` on nil — which the caller's rescue
+        # would swallow, silently disabling the heuristic instead of surfacing it.
         def authorization_method_names
           configured =
             if Phlex::Reactive.respond_to?(:authorization_methods)
-              Phlex::Reactive.authorization_methods
+              Phlex::Reactive.authorization_methods || DEFAULT_AUTHORIZATION_METHODS
             else
               DEFAULT_AUTHORIZATION_METHODS
             end
-          (configured.map(&:to_sym) + [MANUAL_AUTHORIZATION_MARK]).to_set
+          (Array(configured).map(&:to_sym) + [MANUAL_AUTHORIZATION_MARK]).to_set
         end
 
         private

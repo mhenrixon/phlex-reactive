@@ -157,7 +157,11 @@ module Phlex
           # known only after rendering, so we mutate the payload inside the block.
           event = { component: name, bytesize: 0 }
           Phlex::Reactive.instrument("render", event) do
-            html = component.render_in(turbo_view_context)
+            # Machinery renders are REAL (issue #165): a reactive_lazy component
+            # emits its actual template here — the lazy shell is for the
+            # page-embedded initial mount only. Two fiber-local writes; the
+            # render bench holds flat.
+            html = Phlex::Reactive::Defer.with_real_render { component.render_in(turbo_view_context) }
             event[:bytesize] = html.bytesize
             html
           end
