@@ -31,6 +31,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Installable Claude debugging skill + `rails g phlex:reactive:claude` (#168).**
+  The gem ships a `phlex-reactive-debugging` skill (the doctor → inventory → find
+  → browser `report()` → MCP workflow + a failure table) under `lib/`, and the
+  new generator copies it into a host app's `.claude/skills/` and writes the MCP
+  server entry to `.mcp.json` — only when absent (it never rewrites an existing
+  `.mcp.json`; it prints the snippet instead). A new **Debugging & tooling** docs
+  page ties the four surfaces together; the security page documents
+  `verify_authorized`; the instrumentation table gains the `:unverified` outcome;
+  the README gains a Debugging & tooling section + the config rows.
+
 - **On-demand client inspector — `phlex/reactive/inspect` (#168).** A standalone
   JS module (the `confirm.js`/`compute.js` precedent — **zero hot-path cost**, no
   edit to `reactive_controller.js`, loaded only when imported) that scans the live

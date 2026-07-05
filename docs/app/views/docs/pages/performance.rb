@@ -174,6 +174,8 @@ module Views
                   code { 'not_found' }
                   plain '/'
                   code { 'unauthorized' }
+                  plain '/'
+                  code { 'unverified' }
                   plain ').'
                 end
                 li do

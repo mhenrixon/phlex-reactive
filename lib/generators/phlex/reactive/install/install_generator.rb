@@ -61,6 +61,9 @@ module Phlex
             Scaffold one with:  rails g phlex:reactive:component Counter
 
             Then verify the whole install:  bin/rails phlex_reactive:doctor
+
+            Debugging with Claude Code? Install the toolkit (skill + MCP server):
+              rails g phlex:reactive:claude
           MSG
         end
 

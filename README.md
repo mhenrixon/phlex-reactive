@@ -189,6 +189,33 @@ If reactive elements are on the page but the controller never connected, the
 runtime logs a console warning (`[phlex-reactive] found N element(s) with
 data-controller="reactive" but the reactive controller never connected …`).
 
+### Debugging & tooling
+
+Four read-only introspection surfaces answer "what's reactive, where is it
+defined, is it authorized, and what does this page POST?" — plus an installable
+Claude Code toolkit. See the [Debugging & tooling
+guide](https://phlex-reactive.zoolutions.llc/docs/tooling) for the full workflow.
+
+```bash
+bin/rails phlex_reactive:doctor          # validate the whole install (✓/✗/? + a fix each)
+bin/rails phlex_reactive:actions         # every component × action: params, file:line, auth
+bin/rails "phlex_reactive:find[counter]" # fuzzy-find one; prints each action's method source
+bin/rails phlex_reactive:mcp             # a read-only MCP server (needs `gem "mcp"`)
+```
+
+In the browser console, map every reactive root + trigger on the page back to its
+server `Component#action` names (a standalone module — zero cost until imported):
+
+```js
+(await import("phlex/reactive/inspect")).report()
+```
+
+Install the debugging skill + MCP config for Claude Code in one command:
+
+```bash
+rails g phlex:reactive:claude
+```
+
 ---
 
 ## The mental model in one picture
@@ -339,6 +366,8 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_record :name` | Record-backed identity (GlobalID). State = the DB. Also defaults `#id` to `dom_id(record)`. |
 | `reactive_state :a, :b` | Signed instance-var identity. Standalone, or combined with `reactive_record` to sign transient UI state alongside the row. |
 | `action :name, params: { x: :integer }` | Declare a client-invokable action + its param schema. **Default-deny.** |
+| `mark_authorized!` | Inside an action: satisfy the `verify_authorized` guard after a bespoke check the interceptor can't see (a hand-rolled policy). Call it only after your check passes. |
+| `skip_verify_authorized [ :a, :b ]` | Opt a component (bare) or specific actions out of the default-ON `verify_authorized` guard — for a genuinely public component (a counter, a client-only filter). |
 | `reactive_root(**overrides)` | Spread onto the root element: emits the component `id` **and** `reactive_attrs` together, so the controller root always carries `#id`. Preferred over `id:` + `reactive_attrs`. `**overrides` (`class:`/`data:`) deep-merge. |
 | `reactive_attrs` | Marks an element reactive + carries the signed token (no `id`). Spread alongside `id:` on the **same** element: `div(id:, **reactive_attrs)`. Prefer `reactive_root`, which can't split them. |
 | `on(:action, event: "click", **params)` | Spread onto a trigger element. Adds `type=button` for clicks. |
@@ -1840,6 +1869,14 @@ Phlex::Reactive.base_controller_name = "ApplicationController"
 Phlex::Reactive.authorization_errors = [Pundit::NotAuthorizedError]
 # or: [ActionPolicy::Unauthorized]
 
+# verify_authorized (ON by default): an action that authorizes NOTHING raises
+# AuthorizationNotVerified inside the transaction (the mutation rolls back —
+# fail-closed). Satisfy it by calling one of authorization_methods, calling
+# mark_authorized! after a bespoke check, or declaring skip_verify_authorized on
+# a genuinely public component/action. Set the method names to match your library:
+Phlex::Reactive.authorization_methods = %i[authorize! authorize allowed_to?]
+# Phlex::Reactive.verify_authorized = false   # turn the guard off (not recommended)
+
 # Use your ApplicationController to render components (app helpers / Current):
 Phlex::Reactive.renderer = ApplicationController
 
@@ -2114,7 +2151,7 @@ events, all under the `phlex_reactive` namespace:
 
 | Event | Fires | Payload |
 |-------|-------|---------|
-| `action.phlex_reactive` | once per request | `component`, `action`, `outcome` (`ok`/`denied_undeclared`/`invalid_token`/`not_found`/`unauthorized`) |
+| `action.phlex_reactive` | once per request | `component`, `action`, `outcome` (`ok`/`denied_undeclared`/`invalid_token`/`not_found`/`unauthorized`/`unverified`) |
 | `render.phlex_reactive` | per component render | `component`, `bytesize` |
 | `broadcast.phlex_reactive` | per `broadcast_*_to` (Action Cable **and** pgbus) | `component`, `stream_action`, `streamables` |
 
