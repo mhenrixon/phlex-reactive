@@ -375,20 +375,69 @@ module Phlex
       # identity token, but purpose-scoped to DEFER_PURPOSE and expiring after
       # defer_token_ttl. verify/verify_defer are therefore mutually exclusive
       # by construction — see the DEFER_PURPOSE comment.
+      # SECURITY (the leaked-token exchange): the defer endpoint re-renders the
+      # real component, whose root carries a fresh NON-expiring identity (action)
+      # token — so a leaked defer token replayed by ANOTHER actor within its TTL
+      # would hand that actor a permanent action token for the same identity.
+      # The purpose is therefore ALSO scoped to the minting actor's binding (the
+      # session id, via with_defer_binding), so a defer token minted under
+      # binding A fails verification under binding B — the exchange can't cross
+      # actors. Unbound (no session — the ActionController::Base default) is the
+      # documented today-behavior; `authorize!` in the action stays the real
+      # authority in every case.
       def sign_defer(payload)
         verifier.generate(
           payload.merge("v" => TOKEN_VERSION),
-          purpose: DEFER_PURPOSE, expires_in: defer_token_ttl
+          purpose: defer_purpose, expires_in: defer_token_ttl
         )
       end
 
       # Returns the verified, version-upgraded defer payload, or nil when the
-      # token is tampered, expired, carries the wrong purpose (an action token),
-      # or a version this code doesn't understand — all fail closed through the
-      # endpoint's InvalidToken → 400 path.
+      # token is tampered, expired, carries the wrong purpose (an action token
+      # OR a token minted under a DIFFERENT actor binding), or a version this
+      # code doesn't understand — all fail closed through the endpoint's
+      # InvalidToken → 400 path.
       def verify_defer(token)
-        payload = verifier.verified(token, purpose: DEFER_PURPOSE)
+        payload = verifier.verified(token, purpose: defer_purpose)
         payload && upgrade_token(payload)
+      end
+
+      # The purpose string for the CURRENT actor's defer tokens: the base
+      # DEFER_PURPOSE, plus the binding when one is present. Binding is folded
+      # into the PURPOSE (not the payload) so it's part of the signature's
+      # domain separation — a mismatched binding is a verification failure, not
+      # a value the endpoint must remember to compare.
+      def defer_purpose
+        binding = current_defer_binding
+        binding ? "#{DEFER_PURPOSE}/#{binding}" : DEFER_PURPOSE
+      end
+
+      # The acting client's defer binding during a request, or nil. Set by the
+      # ActionsController from defer_binding_for(request) — threaded exactly
+      # like current_connection_id.
+      def current_defer_binding
+        Thread.current[:phlex_reactive_defer_binding]
+      end
+
+      def with_defer_binding(binding)
+        previous = Thread.current[:phlex_reactive_defer_binding]
+        Thread.current[:phlex_reactive_defer_binding] = binding.presence
+        yield
+      ensure
+        Thread.current[:phlex_reactive_defer_binding] = previous
+      end
+
+      # Resolve a request to its defer binding: the session id when a session is
+      # present, else nil (no session middleware — the gem's default — is a
+      # supported, unbound configuration). Tolerant of a session store that
+      # lazily raises: a binding we can't read degrades to nil (unbound), never
+      # a 500. Override to bind to your own actor identity (a user id, an API
+      # token digest) instead of the raw session id.
+      def defer_binding_for(request)
+        session = request.session
+        session&.id&.to_s
+      rescue StandardError
+        nil
       end
 
       # --- pgbus capability gates (issue #165) ---------------------------

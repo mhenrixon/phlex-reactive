@@ -67,6 +67,19 @@ RSpec.describe "deferred renders", type: :request do
       expect(response).to have_http_status(:bad_request)
     end
 
+    it "rejects a token minted under a DIFFERENT actor binding (the leaked-token exchange, #165)" do
+      # A defer token another actor minted (bound to their session) must not
+      # verify here. The endpoint binds to defer_binding_for(request); we force
+      # a distinct minting binding and confirm the endpoint (unbound in the
+      # dummy) rejects it.
+      foreign = Phlex::Reactive.with_defer_binding("someone-elses-session") do
+        Phlex::Reactive.sign_defer({ "c" => "SlowTotalsComponent", "s" => { "value" => 7 } })
+      end
+
+      post_defer(foreign)
+      expect(response).to have_http_status(:bad_request)
+    end
+
     it "rejects an EXPIRED defer token (the short TTL is the leak window)" do
       token = defer_token_for({ "c" => "SlowTotalsComponent", "s" => { "value" => 7 } })
 

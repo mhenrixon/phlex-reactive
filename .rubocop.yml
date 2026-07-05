@@ -215,6 +215,7 @@ RSpec/DescribeClass:
     - spec/phlex/reactive/defer_capability_spec.rb
     - spec/phlex/reactive/response_defer_spec.rb
     - spec/phlex/reactive/lazy_mount_spec.rb
+    - spec/phlex/reactive/defer_binding_spec.rb
 
 # The `describe Klass, "label"` form uses the second arg as a context label
 # (e.g. `describe Component, "reactive_collection"`), not a method name.

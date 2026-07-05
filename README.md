@@ -1349,6 +1349,20 @@ broadcast-before-subscribe race). `:fetch` forces the fetch lane; `:stream`
 requests push and degrades to fetch with a warning when the capability is
 absent. Both lanes are invisible to your action code.
 
+**Security of the defer token.** The defer endpoint re-renders the real
+component, whose fresh root carries a normal (non-expiring) action token — so
+a defer token is, within its TTL, a render of that identity and a path to that
+identity's action token. Two things bound it: it is **actor-bound** (signed
+under the requesting session via `Phlex::Reactive.defer_binding_for(request)`,
+so a leaked defer token can't be redeemed in another session — override the
+resolver to bind to your own actor identity), and — as everywhere in
+phlex-reactive — **the signature proves identity, not permission**. Authorize
+every mutating action; the token, defer or otherwise, is never the authority.
+Apps with no session middleware (the `ActionController::Base` default) mint
+**unbound** defer tokens, so there the TTL + `authorize!` are the whole bound —
+set `Phlex::Reactive.base_controller_name` to a session-bearing controller to
+get actor binding.
+
 **Lazy initial mount** — the same machinery for the *first* render
 (Livewire's `#[Lazy]`): declare `reactive_lazy` and the page ships the
 placeholder shell; the client fetches the real content on connect. Every

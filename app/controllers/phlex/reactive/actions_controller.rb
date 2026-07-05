@@ -35,8 +35,14 @@ module Phlex
         # #82/#87); we only ADD the outcome finalizer. `action` is safe to read
         # up front (it comes from the request, not the verified token).
         event = { component: nil, action: reactive_action_name.to_s, outcome: nil }
-        Phlex::Reactive.instrument("action", event) do
-          create_action(event)
+        # Mint any reply.defer directive tokens UNDER the actor's binding (issue
+        # #165 security), so the defer endpoint accepts them ONLY back from this
+        # same actor. The defer token is built in response_streams (inside this
+        # block via the Defer builder), so the binding must be established here.
+        Phlex::Reactive.with_defer_binding(Phlex::Reactive.defer_binding_for(request)) do
+          Phlex::Reactive.instrument("action", event) do
+            create_action(event)
+          end
         end
       end
 
@@ -51,8 +57,15 @@ module Phlex
       # return false from render? (→ 204: keep content, clear pending).
       def deferred
         event = { component: nil, outcome: nil }
-        Phlex::Reactive.instrument("defer", event) do
-          deferred_action(event)
+        # Verify UNDER the actor's binding (issue #165 security): a defer token
+        # minted for another actor's session fails the binding-scoped purpose,
+        # so a leaked token can't be exchanged here for this actor's render (and
+        # its embedded fresh identity token). Unbound requests (no session) are
+        # unchanged.
+        Phlex::Reactive.with_defer_binding(Phlex::Reactive.defer_binding_for(request)) do
+          Phlex::Reactive.instrument("defer", event) do
+            deferred_action(event)
+          end
         end
       end
 
