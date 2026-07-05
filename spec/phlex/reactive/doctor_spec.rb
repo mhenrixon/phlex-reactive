@@ -43,6 +43,11 @@ RSpec.describe Phlex::Reactive::Doctor do
       expect(route).to be_ok
     end
 
+    it "passes the defer-route check (issue #165 — the defer endpoint resolves)" do
+      defer_route = doctor.checks.find { it.name == :defer_route }
+      expect(defer_route).to be_ok
+    end
+
     it "passes the verifier round-trip check" do
       verifier = doctor.checks.find { it.name == :verifier }
       expect(verifier).to be_ok

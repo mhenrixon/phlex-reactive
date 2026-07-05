@@ -69,6 +69,7 @@ module Phlex
         components = registered_components
         [
           route_check,
+          defer_route_check,
           stimulus_check,
           csrf_check,
           verifier_check,
@@ -84,13 +85,26 @@ module Phlex
       # catch-all route shadows it otherwise (issue #26). Reuses the shipped
       # guard verbatim — it already handles routes-not-yet-drawn.
       def route_check
-        path = Phlex::Reactive.action_path
+        path_check(Phlex::Reactive.action_path, :route, "Phlex::Reactive.action_path")
+      end
+
+      # Same shadow class for the defer endpoint (issue #165): a shadowed defer
+      # route makes every reply.defer / reactive_lazy fetch 404 — the pending
+      # marker clears into data-reactive-error="defer" client-side, but the
+      # root cause is invisible without this check.
+      def defer_route_check
+        path_check(Phlex::Reactive.defer_path, :defer_route, "Phlex::Reactive.defer_path")
+      end
+
+      # Shared body for the two endpoint-route checks: both POST to the gem's
+      # ActionsController, so action_route_ok? answers for either path.
+      def path_check(path, name, setting)
         if Phlex::Reactive.action_route_ok?(path)
-          Check.new(:ok, "POST #{path} routes to #{Doctor.actions_controller}", name: :route)
+          Check.new(:ok, "POST #{path} routes to #{Doctor.actions_controller}", name: name)
         else
-          Check.new(:fail, "POST #{path} does not resolve to #{Doctor.actions_controller}", name: :route,
+          Check.new(:fail, "POST #{path} does not resolve to #{Doctor.actions_controller}", name: name,
             fix: "A host catch-all route (match \"*path\", ...) likely shadows it. Exempt " \
-                 "#{path.delete_prefix("/")} from the catch-all, or set Phlex::Reactive.action_path " \
+                 "#{path.delete_prefix("/")} from the catch-all, or set #{setting} " \
                  "to an unshadowed path.")
         end
       end
