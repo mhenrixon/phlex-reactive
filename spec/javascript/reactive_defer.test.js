@@ -384,6 +384,9 @@ test("lazy mount: connect() probes data-reactive-defer-token on the root and ent
 
   const root = makeTargetEl("lazy-stats")
   root.attrs["data-reactive-defer-token"] = "lazy-token"
+  // The server-rendered shell always carries the pending marker; the probe
+  // gates on it (so a re-probe of a resolved root is a no-op).
+  root.attrs["data-reactive-defer-pending"] = "true"
   // connect() touches these on every root — minimal stubs, like the other
   // controller unit tests.
   root.querySelectorAll = () => []
@@ -403,6 +406,61 @@ test("lazy mount: connect() probes data-reactive-defer-token on the root and ent
   calls[0].gate.resolve(okResponse("<turbo-stream><template>stats</template></turbo-stream>"))
   await flush()
   expect(rendered).toEqual(["<turbo-stream><template>stats</template></turbo-stream>"])
+})
+
+test("lazy mount: a turbo:morph-element re-showing the shell RE-FIRES the fetch (connect-only would hang)", async () => {
+  // Regression: the probe ran only in connect(); a Turbo page-refresh morph
+  // re-shows the shell while keeping the element connected (no re-connect), so
+  // a connect-only probe left the morphed-in shell shimmering forever. The
+  // probe is now also attached to turbo:morph-element.
+  stubTurbo()
+  const mod = await import("../../app/javascript/phlex/reactive/reactive_controller.js")
+  const Controller = mod.default
+
+  const root = makeTargetEl("lazy-stats")
+  root.attrs["data-reactive-defer-token"] = "lazy-token"
+  root.attrs["data-reactive-defer-pending"] = "true"
+  const listeners = {}
+  root.addEventListener = (name, fn) => (listeners[name] = fn)
+  root.removeEventListener = () => {}
+  root.querySelectorAll = () => []
+  stubDocument({ byId: { "lazy-stats": root } })
+  const calls = stubFetch()
+
+  const controller = new Controller()
+  controller.element = root
+  controller.connect()
+  expect(calls.length).toBe(1) // connect fired once
+  calls[0].gate.resolve(okResponse("<t/>"))
+  await flush()
+
+  // A Turbo morph re-shows the shell (token + pending marker present again).
+  root.attrs["data-reactive-defer-token"] = "lazy-token-2"
+  root.attrs["data-reactive-defer-pending"] = "true"
+  listeners["turbo:morph-element"]?.()
+  expect(calls.length).toBe(2) // re-fired on morph
+  expect(JSON.parse(calls[1].options.body)).toEqual({ token: "lazy-token-2" })
+})
+
+test("lazy mount: a re-probe of a RESOLVED root (no pending marker) is a no-op", async () => {
+  stubTurbo()
+  const mod = await import("../../app/javascript/phlex/reactive/reactive_controller.js")
+  const Controller = mod.default
+
+  const root = makeTargetEl("lazy-stats")
+  // Resolved: real content replaced the shell — no token, no pending marker.
+  const listeners = {}
+  root.addEventListener = (name, fn) => (listeners[name] = fn)
+  root.removeEventListener = () => {}
+  root.querySelectorAll = () => []
+  stubDocument({ byId: { "lazy-stats": root } })
+  const calls = stubFetch()
+
+  const controller = new Controller()
+  controller.element = root
+  controller.connect()
+  listeners["turbo:morph-element"]?.()
+  expect(calls.length).toBe(0)
 })
 
 test("connect() without the token attribute never touches the defer path", async () => {

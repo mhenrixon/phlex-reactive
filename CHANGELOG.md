@@ -43,7 +43,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Lazy initial mount — `reactive_lazy` (#165).** The same machinery for the
   FIRST render (Livewire `#[Lazy]`): the page ships the component's
   placeholder shell (`deferred_placeholder`, or a built-in pending shell) with
-  the defer token on the root; the client fetches the real content on connect.
+  the defer token on the root; the client fetches the real content on connect
+  AND after a Turbo page-refresh morph (so a lazy component survives a
+  `turbo:reload`). `reactive_lazy tag: :tr` (etc.) ships a shell element that
+  matches a `<tr>`/`<li>` root instead of an invalid `<div>`.
   Reactive-machinery renders (an action's self-replace, broadcasts, the defer
   endpoint/job) stay REAL, so actions never pay two round trips.
 

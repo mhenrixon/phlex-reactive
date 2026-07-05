@@ -38,7 +38,8 @@ module Phlex
         # same module-level fetch path a reply directive uses. Pending markers
         # + the .reactive-defer-placeholder class are the CSS hooks.
         def render_defer_shell
-          div(
+          public_send(
+            self.class.reactive_lazy_tag,
             id:,
             class: "reactive-defer-placeholder",
             aria: { busy: "true" },

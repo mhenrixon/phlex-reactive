@@ -63,12 +63,34 @@ module Phlex
           # fetches the real content on connect. Reactive machinery renders
           # (replies, broadcasts, the defer endpoint/job) stay REAL. Inherited
           # by subclasses. See Component::Lazy.
-          def reactive_lazy
-            Registry.write_scalar(self, :lazy, true)
+          #
+          # `tag:` sets the shell element (default :div). Set it to the real
+          # root's element for content that can't legally hold a <div> — a
+          # `reactive_lazy tag: :tr` component rooting at <tr> inside <tbody>
+          # ships a <tr> shell, not a <div> the HTML parser would hoist away.
+          def reactive_lazy(tag: :div)
+            Registry.write_scalar(self, :lazy, { tag: tag.to_sym })
+          end
+
+          # The RAW resolved lazy declaration ({ tag: } or nil) — the reader the
+          # Registry walks up the ancestry. It MUST return the stored value, not
+          # a boolean: resolve_scalar inherits whatever the superclass reader
+          # returns, so a boolean false would be inherited as the value and read
+          # back as "declared" (`!false.nil?` == true) — a subclass of any
+          # component would spuriously render the lazy shell.
+          def reactive_lazy_declaration
+            Registry.resolve_scalar(self, :lazy, :reactive_lazy_declaration)
           end
 
           def reactive_lazy?
-            Registry.resolve_scalar(self, :lazy, :reactive_lazy?) ? true : false
+            !reactive_lazy_declaration.nil?
+          end
+
+          # The shell element tag for a lazy component (:div default), resolved
+          # through the registry so a subclass inherits the parent's choice.
+          def reactive_lazy_tag
+            value = reactive_lazy_declaration
+            value.is_a?(::Hash) ? value.fetch(:tag, :div) : :div
           end
 
           # Declare a client-invokable action with an optional param schema.

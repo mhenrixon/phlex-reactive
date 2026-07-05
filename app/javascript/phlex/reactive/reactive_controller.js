@@ -838,6 +838,9 @@ export default class extends Controller {
   // Option filtering (issue #163): the ONE delegated sync handler shared by the
   // root's input/turbo:morph-element listeners, held for teardown.
   #boundSyncFilter
+  // Lazy initial mount (issue #165): the bound re-probe attached to
+  // turbo:morph-element so a Turbo page-refresh morph re-fires the defer fetch.
+  #boundProbeLazyDefer
 
   // Mark that a reactive controller actually connected, so the registration
   // guard above knows the controller was registered (issue #26 part 2).
@@ -863,11 +866,21 @@ export default class extends Controller {
     // Lazy initial mount (issue #165): a reactive_lazy shell carries its defer
     // token as a ROOT attribute — enter the SAME module-level fetch path a
     // reply directive uses (supersession, pending markers, error handling
-    // included). The attribute deliberately STAYS on the shell: the arrival
-    // replaces the whole element (fresh root, no attr), and a Turbo cache
-    // restoration that re-shows the placeholder shell re-fires the fetch.
-    const lazyDeferToken = this.element.getAttribute?.("data-reactive-defer-token")
-    if (lazyDeferToken && this.element.id) startFetchDefer(this.element.id, lazyDeferToken)
+    // included). Probe on connect (a plain replace / cache restoration
+    // re-connects) AND on turbo:morph-element: a Turbo page-refresh MORPH
+    // re-shows the shell while keeping the element CONNECTED and firing no
+    // Stimulus lifecycle, so a connect-only probe would leave the morphed-in
+    // shell shimmering forever. The supersession registry makes a duplicate
+    // probe a no-op (same target id), so re-probing is safe. The attribute
+    // stays on the shell precisely so a re-appearance re-fires.
+    // Only wire the morph re-probe for a root that IS a lazy shell (carries the
+    // token) — a component that never uses reactive_lazy pays nothing (no
+    // listener), matching the dirty-tracking / show-sync gating precedent.
+    if (this.element.getAttribute?.("data-reactive-defer-token")) {
+      this.#probeLazyDefer()
+      this.#boundProbeLazyDefer = () => this.#probeLazyDefer()
+      this.element.addEventListener?.("turbo:morph-element", this.#boundProbeLazyDefer)
+    }
 
     // Dirty tracking (issue #103) — ONLY when this root opts in (track_dirty: or a
     // reactive_field(dirty:)), so a component that never uses it pays nothing (no
@@ -956,6 +969,25 @@ export default class extends Controller {
     this.#teardownDirtyTracking()
     this.#teardownShowSync()
     this.#teardownFilterSync()
+    if (this.#boundProbeLazyDefer) {
+      this.element.removeEventListener?.("turbo:morph-element", this.#boundProbeLazyDefer)
+    }
+  }
+
+  // Lazy initial mount probe (issue #165): fetch the real content when THIS
+  // root is a reactive_lazy shell that still carries its defer token AND the
+  // pending marker. Gating on the pending marker is what makes a re-probe (a
+  // Turbo morph re-showing the shell) fire while a re-probe of an already
+  // RESOLVED root (real content, no token, no marker) is a no-op. The
+  // module-level supersession registry dedupes a duplicate in-flight fetch for
+  // the same id, so calling this on both connect and every morph is safe.
+  #probeLazyDefer() {
+    const el = this.element
+    if (!el?.id) return
+    const token = el.getAttribute?.("data-reactive-defer-token")
+    if (!token) return
+    if (el.getAttribute?.("data-reactive-defer-pending") !== "true") return
+    startFetchDefer(el.id, token)
   }
 
   // Serialize requests per component. Each round trip rewrites the signed

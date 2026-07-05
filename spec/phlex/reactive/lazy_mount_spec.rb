@@ -75,6 +75,34 @@ RSpec.describe "Phlex::Reactive reactive_lazy" do
     it "a non-lazy component renders its real template (control)" do
       expect(CounterComponent.new(count: 3).call).to include(">3<")
     end
+
+    it "renders the shell with a configurable tag (tr/li roots — issue #165 review)" do
+      # A component whose real root is a <tr> can't ship a <div> shell (invalid
+      # inside <tbody>, the parser drops or hoists it). reactive_lazy(tag: :tr)
+      # emits the shell as that element.
+      row = Class.new(ApplicationComponent) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "LazyRowComponent"
+        reactive_state :n
+        reactive_lazy tag: :tr
+        def initialize(n: 0) = @n = n
+        def id = "lazy-row"
+        def deferred_placeholder = "loading"
+        def view_template = tr(id:, **reactive_attrs) { td { @n.to_s } }
+      end
+
+      html = row.new(n: 1).call
+      expect(html).to start_with("<tr")
+      expect(html).to include('id="lazy-row"')
+      expect(html).to include('data-reactive-defer-pending="true"')
+      expect(html).not_to include("<div")
+    end
+
+    it "defaults the shell tag to :div" do
+      expect(lazy_class.new(n: 1).call).to start_with("<div")
+    end
   end
 
   describe "reactive machinery renders are REAL" do

@@ -1387,10 +1387,25 @@ class SessionTotals < ApplicationComponent
 
   reactive_record :workout
   reactive_lazy                       # first render = placeholder shell
+  # reactive_lazy tag: :tr            # for a <tr>/<li> root the shell must match
 
   def deferred_placeholder = TotalsSkeleton.new   # optional
 end
 ```
+
+The lazy shell's `<div>` root would be invalid inside `<tbody>`/`<ul>`, so a
+component whose real root is a `<tr>`/`<li>` sets `reactive_lazy tag: :tr` (etc.)
+to ship a matching shell element. The client re-fetches the real content both on
+connect AND after a Turbo page-refresh **morph** (which re-shows the shell while
+keeping the element connected), so a lazy component survives a `turbo:reload`.
+
+> **One edge case:** a `reply.defer(placeholder:)` shell (the action-driven,
+> not page-mount, form) carries no token of its own — the transient directive
+> owns its delivery. If a page is snapshotted by Turbo mid-defer and later
+> restored from cache, that placeholder can appear stuck (the directive that
+> would have filled it is long gone). It self-corrects on the next action;
+> deferred **content** is never lost server-side. Lazy mounts (which carry the
+> token on the shell) don't have this — they re-fetch on restore.
 
 #### Flash levels
 
