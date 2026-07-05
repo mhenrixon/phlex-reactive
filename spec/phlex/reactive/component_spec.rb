@@ -1520,16 +1520,54 @@ RSpec.describe Phlex::Reactive::Component do
     end
 
     it "raises for a non-id selector (class, compound, descendant — declare-time default-deny)" do
-      [".panel", "#a b", "div#a", "*"].each do
+      # Explicit |selector| param, NOT `it`: the reference sits inside the
+      # nested `expect` block, where `it` resolves to THAT block's (absent)
+      # parameter — nil — so the loop would test "" four times and pass for the
+      # wrong reason. The cop's autocorrect is what introduced exactly that bug
+      # here, hence the targeted disable. Asserting the selector in the message
+      # proves each value actually reaches the validation.
+      # rubocop:disable Style/ItBlockParameter
+      [".panel", "#a b", "div#a", "*"].each do |selector|
         expect do
-          instance.send(:reactive_show_targets, :mode, it => { equals: "x" })
-        end.to raise_error(ArgumentError, /must be a single ID selector/)
+          instance.send(:reactive_show_targets, :mode, selector => { equals: "x" })
+        end.to raise_error(ArgumentError, /target #{Regexp.escape(selector.inspect)} must be a single ID selector/)
       end
+      # rubocop:enable Style/ItBlockParameter
     end
 
     it "raises for an empty target map (a dead declaration)" do
       expect { instance.send(:reactive_show_targets, :mode, {}) }
         .to raise_error(ArgumentError, /at least one target/)
+    end
+
+    # Phlex `mix` space-joins duplicate STRING data values, so TWO
+    # reactive_show_targets calls on one root would concatenate two JSON
+    # strings into an unparseable attr and silently kill both maps. The
+    # multi-field HASH form exists so there is never a reason to call twice:
+    # one call, one attr, several fields.
+    it "accepts the multi-field hash form in ONE call (mix-collision-proof)" do
+      attrs = instance.send(:reactive_show_targets,
+        mode: { "#advanced-tab" => { equals: "advanced" } },
+        kind: { "#premium-note" => { not: "basic" } })
+
+      expect(targets_json(attrs)).to eq(
+        "mode" => { "#advanced-tab" => { "equals" => "advanced" } },
+        "kind" => { "#premium-note" => { "not" => "basic" } }
+      )
+    end
+
+    it "validates each field's map in the multi-field form (id-only still raises)" do
+      expect do
+        instance.send(:reactive_show_targets,
+          mode: { "#ok" => { equals: "x" } },
+          kind: { ".panel" => { equals: "y" } })
+      end.to raise_error(ArgumentError, /must be a single ID selector/)
+    end
+
+    it "raises helpfully when a targets map is passed where a field belongs" do
+      # reactive_show_targets("#a" => {…}) — the caller forgot the field name.
+      expect { instance.send(:reactive_show_targets, "#advanced-tab" => { equals: "x" }) }
+        .to raise_error(ArgumentError, /looks like a target selector, not a field name/)
     end
 
     it "raises without exactly one predicate per target (same rule as reactive_show)" do

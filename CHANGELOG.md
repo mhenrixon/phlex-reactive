@@ -25,7 +25,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   from a field the declaring root owns. A target id not on the page is
   silently skipped (an unrendered tab pane is normal); the cross-root pass
   shares the owned-binding pass's field-read memo (one read per field per
-  sync). No map declared → one `getAttribute` and out.
+  sync). No map declared → one `getAttribute` and out. **One call per root**:
+  Phlex `mix` space-joins duplicate string data values, so a second call's
+  JSON would corrupt the attr (the client warns and ignores it) — several
+  fields go in one call via the hash form
+  (`reactive_show_targets(mode: { … }, kind: { … })`).
 
 - **Value-conditional visibility — `reactive_show` (#161).** The `x-show` /
   `data-show` / `wire:show` case — show/hide an element from a form field's

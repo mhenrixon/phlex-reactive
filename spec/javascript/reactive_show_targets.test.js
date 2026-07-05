@@ -252,16 +252,28 @@ test("a field owned only by a NESTED root is not read (targets untouched)", () =
   expect(badge.hidden).toBe(true) // the outer root owns no inner_mode → no toggle
 })
 
-test("malformed wire JSON never throws and toggles nothing", () => {
+test("malformed wire JSON never throws, toggles nothing, and WARNS (the two-call mix collision symptom)", () => {
+  // Two reactive_show_targets calls on one root space-join their JSON via
+  // Phlex mix into exactly this kind of unparseable attr — the client must
+  // surface it (warn naming the one-call fix), never silently drop both maps.
   const root = reactiveRoot()
-  root.setAttribute("data-reactive-show-targets", "not-json")
+  root.setAttribute("data-reactive-show-targets", '{"mode":{"#a":{"not":"off"}}} {"kind":{"#b":{"equals":"x"}}}')
   const mode = new FakeNode({ tag: "select", name: "mode", value: "on" })
   root.append(mode)
   const badge = new FakeNode({ tag: "span" })
   badge.hidden = true
 
-  expect(() => buildController(root, { "#badge": badge }).connect()).not.toThrow()
+  const warns = []
+  const originalWarn = console.warn
+  console.warn = (msg) => warns.push(String(msg))
+  try {
+    expect(() => buildController(root, { "#badge": badge }).connect()).not.toThrow()
+  } finally {
+    console.warn = originalWarn
+  }
+
   expect(badge.hidden).toBe(true)
+  expect(warns.some((w) => w.includes("data-reactive-show-targets") && w.includes("ONE call"))).toBe(true)
 })
 
 test("a malformed predicate in the map is skipped (empty / unknown keys)", () => {

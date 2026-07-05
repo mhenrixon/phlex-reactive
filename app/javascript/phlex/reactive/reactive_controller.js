@@ -1924,18 +1924,26 @@ export default class extends Controller {
 
   // The declared cross-root show-target map (issue #164): a JSON object of
   // { field: { "#id": predicate } } from data-reactive-show-targets (emitted
-  // by reactive_show_targets on the root). Absent/malformed degrades to {} —
-  // a bad wire attr must never throw on input (the #parseComputeMirror
-  // contract).
+  // by reactive_show_targets on the root). Absent degrades to {}; malformed
+  // degrades to {} WITH a warn — never a throw (the #parseComputeMirror
+  // contract), but never silent either: the likeliest cause is TWO
+  // reactive_show_targets calls on one root, whose JSON strings Phlex `mix`
+  // space-joined into an unparseable attr. The warn names the fix.
   #parseShowTargets() {
     const raw = this.element.getAttribute?.("data-reactive-show-targets")
     if (!raw) return {}
     try {
       const parsed = JSON.parse(raw)
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed
     } catch {
-      return {}
+      // fall through to the shared warn below
     }
+    console.warn(
+      "[phlex-reactive] malformed data-reactive-show-targets — ignored. " +
+        "Did two reactive_show_targets calls collide on one root? Declare every field in ONE call: " +
+        "reactive_show_targets(mode: { ... }, kind: { ... })"
+    )
+    return {}
   }
 
   // The current value of the OWNED field controlling a show binding, as the

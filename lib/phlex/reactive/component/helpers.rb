@@ -463,26 +463,36 @@ module Phlex
         # no attribute freedom. The FIELD read stays owned (#15): you can only
         # drive outside visibility from a field this root owns. A target id not
         # on the page is silently skipped (an unrendered tab pane is normal).
-        def reactive_show_targets(field, targets)
-          unless targets.is_a?(Hash) && targets.any?
+        #
+        # ONE call per root. Phlex `mix` space-joins duplicate STRING data
+        # values, so a second call's JSON would concatenate into an unparseable
+        # attr and the client would drop BOTH maps (it warns when that
+        # happens). Several fields therefore go in ONE call via the hash form:
+        #
+        #   reactive_show_targets(mode: { "#advanced-tab" => { equals: "advanced" } },
+        #                         kind: { "#premium-note" => { not: "basic" } })
+        def reactive_show_targets(field, targets = nil)
+          field_maps = targets.nil? ? field : { field => targets }
+          unless field_maps.is_a?(Hash) && field_maps.any?
             raise ArgumentError,
-              "reactive_show_targets(#{field.inspect}) needs at least one target " \
-              "(\"#id\" => { equals:/not:/in: ... }), got #{targets.inspect}"
+              "reactive_show_targets needs at least one target " \
+              "(:field, \"#id\" => { equals:/not:/in: ... }), got #{field_maps.inspect}"
           end
 
-          normalized = targets.to_h do |selector, predicate|
-            selector = selector.to_s
-            unless selector.match?(DSL::MIRROR_ID_SELECTOR)
+          normalized = field_maps.to_h do |name, map|
+            # Catch the forgotten-field-name misuse — reactive_show_targets(
+            # "#id" => {…}) — before the per-target validation turns it into a
+            # baffling "predicate" error.
+            if name.to_s.start_with?("#")
               raise ArgumentError,
-                "reactive_show_targets(#{field.inspect}) target #{selector.inspect} must be a single " \
-                "ID selector (\"#id\") — cross-root visibility is id-allowlisted, like mirror: (#159)"
+                "reactive_show_targets: #{name.inspect} looks like a target selector, not a field " \
+                "name — call reactive_show_targets(:field, #{name.inspect} => { ... })"
             end
 
-            context = "reactive_show_targets(#{field.inspect}) target #{selector.inspect}"
-            [selector, normalize_show_predicate(predicate.is_a?(Hash) ? predicate : {}, context)]
+            [name.to_s, normalize_show_target_map(name, map)]
           end
 
-          { data: { reactive_show_targets: { field.to_s => normalized }.to_json } }
+          { data: { reactive_show_targets: normalized.to_json } }
         end
 
         # Scoped busy indicator (issue #99). Marks an element so the generic
@@ -586,6 +596,30 @@ module Phlex
         OPTIMISTIC_CLASS_OPS = %w[toggle_class add_class remove_class].freeze
 
         private
+
+        # Normalize + validate ONE field's target map (issue #164): each key a
+        # single id selector (loud raise — the declare-time half of the
+        # two-sided default-deny), each value one literal predicate. Shared by
+        # both reactive_show_targets call forms.
+        def normalize_show_target_map(field, targets)
+          unless targets.is_a?(Hash) && targets.any?
+            raise ArgumentError,
+              "reactive_show_targets(#{field.inspect}) needs at least one target " \
+              "(\"#id\" => { equals:/not:/in: ... }), got #{targets.inspect}"
+          end
+
+          targets.to_h do |selector, predicate|
+            selector = selector.to_s
+            unless selector.match?(DSL::MIRROR_ID_SELECTOR)
+              raise ArgumentError,
+                "reactive_show_targets(#{field.inspect}) target #{selector.inspect} must be a single " \
+                "ID selector (\"#id\") — cross-root visibility is id-allowlisted, like mirror: (#159)"
+            end
+
+            context = "reactive_show_targets(#{field.inspect}) target #{selector.inspect}"
+            [selector, normalize_show_predicate(predicate.is_a?(Hash) ? predicate : {}, context)]
+          end
+        end
 
         # Validate ONE declared literal show predicate (issues #161/#164) and
         # return its wire form — { "equals" => "v" } / { "not" => "v" } /
