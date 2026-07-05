@@ -1,6 +1,35 @@
 # #165 — Deferred reply segments (`reply.defer`) + lazy initial mount
 
-Status: in progress · Branch: `issue-165-deferred-reply-segments`
+Status: implemented · Branch: `issue-165-deferred-reply-segments`
+
+## As built (deltas from the plan below)
+
+- **Measured (same-checkout `git switch --detach` before/after; a fresh
+  worktree gives phantom deltas from dummy tmp/secret state):** hot paths flat
+  — `to_stream_replace` 14.4k → 14.2k i/s (±3.7% noise), identity token
+  199.9k → 196.7k (state) / 93.7k → 93.5k (record), allocations byte-identical.
+  New defer costs are per-interaction, not per-render: `sign_defer` ~120k i/s,
+  `verify_defer` ~99k i/s, directive build ~11 µs, 0 retained
+  (`benchmark/micro/defer_token.rb`). The A/B request spec pins the latency
+  shape: a 120 ms segment cost moves off the reply onto the deferred leg.
+- **Lazy mount is pull-only** (as planned): the shell carries the defer token
+  on the ROOT; the controller's `connect()` probes it. The token attribute
+  stays on the shell so a Turbo cache restoration re-fires the fetch.
+- **Real-render semantics sharpened:** `reactive_lazy` shells render ONLY on
+  page-embedded mounts. Everything through `Streamable.render_component` /
+  `Phlex::Reactive.render` runs inside `Defer.with_real_render` — an action's
+  self-replace, broadcasts, and the defer endpoint/job all emit the real
+  template (no double round trips, no shell echo).
+- **Push-lane degrade hardened:** a signing/enqueue failure AFTER commit falls
+  back to the fetch directive with a warn (a committed action's reply must
+  never 500); gone-record / `render?`-false jobs broadcast a cleanup
+  (reactive:js pending-clear ops + source teardown) so the shimmer never hangs.
+- **Doctor** gained a `defer_route` check (the issue-#26 catch-all shadow
+  class); the boot-time warn stays scoped to `action_path` (the doctor names
+  the defer variant).
+- **LogSubscriber** logs `defer.phlex_reactive`; the install initializer
+  template documents `defer_transport` / `defer_token_ttl` / `defer_job_queue`
+  / `defer_path`.
 
 ## Problem
 
