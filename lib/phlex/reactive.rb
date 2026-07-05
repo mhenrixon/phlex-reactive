@@ -60,6 +60,20 @@ module Phlex
     # minted for phlex-reactive can't be replayed against another verifier use.
     IDENTITY_PURPOSE = "phlex-reactive/identity"
 
+    # Purpose string for DEFER tokens (issue #165) — the short-TTL identity a
+    # reply.defer directive carries so the client can fetch the expensive
+    # render off the actor's critical path. A distinct purpose makes the two
+    # token families non-interchangeable BY SIGNATURE: an action token is
+    # rejected at the defer endpoint (it must not become a render oracle) and a
+    # defer token can never invoke an action (it carries no action grant).
+    DEFER_PURPOSE = "phlex-reactive/defer"
+
+    # The defer_transport values (issue #165): :auto picks push (pgbus durable
+    # one-shot stream + ActiveJob) when capable, else pull (parallel fetch);
+    # :fetch forces pull; :stream requests push but still degrades to pull with
+    # a warning when the capability is absent (degrade, never break).
+    DEFER_TRANSPORTS = %i[auto fetch stream].freeze
+
     # The current identity-token payload version (issue #111), stamped into every
     # signed token under the "v" key. It exists so the NEXT breaking shape change
     # (a rename, per-token expiry, a nonce) can upgrade tokens already in flight
@@ -305,6 +319,103 @@ module Phlex
         instance.set_request!(request)
         instance.set_response!(controller_class.make_response!(request))
         instance.view_context
+      end
+
+      # --- Deferred reply segments (issue #165) --------------------------
+
+      # Lifetime (seconds) of a defer token. It only needs to cover the
+      # reply→fetch gap (or reply→job→SSE on the push lane), so it stays short:
+      # a leaked defer token is a render oracle for exactly one component
+      # identity until this expires. nil resets to the default.
+      attr_writer :defer_token_ttl
+
+      def defer_token_ttl
+        @defer_token_ttl ||= 120
+      end
+
+      # The path the defer endpoint is mounted at (the pull lane's target).
+      # Default "/reactive/defer"; set before boot if it collides.
+      attr_writer :defer_path
+
+      def defer_path
+        @defer_path ||= "/reactive/defer"
+      end
+
+      # How deferred segments reach the actor: :auto (push iff capable, else
+      # pull), :fetch (always pull), :stream (push; degrades to pull with a
+      # warning when the capability is absent). Validated at assignment — a
+      # typo'd transport must fail at the initializer, not silently at reply
+      # time. nil resets to the default.
+      def defer_transport
+        @defer_transport ||= :auto
+      end
+
+      def defer_transport=(value)
+        value = value&.to_sym
+        unless value.nil? || DEFER_TRANSPORTS.include?(value)
+          raise ::ArgumentError,
+            "Phlex::Reactive.defer_transport must be one of #{DEFER_TRANSPORTS.map(&:inspect).join(", ")} " \
+            "(got #{value.inspect})"
+        end
+
+        @defer_transport = value
+      end
+
+      # Signs a defer payload (issue #165): same shape + version stamp as the
+      # identity token, but purpose-scoped to DEFER_PURPOSE and expiring after
+      # defer_token_ttl. verify/verify_defer are therefore mutually exclusive
+      # by construction — see the DEFER_PURPOSE comment.
+      def sign_defer(payload)
+        verifier.generate(
+          payload.merge("v" => TOKEN_VERSION),
+          purpose: DEFER_PURPOSE, expires_in: defer_token_ttl
+        )
+      end
+
+      # Returns the verified, version-upgraded defer payload, or nil when the
+      # token is tampered, expired, carries the wrong purpose (an action token),
+      # or a version this code doesn't understand — all fail closed through the
+      # endpoint's InvalidToken → 400 path.
+      def verify_defer(token)
+        payload = verifier.verified(token, purpose: DEFER_PURPOSE)
+        payload && upgrade_token(payload)
+      end
+
+      # --- pgbus capability gates (issue #165) ---------------------------
+      # Runtime capability detection, never `defined?(Pgbus)` alone or a
+      # version string (the core optionality invariant): pgbus < 0.9.2 also
+      # defines ::Pgbus, so the Streams gate probes the ACTUAL keyword.
+
+      # Necessary but NOT sufficient — the Streams entrypoint exists.
+      def pgbus?
+        return false unless defined?(::Pgbus)
+
+        ::Pgbus.respond_to?(:stream)
+      end
+
+      # The reactive-Streams capability: Stream#broadcast accepts :exclude
+      # (the pgbus >= 0.9.2 shape). This is the gate that prevents
+      # `ArgumentError: unknown keyword :exclude` on an old pgbus.
+      def pgbus_streams?
+        return false unless pgbus?
+        return false unless defined?(::Pgbus::Streams::Stream)
+
+        ::Pgbus::Streams::Stream.instance_method(:broadcast)
+          .parameters.any? { |_type, name| name == :exclude }
+      rescue ::NameError
+        false
+      end
+
+      # Everything the defer PUSH lane needs at runtime: streams-capable pgbus,
+      # server-side signed-src minting (SignedName.sign — the element's src is
+      # built off-request), and ActiveJob to run the render off the request
+      # thread. Anything missing → the pull lane (which is always available).
+      def defer_push_capable?
+        return false unless pgbus_streams?
+        return false unless defined?(::Pgbus::Streams::SignedName) &&
+                            ::Pgbus::Streams::SignedName.respond_to?(:sign)
+
+        defined?(::ActiveJob::Base) ? true : false
       end
 
       # DOM id of the host-app container a Response#flash appends into.

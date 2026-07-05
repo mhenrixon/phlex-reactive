@@ -99,6 +99,16 @@ module Phlex
       def streams(*strings)
         Response.streams(@component, *strings)
       end
+
+      # Defer an expensive segment (issue #165): `reply.defer(Totals.new(...))`
+      # with no prior verb keeps render_self, so the endpoint still guarantees
+      # the bound component's own replace (the default reply) — the deferred
+      # component rides alongside. Chain off any verb for the partial forms:
+      #
+      #   reply.streams(volume_cell).defer(SessionTotals.new(workout: @workout))
+      def defer(component, placeholder: nil, morph: false)
+        Response.with.defer(component, placeholder:, morph:)
+      end
     end
   end
 end

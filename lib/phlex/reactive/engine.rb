@@ -11,11 +11,14 @@ module Phlex
     class Engine < ::Rails::Engine
       isolate_namespace Phlex::Reactive
 
-      # Mount POST /reactive/actions -> Phlex::Reactive::ActionsController#create.
-      # Apps can change the path with Phlex::Reactive.action_path before boot.
+      # Mount POST /reactive/actions -> Phlex::Reactive::ActionsController#create
+      # and POST /reactive/defer -> #deferred (the pull-lane defer endpoint,
+      # issue #165). Apps can change the paths with Phlex::Reactive.action_path /
+      # .defer_path before boot.
       initializer "phlex_reactive.routes" do
         it.routes.append do
           post Phlex::Reactive.action_path, to: "phlex/reactive/actions#create", as: :phlex_reactive_action
+          post Phlex::Reactive.defer_path, to: "phlex/reactive/actions#deferred", as: :phlex_reactive_defer
         end
       end
 

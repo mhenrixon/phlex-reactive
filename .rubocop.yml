@@ -99,10 +99,16 @@ ThreadSafety/ClassInstanceVariable:
     - lib/phlex/reactive/component.rb
     - lib/phlex/reactive/component/**/*.rb
     - lib/phlex/reactive/streamable.rb
+    # The once-per-process degraded-transport warn flag (issue #165) — a benign
+    # boolean race (worst case: the warning logs twice).
+    - lib/phlex/reactive/defer.rb
 
 ThreadSafety/ClassAndModuleAttributes:
   Exclude:
     - lib/phlex/reactive.rb
+    # Test-fixture dials (render_delay_ms / suppressed) the defer suite turns
+    # per example (issue #165) — never touched concurrently.
+    - spec/dummy/app/components/slow_totals_component.rb
 
 ThreadSafety/NewThread:
   Exclude:
@@ -202,6 +208,11 @@ RSpec/DescribeClass:
     # render.phlex_reactive + broadcast.phlex_reactive are cross-cutting events
     # emitted from several class methods, not one class under test (issue #107).
     - spec/phlex/reactive/instrumentation_spec.rb
+    # The defer surface (issue #165) cuts across the module config (token,
+    # transport, gates) and the Response#defer facade — string subjects.
+    - spec/phlex/reactive/defer_token_spec.rb
+    - spec/phlex/reactive/defer_capability_spec.rb
+    - spec/phlex/reactive/response_defer_spec.rb
 
 # The `describe Klass, "label"` form uses the second arg as a context label
 # (e.g. `describe Component, "reactive_collection"`), not a method name.
