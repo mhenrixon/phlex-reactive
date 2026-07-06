@@ -1368,19 +1368,61 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
-  # Issue #161: reactive_show — value-conditional visibility (the x-show /
-  # data-show equivalent). The TARGET element declares which owned field
-  # controls it plus ONE literal predicate; the client toggles `hidden` from
-  # the field's current value with no round trip. The predicate is a declared
-  # literal match (equals:/not:/in:) — never an expression — so there is no
-  # eval surface, and validation is loud at render time (exactly one predicate,
-  # a non-empty in: list).
-  describe "#reactive_show (value-conditional visibility, issue #161)" do
+  # Issue #180 Phase A: reactive_scope — a class-level form namespace so bindings
+  # and reactive_values use bare symbols. The root emits data-reactive-scope so
+  # the client resolves [name="form[field]"]. Inherited through the Registry.
+  describe "#reactive_scope (issue #180)" do
+    it "emits data-reactive-scope on the reactive root when declared" do
+      klass = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Component
+
+        def self.name = "ScopedThing"
+        reactive_scope :form
+        reactive_state :count
+        def initialize(count: 0) = @count = count
+        def id = "scoped-thing"
+      end
+      attrs = klass.new.send(:reactive_root)
+      expect(attrs[:data][:reactive_scope]).to eq("form")
+    end
+
+    it "omits the attr entirely when no scope is declared (byte-stable wire)" do
+      klass = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Component
+
+        def self.name = "UnscopedThing"
+        reactive_state :count
+        def initialize(count: 0) = @count = count
+        def id = "unscoped-thing"
+      end
+      expect(klass.new.send(:reactive_root)[:data]).not_to have_key(:reactive_scope)
+    end
+
+    it "is inherited by subclasses" do
+      parent = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Component
+
+        def self.name = "ScopedParent"
+        reactive_scope :order
+      end
+      child = Class.new(parent) { def self.name = "ScopedChild" }
+      expect(child.reactive_scope).to eq(:order)
+    end
+  end
+
+  # Issue #180 Phase A: reactive_show — value-conditional visibility, now driven
+  # by ONE Ruby-native conditions language (if:/if_any:/unless:) that compiles to
+  # a DNF wire attr (data-reactive-show). A Hash is an AND; an Array is
+  # membership; a Range is a threshold; unless: negates. reactive_values computes
+  # the first-paint hidden: server-side; reactive_scope resolves bare field names
+  # to form[field]; disable: also disables owned controls when hidden. The old
+  # positional/predicate-kwarg surface (equals:/not:/in:/gte:/all:/any:) is
+  # removed — each raises a guided ArgumentError printing the new syntax.
+  describe "#reactive_show (conditions language, issue #180)" do
     subject(:instance) { show_klass.new }
 
     let(:show_klass) do
       Class.new(Phlex::HTML) do
-        include Phlex::Reactive::Streamable
         include Phlex::Reactive::Component
 
         def self.name = "ShowThing"
@@ -1390,226 +1432,178 @@ RSpec.describe Phlex::Reactive::Component do
       end
     end
 
-    it "emits the field binding and the equals: predicate" do
-      attrs = instance.send(:reactive_show, :kind, equals: "premium")
-      expect(attrs[:data][:reactive_show_field]).to eq("kind")
-      expect(attrs[:data][:reactive_show_equals]).to eq("premium")
+    # The compiled DNF groups off the emitted attr.
+    def dnf(attrs)
+      JSON.parse(attrs[:data][:reactive_show]).fetch("any")
     end
 
-    it "emits the not: predicate" do
-      attrs = instance.send(:reactive_show, :mode, not: "off")
-      expect(attrs[:data][:reactive_show_field]).to eq("mode")
-      expect(attrs[:data][:reactive_show_not]).to eq("off")
+    it "emits an if: hash as one DNF group of equals terms" do
+      attrs = instance.send(:reactive_show, if: { type: "individual" })
+      expect(dnf(attrs)).to eq([[{ "field" => "type", "equals" => "individual" }]])
     end
 
-    it "emits the in: predicate as a JSON array of strings" do
-      attrs = instance.send(:reactive_show, :size, in: [:l, "xl"])
-      expect(attrs[:data][:reactive_show_in]).to eq(%w[l xl].to_json)
+    it "ANDs multiple fields within one if: group" do
+      attrs = instance.send(:reactive_show, if: { type: "individual", country: "domestic" })
+      expect(dnf(attrs)).to eq([[
+        { "field" => "type", "equals" => "individual" },
+        { "field" => "country", "equals" => "domestic" }
+      ]])
     end
 
-    it "stringifies a boolean equals: so a checkbox binding reads naturally" do
-      # A checkbox's .value is the constant "on"; the client compares its
-      # checked state as "true"/"false" — so equals: true is the checkbox form.
-      attrs = instance.send(:reactive_show, :gift, equals: true)
-      expect(attrs[:data][:reactive_show_equals]).to eq("true")
+    it "emits if_any: as OR-of-AND groups (the distributive-law killer)" do
+      attrs = instance.send(:reactive_show, if_any: [
+        { director: true },
+        { shareholder: true, role: "individual" }
+      ])
+      expect(dnf(attrs)).to eq([
+        [{ "field" => "director", "equals" => "true" }],
+        [{ "field" => "shareholder", "equals" => "true" }, { "field" => "role", "equals" => "individual" }]
+      ])
     end
 
-    it "stringifies symbols and numbers in every predicate position" do
-      expect(instance.send(:reactive_show, :kind, equals: :premium)[:data][:reactive_show_equals])
-        .to eq("premium")
-      expect(instance.send(:reactive_show, :qty, not: 0)[:data][:reactive_show_not]).to eq("0")
-      expect(instance.send(:reactive_show, :size, in: [1, 2])[:data][:reactive_show_in])
-        .to eq(%w[1 2].to_json)
+    it "maps Array to membership and Range to threshold terms" do
+      attrs = instance.send(:reactive_show, if: { size: %w[l xl], quantity: 10.. })
+      expect(dnf(attrs)).to eq([[
+        { "field" => "size", "in" => %w[l xl] },
+        { "field" => "quantity", "gte" => 10 }
+      ]])
     end
 
-    it "treats equals: nil as the empty string (visible while the field is blank)" do
-      attrs = instance.send(:reactive_show, :note, equals: nil)
-      expect(attrs[:data][:reactive_show_equals]).to eq("")
+    it "composes unless: as negated terms ANDed into the group" do
+      attrs = instance.send(:reactive_show, if: { shareholder: true }, unless: { director: true })
+      expect(dnf(attrs)).to eq([[
+        { "field" => "shareholder", "equals" => "true" },
+        { "field" => "director", "not" => "true" }
+      ]])
     end
 
-    it "deep-merges extra attributes without clobbering the binding data" do
-      attrs = instance.send(:reactive_show, :kind, equals: "premium",
-        class: "panel", data: { testid: "p" })
-      expect(attrs[:class]).to eq("panel")
-      expect(attrs[:data][:testid]).to eq("p")
-      expect(attrs[:data][:reactive_show_field]).to eq("kind")
-      expect(attrs[:data][:reactive_show_equals]).to eq("premium")
+    it "deep-merges extra HTML attrs (conditions live in if:, so no ambiguity)" do
+      attrs = instance.send(:reactive_show, if: { size: %w[l xl] }, class: "note", data: { testid: "s" })
+      expect(attrs[:class]).to eq("note")
+      expect(attrs[:data][:testid]).to eq("s")
+      expect(dnf(attrs)).to eq([[{ "field" => "size", "in" => %w[l xl] }]])
     end
 
-    it "raises without a predicate (a dead binding must fail at render)" do
-      expect { instance.send(:reactive_show, :kind) }
-        .to raise_error(ArgumentError, /exactly one predicate/)
+    describe "first-paint hidden: from reactive_values" do
+      let(:show_klass) do
+        Class.new(Phlex::HTML) do
+          include Phlex::Reactive::Component
+
+          def self.name = "ValuesThing"
+
+          def initialize(director: false, role: "company")
+            @director = director
+            @role = role
+          end
+
+          def reactive_values = { director: @director, role: @role }
+        end
+      end
+
+      it "computes hidden: true server-side when the predicate is false" do
+        attrs = show_klass.new(director: false, role: "company")
+          .send(:reactive_show, if: { director: true })
+        expect(attrs[:hidden]).to be(true)
+      end
+
+      it "computes hidden: false (absent) when the predicate is true" do
+        attrs = show_klass.new(director: true)
+          .send(:reactive_show, if: { director: true })
+        expect(attrs[:hidden]).to be(false)
+      end
+
+      it "evaluates an OR-of-AND against reactive_values" do
+        # role individual but not director → second group matches → visible
+        attrs = show_klass.new(director: false, role: "individual")
+          .send(:reactive_show, if_any: [{ director: true }, { role: "individual" }])
+        expect(attrs[:hidden]).to be(false)
+      end
+
+      it "does not compute hidden: when a referenced field is not in reactive_values" do
+        attrs = show_klass.new.send(:reactive_show, if: { unknown_field: "x" })
+        expect(attrs).not_to have_key(:hidden)
+      end
+
+      it "lets an explicit hidden: win over the computed value" do
+        attrs = show_klass.new(director: true)
+          .send(:reactive_show, if: { director: true }, hidden: true)
+        expect(attrs[:hidden]).to be(true)
+      end
+
+      it "merges a per-call values: override with reactive_values" do
+        attrs = show_klass.new(director: false)
+          .send(:reactive_show, if: { director: true }, values: { director: true })
+        expect(attrs[:hidden]).to be(false)
+      end
     end
 
-    it "raises with more than one predicate (ambiguous match)" do
-      expect { instance.send(:reactive_show, :kind, equals: "a", not: "b") }
-        .to raise_error(ArgumentError, /exactly one predicate/)
+    describe "disable: — hidden controls stop submitting" do
+      it "stamps the disable flag so the client toggles disabled with hidden" do
+        attrs = instance.send(:reactive_show, if: { role: "individual" }, disable: true)
+        expect(attrs[:data][:reactive_show_disable]).to eq("true")
+      end
+
+      it "omits the flag by default (byte-stable wire)" do
+        attrs = instance.send(:reactive_show, if: { role: "individual" })
+        expect(attrs[:data]).not_to have_key(:reactive_show_disable)
+      end
     end
 
-    it "raises on an empty in: list (matches nothing — a dead binding)" do
-      expect { instance.send(:reactive_show, :size, in: []) }
-        .to raise_error(ArgumentError, /in: needs at least one value/)
+    describe "loud validation" do
+      it "raises with no condition" do
+        expect { instance.send(:reactive_show, class: "x") }
+          .to raise_error(ArgumentError, /needs if:, if_any:, or unless:/)
+      end
+
+      it "raises on if: and if_any: together" do
+        expect { instance.send(:reactive_show, if: { a: 1 }, if_any: [{ b: 2 }]) }
+          .to raise_error(ArgumentError, %r{exactly one of if:/if_any:})
+      end
+
+      it "raises on an empty Array value" do
+        expect { instance.send(:reactive_show, if: { size: [] }) }
+          .to raise_error(ArgumentError, /needs at least one value/)
+      end
     end
 
-    it "renders the wire attributes onto the element" do
+    describe "guided errors for the removed 0.9.5 surface" do
+      it "guides a positional field + predicate to the keyword conditions form" do
+        # A positional field is caught first (it's the most visible legacy shape).
+        expect { instance.send(:reactive_show, :mode, equals: "off") }
+          .to raise_error(ArgumentError, /no longer takes a positional field.*if: \{ mode:/m)
+      end
+
+      it "guides bare predicate kwargs (no positional) to if:/unless:/Array/Range" do
+        expect { instance.send(:reactive_show, equals: "off") }
+          .to raise_error(ArgumentError, /equals: .* was removed.*if: \{ field: value \}/m)
+        expect { instance.send(:reactive_show, in: %w[l xl]) }
+          .to raise_error(ArgumentError, /in: → an Array value/m)
+        expect { instance.send(:reactive_show, gte: 10) }
+          .to raise_error(ArgumentError, /gte:.*Range value/m)
+      end
+
+      it "guides all:/any: to if:/if_any:" do
+        expect { instance.send(:reactive_show, all: [{ field: :a, equals: "x" }]) }
+          .to raise_error(ArgumentError, /if:|removed/m)
+        expect { instance.send(:reactive_show, any: [{ field: :a, equals: "x" }]) }
+          .to raise_error(ArgumentError, /if_any:|removed/m)
+      end
+    end
+
+    it "renders the wire attribute onto the element" do
       klass = Class.new(Phlex::HTML) do
         include Phlex::Reactive::Component
 
         def self.name = "ShowRender"
 
         def view_template
-          div(**reactive_show(:mode, not: "off"), id: "details") { "d" }
-        end
-      end
-
-      html = klass.new.call
-      expect(html).to include('data-reactive-show-field="mode"')
-      expect(html).to include('data-reactive-show-not="off"')
-    end
-
-    # Issue #176 part B: numeric threshold predicates. gte:/gt:/lte:/lt: coerce
-    # the field value to a Number on the client and compare against a literal
-    # number baked into the attribute — still a declared literal, no expression.
-    # The RHS must be an actual Numeric in Ruby (stricter — catches typos at
-    # render, the issue's leaning on open Q3).
-    it "emits each numeric predicate as its own wire attr (number stringified)" do
-      expect(instance.send(:reactive_show, :quantity, gte: 10)[:data][:reactive_show_gte]).to eq("10")
-      expect(instance.send(:reactive_show, :amount, gt: 5000)[:data][:reactive_show_gt]).to eq("5000")
-      expect(instance.send(:reactive_show, :qty, lte: 3)[:data][:reactive_show_lte]).to eq("3")
-      expect(instance.send(:reactive_show, :qty, lt: 1.5)[:data][:reactive_show_lt]).to eq("1.5")
-    end
-
-    it "treats a numeric predicate as the single predicate (no equals/not/in needed)" do
-      attrs = instance.send(:reactive_show, :quantity, gte: 10)
-      expect(attrs[:data][:reactive_show_field]).to eq("quantity")
-      expect(attrs[:data]).not_to have_key(:reactive_show_equals)
-    end
-
-    it "raises for a non-numeric RHS on a numeric predicate (typo caught at render)" do
-      expect { instance.send(:reactive_show, :quantity, gte: "10") }
-        .to raise_error(ArgumentError, /gte: needs a number/)
-    end
-
-    it "accepts 0, negatives, and floats as numeric thresholds (falsy-number safe)" do
-      expect(instance.send(:reactive_show, :qty, gte: 0)[:data][:reactive_show_gte]).to eq("0")
-      expect(instance.send(:reactive_show, :temp, lt: -5)[:data][:reactive_show_lt]).to eq("-5")
-      expect(instance.send(:reactive_show, :ratio, gt: 0.5)[:data][:reactive_show_gt]).to eq("0.5")
-    end
-
-    it "raises when a numeric predicate is combined with a literal one (one predicate rule)" do
-      expect { instance.send(:reactive_show, :quantity, gte: 10, equals: "x") }
-        .to raise_error(ArgumentError, /exactly one predicate/)
-    end
-
-    # Issue #176 part A: compound predicates. all:/any: fold a list of per-field
-    # literal terms with one fixed connective — still no expression surface. It
-    # serializes as ONE JSON attr (data-reactive-show), like reactive_show_targets,
-    # because the compound form has no single controlling field.
-    def compound_json(attrs)
-      JSON.parse(attrs[:data][:reactive_show])
-    end
-
-    it "emits an all: compound as one JSON attr of normalized terms" do
-      attrs = instance.send(:reactive_show, all: [
-        { field: :type, equals: "individual" },
-        { field: :country, not: "domestic" }
-      ])
-      expect(attrs[:data]).not_to have_key(:reactive_show_field)
-      expect(compound_json(attrs)).to eq(
-        "all" => [
-          { "field" => "type", "equals" => "individual" },
-          { "field" => "country", "not" => "domestic" }
-        ]
-      )
-    end
-
-    it "emits an any: compound and normalizes each term's predicate" do
-      attrs = instance.send(:reactive_show, any: [
-        { field: :director, equals: true },
-        { field: :shareholder, equals: true }
-      ])
-      expect(compound_json(attrs)).to eq(
-        "any" => [
-          { "field" => "director", "equals" => "true" },
-          { "field" => "shareholder", "equals" => "true" }
-        ]
-      )
-    end
-
-    it "carries a numeric term inside a compound (part A composes with part B)" do
-      attrs = instance.send(:reactive_show, all: [
-        { field: :type, equals: "order" },
-        { field: :amount, gte: 5000 }
-      ])
-      expect(compound_json(attrs)["all"]).to eq(
-        [
-          { "field" => "type", "equals" => "order" },
-          { "field" => "amount", "gte" => 5000 }
-        ]
-      )
-    end
-
-    it "keeps an in: term as a JSON array of strings inside a compound" do
-      attrs = instance.send(:reactive_show, any: [{ field: :size, in: [:l, "xl"] }])
-      expect(compound_json(attrs)["any"]).to eq([{ "field" => "size", "in" => %w[l xl] }])
-    end
-
-    it "raises when a compound term has no field" do
-      expect { instance.send(:reactive_show, all: [{ equals: "x" }]) }
-        .to raise_error(ArgumentError, /each term needs a field/)
-    end
-
-    it "raises when a compound term has no predicate (a dead term)" do
-      expect { instance.send(:reactive_show, all: [{ field: :type }]) }
-        .to raise_error(ArgumentError, /exactly one predicate/)
-    end
-
-    it "raises on an empty compound list (matches nothing — a dead binding)" do
-      expect { instance.send(:reactive_show, all: []) }
-        .to raise_error(ArgumentError, /needs at least one term/)
-    end
-
-    it "raises when both all: and any: are given (one connective)" do
-      expect { instance.send(:reactive_show, all: [{ field: :a, equals: "x" }], any: [{ field: :b, equals: "y" }]) }
-        .to raise_error(ArgumentError, %r{exactly one of all:/any:})
-    end
-
-    it "raises when a compound connective is combined with a single field" do
-      expect { instance.send(:reactive_show, :mode, all: [{ field: :a, equals: "x" }]) }
-        .to raise_error(ArgumentError, %r{compound.*mutually exclusive|a field AND all:/any:})
-    end
-
-    it "raises on a top-level predicate beside a connective (no bogus HTML attr leak)" do
-      # reactive_show(all: [...], equals: "x") — the stray predicate would
-      # otherwise ride the mix as a literal `equals="x"` attribute.
-      expect { instance.send(:reactive_show, all: [{ field: :a, equals: "x" }], equals: "x") }
-        .to raise_error(ArgumentError, /top-level predicate.*predicates belong INSIDE each term/m)
-    end
-
-    it "renders a compound binding with NO stray predicate attrs on the element" do
-      klass = Class.new(Phlex::HTML) do
-        include Phlex::Reactive::Component
-
-        def self.name = "CompoundRender"
-
-        def view_template
-          div(**reactive_show(all: [{ field: :type, equals: "individual" }]), id: "blk") { "d" }
+          div(**reactive_show(if: { mode: "on" }), id: "details") { "d" }
         end
       end
 
       html = klass.new.call
       expect(html).to include("data-reactive-show=")
-      expect(html).not_to match(/\sequals=/)
-      expect(html).not_to match(/\snot=/)
-    end
-
-    it "deep-merges extra attrs through a compound binding" do
-      attrs = instance.send(:reactive_show, class: "block", data: { testid: "p" }, all: [
-        { field: :type, equals: "individual" }
-      ])
-      expect(attrs[:class]).to eq("block")
-      expect(attrs[:data][:testid]).to eq("p")
-      expect(compound_json(attrs)["all"]).to eq([{ "field" => "type", "equals" => "individual" }])
+      expect(html).to include("&quot;mode&quot;")
     end
   end
 
@@ -1731,19 +1725,16 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
-  # Issue #164: reactive_show_targets — CROSS-ROOT value-conditional visibility,
-  # the visibility parallel to #159's cross-root text mirrors. The component
-  # that OWNS the field declares which outside, id-allowlisted elements it
-  # governs (spread on the root, alongside reactive_root). Same posture as
-  # mirror:: opt-in and declared, id selectors only (raise at declare time,
-  # warn-and-skip client-side — two-sided default-deny), literal predicates
-  # only (the reactive_show vocabulary, validated identically).
-  describe "#reactive_show_targets (cross-root visibility, issue #164)" do
+  # Issue #180 Phase A: reactive_show_targets — CROSS-ROOT visibility, now using
+  # the SAME conditions value language. Each target id maps to a where-style
+  # value (scalar/Array/Range) instead of a { equals: } predicate hash; the value
+  # compiles to ONE DNF group (terms ANDed) per id. Id selectors only (raise at
+  # declare time, warn-and-skip client-side — two-sided default-deny).
+  describe "#reactive_show_targets (cross-root visibility, issue #180)" do
     subject(:instance) { targets_klass.new }
 
     let(:targets_klass) do
       Class.new(Phlex::HTML) do
-        include Phlex::Reactive::Streamable
         include Phlex::Reactive::Component
 
         def self.name = "ShowTargetsThing"
@@ -1758,115 +1749,84 @@ RSpec.describe Phlex::Reactive::Component do
       JSON.parse(attrs[:data][:reactive_show_targets])
     end
 
-    it "emits the declared map as one JSON wire attr keyed by field" do
+    it "emits each target's value as a DNF group keyed by id" do
       attrs = instance.send(:reactive_show_targets, :mode,
-        "#advanced-tab" => { equals: "advanced" },
-        "#basic-note" => { not: "advanced" })
+        "#advanced-tab" => "advanced",
+        "#basic-note" => nil)
 
       expect(targets_json(attrs)).to eq(
         "mode" => {
-          "#advanced-tab" => { "equals" => "advanced" },
-          "#basic-note" => { "not" => "advanced" }
+          "#advanced-tab" => [{ "field" => "mode", "equals" => "advanced" }],
+          "#basic-note" => [{ "field" => "mode", "equals" => "" }]
         }
       )
     end
 
-    it "stringifies predicate values and keeps in: as an array of strings" do
-      attrs = instance.send(:reactive_show_targets, :gift,
-        "#gift-note" => { equals: true },
-        "#size-note" => { in: [:l, 2] })
+    it "maps Array to membership and Range to threshold in a target value" do
+      attrs = instance.send(:reactive_show_targets, :amount,
+        "#surcharge" => 5000..,
+        "#sizes" => %w[l xl])
 
-      expect(targets_json(attrs)["gift"]).to eq(
-        "#gift-note" => { "equals" => "true" },
-        "#size-note" => { "in" => %w[l 2] }
+      expect(targets_json(attrs)["amount"]).to eq(
+        "#surcharge" => [{ "field" => "amount", "gte" => 5000 }],
+        "#sizes" => [{ "field" => "amount", "in" => %w[l xl] }]
       )
     end
 
-    it "raises for a non-id selector (class, compound, descendant — declare-time default-deny)" do
-      # Explicit |selector| param, NOT `it`: the reference sits inside the
-      # nested `expect` block, where `it` resolves to THAT block's (absent)
-      # parameter — nil — so the loop would test "" four times and pass for the
-      # wrong reason. The cop's autocorrect is what introduced exactly that bug
-      # here, hence the targeted disable. Asserting the selector in the message
-      # proves each value actually reaches the validation.
+    it "maps a bounded Range to TWO ANDed terms in the target group" do
+      attrs = instance.send(:reactive_show_targets, :score, "#band" => 10..20)
+      expect(targets_json(attrs)["score"]).to eq(
+        "#band" => [{ "field" => "score", "gte" => 10 }, { "field" => "score", "lte" => 20 }]
+      )
+    end
+
+    it "raises for a non-id selector (declare-time default-deny)" do
       # rubocop:disable Style/ItBlockParameter
       [".panel", "#a b", "div#a", "*"].each do |selector|
         expect do
-          instance.send(:reactive_show_targets, :mode, selector => { equals: "x" })
-        end.to raise_error(ArgumentError, /target #{Regexp.escape(selector.inspect)} must be a single ID selector/)
+          instance.send(:reactive_show_targets, :mode, selector => "x")
+        end.to raise_error(ArgumentError, /must be a single ID selector/)
       end
       # rubocop:enable Style/ItBlockParameter
     end
 
-    it "raises for an empty target map (a dead declaration)" do
+    it "raises for an empty target map" do
       expect { instance.send(:reactive_show_targets, :mode, {}) }
         .to raise_error(ArgumentError, /at least one target/)
     end
 
-    # Phlex `mix` space-joins duplicate STRING data values, so TWO
-    # reactive_show_targets calls on one root would concatenate two JSON
-    # strings into an unparseable attr and silently kill both maps. The
-    # multi-field HASH form exists so there is never a reason to call twice:
-    # one call, one attr, several fields.
     it "accepts the multi-field hash form in ONE call (mix-collision-proof)" do
       attrs = instance.send(:reactive_show_targets,
-        mode: { "#advanced-tab" => { equals: "advanced" } },
-        kind: { "#premium-note" => { not: "basic" } })
+        mode: { "#advanced-tab" => "advanced" },
+        kind: { "#premium-note" => %w[gold platinum] })
 
       expect(targets_json(attrs)).to eq(
-        "mode" => { "#advanced-tab" => { "equals" => "advanced" } },
-        "kind" => { "#premium-note" => { "not" => "basic" } }
+        "mode" => { "#advanced-tab" => [{ "field" => "mode", "equals" => "advanced" }] },
+        "kind" => { "#premium-note" => [{ "field" => "kind", "in" => %w[gold platinum] }] }
       )
     end
 
-    it "validates each field's map in the multi-field form (id-only still raises)" do
-      expect do
-        instance.send(:reactive_show_targets,
-          mode: { "#ok" => { equals: "x" } },
-          kind: { ".panel" => { equals: "y" } })
-      end.to raise_error(ArgumentError, /must be a single ID selector/)
-    end
-
     it "raises helpfully when a targets map is passed where a field belongs" do
-      # reactive_show_targets("#a" => {…}) — the caller forgot the field name.
-      expect { instance.send(:reactive_show_targets, "#advanced-tab" => { equals: "x" }) }
+      expect { instance.send(:reactive_show_targets, "#advanced-tab" => "x") }
         .to raise_error(ArgumentError, /looks like a target selector, not a field name/)
     end
 
-    it "raises without exactly one predicate per target (same rule as reactive_show)" do
-      expect do
-        instance.send(:reactive_show_targets, :mode, "#a" => {})
-      end.to raise_error(ArgumentError, /exactly one predicate/)
-
-      expect do
-        instance.send(:reactive_show_targets, :mode, "#a" => { equals: "x", not: "y" })
-      end.to raise_error(ArgumentError, /exactly one predicate/)
-    end
-
-    it "raises on an empty in: list (same rule as reactive_show)" do
-      expect do
-        instance.send(:reactive_show_targets, :mode, "#a" => { in: [] })
-      end.to raise_error(ArgumentError, /in: needs at least one value/)
+    it "raises on an empty Array value (same rule as reactive_show)" do
+      expect { instance.send(:reactive_show_targets, :mode, "#a" => []) }
+        .to raise_error(ArgumentError, /needs at least one value/)
     end
 
     it "deep-merges with reactive_root via mix (no data: clobber)" do
       attrs = instance.send(:mix,
         instance.send(:reactive_root),
-        instance.send(:reactive_show_targets, :mode, "#a" => { equals: "x" }))
+        instance.send(:reactive_show_targets, :mode, "#a" => "x"))
       expect(attrs[:data][:controller]).to eq("reactive")
       expect(attrs[:data][:reactive_show_targets]).to be_a(String)
     end
 
-    # Issue #176 part B: numeric threshold predicates carry into the cross-root
-    # map too — one shared normalizer, so the vocabulary can never drift.
-    it "carries a numeric predicate into a target's embedded predicate object" do
-      attrs = instance.send(:reactive_show_targets, :amount, "#surcharge" => { gte: 5000 })
-      expect(targets_json(attrs)["amount"]).to eq("#surcharge" => { "gte" => 5000 })
-    end
-
-    it "raises for a non-numeric RHS on a cross-root numeric predicate" do
-      expect { instance.send(:reactive_show_targets, :amount, "#x" => { gt: "big" }) }
-        .to raise_error(ArgumentError, /gt: needs a number/)
+    it "guides the removed { equals: } predicate-hash form to a bare value" do
+      expect { instance.send(:reactive_show_targets, :mode, "#a" => { equals: "x" }) }
+        .to raise_error(ArgumentError, /bare value|"#a" => "x"|use a value/m)
     end
   end
 

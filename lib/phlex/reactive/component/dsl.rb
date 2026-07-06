@@ -44,6 +44,20 @@ module Phlex
             Registry.resolve_scalar(self, :record_key, :reactive_record_key)
           end
 
+          # Declare (with a name) OR read (bare) a form-field NAMESPACE for this
+          # component's bindings (issue #180). With `reactive_scope :form`,
+          # reactive_show / reactive_values use bare symbols (`:director`) and the
+          # client resolves the owned field as `[name="form[director]"]`; the root
+          # emits `data-reactive-scope="form"`. Bare `reactive_scope` reads the
+          # nearest declared scope up the ancestry (nil when none) — the
+          # dual-purpose form matching reactive_compute's getter/setter. A
+          # per-binding raw string field name still passes through unscoped.
+          def reactive_scope(name = nil)
+            return Registry.resolve_scalar(self, :scope, :reactive_scope) if name.nil?
+
+            Registry.write_scalar(self, :scope, name.to_sym)
+          end
+
           # Opt into signed STATE for record-less components only.
           #   reactive_state :count, :open
           def reactive_state(*names)

@@ -111,9 +111,12 @@ module Phlex
         end
       end
 
-      include DSL
+      # ClientBindings (issue #180) is the client-only surface (DSL + Helpers),
+      # tokenless and Streamable-free. Component includes it as the ONE
+      # implementation, then layers Identity + Lazy (and Streamable, above) on
+      # top — a token-bearing root is a superset of the client-only one.
+      include ClientBindings
       include Identity
-      include Helpers
       include Lazy
     end
   end

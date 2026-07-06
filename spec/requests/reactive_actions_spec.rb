@@ -321,6 +321,32 @@ RSpec.describe "Reactive actions", type: :request do
         expect(response.body.scan('target="counter"').size).to eq(1) # only the token stream targets self
       end
 
+      # Issue #180 automatic token refresh: reply.with — a companion-only reply
+      # that does NOT re-render the root and binds no token_component. The
+      # endpoint must append a token-only stream automatically (NOT a full-self
+      # replace that could clobber inputs), so reply.with and reply.streams
+      # converge — the author no longer picks a verb to keep the token fresh.
+      it "auto-refreshes the token for a reply.with that doesn't re-render the root" do
+        post_action(CounterComponent, payload: { "s" => { "count" => 4 } }, act: "bump_via_with")
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include('target="counter-mirror"') # the caller's stream
+        expect(response.body).to include('action="reactive:token"') # auto token refresh
+        expect(response.body).to include('target="counter"')
+        expect(response.body).to include("data-reactive-token-value=")
+        expect(response.body).not_to include('action="replace"') # NOT a full-self replace
+      end
+
+      it "does not double the token when a reply.with already re-renders the root" do
+        # bump_via_with_self returns reply.with(self.class.replace(...)) — the
+        # raw self-replace string already carries the fresh token, so the
+        # auto-refresh must stay idempotent (no extra reactive:token, one target).
+        post_action(CounterComponent, payload: { "s" => { "count" => 4 } }, act: "bump_via_with_self")
+
+        expect(response.body).not_to include('action="reactive:token"')
+        expect(response.body.scan('target="counter"').size).to eq(1)
+      end
+
       # Regression: the dedupe must be scoped to the ACTOR's target, not a global
       # substring. A partial reply that includes ANOTHER component's stream (which
       # legitimately carries its own data-reactive-token-value) must STILL refresh

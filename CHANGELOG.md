@@ -8,6 +8,49 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **BREAKING: `reactive_show` speaks ONE conditions language — `if:`/`if_any:`/`unless:` (#180).**
+  The four accreted dialects (the positional-field predicate kwargs
+  `equals:`/`not:`/`in:`/`gte:`/`gt:`/`lte:`/`lt:`, the `all:`/`any:` term
+  arrays, and the `{ equals: … }` target predicate hashes) are **removed** and
+  replaced by a single Ruby-native language: a **Hash is an AND**, an **Array is
+  membership**, a **Range is a threshold**, `if_any:` is OR-of-AND (one level of
+  disjunction — the distributive-law killer), and `unless:` negates. Each removed
+  form raises a **guided `ArgumentError`** printing the exact rewrite. Migration:
+
+  | Before (removed) | After |
+  |---|---|
+  | `reactive_show(:mode, not: "off")` | `reactive_show(unless: { mode: "off" })` |
+  | `reactive_show(:gift, equals: true)` | `reactive_show(if: { gift: true })` |
+  | `reactive_show(:size, in: %w[l xl])` | `reactive_show(if: { size: %w[l xl] })` |
+  | `reactive_show(:qty, gte: 10)` | `reactive_show(if: { qty: 10.. })` |
+  | `reactive_show(:amt, gt: 5000)` | `reactive_show(unless: { amt: ..5000 })` |
+  | `reactive_show(all: [{ field: :a, equals: "x" }, …])` | `reactive_show(if: { a: "x", … })` |
+  | `reactive_show(any: [{ field: :a, equals: "x" }, …])` | `reactive_show(if_any: [{ a: "x" }, …])` |
+  | `reactive_show_targets(:m, "#id" => { equals: "x" })` | `reactive_show_targets(:m, "#id" => "x")` |
+
+  New alongside it: **`reactive_values`** computes each binding's first-paint
+  `hidden:` server-side (no per-section mirror method, no flash);
+  **`reactive_scope :form`** lets bindings use bare field symbols
+  (`[name="form[field]"]` on the client); **`disable: true`** disables a hidden
+  section's own controls so a switched-away value never submits. The wire is now
+  ONE DNF shape (`data-reactive-show='{"any":[[term,…],…]}'`); the client keeps
+  legacy read arms for one minor (deploy overlap), removed in 0.11.
+
+- **`Phlex::Reactive::ClientBindings` — a blessed client-only include (#180).** A
+  view that only shows/hides, filters, or computes client-side (no server
+  actions, no token) includes this instead of the full `Component`. It does NOT
+  pull in `Streamable` (so it never clobbers an app's own `replace`/`to_stream_*`
+  concern) or the token machinery — a token-less `reactive_root` with no `#id`
+  requirement, invisible to `phlex_reactive:doctor`. The full `Component`
+  includes it (one implementation), then layers Streamable + Identity on top.
+
+- **Automatic token refresh — `reply.with` and `reply.streams` converge (#180).**
+  The action endpoint now appends a `reactive:token` refresh stream automatically
+  whenever a reply does not re-render the component's root, instead of prepending
+  a full self-replace that could clobber a live input. Picking `.streams` vs
+  `.with` to keep the signed token fresh is no longer a correctness decision — a
+  companion-only reply refreshes the token either way.
+
 - **BREAKING: `verify_authorized` is ON by default (#168).** A reactive action
   that completes **without any authorization call now raises**
   `Phlex::Reactive::AuthorizationNotVerified` — **rolling back the transaction**

@@ -860,30 +860,56 @@ function parseShowCompound(raw) {
   return null
 }
 
-// Evaluate a COMPOUND show binding (issue #176 part A): a parsed
-// { all: [term, …] } or { any: [term, …] } payload, where each term is
-// { field, <predicate> }. `fieldValue(name)` resolves the OWNED field's current
-// value (memoized by the caller). all: ANDs every term, any: ORs them. A term
-// whose field is missing (null) or whose predicate is malformed/unknown folds
-// as FALSE — fail-closed (the issue's default-deny lean): a broken AND term can
-// never pass, a broken OR term can never reveal. Returns true/false for a
-// decidable payload, or null for a malformed payload (no all:/any: array) so
-// the caller warn-skips and leaves visibility alone.
-function compoundShowMatches(payload, fieldValue) {
+// Evaluate one DNF TERM against a resolved field value (issue #180). A missing
+// field (null) or a malformed/unknown predicate folds to FALSE — fail-closed
+// (default-deny): a broken AND term can't pass, a broken OR term can't reveal.
+function dnfTermMatches(term, fieldValue) {
+  if (!term || typeof term !== "object" || typeof term.field !== "string") return false
+  // An absent owned field reads as "" — identical to the server evaluator
+  // (ShowConditions.match? treats a missing field as blank). This keeps the
+  // Ruby first-paint and the client live-toggle in exact agreement (the shared
+  // fixture proves it). A malformed predicate still folds to false.
+  const value = fieldValue(term.field) ?? ""
+  return showPredicateMatches(term, value) === true
+}
+
+// Evaluate a DNF show payload (issue #180): { any: [group, …] } where each
+// GROUP is an array of terms (terms AND within a group, groups OR). Returns
+// true/false for a decidable payload, or null for a malformed one (no groups)
+// so the caller warn-skips and leaves visibility alone. This is the ONE shape
+// the 0.10 wire emits; showPayloadMatches routes the legacy shapes here or to
+// the compatibility arm below.
+function anyOfAllsMatches(groups, fieldValue) {
+  if (!Array.isArray(groups) || groups.length === 0) return null
+  // groups OR; within a group, terms AND (an empty group can't decide → false).
+  return groups.some((group) => Array.isArray(group) && group.length > 0 &&
+    group.every((term) => dnfTermMatches(term, fieldValue)))
+}
+
+// Route a parsed data-reactive-show payload to the right evaluator. The 0.10
+// wire is { any: [ [term,…], … ] } (DNF — groups are ARRAYS). For a stale tab
+// still serving pre-0.10 HTML (deploy overlap), fall back to the 0.9.5 compound
+// shape { all: [term,…] } / { any: [term,…] } where the values are flat TERM
+// OBJECTS, not arrays. The nesting distinguishes them: DNF's any[0] is an Array.
+// DELETE the legacy arm in 0.11.
+function showPayloadMatches(payload, fieldValue) {
   if (!payload || typeof payload !== "object") return null
+  const any = payload.any
+  if (Array.isArray(any) && (any.length === 0 || Array.isArray(any[0]))) {
+    return anyOfAllsMatches(any, fieldValue)
+  }
+  return legacyCompoundShowMatches(payload, fieldValue)
+}
+
+// LEGACY (0.9.5, deploy-overlap only — DELETE in 0.11): the flat all:/any:
+// compound fold, where terms are objects (not groups). Preserved so a morph of
+// stale pre-0.10 HTML doesn't go dead.
+function legacyCompoundShowMatches(payload, fieldValue) {
   const connective = Array.isArray(payload.all) ? "all" : Array.isArray(payload.any) ? "any" : null
   if (!connective) return null
   const terms = payload[connective]
-  if (terms.length === 0) return null // an empty compound decides nothing — skip
-
-  const results = terms.map((term) => {
-    if (!term || typeof term !== "object" || typeof term.field !== "string") return false
-    const value = fieldValue(term.field)
-    if (value === null) return false // no owned field with that name → fail-closed
-    const match = showPredicateMatches(term, value)
-    return match === true // null (malformed term) or false both fold to false
-  })
-
+  if (terms.length === 0) return null
+  const results = terms.map((term) => dnfTermMatches(term, fieldValue))
   return connective === "all" ? results.every(Boolean) : results.some(Boolean)
 }
 
@@ -2345,37 +2371,57 @@ export default class extends Controller {
     if (typeof this.element?.querySelectorAll !== "function") return
 
     const owns = this.#ownershipFilter()
+    const scope = this.element.getAttribute?.("data-reactive-scope") || null
     const values = new Map()
     // A memoized resolver shared by every binding in this pass — a field driving
-    // several bindings (and several terms of a compound) reads exactly once.
+    // several bindings (and several DNF terms) reads exactly once. Scope-aware:
+    // a bare field `director` resolves as `[name="scope[director]"]` (issue #180).
     const fieldValue = (name) => {
-      if (!values.has(name)) values.set(name, this.#showFieldValue(name, owns))
+      if (!values.has(name)) values.set(name, this.#showFieldValue(name, owns, scope))
       return values.get(name)
     }
     for (const el of this.element.querySelectorAll(SHOW_BINDING_SELECTOR)) {
       if (!owns(el)) continue // a nested root's binding is its own controller's job
 
-      // Compound all:/any: (issue #176 part A): no single -field attr; parse the
-      // JSON payload and fold its per-field terms.
-      const compoundRaw = el.getAttribute("data-reactive-show")
-      if (compoundRaw !== null) {
-        const match = compoundShowMatches(parseShowCompound(compoundRaw), fieldValue)
-        if (match !== null) el.hidden = !match
+      // The 0.10 DNF payload (issue #180): data-reactive-show carries
+      // { any: [ [term,…], … ] }. The legacy flat-attr and 0.9.5-compound read
+      // arms live in showPayloadMatches/showBindingMatches for deploy overlap.
+      const payloadRaw = el.getAttribute("data-reactive-show")
+      if (payloadRaw !== null) {
+        const match = showPayloadMatches(parseShowCompound(payloadRaw), fieldValue)
+        if (match !== null) this.#applyShowVisibility(el, match, owns, scope)
         continue
       }
 
+      // LEGACY flat-attr binding (pre-0.10, deploy overlap — removed in 0.11).
       const name = el.getAttribute("data-reactive-show-field")
       if (!name) continue
       const value = fieldValue(name)
       if (value === null) continue // no owned field with that name — leave it be
       const match = showBindingMatches(el, value)
       if (match === null) continue // malformed predicate — warned + skipped
-      el.hidden = !match
+      this.#applyShowVisibility(el, match, owns, scope)
     }
 
     // The cross-root pass (issue #164) shares the same owned-field memo, so a
     // field driving both an owned binding and an outside target reads once.
-    this.#syncShowTargets(owns, values)
+    this.#syncShowTargets(owns, values, scope)
+  }
+
+  // Toggle `hidden` (and, when the binding declares data-reactive-show-disable,
+  // the `disabled` of every owned named control inside it) from a match result
+  // (issue #180). Disabling a hidden section's controls stops them submitting —
+  // the stale-value fix. A visible section re-enables them. Controls a nested
+  // reactive root owns are left alone (#15 ownership).
+  #applyShowVisibility(el, match, owns, scope) {
+    el.hidden = !match
+    if (el.getAttribute("data-reactive-show-disable") !== "true") return
+    if (typeof el.querySelectorAll !== "function") return
+    for (const control of el.querySelectorAll("input[name], select[name], textarea[name]")) {
+      if (owns(control)) control.disabled = !match
+    }
+    // The element itself may be a named control (a bare field with a binding).
+    if (el.name && owns(el)) el.disabled = !match
   }
 
   // Apply the declared cross-root show targets (issue #164) — the visibility
@@ -2388,19 +2434,35 @@ export default class extends Controller {
   // unrendered tab pane is normal); a malformed predicate warn-skips its one
   // target while siblings still apply. With no map declared this is one
   // getAttribute and out.
-  #syncShowTargets(owns, values) {
+  #syncShowTargets(owns, values, scope) {
     const map = this.#parseShowTargets()
     for (const [name, targets] of Object.entries(map)) {
       if (!targets || typeof targets !== "object" || Array.isArray(targets)) continue
-      if (!values.has(name)) values.set(name, this.#showFieldValue(name, owns))
+      if (!values.has(name)) values.set(name, this.#showFieldValue(name, owns, scope))
       const value = values.get(name)
       if (value === null) continue // no owned field with that name — leave them be
-      for (const [selector, pred] of Object.entries(targets)) {
+      // Every target's terms share this one field, so a constant resolver folds
+      // the group (issue #180): a target's value is a DNF GROUP (terms ANDed).
+      const resolve = () => value
+      for (const [selector, group] of Object.entries(targets)) {
         if (!guardShowTargetSelector(selector)) continue
-        const match = showPredicateMatches(pred, value)
-        if (match === null) {
-          console.warn(`[phlex-reactive] malformed reactive_show_targets predicate for ${selector} — skipped`)
-          continue
+        // 0.10 wire: the value is a DNF GROUP (an array of terms, ANDed).
+        // LEGACY (0.9.5, deploy overlap — DELETE in 0.11): a flat predicate
+        // OBJECT ({ equals/not/in/gte… }) routed through showPredicateMatches.
+        let match
+        if (Array.isArray(group)) {
+          if (group.length === 0) {
+            console.warn(`[phlex-reactive] malformed reactive_show_targets group for ${selector} — skipped`)
+            continue
+          }
+          match = group.every((term) => dnfTermMatches(term, resolve))
+        } else {
+          const legacy = showPredicateMatches(group, value)
+          if (legacy === null) {
+            console.warn(`[phlex-reactive] malformed reactive_show_targets predicate for ${selector} — skipped`)
+            continue
+          }
+          match = legacy
         }
         for (const node of document.querySelectorAll(selector)) node.hidden = !match
       }
@@ -2438,10 +2500,14 @@ export default class extends Controller {
   // Rails pairs with it); a radio group reports the CHECKED radio's value (""
   // when none is); anything else reports .value first-wins. Returns null when
   // no owned field carries the name — the caller then leaves visibility alone.
-  #showFieldValue(name, owns) {
+  #showFieldValue(name, owns, scope) {
+    // Scope (issue #180): a bare field `director` under `data-reactive-scope=
+    // "form"` resolves as `[name="form[director]"]`. A name already carrying a
+    // bracket (a raw wire name the author passed) is used verbatim.
+    const domName = scope && !name.includes("[") ? `${scope}[${name}]` : name
     let sawRadio = false
     let first = null
-    for (const el of this.element.querySelectorAll(`[name="${name}"]`)) {
+    for (const el of this.element.querySelectorAll(`[name="${domName}"]`)) {
       if (!owns(el)) continue
       if (el.type === "checkbox") return el.checked ? "true" : "false"
       if (el.type === "radio") {

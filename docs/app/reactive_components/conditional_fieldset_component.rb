@@ -1,16 +1,24 @@
 # frozen_string_literal: true
 
-# Issue #161: value-conditional visibility — reactive_show, the x-show /
-# data-show equivalent. Each dependent section declares which field controls it
-# plus ONE literal predicate, and the generic controller toggles `hidden` from
-# the field's CURRENT value with NO round trip. Like ClientTabsComponent it
-# declares NO actions: there is no token-bearing trigger anywhere. Every section
-# renders its initial `hidden:` from the same server state that renders its
-# field, so first paint needs no client reconcile (no flash).
+# Issue #180: value-conditional visibility — reactive_show, the x-show /
+# data-show equivalent, via the ONE conditions language (if:/if_any:/unless:).
+# A Hash is an AND, an Array is membership, a Range is a threshold, unless:
+# negates; the generic controller toggles `hidden` from the fields' CURRENT
+# values with NO round trip. reactive_values computes each section's first-paint
+# `hidden:` server-side — no per-section mirror method, no flash. Like
+# ClientTabsComponent it declares NO actions: no token-bearing trigger anywhere.
 class ConditionalFieldsetComponent < Phlex::HTML
   include Phlex::Reactive::Component
 
   def id = 'conditional-fieldset'
+
+  # First-paint truth: every reactive_show whose fields are all here computes
+  # its own initial `hidden:`.
+  def reactive_values
+    { mode: 'off', gift: false, delivery: 'pickup',
+      type: 'individual', country: 'domestic',
+      director: false, shareholder: false, role: 'individual', quantity: 1 }
+  end
 
   def view_template
     div(**reactive_root(class: 'flex flex-col gap-4')) do
@@ -18,6 +26,7 @@ class ConditionalFieldsetComponent < Phlex::HTML
       gift_option
       delivery_choice
       compound_address
+      or_of_and_names
       quantity_surcharge
     end
   end
@@ -37,25 +46,25 @@ class ConditionalFieldsetComponent < Phlex::HTML
       end
       # Extra attrs ride THROUGH reactive_show (it deep-merges via mix) — a bare
       # `data:` beside the spread would clobber the binding.
-      div(**reactive_show(:mode, not: 'off', hidden: true,
-                                 class: 'rounded-box border border-base-300 p-3',
-                                 data: { testid: 'mode-details' })) do
+      div(**reactive_show(unless: { mode: 'off' },
+                          class: 'rounded-box border border-base-300 p-3',
+                          data: { testid: 'mode-details' })) do
         'Shipping details — visible while the select is not "No shipping".'
       end
     end
   end
 
   # A checkbox: its .value is the constant "on", so the binding compares the
-  # CHECKED state — equals: true is the checkbox form.
+  # CHECKED state — `gift: true` is the checkbox form.
   def gift_option
     div(class: 'flex flex-col gap-2') do
       label(class: 'flex items-center gap-2') do
         input(type: 'checkbox', name: 'gift', class: 'checkbox checkbox-sm', data: { testid: 'gift' })
         span { 'This is a gift' }
       end
-      div(**reactive_show(:gift, equals: true, hidden: true,
-                                 class: 'rounded-box border border-base-300 p-3',
-                                 data: { testid: 'gift-note' })) do
+      div(**reactive_show(if: { gift: true },
+                          class: 'rounded-box border border-base-300 p-3',
+                          data: { testid: 'gift-note' })) do
         'Gift message — visible while the checkbox is checked.'
       end
     end
@@ -76,15 +85,15 @@ class ConditionalFieldsetComponent < Phlex::HTML
           span { 'Ship' }
         end
       end
-      div(**reactive_show(:delivery, equals: 'ship', hidden: true,
-                                     class: 'rounded-box border border-base-300 p-3',
-                                     data: { testid: 'address' })) do
+      div(**reactive_show(if: { delivery: 'ship' },
+                          class: 'rounded-box border border-base-300 p-3',
+                          data: { testid: 'address' })) do
         'Shipping address — visible while the "Ship" radio is checked.'
       end
     end
   end
 
-  # Issue #176 part A: a COMPOUND all: across TWO fields — one flat binding,
+  # Issue #180: a COMPOUND if:/unless: across TWO fields — one flat binding,
   # visible only while type == "individual" AND country != "domestic".
   def compound_address
     div(class: 'flex flex-col gap-2') do
@@ -104,18 +113,42 @@ class ConditionalFieldsetComponent < Phlex::HTML
           end
         end
       end
-      div(**reactive_show(hidden: true,
+      div(**reactive_show(if: { type: 'individual' }, unless: { country: 'domestic' },
                           class: 'rounded-box border border-base-300 p-3',
-                          data: { testid: 'intl-address' }, all: [
-                            { field: :type, equals: 'individual' },
-                            { field: :country, not: 'domestic' }
-                          ])) do
+                          data: { testid: 'intl-address' })) do
         'International address — visible while Individual AND not Domestic.'
       end
     end
   end
 
-  # Issue #176 part B: a NUMERIC threshold — reveal while quantity >= 10.
+  # Issue #180: OR-of-AND (the distributive-law killer) — visible while
+  # director OR (shareholder AND role == "individual"). ONE if_any: binding, no
+  # nested wrapper divs.
+  def or_of_and_names
+    div(class: 'flex flex-col gap-2') do
+      div(class: 'flex gap-4 items-center') do
+        label(class: 'flex items-center gap-2') do
+          input(type: 'checkbox', name: 'director', class: 'checkbox checkbox-sm', data: { testid: 'director' })
+          span { 'Director' }
+        end
+        label(class: 'flex items-center gap-2') do
+          input(type: 'checkbox', name: 'shareholder', class: 'checkbox checkbox-sm', data: { testid: 'shareholder' })
+          span { 'Shareholder' }
+        end
+        select(name: 'role', class: 'select select-sm w-fit', data: { testid: 'role' }) do
+          option(value: 'individual', selected: true) { 'Individual' }
+          option(value: 'company') { 'Company' }
+        end
+      end
+      div(**reactive_show(if_any: [{ director: true }, { shareholder: true, role: 'individual' }],
+                          class: 'rounded-box border border-base-300 p-3',
+                          data: { testid: 'name-fields' })) do
+        'Name fields — visible while Director OR (Shareholder AND Individual).'
+      end
+    end
+  end
+
+  # Issue #180: a NUMERIC threshold — reveal while quantity >= 10 (a Range).
   def quantity_surcharge
     div(class: 'flex flex-col gap-2') do
       label(class: 'flex items-center gap-2') do
@@ -123,9 +156,9 @@ class ConditionalFieldsetComponent < Phlex::HTML
         input(type: 'number', name: 'quantity', value: '1',
               class: 'input input-sm w-24', data: { testid: 'quantity' })
       end
-      div(**reactive_show(:quantity, gte: 10, hidden: true,
-                                     class: 'rounded-box border border-base-300 p-3',
-                                     data: { testid: 'surcharge' })) do
+      div(**reactive_show(if: { quantity: 10.. },
+                          class: 'rounded-box border border-base-300 p-3',
+                          data: { testid: 'surcharge' })) do
         'Bulk surcharge applies — visible while quantity ≥ 10.'
       end
     end

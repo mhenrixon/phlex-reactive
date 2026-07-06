@@ -1,58 +1,65 @@
 # frozen_string_literal: true
 
-# Issue #161: value-conditional visibility — reactive_show, the x-show /
-# data-show equivalent. Each dependent section declares which field controls
-# it plus one literal predicate, and the generic controller toggles `hidden`
-# from the field's CURRENT value with NO round trip. Like ClientTabsComponent
-# it deliberately declares NO actions: there is no token-bearing trigger
-# anywhere, and the system spec's fetch spy proves nothing is ever posted.
-# Every section renders its initial `hidden:` from the same server state that
-# renders its field, so first paint needs no client reconcile (no flash).
+# Issue #180 Phase A: value-conditional visibility via the ONE conditions
+# language. Each dependent section declares an if:/if_any:/unless: condition (a
+# Hash is an AND, an Array is membership, a Range is a threshold, unless:
+# negates); the generic controller toggles `hidden` from the fields' CURRENT
+# values with NO round trip. reactive_values computes the first-paint hidden:
+# server-side, so no section hand-mirrors its predicate. Like ClientTabsComponent
+# it declares NO actions: the system spec's fetch spy proves nothing is posted.
 class ConditionalFieldsetComponent < ApplicationComponent
   include Phlex::Reactive::Component
 
   def id = "conditional-fieldset"
 
+  # First-paint truth (issue #180): every reactive_show whose fields are all
+  # here computes its own initial hidden:. No per-section mirror method.
+  def reactive_values
+    { mode: "off", gift: false, delivery: "pickup",
+      type: "individual", country: "domestic",
+      director: false, shareholder: false, role: "individual", quantity: 1 }
+  end
+
   def view_template
-    # Cross-root show targets (issue #164): the mode select ALSO drives a badge
-    # that lives OUTSIDE this root (the demos controller renders it after the
-    # component) — declared on the root, id-only, same literal predicates.
+    # Cross-root show targets (issue #164/#180): the mode select ALSO drives a
+    # badge OUTSIDE this root (rendered after the component), via a where-style
+    # value — visible while mode is standard OR express (a membership Array,
+    # positive form of "not off").
     div(**mix(reactive_root,
-      reactive_show_targets(:mode, "#cf-mode-badge" => { not: "off" }))) do
+      reactive_show_targets(:mode, "#cf-mode-badge" => %w[standard express]))) do
       shipping_mode
       gift_option
       delivery_choice
       compound_address
+      or_of_and_names
       quantity_surcharge
     end
   end
 
   private
 
-  # A <select> driving a dependent panel: visible WHILE mode != "off".
+  # A <select> driving a dependent panel: visible WHILE mode != "off" (unless:).
   def shipping_mode
     select(name: "mode", data: { testid: "mode" }) do
       option(value: "off", selected: true) { "No shipping" }
       option(value: "standard") { "Standard" }
       option(value: "express") { "Express" }
     end
-    # Extra attrs ride THROUGH reactive_show (it deep-merges via mix) — a bare
-    # `data:` beside the spread would clobber the binding (Never-Do #8).
-    div(**reactive_show(:mode, not: "off", hidden: true, data: { testid: "mode-details" })) do
+    div(**reactive_show(unless: { mode: "off" }, data: { testid: "mode-details" })) do
       "Shipping details"
     end
   end
 
-  # A checkbox: its .value is the constant "on", so the binding compares the
-  # CHECKED state — equals: true is the checkbox form.
+  # A checkbox: its .value is the constant "on", so the condition compares the
+  # CHECKED state — gift: true is the checkbox form.
   def gift_option
     input(type: "checkbox", name: "gift", data: { testid: "gift" })
-    div(**reactive_show(:gift, equals: true, hidden: true, data: { testid: "gift-note" })) do
+    div(**reactive_show(if: { gift: true }, data: { testid: "gift-note" })) do
       "Gift message"
     end
   end
 
-  # A radio group: the binding reads the CHECKED radio's value.
+  # A radio group: the condition reads the CHECKED radio's value.
   def delivery_choice
     label do
       input(type: "radio", name: "delivery", value: "pickup", checked: true, data: { testid: "delivery-pickup" })
@@ -62,14 +69,14 @@ class ConditionalFieldsetComponent < ApplicationComponent
       input(type: "radio", name: "delivery", value: "ship", data: { testid: "delivery-ship" })
       plain "Ship"
     end
-    div(**reactive_show(:delivery, equals: "ship", hidden: true, data: { testid: "address" })) do
+    div(**reactive_show(if: { delivery: "ship" }, data: { testid: "address" })) do
       "Shipping address"
     end
   end
 
-  # Compound AND across TWO fields (issue #176 part A): the block is visible only
-  # while type == "individual" AND country != "domestic" — one flat binding, no
-  # wrapper-div nesting, the DOM structure freed from the boolean logic.
+  # Compound AND across TWO fields (issue #180): visible while type ==
+  # "individual" AND country != "domestic" — one flat if:/unless: binding, no
+  # wrapper-div nesting.
   def compound_address
     select(name: "type", data: { testid: "type" }) do
       option(value: "individual", selected: true) { "Individual" }
@@ -79,21 +86,46 @@ class ConditionalFieldsetComponent < ApplicationComponent
       option(value: "domestic", selected: true) { "Domestic" }
       option(value: "foreign") { "Foreign" }
     end
-    div(**reactive_show(hidden: true, data: { testid: "intl-address" }, all: [
-      { field: :type, equals: "individual" },
-      { field: :country, not: "domestic" }
-    ])) do
+    div(**reactive_show(if: { type: "individual" }, unless: { country: "domestic" },
+      data: { testid: "intl-address" })) do
       "International address"
     end
   end
 
-  # Numeric threshold (issue #176 part B): the surcharge notice reveals while
-  # quantity >= 10 — an ordered comparison, not a literal match. A blank/garbage
-  # value is NaN → hidden (the safe reveal-on-threshold default).
+  # OR-of-AND (issue #180 — the distributive-law killer): visible while
+  # director OR (shareholder AND role == "individual"). ONE if_any: binding,
+  # no nested wrapper divs, no hand-applied distributive law. This is the exact
+  # shape a production adopter had to decompose by hand — now a permanent
+  # regression test.
+  def or_of_and_names
+    label do
+      input(type: "checkbox", name: "director", data: { testid: "director" })
+      plain "Director"
+    end
+    label do
+      input(type: "checkbox", name: "shareholder", data: { testid: "shareholder" })
+      plain "Shareholder"
+    end
+    select(name: "role", data: { testid: "role" }) do
+      option(value: "individual", selected: true) { "Individual" }
+      option(value: "company") { "Company" }
+    end
+    div(**reactive_show(if_any: [
+      { director: true },
+      { shareholder: true, role: "individual" }
+    ], data: { testid: "name-fields" })) do
+      "Name fields"
+    end
+  end
+
+  # Numeric threshold (issue #180): reveal while quantity >= 10 (a Range). With
+  # disable: true, the surcharge's own control is disabled while hidden so a
+  # stale value never submits.
   def quantity_surcharge
     input(type: "number", name: "quantity", value: "1", data: { testid: "quantity" })
-    div(**reactive_show(:quantity, gte: 10, hidden: true, data: { testid: "surcharge" })) do
-      "Bulk surcharge applies"
+    div(**reactive_show(if: { quantity: 10.. }, disable: true, data: { testid: "surcharge" })) do
+      plain "Bulk surcharge applies — confirm:"
+      input(type: "text", name: "bulk_ack", value: "1", data: { testid: "bulk-ack" })
     end
   end
 end

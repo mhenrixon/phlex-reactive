@@ -22,6 +22,8 @@ class CounterComponent < ApplicationComponent
   action :bump_via_morph
   action :go_home
   action :bump_via_partial
+  action :bump_via_with
+  action :bump_via_with_self
   action :bump_with_sibling
   action :bump_with_self_stream
   action :bump_with_js
@@ -74,6 +76,25 @@ class CounterComponent < ApplicationComponent
   def bump_via_partial
     @count += 1
     reply.streams(%(<turbo-stream action="update" target="counter-mirror"><template>#{@count}</template></turbo-stream>))
+  end
+
+  # Reply: reply.with — a companion-only update that opts out of the full-self
+  # replace but binds NO token_component (unlike reply.streams). Before issue
+  # #180 this got a full-self replace prepended (GUARD 2), which could clobber a
+  # live input; now the endpoint appends an AUTOMATIC token-only stream instead,
+  # so .with and .streams converge. REQUEST-spec fixture for auto token refresh.
+  def bump_via_with
+    @count += 1
+    reply.with(%(<turbo-stream action="update" target="counter-mirror"><template>#{@count}</template></turbo-stream>))
+  end
+
+  # Reply: reply.with whose stream ALREADY re-renders the root (the actor's own
+  # self-replace, carrying the fresh token). The auto token refresh must stay
+  # idempotent — no extra reactive:token, one target="counter". REQUEST-spec
+  # fixture for the auto-refresh idempotency guard.
+  def bump_via_with_self
+    @count += 1
+    reply.with(self.class.replace(count: @count).to_s)
   end
 
   # Reply: a partial update whose streams include ANOTHER reactive component's
