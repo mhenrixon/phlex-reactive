@@ -1579,6 +1579,30 @@ RSpec.describe Phlex::Reactive::Component do
         .to raise_error(ArgumentError, %r{compound.*mutually exclusive|a field AND all:/any:})
     end
 
+    it "raises on a top-level predicate beside a connective (no bogus HTML attr leak)" do
+      # reactive_show(all: [...], equals: "x") — the stray predicate would
+      # otherwise ride the mix as a literal `equals="x"` attribute.
+      expect { instance.send(:reactive_show, all: [{ field: :a, equals: "x" }], equals: "x") }
+        .to raise_error(ArgumentError, /top-level predicate.*predicates belong INSIDE each term/m)
+    end
+
+    it "renders a compound binding with NO stray predicate attrs on the element" do
+      klass = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Component
+
+        def self.name = "CompoundRender"
+
+        def view_template
+          div(**reactive_show(all: [{ field: :type, equals: "individual" }]), id: "blk") { "d" }
+        end
+      end
+
+      html = klass.new.call
+      expect(html).to include("data-reactive-show=")
+      expect(html).not_to match(/\sequals=/)
+      expect(html).not_to match(/\snot=/)
+    end
+
     it "deep-merges extra attrs through a compound binding" do
       attrs = instance.send(:reactive_show, class: "block", data: { testid: "p" }, all: [
         { field: :type, equals: "individual" }

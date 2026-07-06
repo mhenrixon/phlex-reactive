@@ -838,6 +838,17 @@ module Phlex
           end
 
           connective, terms = connectives.first
+          # A top-level predicate alongside a connective (reactive_show(all: [...],
+          # equals: "x")) is a misuse — predicates belong INSIDE terms. Catch it
+          # loudly at render rather than leaking `equals="x"` as a bogus HTML attr
+          # (the mix at the tail treats every leftover kwarg as a literal
+          # attribute). Same default-deny posture as the single-field path.
+          if (stray = options.slice(*SHOW_PREDICATE_KEYS)).any?
+            raise ArgumentError,
+              "reactive_show #{connective}: got a top-level predicate #{stray.keys.inspect} — " \
+              "predicates belong INSIDE each term ({ field: …, #{stray.keys.first}: … }), not beside the connective"
+          end
+
           attrs = options.except(*SHOW_CONNECTIVE_KEYS)
           unless terms.is_a?(Array) && terms.any?
             raise ArgumentError,
