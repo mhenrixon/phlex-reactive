@@ -74,6 +74,9 @@ class FakeNode {
     if (selector === "[data-reactive-show-field]") {
       return "data-reactive-show-field" in this.attrs
     }
+    if (selector === "[data-reactive-show-field], [data-reactive-show]") {
+      return "data-reactive-show-field" in this.attrs || "data-reactive-show" in this.attrs
+    }
     if (selector === '[data-action*="reactive#trackDirty"]') {
       return (this.attrs["data-action"] ?? "").includes("reactive#trackDirty")
     }
@@ -313,4 +316,34 @@ test("an owned element binding AND a declared target share one pass (both apply)
 
   expect(inside.hidden).toBe(false) // the #161 owned binding
   expect(badge.hidden).toBe(false) // the #164 outside target, same sync pass
+})
+
+// --- Issue #176 part B: numeric threshold predicates in the cross-root map ---
+// The same numeric vocabulary carries into a target's embedded predicate — the
+// map already holds a parsed predicate object, so showPredicateMatches grows
+// the same gte/gt/lte/lt arms as the owned-binding evaluator.
+
+test("a numeric threshold drives an OUTSIDE target", () => {
+  const root = reactiveRoot({ amount: { "#surcharge": { gte: 5000 } } })
+  const amount = new FakeNode({ tag: "input", type: "number", name: "amount", value: "1000" })
+  root.append(amount)
+  const surcharge = new FakeNode({ tag: "aside" })
+  surcharge.hidden = true
+
+  buildController(root, { "#surcharge": surcharge }).connect()
+  expect(surcharge.hidden).toBe(true) // 1000 < 5000
+
+  amount.value = "9000"
+  root.emit("input", { target: amount })
+  expect(surcharge.hidden).toBe(false) // 9000 >= 5000
+})
+
+test("a non-numeric field value hides the numeric target (NaN → false), never throws", () => {
+  const root = reactiveRoot({ amount: { "#surcharge": { gt: 100 } } })
+  const amount = new FakeNode({ tag: "input", type: "number", name: "amount", value: "" })
+  root.append(amount)
+  const surcharge = new FakeNode({ tag: "aside" })
+
+  expect(() => buildController(root, { "#surcharge": surcharge }).connect()).not.toThrow()
+  expect(surcharge.hidden).toBe(true) // "" → NaN → false
 })

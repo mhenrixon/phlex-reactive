@@ -17,6 +17,8 @@ class ConditionalFieldsetComponent < Phlex::HTML
       shipping_mode
       gift_option
       delivery_choice
+      compound_address
+      quantity_surcharge
     end
   end
 
@@ -78,6 +80,53 @@ class ConditionalFieldsetComponent < Phlex::HTML
                                      class: 'rounded-box border border-base-300 p-3',
                                      data: { testid: 'address' })) do
         'Shipping address — visible while the "Ship" radio is checked.'
+      end
+    end
+  end
+
+  # Issue #176 part A: a COMPOUND all: across TWO fields — one flat binding,
+  # visible only while type == "individual" AND country != "domestic".
+  def compound_address
+    div(class: 'flex flex-col gap-2') do
+      div(class: 'flex gap-4') do
+        label(class: 'flex items-center gap-2') do
+          span { 'Type' }
+          select(name: 'type', class: 'select select-sm w-fit', data: { testid: 'type' }) do
+            option(value: 'individual', selected: true) { 'Individual' }
+            option(value: 'company') { 'Company' }
+          end
+        end
+        label(class: 'flex items-center gap-2') do
+          span { 'Country' }
+          select(name: 'country', class: 'select select-sm w-fit', data: { testid: 'country' }) do
+            option(value: 'domestic', selected: true) { 'Domestic' }
+            option(value: 'foreign') { 'Foreign' }
+          end
+        end
+      end
+      div(**reactive_show(hidden: true,
+                          class: 'rounded-box border border-base-300 p-3',
+                          data: { testid: 'intl-address' }, all: [
+                            { field: :type, equals: 'individual' },
+                            { field: :country, not: 'domestic' }
+                          ])) do
+        'International address — visible while Individual AND not Domestic.'
+      end
+    end
+  end
+
+  # Issue #176 part B: a NUMERIC threshold — reveal while quantity >= 10.
+  def quantity_surcharge
+    div(class: 'flex flex-col gap-2') do
+      label(class: 'flex items-center gap-2') do
+        span { 'Quantity' }
+        input(type: 'number', name: 'quantity', value: '1',
+              class: 'input input-sm w-24', data: { testid: 'quantity' })
+      end
+      div(**reactive_show(:quantity, gte: 10, hidden: true,
+                                     class: 'rounded-box border border-base-300 p-3',
+                                     data: { testid: 'surcharge' })) do
+        'Bulk surcharge applies — visible while quantity ≥ 10.'
       end
     end
   end

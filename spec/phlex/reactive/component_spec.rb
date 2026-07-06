@@ -1466,6 +1466,127 @@ RSpec.describe Phlex::Reactive::Component do
       expect(html).to include('data-reactive-show-field="mode"')
       expect(html).to include('data-reactive-show-not="off"')
     end
+
+    # Issue #176 part B: numeric threshold predicates. gte:/gt:/lte:/lt: coerce
+    # the field value to a Number on the client and compare against a literal
+    # number baked into the attribute — still a declared literal, no expression.
+    # The RHS must be an actual Numeric in Ruby (stricter — catches typos at
+    # render, the issue's leaning on open Q3).
+    it "emits each numeric predicate as its own wire attr (number stringified)" do
+      expect(instance.send(:reactive_show, :quantity, gte: 10)[:data][:reactive_show_gte]).to eq("10")
+      expect(instance.send(:reactive_show, :amount, gt: 5000)[:data][:reactive_show_gt]).to eq("5000")
+      expect(instance.send(:reactive_show, :qty, lte: 3)[:data][:reactive_show_lte]).to eq("3")
+      expect(instance.send(:reactive_show, :qty, lt: 1.5)[:data][:reactive_show_lt]).to eq("1.5")
+    end
+
+    it "treats a numeric predicate as the single predicate (no equals/not/in needed)" do
+      attrs = instance.send(:reactive_show, :quantity, gte: 10)
+      expect(attrs[:data][:reactive_show_field]).to eq("quantity")
+      expect(attrs[:data]).not_to have_key(:reactive_show_equals)
+    end
+
+    it "raises for a non-numeric RHS on a numeric predicate (typo caught at render)" do
+      expect { instance.send(:reactive_show, :quantity, gte: "10") }
+        .to raise_error(ArgumentError, /gte: needs a number/)
+    end
+
+    it "accepts 0, negatives, and floats as numeric thresholds (falsy-number safe)" do
+      expect(instance.send(:reactive_show, :qty, gte: 0)[:data][:reactive_show_gte]).to eq("0")
+      expect(instance.send(:reactive_show, :temp, lt: -5)[:data][:reactive_show_lt]).to eq("-5")
+      expect(instance.send(:reactive_show, :ratio, gt: 0.5)[:data][:reactive_show_gt]).to eq("0.5")
+    end
+
+    it "raises when a numeric predicate is combined with a literal one (one predicate rule)" do
+      expect { instance.send(:reactive_show, :quantity, gte: 10, equals: "x") }
+        .to raise_error(ArgumentError, /exactly one predicate/)
+    end
+
+    # Issue #176 part A: compound predicates. all:/any: fold a list of per-field
+    # literal terms with one fixed connective — still no expression surface. It
+    # serializes as ONE JSON attr (data-reactive-show), like reactive_show_targets,
+    # because the compound form has no single controlling field.
+    def compound_json(attrs)
+      JSON.parse(attrs[:data][:reactive_show])
+    end
+
+    it "emits an all: compound as one JSON attr of normalized terms" do
+      attrs = instance.send(:reactive_show, all: [
+        { field: :type, equals: "individual" },
+        { field: :country, not: "domestic" }
+      ])
+      expect(attrs[:data]).not_to have_key(:reactive_show_field)
+      expect(compound_json(attrs)).to eq(
+        "all" => [
+          { "field" => "type", "equals" => "individual" },
+          { "field" => "country", "not" => "domestic" }
+        ]
+      )
+    end
+
+    it "emits an any: compound and normalizes each term's predicate" do
+      attrs = instance.send(:reactive_show, any: [
+        { field: :director, equals: true },
+        { field: :shareholder, equals: true }
+      ])
+      expect(compound_json(attrs)).to eq(
+        "any" => [
+          { "field" => "director", "equals" => "true" },
+          { "field" => "shareholder", "equals" => "true" }
+        ]
+      )
+    end
+
+    it "carries a numeric term inside a compound (part A composes with part B)" do
+      attrs = instance.send(:reactive_show, all: [
+        { field: :type, equals: "order" },
+        { field: :amount, gte: 5000 }
+      ])
+      expect(compound_json(attrs)["all"]).to eq(
+        [
+          { "field" => "type", "equals" => "order" },
+          { "field" => "amount", "gte" => 5000 }
+        ]
+      )
+    end
+
+    it "keeps an in: term as a JSON array of strings inside a compound" do
+      attrs = instance.send(:reactive_show, any: [{ field: :size, in: [:l, "xl"] }])
+      expect(compound_json(attrs)["any"]).to eq([{ "field" => "size", "in" => %w[l xl] }])
+    end
+
+    it "raises when a compound term has no field" do
+      expect { instance.send(:reactive_show, all: [{ equals: "x" }]) }
+        .to raise_error(ArgumentError, /each term needs a field/)
+    end
+
+    it "raises when a compound term has no predicate (a dead term)" do
+      expect { instance.send(:reactive_show, all: [{ field: :type }]) }
+        .to raise_error(ArgumentError, /exactly one predicate/)
+    end
+
+    it "raises on an empty compound list (matches nothing — a dead binding)" do
+      expect { instance.send(:reactive_show, all: []) }
+        .to raise_error(ArgumentError, /needs at least one term/)
+    end
+
+    it "raises when both all: and any: are given (one connective)" do
+      expect { instance.send(:reactive_show, all: [{ field: :a, equals: "x" }], any: [{ field: :b, equals: "y" }]) }
+        .to raise_error(ArgumentError, %r{exactly one of all:/any:})
+    end
+
+    it "raises when a compound connective is combined with a single field" do
+      expect { instance.send(:reactive_show, :mode, all: [{ field: :a, equals: "x" }]) }
+        .to raise_error(ArgumentError, %r{compound.*mutually exclusive|a field AND all:/any:})
+    end
+
+    it "deep-merges extra attrs through a compound binding" do
+      attrs = instance.send(:reactive_show, class: "block", data: { testid: "p" }, all: [
+        { field: :type, equals: "individual" }
+      ])
+      expect(attrs[:class]).to eq("block")
+      expect(attrs[:data][:testid]).to eq("p")
+      expect(compound_json(attrs)["all"]).to eq([{ "field" => "type", "equals" => "individual" }])
+    end
   end
 
   # Issue #163: reactive_filter — client-side option filtering for the
@@ -1710,6 +1831,18 @@ RSpec.describe Phlex::Reactive::Component do
         instance.send(:reactive_show_targets, :mode, "#a" => { equals: "x" }))
       expect(attrs[:data][:controller]).to eq("reactive")
       expect(attrs[:data][:reactive_show_targets]).to be_a(String)
+    end
+
+    # Issue #176 part B: numeric threshold predicates carry into the cross-root
+    # map too — one shared normalizer, so the vocabulary can never drift.
+    it "carries a numeric predicate into a target's embedded predicate object" do
+      attrs = instance.send(:reactive_show_targets, :amount, "#surcharge" => { gte: 5000 })
+      expect(targets_json(attrs)["amount"]).to eq("#surcharge" => { "gte" => 5000 })
+    end
+
+    it "raises for a non-numeric RHS on a cross-root numeric predicate" do
+      expect { instance.send(:reactive_show_targets, :amount, "#x" => { gt: "big" }) }
+        .to raise_error(ArgumentError, /gt: needs a number/)
     end
   end
 

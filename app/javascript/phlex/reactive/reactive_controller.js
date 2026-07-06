@@ -766,8 +766,57 @@ function showBindingMatches(el, value) {
     console.warn(`[phlex-reactive] malformed reactive_show in: list ${JSON.stringify(inRaw)} — skipped`)
     return null
   }
+  // Numeric threshold predicates (issue #176 part B): gte/gt/lte/lt read the
+  // literal off its own flat attr and compare Number(value) against it. Any
+  // present numeric attr decides the binding — a non-numeric field value (NaN)
+  // is false (hidden), and a non-numeric LITERAL warn-skips (null).
+  for (const key of SHOW_NUMERIC_KEYS) {
+    const raw = el.getAttribute(`data-reactive-show-${key}`)
+    if (raw !== null) return numericPredicateMatches(key, raw, value)
+  }
   console.warn("[phlex-reactive] a reactive_show binding declares no predicate — skipped")
   return null
+}
+
+// The numeric threshold keys (issue #176 part B) — the client half of the Ruby
+// SHOW_NUMERIC_KEYS. Order-independent; the evaluator reads the one that's
+// present. Each coerces BOTH sides to Number and compares.
+const SHOW_NUMERIC_KEYS = ["gte", "gt", "lte", "lt"]
+
+// Evaluate one numeric threshold predicate against a field value. Returns
+// true/false for a decidable comparison, or null when the LITERAL itself is
+// non-numeric (a malformed binding — warn-skip, default-deny). A non-numeric
+// FIELD value (empty/blank/garbage) is treated as NaN → false: the
+// reveal-on-threshold notice stays hidden, the safe default. Shared by the
+// owned-binding evaluator (raw string literal off an attr) and the
+// cross-root/compound evaluator (a literal that arrived as a JSON number or
+// string).
+function numericPredicateMatches(key, literal, value) {
+  const rhs = Number(literal)
+  if (Number.isNaN(rhs)) {
+    console.warn(`[phlex-reactive] reactive_show ${key}: needs a numeric literal, got ${JSON.stringify(literal)} — skipped`)
+    return null
+  }
+  // A blank/whitespace field value must fail closed. Number("") and
+  // Number("   ") are 0 (NOT NaN), so a bare Number()+isNaN check would wrongly
+  // reveal a `lte:`/`lt:`/`gte: 0` binding on an EMPTY field. Force the
+  // empty/blank case to NaN so the "blank → hidden" contract holds for every
+  // operator, not just the ones where 0 happens to fail the comparison.
+  const trimmed = value == null ? "" : String(value).trim()
+  const n = trimmed === "" ? NaN : Number(trimmed)
+  if (Number.isNaN(n)) return false
+  switch (key) {
+    case "gte":
+      return n >= rhs
+    case "gt":
+      return n > rhs
+    case "lte":
+      return n <= rhs
+    case "lt":
+      return n < rhs
+    default:
+      return null
+  }
 }
 
 // Evaluate an ALREADY-PARSED show predicate object (issue #164) — the
@@ -781,7 +830,61 @@ function showPredicateMatches(pred, value) {
   if (typeof pred.equals === "string") return value === pred.equals
   if (typeof pred.not === "string") return value !== pred.not
   if (Array.isArray(pred.in)) return pred.in.includes(value)
+  // Numeric threshold predicates (issue #176 part B): the literal arrives as a
+  // JSON number (or a numeric string) embedded in the predicate object — one
+  // shared numericPredicateMatches with the owned-binding evaluator.
+  for (const key of SHOW_NUMERIC_KEYS) {
+    if (key in pred) return numericPredicateMatches(key, pred[key], value)
+  }
   return null
+}
+
+// The selector matching every OWNED-element show binding: single-field
+// (data-reactive-show-field, issue #161) OR compound all:/any:
+// (data-reactive-show, issue #176). Both the connect() gate and the sync walk
+// use it so a compound-only root still enables the sync.
+const SHOW_BINDING_SELECTOR = "[data-reactive-show-field], [data-reactive-show]"
+
+// Parse a compound show binding's JSON payload (issue #176 part A). Malformed
+// JSON degrades to null WITH a warn — a bad binding must never throw or blank
+// the page (client-side default-deny), but a collision (two bindings' JSON
+// mix-joined) is worth surfacing.
+function parseShowCompound(raw) {
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed
+  } catch {
+    // fall through to the warn
+  }
+  console.warn(`[phlex-reactive] malformed compound reactive_show payload ${JSON.stringify(raw)} — skipped`)
+  return null
+}
+
+// Evaluate a COMPOUND show binding (issue #176 part A): a parsed
+// { all: [term, …] } or { any: [term, …] } payload, where each term is
+// { field, <predicate> }. `fieldValue(name)` resolves the OWNED field's current
+// value (memoized by the caller). all: ANDs every term, any: ORs them. A term
+// whose field is missing (null) or whose predicate is malformed/unknown folds
+// as FALSE — fail-closed (the issue's default-deny lean): a broken AND term can
+// never pass, a broken OR term can never reveal. Returns true/false for a
+// decidable payload, or null for a malformed payload (no all:/any: array) so
+// the caller warn-skips and leaves visibility alone.
+function compoundShowMatches(payload, fieldValue) {
+  if (!payload || typeof payload !== "object") return null
+  const connective = Array.isArray(payload.all) ? "all" : Array.isArray(payload.any) ? "any" : null
+  if (!connective) return null
+  const terms = payload[connective]
+  if (terms.length === 0) return null // an empty compound decides nothing — skip
+
+  const results = terms.map((term) => {
+    if (!term || typeof term !== "object" || typeof term.field !== "string") return false
+    const value = fieldValue(term.field)
+    if (value === null) return false // no owned field with that name → fail-closed
+    const match = showPredicateMatches(term, value)
+    return match === true // null (malformed term) or false both fold to false
+  })
+
+  return connective === "all" ? results.every(Boolean) : results.some(Boolean)
 }
 
 // A cross-root show target must be a single ID selector (issue #164) — the
@@ -2222,7 +2325,10 @@ export default class extends Controller {
   // getAttribute, cheaper than the binding walk.
   #showSyncEnabled() {
     if (this.element.getAttribute?.("data-reactive-show-targets")) return true
-    const nodes = this.element.querySelectorAll?.("[data-reactive-show-field]") ?? []
+    // Single-field bindings carry -field; compound all:/any: bindings (issue
+    // #176) carry data-reactive-show and have NO single controlling field, so
+    // both selectors gate the sync.
+    const nodes = this.element.querySelectorAll?.(SHOW_BINDING_SELECTOR) ?? []
     for (const el of nodes) if (this.#ownsField(el)) return true
     return false
   }
@@ -2240,12 +2346,27 @@ export default class extends Controller {
 
     const owns = this.#ownershipFilter()
     const values = new Map()
-    for (const el of this.element.querySelectorAll("[data-reactive-show-field]")) {
+    // A memoized resolver shared by every binding in this pass — a field driving
+    // several bindings (and several terms of a compound) reads exactly once.
+    const fieldValue = (name) => {
+      if (!values.has(name)) values.set(name, this.#showFieldValue(name, owns))
+      return values.get(name)
+    }
+    for (const el of this.element.querySelectorAll(SHOW_BINDING_SELECTOR)) {
       if (!owns(el)) continue // a nested root's binding is its own controller's job
+
+      // Compound all:/any: (issue #176 part A): no single -field attr; parse the
+      // JSON payload and fold its per-field terms.
+      const compoundRaw = el.getAttribute("data-reactive-show")
+      if (compoundRaw !== null) {
+        const match = compoundShowMatches(parseShowCompound(compoundRaw), fieldValue)
+        if (match !== null) el.hidden = !match
+        continue
+      }
+
       const name = el.getAttribute("data-reactive-show-field")
       if (!name) continue
-      if (!values.has(name)) values.set(name, this.#showFieldValue(name, owns))
-      const value = values.get(name)
+      const value = fieldValue(name)
       if (value === null) continue // no owned field with that name — leave it be
       const match = showBindingMatches(el, value)
       if (match === null) continue // malformed predicate — warned + skipped

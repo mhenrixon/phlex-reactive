@@ -51,6 +51,23 @@ RSpec.describe "Value-conditional visibility (issue #161 — reactive_show)", ty
     find("[data-testid='delivery-pickup']").click
     expect(page).to have_css("[data-testid='address']", visible: :hidden)
 
+    # Compound AND (issue #176 part A): visible only while type == individual
+    # AND country != domestic — one flat binding across TWO fields.
+    expect(page).to have_css("[data-testid='intl-address']", visible: :hidden) # domestic fails
+    select "Foreign", from: "country"
+    expect(page).to have_css("[data-testid='intl-address']", text: "International address")
+    select "Company", from: "type" # the type term now fails → AND false again
+    expect(page).to have_css("[data-testid='intl-address']", visible: :hidden)
+    select "Individual", from: "type"
+    expect(page).to have_css("[data-testid='intl-address']", text: "International address")
+
+    # Numeric threshold (issue #176 part B): reveal while quantity >= 10.
+    expect(page).to have_css("[data-testid='surcharge']", visible: :hidden) # 1 < 10
+    fill_in "quantity", with: "12"
+    expect(page).to have_css("[data-testid='surcharge']", text: "Bulk surcharge applies")
+    fill_in "quantity", with: "5"
+    expect(page).to have_css("[data-testid='surcharge']", visible: :hidden) # 5 < 10
+
     # The whole exchange was client-side: not one fetch, no full-page reload.
     expect(page.evaluate_script("window.__fetchCount")).to eq(0)
     expect(page.evaluate_script("window.__noReload")).to eq("alive")
