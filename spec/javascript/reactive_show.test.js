@@ -80,6 +80,10 @@ class FakeNode {
     if (selector === "[data-reactive-show-field]") {
       return "data-reactive-show-field" in this.attrs
     }
+    // The combined single-field OR compound binding selector (issue #176).
+    if (selector === "[data-reactive-show-field], [data-reactive-show]") {
+      return "data-reactive-show-field" in this.attrs || "data-reactive-show" in this.attrs
+    }
     // The dirty-tracking opt-in probe connect() also runs.
     if (selector === '[data-action*="reactive#trackDirty"]') {
       return (this.attrs["data-action"] ?? "").includes("reactive#trackDirty")
@@ -379,4 +383,233 @@ test("two bindings on the SAME field both sync from one memoized read", () => {
 
   expect(panelA.hidden).toBe(false) // equals matches
   expect(panelB.hidden).toBe(true) // not: fails
+})
+
+// --- Issue #176 part B: numeric threshold predicates ------------------------
+// gte/gt/lte/lt coerce the field value to a Number and compare against a literal
+// number baked into the attr. A non-numeric field value (empty/blank/garbage)
+// is NaN → false (hidden), the safe default for a reveal-on-threshold notice.
+
+test("gte: shows while Number(value) >= the literal, hides below it", () => {
+  const root = reactiveRoot()
+  const qty = new FakeNode({ tag: "input", type: "number", name: "quantity", value: "3" })
+  const surcharge = binding("quantity", { "data-reactive-show-gte": "10" })
+  surcharge.hidden = true
+  root.append(qty, surcharge)
+
+  buildController(root).connect()
+  expect(surcharge.hidden).toBe(true) // 3 < 10
+
+  qty.value = "10"
+  root.emit("input", { target: qty })
+  expect(surcharge.hidden).toBe(false) // 10 >= 10
+
+  qty.value = "42"
+  root.emit("input", { target: qty })
+  expect(surcharge.hidden).toBe(false)
+})
+
+test("gt/lte/lt each compare with the right strictness", () => {
+  const root = reactiveRoot()
+  const amount = new FakeNode({ tag: "input", type: "number", name: "amount", value: "5000" })
+  const gt = binding("amount", { "data-reactive-show-gt": "5000" })
+  const lte = binding("amount", { "data-reactive-show-lte": "5000" })
+  const lt = binding("amount", { "data-reactive-show-lt": "5000" })
+  root.append(amount, gt, lte, lt)
+
+  buildController(root).connect()
+  expect(gt.hidden).toBe(true) // 5000 > 5000 is false
+  expect(lte.hidden).toBe(false) // 5000 <= 5000
+  expect(lt.hidden).toBe(true) // 5000 < 5000 is false
+
+  amount.value = "4999"
+  root.emit("input", { target: amount })
+  expect(gt.hidden).toBe(true)
+  expect(lte.hidden).toBe(false)
+  expect(lt.hidden).toBe(false) // 4999 < 5000
+})
+
+test("a threshold of 0 works (Number(\"0\") is not treated as a missing literal)", () => {
+  const root = reactiveRoot()
+  const balance = new FakeNode({ tag: "input", type: "number", name: "balance", value: "0" })
+  const owed = binding("balance", { "data-reactive-show-gt": "0" })
+  const zeroOrMore = binding("balance", { "data-reactive-show-gte": "0" })
+  root.append(balance, owed, zeroOrMore)
+
+  buildController(root).connect()
+  expect(owed.hidden).toBe(true) // 0 > 0 is false
+  expect(zeroOrMore.hidden).toBe(false) // 0 >= 0 is true
+
+  balance.value = "-5"
+  root.emit("input", { target: balance })
+  expect(zeroOrMore.hidden).toBe(true) // -5 >= 0 is false
+})
+
+test("a non-numeric (blank/garbage) value is NaN → false (hidden), never a throw", () => {
+  const root = reactiveRoot()
+  const qty = new FakeNode({ tag: "input", type: "number", name: "quantity", value: "" })
+  const surcharge = binding("quantity", { "data-reactive-show-gte": "10" })
+  root.append(qty, surcharge)
+
+  expect(() => buildController(root).connect()).not.toThrow()
+  expect(surcharge.hidden).toBe(true) // "" → NaN → false
+
+  qty.value = "abc"
+  root.emit("input", { target: qty })
+  expect(surcharge.hidden).toBe(true)
+})
+
+// Regression: Number("") is 0, NOT NaN — so a blank field must be forced to NaN
+// or a `lte:`/`lt:`/`gte: 0` binding would wrongly REVEAL on an empty field,
+// violating the "blank → hidden" contract for those operators.
+test("a blank field fails closed for EVERY operator (Number(\"\") === 0 trap)", () => {
+  const root = reactiveRoot()
+  const balance = new FakeNode({ tag: "input", type: "number", name: "balance", value: "" })
+  const lte5 = binding("balance", { "data-reactive-show-lte": "5" })
+  const lt5 = binding("balance", { "data-reactive-show-lt": "5" })
+  const gte0 = binding("balance", { "data-reactive-show-gte": "0" })
+  root.append(balance, lte5, lt5, gte0)
+
+  buildController(root).connect()
+  // Empty value → NaN → false for all three, despite 0 <= 5 / 0 < 5 / 0 >= 0.
+  expect(lte5.hidden).toBe(true)
+  expect(lt5.hidden).toBe(true)
+  expect(gte0.hidden).toBe(true)
+
+  // A real 0 (typed) still evaluates normally — the guard is blank-only.
+  balance.value = "0"
+  root.emit("input", { target: balance })
+  expect(lte5.hidden).toBe(false) // 0 <= 5
+  expect(gte0.hidden).toBe(false) // 0 >= 0
+})
+
+test("a numeric predicate whose literal is non-numeric is skipped (default-deny)", () => {
+  const root = reactiveRoot()
+  const qty = new FakeNode({ tag: "input", type: "number", name: "quantity", value: "50" })
+  const bad = binding("quantity", { "data-reactive-show-gte": "not-a-number" })
+  bad.hidden = true
+  root.append(qty, bad)
+
+  expect(() => buildController(root).connect()).not.toThrow()
+  expect(bad.hidden).toBe(true) // malformed literal → skipped, visibility untouched
+})
+
+// --- Issue #176 part A: compound all:/any: predicates -----------------------
+// A compound binding carries data-reactive-show=<JSON> instead of a single
+// -field attr. Each term is { field, <predicate> }; all: ANDs, any: ORs. A
+// missing/malformed term folds as false (fail-closed — the default-deny lean).
+
+// A compound-binding target: data-reactive-show=<JSON payload>, NO -field attr.
+function compound(payload) {
+  return new FakeNode({ tag: "div", attrs: { "data-reactive-show": JSON.stringify(payload) } })
+}
+
+test("all: is visible only while EVERY term matches (AND across two fields)", () => {
+  const root = reactiveRoot()
+  const type = new FakeNode({ tag: "select", name: "type", value: "individual" })
+  const country = new FakeNode({ tag: "select", name: "country", value: "domestic" })
+  const address = compound({
+    all: [
+      { field: "type", equals: "individual" },
+      { field: "country", not: "domestic" },
+    ],
+  })
+  address.hidden = true
+  root.append(type, country, address)
+
+  buildController(root).connect()
+  expect(address.hidden).toBe(true) // country == "domestic" fails the not: term
+
+  country.value = "foreign"
+  root.emit("change", { target: country })
+  expect(address.hidden).toBe(false) // both terms now match
+
+  type.value = "company"
+  root.emit("change", { target: type })
+  expect(address.hidden).toBe(true) // type term now fails
+})
+
+test("any: is visible while AT LEAST ONE term matches (OR across two checkboxes)", () => {
+  const root = reactiveRoot()
+  const director = new FakeNode({ tag: "input", type: "checkbox", name: "director", value: "on", checked: false })
+  const shareholder = new FakeNode({ tag: "input", type: "checkbox", name: "shareholder", value: "on", checked: false })
+  const names = compound({
+    any: [
+      { field: "director", equals: "true" },
+      { field: "shareholder", equals: "true" },
+    ],
+  })
+  names.hidden = true
+  root.append(director, shareholder, names)
+
+  buildController(root).connect()
+  expect(names.hidden).toBe(true) // neither checked
+
+  shareholder.checked = true
+  root.emit("change", { target: shareholder })
+  expect(names.hidden).toBe(false) // one matches → OR true
+
+  shareholder.checked = false
+  root.emit("change", { target: shareholder })
+  expect(names.hidden).toBe(true)
+})
+
+test("a numeric term composes inside a compound (part A + part B)", () => {
+  const root = reactiveRoot()
+  const type = new FakeNode({ tag: "select", name: "type", value: "order" })
+  const amount = new FakeNode({ tag: "input", type: "number", name: "amount", value: "1000" })
+  const warning = compound({
+    all: [
+      { field: "type", equals: "order" },
+      { field: "amount", gte: 5000 },
+    ],
+  })
+  warning.hidden = true
+  root.append(type, amount, warning)
+
+  buildController(root).connect()
+  expect(warning.hidden).toBe(true) // amount 1000 < 5000
+
+  amount.value = "6000"
+  root.emit("input", { target: amount })
+  expect(warning.hidden).toBe(false) // order AND 6000 >= 5000
+})
+
+test("a compound term with a missing owned field folds as false (fail-closed)", () => {
+  const root = reactiveRoot()
+  const type = new FakeNode({ tag: "select", name: "type", value: "individual" })
+  const block = compound({
+    all: [
+      { field: "type", equals: "individual" },
+      { field: "ghost", equals: "x" }, // no owned field named ghost
+    ],
+  })
+  root.append(type, block)
+
+  buildController(root).connect()
+  expect(block.hidden).toBe(true) // the ghost term can't match → all: false → hidden
+})
+
+test("a malformed compound JSON payload is skipped (warn, never a throw)", () => {
+  const root = reactiveRoot()
+  const type = new FakeNode({ tag: "select", name: "type", value: "individual" })
+  const bad = new FakeNode({ tag: "div", attrs: { "data-reactive-show": "not-json" } })
+  bad.hidden = true
+  root.append(type, bad)
+
+  expect(() => buildController(root).connect()).not.toThrow()
+  expect(bad.hidden).toBe(true) // untouched
+})
+
+test("connect() gate fires for a compound-only root (no -field attr anywhere)", () => {
+  const root = reactiveRoot()
+  const type = new FakeNode({ tag: "select", name: "type", value: "individual" })
+  const block = compound({ all: [{ field: "type", equals: "individual" }] })
+  block.hidden = true
+  root.append(type, block)
+
+  buildController(root).connect()
+  // The gate must have installed listeners AND seeded: single-term all: matches.
+  expect(block.hidden).toBe(false)
+  expect((root.listeners.input ?? []).length).toBeGreaterThan(0)
 })

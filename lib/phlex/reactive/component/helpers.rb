@@ -441,20 +441,37 @@ module Phlex
         # after a morph; render the initial `hidden:` yourself (from the same
         # server state that renders the field) to avoid a first-paint flash.
         # Extra attrs deep-merge over the binding (mix), like reactive_field.
-        def reactive_show(field, **options)
-          predicates = options.slice(*SHOW_PREDICATE_KEYS)
-          attrs = options.except(*SHOW_PREDICATE_KEYS)
-          unless predicates.size == 1
-            raise ArgumentError,
-              "reactive_show(#{field.inspect}) needs exactly one predicate — equals:, not:, or " \
-              "in: — got #{predicates.keys.inspect}"
-          end
+        # Compound forms (issue #176 part A) — visibility that depends on MORE
+        # THAN ONE field, or a threshold, staying inside the eval-free literal
+        # contract. `all:`/`any:` fold a list of per-field terms (each the same
+        # equals:/not:/in:/gte:/gt:/lte:/lt: vocabulary) with one fixed
+        # connective; the compound has no single controlling field, so it
+        # serializes as ONE JSON attr (data-reactive-show) like
+        # reactive_show_targets rather than the flat data-reactive-show-* attrs:
+        #
+        #   # visible while type == "individual" AND country != "domestic"
+        #   div(**reactive_show(all: [
+        #     { field: :type,    equals: "individual" },
+        #     { field: :country, not:    "domestic" }
+        #   ]))
+        #   # visible while director OR shareholder is checked
+        #   div(**reactive_show(any: [
+        #     { field: :director,    equals: true },
+        #     { field: :shareholder, equals: true }
+        #   ]))
+        #   # a numeric threshold, single field or as a compound term
+        #   div(**reactive_show(:quantity, gte: 10))            # visible while qty >= 10
+        #   div(**reactive_show(all: [{ field: :amount, gte: 5000 }, ...]))
+        #
+        # `all:`/`any:` are additive and mutually exclusive with the single-field
+        # form and with each other — enforced loudly at render, like the
+        # one-predicate rule. A single-field `all:` with one term degrades to the
+        # flat form's behaviour client-side.
+        def reactive_show(field = nil, **options)
+          connectives = options.slice(*SHOW_CONNECTIVE_KEYS)
+          return reactive_show_compound(field, connectives, options) if connectives.any?
 
-          key, value = normalize_show_predicate(predicates, "reactive_show(#{field.inspect})").first
-          data = { reactive_show_field: field.to_s }
-          data[:"reactive_show_#{key}"] = key == "in" ? value.to_json : value
-
-          mix({ data: }, attrs)
+          reactive_show_single(field, options)
         end
 
         # Client-side option filtering for the searchable combobox (issue #163)
@@ -658,12 +675,33 @@ module Phlex
           reactive_record_for_nested.update!(**nested_attributes(association, attrs), **extra)
         end
 
-        # The declared reactive_show predicates (issue #161): a literal match on
-        # the controlling field's current value. Exactly one per binding —
-        # enforced loudly at render (a dead binding must not no-op in the
-        # browser). `not`/`in` are Ruby keywords, so they arrive via **options
-        # rather than named kwargs.
-        SHOW_PREDICATE_KEYS = %i[equals not in].freeze
+        # The declared reactive_show predicates: a literal match on the
+        # controlling field's current value. Exactly one per binding — enforced
+        # loudly at render (a dead binding must not no-op in the browser).
+        # `not`/`in` are Ruby keywords, so they arrive via **options rather than
+        # named kwargs. Issue #161 shipped the string-literal trio; issue #176
+        # adds the numeric-threshold quartet below.
+        SHOW_LITERAL_KEYS = %i[equals not in].freeze
+
+        # The numeric-threshold predicates (issue #176 part B): gte/gt/lte/lt
+        # compare the field value coerced to a Number against a literal number.
+        # Still a declared literal — the RHS is a number baked into the
+        # attribute, never an expression — the only new capability is ordered
+        # comparison. The RHS must be an actual Numeric in Ruby (stricter, so a
+        # typo like gte: "10" fails at render, not silently in the browser).
+        SHOW_NUMERIC_KEYS = %i[gte gt lte lt].freeze
+
+        # Every predicate key a reactive_show / reactive_show_targets binding may
+        # declare — the literal trio plus the numeric quartet. Exactly one of
+        # these decides a single binding; a compound term declares one too.
+        SHOW_PREDICATE_KEYS = (SHOW_LITERAL_KEYS + SHOW_NUMERIC_KEYS).freeze
+
+        # The compound connectives (issue #176 part A): fold a list of per-field
+        # literal/numeric terms with ONE fixed keyword. Not an expression surface
+        # — the connective is one of two fixed keywords, each term is the same
+        # declared predicate vocabulary. Mutually exclusive with a single field
+        # and with each other (enforced loudly at render).
+        SHOW_CONNECTIVE_KEYS = %i[all any].freeze
 
         # The declared optimistic-hint class ops (issue #98): the cosmetic class
         # vocabulary the client applies instantly and reverts on failure. Enforced
@@ -712,26 +750,130 @@ module Phlex
           end
         end
 
-        # Validate ONE declared literal show predicate (issues #161/#164) and
+        # Validate ONE declared show predicate (issues #161/#164/#176) and
         # return its wire form — { "equals" => "v" } / { "not" => "v" } /
-        # { "in" => ["a", …] } (a real array: reactive_show JSON-encodes it into
-        # its own attr; the reactive_show_targets map embeds it directly).
-        # Shared by both helpers so the vocabulary and the loud validation can
-        # never drift. `context` names the call site in the error.
+        # { "in" => ["a", …] } / { "gte" => 10 } (a numeric RHS stays a real
+        # Number so the wire carries a JSON number, not a string). reactive_show
+        # JSON-encodes an in: array into its own attr; the reactive_show_targets
+        # map and a compound term embed the predicate directly. Shared by every
+        # helper so the vocabulary and the loud validation can never drift.
+        # `context` names the call site in the error.
         def normalize_show_predicate(predicates, context)
           unless predicates.size == 1 && SHOW_PREDICATE_KEYS.include?(predicates.keys.first)
             raise ArgumentError,
-              "#{context} needs exactly one predicate — equals:, not:, or in: — " \
-              "got #{predicates.keys.inspect}"
+              "#{context} needs exactly one predicate — equals:, not:, in:, or " \
+              "gte:/gt:/lte:/lt: — got #{predicates.keys.inspect}"
           end
 
           key, value = predicates.first
+          return normalize_show_numeric(key, value, context) if SHOW_NUMERIC_KEYS.include?(key)
           return { key.to_s => value.to_s } unless key == :in
 
           list = Array(value).map(&:to_s)
           raise ArgumentError, "#{context} in: needs at least one value" if list.empty?
 
           { "in" => list }
+        end
+
+        # Validate a numeric threshold predicate (issue #176 part B): the RHS
+        # must be an actual Numeric (a String "10" is a typo caught here, not a
+        # silent NaN in the browser). It rides the wire as a JSON number so the
+        # client compares Number(value) against it directly.
+        def normalize_show_numeric(key, value, context)
+          unless value.is_a?(Numeric)
+            raise ArgumentError,
+              "#{context} #{key}: needs a number (an ordered comparison against a literal), " \
+              "got #{value.inspect}"
+          end
+
+          { key.to_s => value }
+        end
+
+        # The single-field reactive_show form (issue #161, extended for numeric
+        # thresholds in #176): one owned field + one predicate → flat
+        # data-reactive-show-* attrs. An in: list JSON-encodes into its own attr;
+        # a numeric threshold or a literal stringifies into the flat attr and the
+        # client Number()-coerces the numeric case back on read.
+        def reactive_show_single(field, options)
+          if field.nil?
+            raise ArgumentError,
+              "reactive_show needs a field (reactive_show(:mode, equals: …)) or a compound " \
+              "connective (reactive_show(all: [...]) / any:) — got neither"
+          end
+
+          predicates = options.slice(*SHOW_PREDICATE_KEYS)
+          attrs = options.except(*SHOW_PREDICATE_KEYS)
+          unless predicates.size == 1
+            raise ArgumentError,
+              "reactive_show(#{field.inspect}) needs exactly one predicate — equals:, not:, in:, " \
+              "or gte:/gt:/lte:/lt: — got #{predicates.keys.inspect}"
+          end
+
+          key, value = normalize_show_predicate(predicates, "reactive_show(#{field.inspect})").first
+          data = { reactive_show_field: field.to_s }
+          # in: → JSON array; a numeric threshold or a literal → the value as-is.
+          # Phlex stringifies it into the flat attr; the client re-reads via
+          # getAttribute (always a string) and Number()-coerces the numeric case.
+          data[:"reactive_show_#{key}"] = key == "in" ? value.to_json : value.to_s
+
+          mix({ data: }, attrs)
+        end
+
+        # The compound reactive_show form (issue #176 part A): `all:`/`any:` fold
+        # a list of per-field terms with one fixed connective, serialized as one
+        # JSON attr (data-reactive-show). A field alongside a connective, or two
+        # connectives, is a contradiction — raise. Each term is validated through
+        # the SAME predicate normalizer, so a term's vocabulary never drifts from
+        # the single-field form.
+        def reactive_show_compound(field, connectives, options)
+          unless field.nil?
+            raise ArgumentError,
+              "reactive_show got a field AND all:/any: — the compound and single-field forms are " \
+              "mutually exclusive; use one flat binding OR a compound list, not both"
+          end
+          unless connectives.size == 1
+            raise ArgumentError,
+              "reactive_show needs exactly one of all:/any: (one fixed connective), " \
+              "got #{connectives.keys.inspect}"
+          end
+
+          connective, terms = connectives.first
+          # A top-level predicate alongside a connective (reactive_show(all: [...],
+          # equals: "x")) is a misuse — predicates belong INSIDE terms. Catch it
+          # loudly at render rather than leaking `equals="x"` as a bogus HTML attr
+          # (the mix at the tail treats every leftover kwarg as a literal
+          # attribute). Same default-deny posture as the single-field path.
+          if (stray = options.slice(*SHOW_PREDICATE_KEYS)).any?
+            raise ArgumentError,
+              "reactive_show #{connective}: got a top-level predicate #{stray.keys.inspect} — " \
+              "predicates belong INSIDE each term ({ field: …, #{stray.keys.first}: … }), not beside the connective"
+          end
+
+          attrs = options.except(*SHOW_CONNECTIVE_KEYS)
+          unless terms.is_a?(Array) && terms.any?
+            raise ArgumentError,
+              "reactive_show #{connective}: needs at least one term " \
+              "({ field: …, equals:/not:/in:/gte:/… }), got #{terms.inspect}"
+          end
+
+          normalized = terms.map { normalize_show_term(connective, it) }
+          mix({ data: { reactive_show: { connective.to_s => normalized }.to_json } }, attrs)
+        end
+
+        # Normalize + validate ONE compound term (issue #176 part A): a Hash with
+        # a :field and exactly one predicate. The predicate goes through the
+        # shared normalizer; the field is stringified into the term. Returns
+        # { "field" => name, <predicate> } so the wire is uniform with the
+        # reactive_show_targets embedded-predicate shape.
+        def normalize_show_term(connective, term)
+          context = "reactive_show #{connective}: term"
+          unless term.is_a?(Hash) && term.key?(:field)
+            raise ArgumentError, "#{context} — each term needs a field (got #{term.inspect})"
+          end
+
+          field = term[:field]
+          predicate = normalize_show_predicate(term.except(:field), "#{context} (field #{field.inspect})")
+          { "field" => field.to_s }.merge(predicate)
         end
 
         # True when the hint declares checked: :keep — the click-bound

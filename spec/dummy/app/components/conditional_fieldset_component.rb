@@ -22,6 +22,8 @@ class ConditionalFieldsetComponent < ApplicationComponent
       shipping_mode
       gift_option
       delivery_choice
+      compound_address
+      quantity_surcharge
     end
   end
 
@@ -62,6 +64,36 @@ class ConditionalFieldsetComponent < ApplicationComponent
     end
     div(**reactive_show(:delivery, equals: "ship", hidden: true, data: { testid: "address" })) do
       "Shipping address"
+    end
+  end
+
+  # Compound AND across TWO fields (issue #176 part A): the block is visible only
+  # while type == "individual" AND country != "domestic" — one flat binding, no
+  # wrapper-div nesting, the DOM structure freed from the boolean logic.
+  def compound_address
+    select(name: "type", data: { testid: "type" }) do
+      option(value: "individual", selected: true) { "Individual" }
+      option(value: "company") { "Company" }
+    end
+    select(name: "country", data: { testid: "country" }) do
+      option(value: "domestic", selected: true) { "Domestic" }
+      option(value: "foreign") { "Foreign" }
+    end
+    div(**reactive_show(hidden: true, data: { testid: "intl-address" }, all: [
+      { field: :type, equals: "individual" },
+      { field: :country, not: "domestic" }
+    ])) do
+      "International address"
+    end
+  end
+
+  # Numeric threshold (issue #176 part B): the surcharge notice reveals while
+  # quantity >= 10 — an ordered comparison, not a literal match. A blank/garbage
+  # value is NaN → hidden (the safe reveal-on-threshold default).
+  def quantity_surcharge
+    input(type: "number", name: "quantity", value: "1", data: { testid: "quantity" })
+    div(**reactive_show(:quantity, gte: 10, hidden: true, data: { testid: "surcharge" })) do
+      "Bulk surcharge applies"
     end
   end
 end

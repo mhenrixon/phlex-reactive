@@ -117,6 +117,48 @@ module Views
               from the same server state that renders the field, so the first paint
               doesn't flash.
 
+              **Compound & numeric predicates (#176).** Two common form shapes fall
+              just outside a single literal match: visibility that depends on **more
+              than one field**, and visibility gated on a **threshold**. Both stay
+              inside the eval-free contract.
+
+              `all:` / `any:` fold a list of per-field terms with **one fixed
+              connective** — still no expression surface, just AND vs OR over the
+              same literal vocabulary. One flat binding replaces the wrapper-div
+              nesting AND is the only way to express OR:
+
+              ```ruby
+              # visible while type == "individual" AND country != "domestic"
+              div(**reactive_show(all: [
+                { field: :type,    equals: "individual" },
+                { field: :country, not:    "domestic" }
+              ]))
+              # visible while director OR shareholder is checked
+              div(**reactive_show(any: [
+                { field: :director,    equals: true },
+                { field: :shareholder, equals: true }
+              ]))
+              ```
+
+              `gte:` / `gt:` / `lte:` / `lt:` compare the field value coerced to a
+              Number against a literal number baked into the binding (the RHS must
+              be a real `Numeric` in Ruby — a typo fails at render). A non-numeric
+              field value is `NaN` → hidden, the safe reveal-on-threshold default.
+              Numeric predicates work standalone and as a compound term:
+
+              ```ruby
+              div(**reactive_show(:quantity, gte: 10))   # visible while qty >= 10
+              div(**reactive_show(all: [
+                { field: :type,   equals: "order" },
+                { field: :amount, gte:    5000 }
+              ]))
+              ```
+
+              A malformed compound term folds **false** (fail-closed: a broken AND
+              term can't pass, a broken OR term can't reveal) — the same default-deny
+              posture as the rest of the vocabulary. Numeric predicates also carry
+              into `reactive_show_targets` maps.
+
               A plain `reactive_show` is root-scoped by design. When the dependents
               live **outside** the control's root — a nav tab, a panel in another
               tab pane, a sidebar note — `reactive_show_targets` (#164) is the

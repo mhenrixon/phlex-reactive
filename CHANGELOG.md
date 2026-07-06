@@ -31,6 +31,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Compound & numeric `reactive_show` predicates — `all:`/`any:` and
+  `gte:`/`gt:`/`lte:`/`lt:` (#176).** Value-conditional visibility now spans
+  **more than one field** and **numeric thresholds**, staying inside the
+  eval-free "declared literal predicate" contract. `all:` / `any:` fold a list of
+  per-field terms (`{ field:, equals:/not:/in:/gte:/… }`) with one fixed
+  connective — AND vs OR over the same literal vocabulary, no expression surface;
+  one flat binding replaces wrapper-div nesting and is the only way to express OR.
+  `gte:`/`gt:`/`lte:`/`lt:` compare `Number(value)` against a literal number baked
+  into the binding (the RHS must be a real `Numeric` — a typo fails at render); a
+  non-numeric field value is `NaN` → hidden, the safe reveal-on-threshold default.
+  Numeric predicates work standalone, as a compound term, and inside a
+  `reactive_show_targets` map. Malformed terms fold **false** (fail-closed:
+  default-deny). The single-field `reactive_show(:field, equals:)` form is
+  unchanged; the additions are backwards compatible.
+
 - **Installable Claude debugging skill + `rails g phlex:reactive:claude` (#168).**
   The gem ships a `phlex-reactive-debugging` skill (the doctor → inventory → find
   → browser `report()` → MCP workflow + a failure table) under `lib/`, and the
