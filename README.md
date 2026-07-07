@@ -1832,8 +1832,9 @@ class NotificationsList < ApplicationComponent
   end
 
   def dismiss(id:)
-    Todo.find(id).destroy!
-    reply.remove(id, from: :notifications)   # remove row + bump count + restore empty-state at 0
+    todo = Todo.find(id)
+    todo.destroy!
+    reply.remove(todo, from: :notifications)   # remove row + bump count + restore empty-state at 0
   end
 
   # view_template renders the count, the container <ul>, and the empty-state on

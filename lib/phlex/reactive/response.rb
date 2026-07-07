@@ -25,8 +25,9 @@ module Phlex
       # Issue #182: `reply` is the ONE documented door. Each former public class
       # verb (Response.replace(self), …) is removed — it raises a guided
       # ArgumentError naming the `reply.<verb>` rewrite. The builder BODIES live
-      # on as private `build_*` class methods (the Response value object stays the
-      # single place that knows how to construct itself); Reply calls them. The
+      # on as internal-use `build_*` class methods (public in Ruby terms — Reply
+      # calls them directly — but NOT part of the documented reply-facing surface;
+      # Response stays the single place that knows how to construct itself). The
       # rewrite shown for a collection verb points at the keyword form (issue #182).
       REMOVED_CLASS_VERBS = {
         replace: "reply.replace",
