@@ -3,6 +3,10 @@
 Rails.application.routes.draw do
   mount Turbo::Engine => "/turbo" if defined?(Turbo::Engine)
 
+  # Issue #187: under TRANSPORT=pgbus the dummy mounts pgbus so its SSE stream
+  # endpoint (/pgbus/streams) is live and turbo_stream_from routes over it.
+  mount Pgbus::Engine => "/pgbus" if ENV["TRANSPORT"] == "pgbus" && defined?(Pgbus::Engine)
+
   # Example pages exercised by system specs.
   get "counter" => "demos#counter"
   get "debug" => "demos#debug"

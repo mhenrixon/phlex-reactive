@@ -82,29 +82,49 @@ RSpec.describe "broadcast_*_to_each fan-out (issue #119)", type: :request do
     end
   end
 
-  # exclude:/visible_to: are TRANSPORT opts (pgbus reads them; Action Cable
-  # ignores them). They must forward PER key exactly like every other
-  # broadcast_*_to method — the pgbus-PRESENT path suppresses the actor's echo
-  # on every stream, and the pgbus-ABSENT path stays unchanged.
-  describe "transport opts pass-through (pgbus-present)" do
-    it "forwards exclude: to every key" do
-      allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
+  # exclude:/visible_to: are TRANSPORT opts. pgbus reads them from THREAD-LOCALS
+  # (Thread.current[:pgbus_broadcast_exclude]/_visible_to) in its
+  # Turbo::StreamsChannel#broadcast_stream_to patch — NOT from the broadcast_*_to
+  # kwargs (turbo-rails swallows unknown kwargs into its render locals, so passing
+  # exclude: as a StreamsChannel kwarg silently dropped it — issue #187). So the
+  # fan-out must set the thread-local for the WHOLE loop (every key is excluded),
+  # gated on pgbus_streams? (Action Cable never reads it → no-op).
+  describe "transport opts thread to pgbus (pgbus-present)" do
+    before { allow(Phlex::Reactive).to receive(:pgbus_streams?).and_return(true) }
+
+    it "sets the exclude thread-local for every key's broadcast" do
+      seen = []
+      allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to) do
+        seen << Thread.current[:pgbus_broadcast_exclude]
+      end
 
       CounterComponent.broadcast_replace_to_each(keys, model: nil, exclude: "conn-actor-1")
 
-      expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
-        .with(anything, anything, hash_including(exclude: "conn-actor-1"))
-        .exactly(keys.size).times
+      expect(seen).to eq(["conn-actor-1"] * keys.size)
+      # …and it is cleared after the fan-out (never leaks to a later broadcast).
+      expect(Thread.current[:pgbus_broadcast_exclude]).to be_nil
     end
 
-    it "forwards visible_to: to every key" do
-      allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
+    it "sets the visible_to thread-local for every key's broadcast" do
+      seen = []
+      allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to) do
+        seen << Thread.current[:pgbus_broadcast_visible_to]
+      end
 
       CounterComponent.broadcast_replace_to_each(keys, model: nil, visible_to: "user:7")
 
-      expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
-        .with(anything, anything, hash_including(visible_to: "user:7"))
-        .exactly(keys.size).times
+      expect(seen).to eq(["user:7"] * keys.size)
+    end
+
+    it "does NOT pass exclude:/visible_to: as StreamsChannel kwargs (turbo-rails would swallow them)" do
+      seen_kwargs = []
+      allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to) do |*_args, **kwargs|
+        seen_kwargs << kwargs
+      end
+
+      CounterComponent.broadcast_replace_to_each(keys, model: nil, exclude: "conn-actor-1")
+
+      expect(seen_kwargs).to all(satisfy { !it.key?(:exclude) && !it.key?(:visible_to) })
     end
   end
 

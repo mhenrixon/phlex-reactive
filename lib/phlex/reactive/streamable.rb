@@ -246,11 +246,11 @@ module Phlex
         # transports (Action Cable AND pgbus): it wraps this class-method body,
         # which is the same on either, so pgbus optionality is preserved.
         def broadcast_replace_to(*streamables, model: nil, exclude: nil, visible_to: nil, morph: false, **options)
-          instrument_broadcast("replace", streamables) do
+          instrument_broadcast("replace", streamables, exclude:, visible_to:) do
             component = build(model, options)
             ::Turbo::StreamsChannel.broadcast_replace_to(
               *streamables, target: component.id, html: render_component(component),
-              **morph_attributes(morph), **broadcast_transport_opts(exclude:, visible_to:)
+              **morph_attributes(morph)
             )
           end
         end
@@ -261,41 +261,38 @@ module Phlex
         # flag, it rides through `attributes:` (the broadcast path has no
         # `method:` kwarg) via morph_attributes.
         def broadcast_update_to(*streamables, model: nil, exclude: nil, visible_to: nil, morph: false, **options)
-          instrument_broadcast("update", streamables) do
+          instrument_broadcast("update", streamables, exclude:, visible_to:) do
             component = build(model, options)
             ::Turbo::StreamsChannel.broadcast_update_to(
               *streamables, target: component.id, html: render_component(component),
-              **morph_attributes(morph), **broadcast_transport_opts(exclude:, visible_to:)
+              **morph_attributes(morph)
             )
           end
         end
 
         def broadcast_append_to(*streamables, target:, model: nil, exclude: nil, visible_to: nil, **options)
-          instrument_broadcast("append", streamables) do
+          instrument_broadcast("append", streamables, exclude:, visible_to:) do
             component = build(model, options)
             ::Turbo::StreamsChannel.broadcast_append_to(
-              *streamables, target:, html: render_component(component),
-              **broadcast_transport_opts(exclude:, visible_to:)
+              *streamables, target:, html: render_component(component)
             )
           end
         end
 
         def broadcast_prepend_to(*streamables, target:, model: nil, exclude: nil, visible_to: nil, **options)
-          instrument_broadcast("prepend", streamables) do
+          instrument_broadcast("prepend", streamables, exclude:, visible_to:) do
             component = build(model, options)
             ::Turbo::StreamsChannel.broadcast_prepend_to(
-              *streamables, target:, html: render_component(component),
-              **broadcast_transport_opts(exclude:, visible_to:)
+              *streamables, target:, html: render_component(component)
             )
           end
         end
 
         def broadcast_remove_to(*streamables, model: nil, exclude: nil, visible_to: nil, **options)
-          instrument_broadcast("remove", streamables) do
+          instrument_broadcast("remove", streamables, exclude:, visible_to:) do
             component = build(model, options)
             ::Turbo::StreamsChannel.broadcast_remove_to(
-              *streamables, target: component.id,
-              **broadcast_transport_opts(exclude:, visible_to:)
+              *streamables, target: component.id
             )
           end
         end
@@ -303,8 +300,8 @@ module Phlex
         # Push server-side client DOM ops to EVERY subscriber of a stream (issue
         # #97) — the broadcast sibling of Response#js. Rides a `reactive:js`
         # custom stream action over Turbo::StreamsChannel, so it works on Action
-        # Cable AND pgbus (transport opts pass through broadcast_transport_opts
-        # exactly like every other broadcast):
+        # Cable AND pgbus (exclude:/visible_to: thread to pgbus via
+        # instrument_broadcast exactly like every other broadcast):
         #
         #   Notifications::Badge.broadcast_js_to(user, :alerts,
         #     js.add_class("#bell", "has-unread"), exclude: reactive_connection_id)
@@ -320,15 +317,14 @@ module Phlex
         # actor-reply concern only (Response#js), so it raises ArgumentError here
         # rather than silently shipping a hostile-feeling broadcast.
         def broadcast_js_to(*streamables, ops, exclude: nil, visible_to: nil, target: nil)
-          instrument_broadcast("reactive:js", streamables) do
+          instrument_broadcast("reactive:js", streamables, exclude:, visible_to:) do
             json = broadcast_js_ops_json(ops)
             ::Turbo::StreamsChannel.broadcast_action_to(
               *streamables,
               action: "reactive:js",
               target: target,
               attributes: { data: { reactive_ops: json } },
-              render: false,
-              **broadcast_transport_opts(exclude:, visible_to:)
+              render: false
             )
           end
         end
@@ -356,49 +352,45 @@ module Phlex
         # render-per-viewer by definition and can't be shared. This fan-out is
         # for the same payload to many keys.
         def broadcast_replace_to_each(stream_keys, model: nil, exclude: nil, visible_to: nil, morph: false, **options)
-          instrument_broadcast("replace", stream_keys) do
+          instrument_broadcast("replace", stream_keys, exclude:, visible_to:) do
             component = build(model, options)
             html = render_component(component)
-            transport = broadcast_transport_opts(exclude:, visible_to:)
             stream_keys.each do
               ::Turbo::StreamsChannel.broadcast_replace_to(
-                *Array(it), target: component.id, html:, **morph_attributes(morph), **transport
+                *Array(it), target: component.id, html:, **morph_attributes(morph)
               )
             end
           end
         end
 
         def broadcast_update_to_each(stream_keys, model: nil, exclude: nil, visible_to: nil, morph: false, **options)
-          instrument_broadcast("update", stream_keys) do
+          instrument_broadcast("update", stream_keys, exclude:, visible_to:) do
             component = build(model, options)
             html = render_component(component)
-            transport = broadcast_transport_opts(exclude:, visible_to:)
             stream_keys.each do
               ::Turbo::StreamsChannel.broadcast_update_to(
-                *Array(it), target: component.id, html:, **morph_attributes(morph), **transport
+                *Array(it), target: component.id, html:, **morph_attributes(morph)
               )
             end
           end
         end
 
         def broadcast_append_to_each(stream_keys, target:, model: nil, exclude: nil, visible_to: nil, **options)
-          instrument_broadcast("append", stream_keys) do
+          instrument_broadcast("append", stream_keys, exclude:, visible_to:) do
             component = build(model, options)
             html = render_component(component)
-            transport = broadcast_transport_opts(exclude:, visible_to:)
             stream_keys.each do
-              ::Turbo::StreamsChannel.broadcast_append_to(*Array(it), target:, html:, **transport)
+              ::Turbo::StreamsChannel.broadcast_append_to(*Array(it), target:, html:)
             end
           end
         end
 
         def broadcast_prepend_to_each(stream_keys, target:, model: nil, exclude: nil, visible_to: nil, **options)
-          instrument_broadcast("prepend", stream_keys) do
+          instrument_broadcast("prepend", stream_keys, exclude:, visible_to:) do
             component = build(model, options)
             html = render_component(component)
-            transport = broadcast_transport_opts(exclude:, visible_to:)
             stream_keys.each do
-              ::Turbo::StreamsChannel.broadcast_prepend_to(*Array(it), target:, html:, **transport)
+              ::Turbo::StreamsChannel.broadcast_prepend_to(*Array(it), target:, html:)
             end
           end
         end
@@ -406,11 +398,10 @@ module Phlex
         # remove has no body — nothing to render. It still builds ONCE to read
         # the component's #id (the target), then loops the cheap channel call.
         def broadcast_remove_to_each(stream_keys, model: nil, exclude: nil, visible_to: nil, **options)
-          instrument_broadcast("remove", stream_keys) do
+          instrument_broadcast("remove", stream_keys, exclude:, visible_to:) do
             component = build(model, options)
-            transport = broadcast_transport_opts(exclude:, visible_to:)
             stream_keys.each do
-              ::Turbo::StreamsChannel.broadcast_remove_to(*Array(it), target: component.id, **transport)
+              ::Turbo::StreamsChannel.broadcast_remove_to(*Array(it), target: component.id)
             end
           end
         end
@@ -418,16 +409,46 @@ module Phlex
         private
 
         # Wrap a broadcast_*_to body in a broadcast.phlex_reactive event (issue
-        # #107). Payload: the component NAME, the Turbo stream action, and the
-        # streamables COUNT — never the model/state. Fires on both transports
-        # because it wraps the shared class-method body. Returns the block's value
-        # (the broadcast result) so callers are unaffected.
-        def instrument_broadcast(stream_action, streamables, &)
+        # #107) AND thread the pgbus transport opts (issue #187). Payload: the
+        # component NAME, the Turbo stream action, and the streamables COUNT —
+        # never the model/state. Fires on both transports because it wraps the
+        # shared class-method body. Returns the block's value (the broadcast
+        # result) so callers are unaffected.
+        #
+        # exclude:/visible_to: (issue #187): pgbus reads these from thread-locals
+        # (Thread.current[:pgbus_broadcast_exclude]/_visible_to), which its
+        # Turbo::StreamsChannel#broadcast_stream_to patch consults — NOT from the
+        # broadcast_*_to kwargs (turbo-rails swallows unknown kwargs into its
+        # render locals, so passing exclude: as a kwarg to StreamsChannel silently
+        # drops it: the actor-echo suppression never fired on pgbus). We set the
+        # thread-locals around the broadcast (capability-gated on pgbus_streams?)
+        # and clear them in ensure. On Action Cable there is no such thread-local
+        # reader, so this is a no-op there — pgbus optionality preserved.
+        def instrument_broadcast(stream_action, streamables, exclude: nil, visible_to: nil, &)
           Phlex::Reactive.instrument(
             "broadcast",
-            { component: name, stream_action: stream_action, streamables: streamables.size },
-            &
-          )
+            { component: name, stream_action: stream_action, streamables: streamables.size }
+          ) { with_pgbus_broadcast_opts(exclude:, visible_to:, &) }
+        end
+
+        # Set the pgbus broadcast thread-locals for the duration of the block,
+        # ONLY when streams-capable pgbus is present (the capability gate — an old
+        # pgbus / Action Cable never reads these keys, so we skip the work and the
+        # ensure entirely). Cleared in ensure so a broadcast never leaks its
+        # exclude into a later one on the same thread.
+        def with_pgbus_broadcast_opts(exclude:, visible_to:)
+          return yield unless Phlex::Reactive.pgbus_streams?
+
+          prev_exclude = Thread.current[:pgbus_broadcast_exclude]
+          prev_visible = Thread.current[:pgbus_broadcast_visible_to]
+          Thread.current[:pgbus_broadcast_exclude] = exclude
+          Thread.current[:pgbus_broadcast_visible_to] = visible_to
+          yield
+        ensure
+          if Phlex::Reactive.pgbus_streams?
+            Thread.current[:pgbus_broadcast_exclude] = prev_exclude
+            Thread.current[:pgbus_broadcast_visible_to] = prev_visible
+          end
         end
 
         # Validate + serialize broadcast ops: reject focus-class ops (they steal
@@ -461,15 +482,6 @@ module Phlex
         # render args and be dropped). Same wire result: method="morph".
         def morph_attributes(morph)
           morph ? { attributes: { method: "morph" } } : {}
-        end
-
-        # Only include transport opts that were actually given, so on Action
-        # Cable (which doesn't accept them) the common no-opts call is unchanged.
-        def broadcast_transport_opts(exclude:, visible_to:)
-          opts = {}
-          opts[:exclude] = exclude unless exclude.nil?
-          opts[:visible_to] = visible_to unless visible_to.nil?
-          opts
         end
 
         def renderer

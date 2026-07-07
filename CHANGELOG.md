@@ -6,6 +6,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`exclude:`/`visible_to:` now actually reach pgbus — actor-echo suppression works over SSE (#187).**
+  `broadcast_*_to`/`broadcast_*_to_each` passed `exclude:`/`visible_to:` as keyword
+  arguments to `Turbo::StreamsChannel.broadcast_*_to`, but turbo-rails swallows
+  unknown kwargs into its render locals — so on the pgbus transport the options were
+  **silently dropped** and `exclude: reactive_connection_id` never suppressed the
+  actor's own broadcast echo. They are now threaded through the thread-locals pgbus
+  reads (`Thread.current[:pgbus_broadcast_exclude]`/`_visible_to`), capability-gated
+  on `pgbus_streams?` so the Action Cable path is unchanged. Found by the new
+  end-to-end pgbus transport suite (below) — the prior unit doubles only proved the
+  option was *forwarded to the method*, never that it *reached pgbus*.
+
+### Added
+
+- **CI transport verification matrix — the browser suite runs on Action Cable AND pgbus (#187).**
+  The system job is now `server × transport` (Puma/Falcon × cable/pgbus). The pgbus
+  cells add a plain `postgres:18` (pgbus vendors the PGMQ schema via its own
+  migrations — no extension image) and set `TRANSPORT=pgbus`, so the existing browser
+  suite proves the reactive round trip is transport-agnostic, and new `:pgbus`-tagged
+  specs prove real cross-tab broadcast delivery + actor-echo exclusion over live
+  Postgres SSE. `rake spec:system_matrix` runs the 2×2 locally (pgbus cells skip with
+  a note when Postgres isn't reachable); `rake pgbus:prepare_test_db` sets up the DB.
+  pgbus remains an optional, non-gemspec dependency — it is now a first-class *tested*
+  transport, not a required one.
+
 ### Changed
 
 - **BREAKING: `reactive_show` speaks ONE conditions language — `if:`/`if_any:`/`unless:` (#180).**

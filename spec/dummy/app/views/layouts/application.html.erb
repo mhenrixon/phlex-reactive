@@ -16,14 +16,24 @@
     <script type="importmap">
       {
         "imports": {
-          "@hotwired/turbo-rails": "/vendor/turbo.js",
+          <%# Issue #187: pin turbo to a shim that re-exports a NAMED `Turbo`
+              (the raw turbo.js only sets window.Turbo). pgbus's stream-source
+              client does `import { Turbo } from "@hotwired/turbo-rails"`; without
+              the named export its module throws and the SSE element never
+              registers. The shim re-runs turbo.js's side effects, so a bare
+              `import "@hotwired/turbo-rails"` (the cable cells) is unaffected. %>
+          "@hotwired/turbo-rails": "/vendor/turbo_rails_shim.js",
           "@hotwired/stimulus": "/vendor/stimulus.js",
           "reactive_controller": "/vendor/reactive_controller.js",
           "phlex/reactive/confirm": "/vendor/confirm.js",
           "phlex/reactive/compute": "/vendor/compute.js",
           "phlex/reactive/inspect": "/vendor/inspect.js",
           "payment_split_reducer": "/vendor/payment_split_reducer.js",
-          "post_preview_reducer": "/vendor/post_preview_reducer.js"
+          "post_preview_reducer": "/vendor/post_preview_reducer.js"<% if ENV["TRANSPORT"] == "pgbus" %>,
+          <%# Issue #187: pgbus's turbo_stream_from injects `import
+              "pgbus/stream_source_element"`; pin it to the vendored engine asset
+              (this app has no asset pipeline / importmap-rails auto-pin). %>
+          "pgbus/stream_source_element": "/vendor/pgbus_stream_source_element.js"<% end %>
         }
       }
     </script>

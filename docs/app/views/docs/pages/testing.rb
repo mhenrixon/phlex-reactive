@@ -289,7 +289,41 @@ module Views
                 plain 's or two browser contexts), act in one, and assert the morph appears in the other. ' \
                       'Allow a beat for the SSE round trip.'
               end
+              p do
+                strong { 'The transport matrix.' }
+                plain ' The gem is transport-agnostic — a reactive round trip must work on ' \
+                      'Action Cable AND pgbus. Its own CI proves this by running the browser suite ' \
+                      'across '
+                code { 'server × transport' }
+                plain ' (Puma/Falcon × cable/pgbus). The '
+                code { 'cable' }
+                plain ' cells run on SQLite; the '
+                code { 'pgbus' }
+                plain ' cells add a plain '
+                code { 'postgres:18' }
+                plain ' (pgbus vendors the PGMQ schema via its own migrations — no extension image) ' \
+                      'and set '
+                code { 'TRANSPORT=pgbus' }
+                plain ', so the same specs run over real Postgres-backed SSE. A handful of '
+                code { ':pgbus' }
+                plain '-tagged specs additionally prove real cross-tab delivery and actor-echo ' \
+                      'exclusion (the '
+                code { 'exclude: reactive_connection_id' }
+                plain ' contract) end to end.'
+              end
             end
+            DocsUI::Code(<<~BASH, lexer: :shell)
+              # both servers, Action Cable (the default local sweep)
+              bundle exec rake spec:system_servers
+
+              # the full matrix: puma/falcon × cable/pgbus (needs local Postgres;
+              # the pgbus cells skip with a note when Postgres isn't reachable)
+              bundle exec rake spec:system_matrix
+
+              # one pgbus cell by hand
+              bundle exec rake pgbus:prepare_test_db          # once, sets up the DB
+              TRANSPORT=pgbus CAPYBARA_SERVER=falcon bundle exec rspec spec/system
+            BASH
           end
         end
 
