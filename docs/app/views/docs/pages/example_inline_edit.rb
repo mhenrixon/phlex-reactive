@@ -73,11 +73,11 @@ module Views
         def dirty_component
           DocsUI::Section('How dirty tracking works') do
             md <<~MD
-              `reactive_root(track_dirty: true, warn_unsaved: true)` mixes
-              `input->reactive#trackDirty` onto the root and arms a navigate-away
-              guard gated on the live dirty count. `reactive_field(:title, dirty:
-              true)` opts the field in too. On `save` the action morphs, so the
-              reply re-renders the field with the NEW value as its fresh
+              `reactive_dirty warn_unsaved: true`, declared once at the class
+              level, mixes `input->reactive#trackDirty` onto the root and arms a
+              navigate-away guard gated on the live dirty count — every field
+              under the root tracks by default. On `save` the action morphs, so
+              the reply re-renders the field with the NEW value as its fresh
               `defaultValue` — the post-morph re-scan finds it clean and the badge
               clears without a full-page reload.
             MD

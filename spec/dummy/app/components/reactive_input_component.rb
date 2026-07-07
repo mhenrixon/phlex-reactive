@@ -29,10 +29,11 @@ class ReactiveInputComponent < ApplicationComponent
 
   def view_template
     div(id:, **reactive_attrs) do
-      # name="value" emitted by the helper, not hand-written.
-      reactive_input(:value, value: @record.public_send(@attribute).to_s, data: { testid: "field" })
+      # One binding helper (issue #184): reactive_field emits name="value"; the
+      # element (input/select/textarea) is the caller's.
+      input(**reactive_field(:value, value: @record.public_send(@attribute).to_s, data: { testid: "field" }))
 
-      reactive_select(:status, data: { testid: "status" }) do
+      select(**reactive_field(:status, data: { testid: "status" })) do
         # Named param required: the inner Phlex content block reuses `s`, so `it`
         # would collapse both blocks onto one implicit param (wrong output).
         STATUSES.each { |s| option(value: s) { s } } # rubocop:disable Style/ItBlockParameter

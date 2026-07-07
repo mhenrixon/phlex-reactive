@@ -116,6 +116,8 @@ module Phlex
         # frozen registry makes runtime registration a loud error rather than a
         # never-validated type. Idempotent.
         Phlex::Reactive.freeze_param_types!
+        # Freeze the named-schema registry the same way (issue #184).
+        Phlex::Reactive.freeze_param_schemas!
       end
     end
   end

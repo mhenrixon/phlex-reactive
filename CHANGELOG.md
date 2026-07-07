@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Scoped form fields no longer silently drop their params — the #67 footgun is fixed (#184).**
+  Under `reactive_scope`, `reactive_field(:date)` now emits the scoped wire name
+  (`name="invoice[date]"`), so the POST arrives bracketed — and the endpoint unwraps
+  exactly ONE scope level before schema matching, so a FLAT schema
+  (`params: { date: :string }`) matches. Previously a scoped field either POSTed a bare
+  name (misaligned with the `reactive_show`/`reactive_compute` resolvers, which already
+  query `[name="scope[x]"]`) or forced a hand-written bracketed name + a hand-nested
+  schema that Rails' bracket-expansion silently dropped. The client's `meta.changed`
+  resolver (`#changedComputeField`) is now scope-aware too, so a scoped compute
+  component's reducer still sees the bare declared name.
+
 - **`reactive_compute` output order no longer silently corrupts values (#183).**
   Each output write used to dispatch an `input` event **mid-loop**, re-entering the
   reducer synchronously from a **half-written DOM** — so a wrong `outputs:` order
@@ -22,6 +33,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stay correct) and a self-re-entry-suppression test.
 
 ### Changed
+
+- **BREAKING: forms & fields — scope everywhere, one dirty declaration, named schemas (#184).**
+  - **`reactive_scope` extends to `reactive_field` and the param unwrap:** a scoped
+    field emits `name="scope[field]"` and the endpoint peels one scope level, so the
+    schema stays flat. A schema nested under the scope key raises a guided
+    `ArgumentError` from BOTH the `action` macro and `reactive_scope` (either
+    declaration order).
+  - **One dirty declaration — `reactive_dirty`:** `reactive_dirty warn_unsaved: true`
+    (class-level) and `reactive_dirty only: %i[title]` replace
+    `reactive_root(track_dirty:, warn_unsaved:)` + `reactive_field(dirty:)`. The
+    removed kwargs raise guided errors; the emitted DOM is unchanged (zero client
+    change).
+  - **Named param schemas — `Phlex::Reactive.param_schema`:** register a reusable
+    schema in an initializer (`param_schema :todo, title: :string, …`) and resolve it
+    with `action :save, params: :todo`, or compose with `{ **param_schema(:todo), … }`.
+    Frozen after boot (the `param_type` precedent); an unknown name lists the
+    registered ones. `params:` still takes a Hash.
+  - **One binding helper:** `reactive_input` / `reactive_select` are removed — use
+    `input(**reactive_field(…))` / `select(**reactive_field(…)) { … }` /
+    `textarea(**reactive_field(…))`. The stubs raise the rewrite.
 
 - **BREAKING: `reactive_compute` is scope-aware, root-bound, and permit-shaped (#183).**
   - **Bind + listen at the root:** `reactive_root(compute: :name)` emits the compute

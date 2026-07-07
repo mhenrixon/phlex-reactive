@@ -384,8 +384,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `on(:action, once: true)` | Fire at most once, then unbind (Stimulus's native `:once`). |
 | `on_client(:click, js.toggle("#menu"))` | **Client-only** trigger: applies declared DOM ops with ZERO round trip — no token, no POST, ever. Takes the same `window:`/`once:`/`outside:` modifiers. See [Client-only ops](#client-only-ops-on_client--js--zero-round-trips). |
 | `js` | The immutable op builder behind `on_client`: `show`/`hide`/`toggle` (the `hidden` attribute, with an optional `transition:`), `add_class`/`remove_class`/`toggle_class`, `set_attr`/`remove_attr`/`toggle_attr` (allowlisted names), `focus`/`focus_first`, `text` (set `textContent` — XSS-safe), and `dispatch` — chainable. |
-| `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
-| `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
+| `reactive_field(:param, **attrs)` | The attribute hash that binds a control to an action param (no magic `name:`) — spread onto any control: `input(**reactive_field(:value, value: @record.name))`, `select(**reactive_field(:status)) { … }`. |
 | `reactive_text(:name, initial)` | Mirror a compute output (or a declared input) into a **text node** — a live preview heading, a character counter, `"Hello, {name}"` — via `textContent` (XSS-safe). The text sibling of `reactive_field`; carries no `name`, so it's never POSTed. See [Client-side computes](#client-side-computes-reactive_compute--reactive_text). |
 | `reactive_show(if:/if_any:/unless:)` | **Value-conditional visibility** (the `x-show`/`data-show` case): spread onto the element to show/hide — it toggles `hidden` from the fields' **current values**, client-only, zero round trip. One conditions language: a **Hash is an AND**, an **Array is membership**, a **Range is a threshold**, `if_any:` is OR-of-AND, `unless:` negates. `reactive_values` computes first paint; `disable:` disables a hidden section's controls. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
 | `reactive_show_targets(:field, "#id" => value)` | **Cross-root visibility**: the component that owns the field declares which **outside**, id-allowlisted elements it governs (a nav tab, a panel in another pane) — the visibility parallel of `mirror:`. Spread on the **root** via `mix(reactive_root, …)`, **once per root** — several fields go in one call via the hash form. The value uses the same `where`-style vocabulary (`"advanced"`, `%w[a b]`, `10..`). Id selectors only (raise at render + client warn-skip); toggles `hidden` only. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
@@ -393,7 +392,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_listnav("[role=option]")` | The **standalone** combobox keyboard wiring (Arrow/Enter/Escape) for an input that fires **no action** — the preload-and-filter case. Same behavior as `on(…, listnav:)`, minus the POST. |
 | `reactive_compute :name, inputs: { title: :string, qty: :number }, outputs:` | **Typed** inputs: a `:string` reaches the JS reducer raw, a `:number` is coerced through `Number`. The array form (`inputs: %i[a b]`) stays all-numeric; the **permit-style** form (`inputs: [:qty, title: :string]`) mixes both — bare symbols default `:number`, a trailing hash types the exceptions. `outputs:` is the field allowlist; a reducer-result key also paints any owned `reactive_text` node by presence and any `mirror:` id, so an `outputs:` entry that exists only to reach a text node is redundant (harmless — a widening). |
 | `reactive_compute :name, ..., mirror: { sum: "#summary-sum" }` | **Cross-root text mirrors**: paint a compute value into declared, id-allowlisted nodes **outside** the reactive root (a recap in another tab pane) via `textContent` — no bespoke listener. See [Cross-root mirrors](#cross-root-mirrors-mirror--painting-a-recap-outside-the-root). |
-| `reactive_root(track_dirty: true, warn_unsaved: true)` / `reactive_field(:param, dirty: true)` | **Dirty tracking** against the DOM's own `defaultValue`/`defaultChecked`/`defaultSelected` — no client state. Marks changed fields + the root `data-reactive-dirty`; `warn_unsaved:` arms a `beforeunload`/`turbo:before-visit` guard. Style with `[data-reactive-dirty]`. See [Dirty-field tracking](#dirty-field-tracking-dirty--track_dirty--warn_unsaved). |
+| `reactive_dirty` / `reactive_dirty warn_unsaved: true` / `reactive_dirty only: %i[...]` | **Dirty tracking**, declared once at the class level, against the DOM's own `defaultValue`/`defaultChecked`/`defaultSelected` — no client state. Marks changed fields + the root `data-reactive-dirty`; `warn_unsaved:` arms a `beforeunload`/`turbo:before-visit` guard; `only:` scopes tracking to named fields. Style with `[data-reactive-dirty]`. See [Dirty-field tracking](#dirty-field-tracking-reactive_dirty). |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
 | `reactive_collection :name, item:, container:, count:, empty:, size:` | Declare an add/remove-row list once; actions call `reply.append`/`prepend`/`remove`. See [Reactive collections](#reactive-collections-addremove-rows--count--empty-state). |
 | `reply.replace` / `.morph` / `.update` / `.remove` / `.redirect(url)` / `.with(*)` / `.js(ops)` | Return from an action to control the reply (flash, remove, redirect, multi-stream, server-pushed client ops). See [Controlling the action's reply](#reply--controlling-the-actions-reply). |
@@ -427,6 +426,23 @@ def charge(amount:) = @invoice.charge!(amount) # amount is a BigDecimal or unset
 Register during boot only: the registry is **frozen after initialization**, so a
 runtime `param_type` call raises. A schema referencing a registered type is
 validated at declaration like any built-in.
+
+**Named param schemas (`Phlex::Reactive.param_schema`).** Register a reusable
+schema once so sibling components stop duplicating a verbatim params Hash that
+drifts — follows the same boot-only contract as `param_type`:
+
+```ruby
+# config/initializers/phlex_reactive.rb
+Phlex::Reactive.param_schema :todo, title: :string, done: :boolean
+
+# then, in any component:
+action :save, params: :todo
+
+# or compose it into a bigger schema:
+action :bulk, params: { **Phlex::Reactive.param_schema(:todo), note: :string }
+```
+
+Reading an unregistered name raises, listing the ones that are registered.
 
 **File uploads (`:file`).** Declare `:file` (or `[:file]` for multiple) to accept
 an uploaded file in a reactive action — attach a document/receipt/image to the
@@ -686,7 +702,7 @@ is not disabled mid-typing. On settle the text is restored only if it still
 matches what was swapped in; a morph that rendered a **new** server label is left
 alone.
 
-### Dirty-field tracking (`dirty:` / `track_dirty:` + `warn_unsaved:`)
+### Dirty-field tracking (`reactive_dirty`)
 
 Show "unsaved changes", enable **Save** only when something changed, or warn
 before navigating away — Livewire's `wire:dirty` — **without shipping any client
@@ -696,17 +712,32 @@ zero extra bytes. `input.defaultValue` / `defaultChecked` / `option.defaultSelec
 phlex-reactive reads that baseline straight from the DOM — nothing to snapshot,
 nothing to sign.
 
+`reactive_dirty` is declared **once, at the class level**, alongside your other
+macros (`reactive_record`/`reactive_state`/`action`) — not as a `reactive_root` or
+`reactive_field` keyword:
+
 ```ruby
-div(**reactive_root(track_dirty: true, warn_unsaved: true)) do
-  input(**reactive_field(:title, value: @todo.title, dirty: true))
-  span(class: "unsaved-badge") { "Unsaved" }   # shown via [data-reactive-dirty] CSS
-  button(**on(:save, disable_with: "Saving…")) { "Save" }
+class TodoForm < ApplicationComponent
+  include Phlex::Reactive::Component
+
+  reactive_record :todo
+  reactive_dirty warn_unsaved: true
+  action :save, params: { title: :string }
+
+  def view_template
+    div(**reactive_root) do
+      input(**reactive_field(:title, value: @todo.title))
+      span(class: "unsaved-badge") { "Unsaved" }   # shown via [data-reactive-dirty] CSS
+      button(**on(:save, disable_with: "Saving…")) { "Save" }
+    end
+  end
 end
 ```
 
-- **`track_dirty: true`** on the root wires every input under it to a full
-  re-scan on change. **`dirty: true`** on a single `reactive_field` opts that one
-  field in (use it when only some fields should count).
+- **`reactive_dirty`** (no args) wires every input under the root to a full
+  re-scan on change. **`reactive_dirty only: %i[title]`** scopes tracking to the
+  named fields only — each carries its own descriptor instead of the root
+  delegating for the whole subtree (use it when only some fields should count).
 - On each change the client re-scans **every field the root owns** in one pass and
   marks:
   - each changed field with **`data-reactive-dirty="true"`**, and
@@ -739,15 +770,16 @@ and the badge clears with no reload. (Turbo 8 morph preserves a focused field's
 in-progress value while writing the fresh defaults — the post-morph re-scan is
 what keeps the root count honest in that state.)
 
-**`warn_unsaved: true`** arms a navigate-away guard gated on the **live** dirty
-count: `beforeunload` (a real browser unload) and `turbo:before-visit` (a Turbo
-in-app navigation). A clean form never blocks. **Caveats:** browsers show their
-own generic `beforeunload` copy (your message string is legacy and ignored), and
-`turbo:before-visit` **does not fire on restoration visits** (Back/Forward) — a
-documented Turbo gap, not a phlex-reactive one.
+**`reactive_dirty warn_unsaved: true`** arms a navigate-away guard gated on the
+**live** dirty count: `beforeunload` (a real browser unload) and
+`turbo:before-visit` (a Turbo in-app navigation). A clean form never blocks.
+**Caveats:** browsers show their own generic `beforeunload` copy (your message
+string is legacy and ignored), and `turbo:before-visit` **does not fire on
+restoration visits** (Back/Forward) — a documented Turbo gap, not a
+phlex-reactive one.
 
 **Out of scope (v1):** rich-text / `contenteditable` editors have no `default*`
-baseline and are **not** tracked. Combining `reactive_field(dirty:)` with your own
+baseline and are **not** tracked. Combining `reactive_field` with your own
 `data:`/`on(...)` still needs `mix(...)` (a bare merge clobbers the `data-action`
 the descriptor rides on — the same rule as everywhere else).
 
@@ -1190,17 +1222,17 @@ button(**on(:increment), data: { testid: "inc" }) { "+" }
 **Binding inputs to action params (drop the magic `name:`).** A field's value
 travels with an action only if its `name` equals the param. Hand-writing
 `name: "value"` on every input is easy to forget — the action then silently gets
-nothing. `reactive_input`/`reactive_select` emit the binding for you (the trigger
-stays on the button, so focusing the field doesn't dispatch and collapse edit
-mode):
+nothing. `reactive_field` returns the attribute hash that carries the binding —
+spread it onto any control (the trigger stays on the button, so focusing the
+field doesn't dispatch and collapse edit mode):
 
 ```ruby
 action :save, params: { value: :string, status: :string }
 
 def view_template
   span(**reactive_root) do
-    reactive_input(:value, value: @record.name)            # <input name="value" …>
-    reactive_select(:status) do                            # <select name="status">…</select>
+    input(**reactive_field(:value, value: @record.name))    # <input name="value" …>
+    select(**reactive_field(:status)) do                    # <select name="status">…</select>
       %w[open closed].each { |s| option(value: s, selected: s == @record.status) { s } }
     end
     button(**mix(on(:save), data: { testid: "save" })) { "Save" }

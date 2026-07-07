@@ -53,6 +53,8 @@ module Phlex
           record_key: :@reactive_own_record_key,
           # Form-field namespace — reactive_scope (issue #180).
           scope: :@reactive_own_scope,
+          # Dirty-tracking config — reactive_dirty (issue #184).
+          dirty: :@reactive_own_dirty,
           # Deferred reply segments — reactive_lazy (issue #165).
           lazy: :@reactive_own_lazy,
           # verify_authorized opt-out (issue #168): a scalar bare flag (skip the
