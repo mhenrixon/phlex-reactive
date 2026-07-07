@@ -322,7 +322,7 @@ module Phlex
           }
           attrs[:data][:reactive_debounce_param] = debounce if debounce
           attrs[:data][:reactive_throttle_param] = throttle if throttle
-          attrs[:data][:reactive_confirm_param] = confirm if confirm
+          apply_confirm!(attrs[:data], confirm) if confirm
           attrs[:data][:reactive_optimistic_param] = pending_hint_json(optimistic, action_name, :optimistic) if optimistic
           attrs[:data][:reactive_busy_param] = pending_hint_json(busy, action_name, :busy) if busy
           # STRING "true", not boolean: Phlex renders a `true` attribute VALUELESS
@@ -390,8 +390,9 @@ module Phlex
           # the identical data-reactive-confirm-param; the client's runOps prompts
           # via confirmResolver BEFORE applying the ops (a falsy resolve cancels
           # the chain), so a destructive client op gets the themed dialog with no
-          # round trip. The conditional (predicate) forms are issue #179.
-          attrs[:data][:reactive_confirm_param] = confirm if confirm
+          # round trip. Issue #179: a Hash confirm: is CONDITIONAL — same shared
+          # apply_confirm! branches String vs Hash for both on and on_client.
+          apply_confirm!(attrs[:data], confirm) if confirm
           attrs[:type] = "button" if event == "click" && !window_bound
           attrs
         end
@@ -816,6 +817,53 @@ module Phlex
           end
 
           selector
+        end
+
+        # Issue #179: apply a confirm: gate to a trigger's data hash. A String is
+        # the static #52/#55 form (data-reactive-confirm-param, unchanged). A Hash
+        # is the CONDITIONAL form (data-reactive-confirm-when-param, JSON) — warn
+        # only when field values look suspect:
+        #   { when: { total: 0 }, message: }  — reactive_show conditions language
+        #     (scalar=equals, Range=threshold, Array=set); prompts when it MATCHES.
+        #   { predicate: "name", message: }   — a JS fn registered with
+        #     setConfirmPredicate, evaluated over collected fields (multi-field logic).
+        # Shared by on and on_client so both paths speak the same three forms. The
+        # predicate is soft-validation UX, NOT authorization — a user can bypass it;
+        # the action still hits the endpoint's real authorize/default-deny.
+        def apply_confirm!(data, confirm)
+          case confirm
+          when String
+            data[:reactive_confirm_param] = confirm
+          when Hash
+            data[:reactive_confirm_when_param] = compile_conditional_confirm(confirm).to_json
+          else
+            raise ArgumentError,
+              "confirm: takes a String (static) or a Hash ({ when: {…}, message: } / " \
+              "{ predicate: \"name\", message: }), got #{confirm.class}"
+          end
+        end
+
+        # Validate + compile a Hash confirm: into its wire payload. Exactly one of
+        # when:/predicate:, message: required — a dead binding fails loudly at
+        # render (the reactive_show posture), never silently in the browser.
+        def compile_conditional_confirm(confirm)
+          message = confirm[:message]
+          has_when = confirm.key?(:when)
+          has_predicate = confirm.key?(:predicate)
+
+          if has_when == has_predicate
+            raise ArgumentError,
+              "confirm: needs exactly one of when: (a conditions hash) or predicate: " \
+              "(a registered name), not both/neither — got #{confirm.except(:message).inspect}"
+          end
+          raise ArgumentError, "confirm: Hash needs a message: to show when it fires" if message.nil?
+
+          if has_predicate
+            { "predicate" => confirm[:predicate].to_s, "message" => message }
+          else
+            groups = Phlex::Reactive::ShowConditions.normalize(if: confirm[:when])
+            { "groups" => { "any" => groups }, "message" => message }
+          end
         end
 
         # Normalize + validate ONE field's target map (issue #180): each key a

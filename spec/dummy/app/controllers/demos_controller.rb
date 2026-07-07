@@ -212,6 +212,18 @@ class DemosController < ActionController::Base
     render html: render_to_string(ClientOpConfirmComponent.new, layout: false).html_safe, layout: true
   end
 
+  # Issue #179: DECLARATIVE conditional confirm — the save warns only when total
+  # is 0 (the reactive_show conditions language evaluated client-side).
+  def conditional_confirm
+    render_component ConditionalConfirmComponent.new
+  end
+
+  # Issue #179: NAMED-PREDICATE conditional confirm — the save warns only when
+  # the end date precedes the start (a registered multi-field JS predicate).
+  def schedule_confirm
+    render_component ScheduleConfirmComponent.new
+  end
+
   # Optimistic visual hints (issue #98): a checkbox that flips natively before
   # the (deliberately slow) morph, a failing action whose hint reverts, and a
   # hide-then-remove delete. A fresh, unfinished Todo each visit.

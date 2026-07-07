@@ -896,6 +896,68 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  # Issue #179: confirm: overloads to a Hash for CONDITIONAL confirmation — warn
+  # only when field values look suspect. The declarative form reuses reactive_show's
+  # conditions language via when: (scalar=equals, Range=threshold, Array=set),
+  # compiled by ShowConditions and emitted as data-reactive-confirm-when-param JSON.
+  # The named-predicate form carries a registered-function name. The static String
+  # form is unchanged.
+  describe "#on conditional confirm (issue #179)" do
+    subject(:instance) { state_klass.new }
+
+    it "compiles when: through the reactive_show conditions language (equals)" do
+      attrs = instance.send(:on, :save, confirm: { when: { count: 0 }, message: "Count is 0 — continue?" })
+
+      payload = JSON.parse(attrs[:data][:reactive_confirm_when_param])
+      expect(payload["message"]).to eq("Count is 0 — continue?")
+      # ShowConditions DNF wire: { any: [[{ field, equals }]] }
+      term = payload.dig("groups", "any", 0, 0)
+      expect(term["field"]).to eq("count")
+      expect(term["equals"]).to eq("0")
+      expect(attrs[:data]).not_to have_key(:reactive_confirm_param) # not the static form
+    end
+
+    it "compiles a Range value as a threshold (reactive_show semantics)" do
+      attrs = instance.send(:on, :save, confirm: { when: { count: 100.. }, message: "Large — sure?" })
+
+      term = JSON.parse(attrs[:data][:reactive_confirm_when_param]).dig("groups", "any", 0, 0)
+      expect(term["field"]).to eq("count")
+      expect(term["gte"]).to eq(100)
+    end
+
+    it "carries a named predicate verbatim" do
+      attrs = instance.send(:on, :save, confirm: { predicate: "zero_total", message: "Totals look off — continue?" })
+
+      payload = JSON.parse(attrs[:data][:reactive_confirm_when_param])
+      expect(payload["predicate"]).to eq("zero_total")
+      expect(payload["message"]).to eq("Totals look off — continue?")
+    end
+
+    it "raises when the Hash has neither when: nor predicate:" do
+      expect { instance.send(:on, :save, confirm: { message: "?" }) }
+        .to raise_error(ArgumentError, /when:.*predicate:|needs (a )?when:/i)
+    end
+
+    it "raises when the Hash has BOTH when: and predicate:" do
+      expect { instance.send(:on, :save, confirm: { when: { count: 0 }, predicate: "x", message: "?" }) }
+        .to raise_error(ArgumentError, /when:.*predicate:|exactly one|not both/i)
+    end
+
+    it "raises when the Hash omits message:" do
+      expect { instance.send(:on, :save, confirm: { when: { count: 0 } }) }
+        .to raise_error(ArgumentError, /message:/)
+    end
+
+    it "works identically on on_client (the Hash rides the client-op path too)" do
+      attrs = instance.send(:on_client, :click, instance.js.text("#draft", ""),
+        confirm: { when: { count: 0 }, message: "Discard?" })
+
+      payload = JSON.parse(attrs[:data][:reactive_confirm_when_param])
+      expect(payload["message"]).to eq("Discard?")
+      expect(payload.dig("groups", "any", 0, 0)["field"]).to eq("count")
+    end
+  end
+
   describe "#on keyboard filters via event: (Enter-to-submit / Escape-to-cancel)" do
     subject(:instance) { state_klass.new }
 

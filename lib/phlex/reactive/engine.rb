@@ -35,6 +35,8 @@ module Phlex
             phlex/reactive/reactive_controller.min.js.map
             phlex/reactive/confirm.min.js
             phlex/reactive/confirm.min.js.map
+            phlex/reactive/confirm_predicate.min.js
+            phlex/reactive/confirm_predicate.min.js.map
             phlex/reactive/compute.min.js
             phlex/reactive/compute.min.js.map
             phlex/reactive/inspect.min.js
@@ -74,6 +76,16 @@ module Phlex
           it.importmap.pin(
             "phlex/reactive/compute",
             to: "phlex/reactive/compute.min.js",
+            preload: true
+          )
+          # The client-side confirm-predicate registry (issue #179) — the
+          # multi-field escape hatch for conditional confirmation. Same bare-specifier
+          # rationale as confirm/compute: reactive_controller.js imports it, and an app
+          # registers predicates via `import { setConfirmPredicate } from
+          # "phlex/reactive/confirm_predicate"` — both resolve through this pin.
+          it.importmap.pin(
+            "phlex/reactive/confirm_predicate",
+            to: "phlex/reactive/confirm_predicate.min.js",
             preload: true
           )
           # The on-demand client inspector (issue #168). NOT preloaded — it is a
