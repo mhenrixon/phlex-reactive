@@ -300,7 +300,7 @@ module Phlex
                        "initializer (config/initializers/phlex_reactive.rb)."
         end
 
-        param_schemas[name.to_sym] = schema.transform_keys(&:to_sym).freeze
+        param_schemas[name.to_sym] = deep_freeze_schema(schema.transform_keys(&:to_sym))
       end
 
       def param_schemas
@@ -327,6 +327,19 @@ module Phlex
       end
 
       private
+
+      # Deep-freeze a registered schema so a nested Hash/Array (a nested-param
+      # schema like { address: { street: :string } }) can't be mutated through the
+      # memoized object fetch_param_schema returns — a top-level freeze alone leaves
+      # inner structures writable, poisoning the shared registry entry. Symbolizes
+      # nested keys too so composed-in nested schemas stay canonical.
+      def deep_freeze_schema(value)
+        case value
+        when Hash then value.to_h { |k, v| [k.to_sym, deep_freeze_schema(v)] }.freeze
+        when Array then value.map { deep_freeze_schema(it) }.freeze
+        else value
+        end
+      end
 
       # Resolve a registered named schema, raising a guided error (listing the
       # registered names) for an unknown one — the action macro calls this to turn

@@ -399,15 +399,17 @@ module Phlex
         # hatch). The trigger (on(:save)) stays on the button, not the field — so
         # focusing the input doesn't dispatch and collapse edit mode.
         #
-        # `dirty: true` (issue #103) wires the field to the generic controller's
-        # trackDirty action, so a change re-scans this reactive root's owned fields
-        # and marks the changed ones `data-reactive-dirty` (and the root with a
-        # count). NO client state is shipped — the baseline is the DOM's own
-        # `defaultValue`/`defaultChecked`/`defaultSelected`, i.e. the attributes from
-        # the last server render; dirty = current ≠ default. It deep-merges the
-        # descriptor via mix, so a caller's own data-action is token-joined, not
-        # clobbered (CLAUDE.md Never-Do #8 — combining with other data:/on() still
-        # needs mix at the call site).
+        # Dirty tracking is class-level now (issue #184): the per-field `dirty:`
+        # kwarg is REMOVED (reject_removed_field_dirty! raises a guided error). A
+        # field carries the trackDirty descriptor only when `reactive_dirty only:`
+        # names it (field_dirty_tracked?) — otherwise the root delegates for the
+        # whole subtree via reactive_root. The client behavior is unchanged (issue
+        # #103): a change re-scans this root's owned fields and marks the changed
+        # ones `data-reactive-dirty` (the root gets a count); NO client state ships —
+        # the baseline is the DOM's own `defaultValue`/`defaultChecked`/
+        # `defaultSelected` from the last server render (dirty = current ≠ default).
+        # The descriptor deep-merges via mix, so a caller's own data-action is
+        # token-joined, not clobbered (CLAUDE.md Never-Do #8).
         def reactive_field(param, **attrs)
           # Issue #184: the removed dirty: kwarg lands in **attrs — catch it and
           # print the reactive_dirty rewrite.

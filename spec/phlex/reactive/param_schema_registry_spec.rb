@@ -19,6 +19,14 @@ RSpec.describe "Phlex::Reactive.param_schema (issue #184)" do # rubocop:disable 
     expect(Phlex::Reactive.param_schema(:todo)).to eq(title: :string, done: :boolean)
   end
 
+  it "deep-freezes a nested schema so the shared entry can't be mutated" do
+    Phlex::Reactive.param_schema(:order, total: :integer, address: { street: :string })
+    stored = Phlex::Reactive.param_schema(:order)
+    expect(stored).to be_frozen
+    expect(stored[:address]).to be_frozen
+    expect { stored[:address][:evil] = :boom }.to raise_error(FrozenError)
+  end
+
   it "resolves `action params: :symbol` to the registered schema" do
     Phlex::Reactive.param_schema(:todo, title: :string, done: :boolean)
     klass = Class.new do
