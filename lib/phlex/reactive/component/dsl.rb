@@ -340,20 +340,46 @@ module Phlex
             reactive_computes.key?(name.to_sym)
           end
 
-          # Split the `inputs:` argument into [ordered names, types-or-nil] (issue
-          # #104). A HASH ({ title: :string, qty: :number }) yields typed inputs —
-          # the ordered keys plus a symbolized name→type map. Anything else (an
-          # array, a bare symbol) is the UNTYPED form — ordered names and nil types,
-          # so the array-form wire stays byte-identical and the client keeps its
-          # numeric coercion. Named after the shape it normalizes.
+          # Split the `inputs:` argument into [ordered names, types-or-nil].
+          # THREE shapes, all degenerate cases of the issue-#183 PERMIT form
+          # (bare symbols default to :number; a trailing Hash types the exceptions):
+          #
+          #   * a pure Hash ({ title: :string, qty: :number }) — the issue-#104 typed
+          #     form. Ordered keys + a name→type map.
+          #   * a permit Array with a trailing Hash ([:qty, { title: :string }]) —
+          #     bare symbols typed :number, the Hash keys typed as declared. This is
+          #     the one form the issue-#183 docs show.
+          #   * a bare Array/symbol ([:price, :qty]) — the issue-#73 UNTYPED form.
+          #     nil types, so the array-form wire stays byte-identical and the client
+          #     keeps its numeric coercion.
+          #
+          # Named after the shape it normalizes.
           def normalize_compute_inputs(inputs)
-            if inputs.is_a?(Hash)
-              names = inputs.keys.map(&:to_sym)
-              types = inputs.transform_keys(&:to_sym).transform_values(&:to_sym)
-              [names, types]
-            else
-              [Array(inputs).map(&:to_sym), nil]
-            end
+            return normalize_typed_compute_inputs(inputs) if inputs.is_a?(Hash)
+
+            # dup before popping: Array(inputs) returns the SAME object for an array
+            # arg, so an unguarded pop would mutate (or FrozenError on) a shared or
+            # frozen inputs array the caller still holds.
+            list = Array(inputs).dup
+            trailing = list.last.is_a?(Hash) ? list.pop : nil
+            names = list.map(&:to_sym)
+
+            # No trailing type Hash → the untyped array form (nil types).
+            return [names, nil] if trailing.nil?
+
+            # Permit form: bare names default to :number; the trailing Hash types
+            # the exceptions. Declaration order is bare names, then the Hash keys.
+            typed = trailing.transform_keys(&:to_sym).transform_values(&:to_sym)
+            ordered = names + typed.keys
+            types = names.to_h { [it, :number] }.merge(typed)
+            [ordered, types]
+          end
+
+          # A pure Hash of name => type (issue #104): ordered keys + the type map.
+          def normalize_typed_compute_inputs(inputs)
+            names = inputs.keys.map(&:to_sym)
+            types = inputs.transform_keys(&:to_sym).transform_values(&:to_sym)
+            [names, types]
           end
 
           # Normalize `mirror:` to { name => [id selectors] } (nil passes

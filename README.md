@@ -368,7 +368,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `action :name, params: { x: :integer }` | Declare a client-invokable action + its param schema. **Default-deny.** |
 | `mark_authorized!` | Inside an action: satisfy the `verify_authorized` guard after a bespoke check the interceptor can't see (a hand-rolled policy). Call it only after your check passes. |
 | `skip_verify_authorized [ :a, :b ]` | Opt a component (bare) or specific actions out of the default-ON `verify_authorized` guard — for a genuinely public component (a counter, a client-only filter). |
-| `reactive_root(**overrides)` | Spread onto the root element: emits the component `id` **and** `reactive_attrs` together, so the controller root always carries `#id`. Preferred over `id:` + `reactive_attrs`. `**overrides` (`class:`/`data:`) deep-merge. |
+| `reactive_root(**overrides)` | Spread onto the root element: emits the component `id` **and** `reactive_attrs` together, so the controller root always carries `#id`. Preferred over `id:` + `reactive_attrs`. `**overrides` (`class:`/`data:`) deep-merge. `compute: :name` binds a client-side compute **at the root** — descriptors plus the `input->reactive#recompute` delegation, so no field needs its own wiring; `nil` collapses to no binding. See [Client-side computes](#client-side-computes-reactive_compute--reactive_text). |
 | `reactive_attrs` | Marks an element reactive + carries the signed token (no `id`). Spread alongside `id:` on the **same** element: `div(id:, **reactive_attrs)`. Prefer `reactive_root`, which can't split them. |
 | `on(:action, event: "click", **params)` | Spread onto a trigger element. Adds `type=button` for clicks. |
 | `on(:action, event: "input", debounce: 300)` | Coalesce rapid events into one round trip after a quiet period (live-as-you-type). |
@@ -391,7 +391,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_show_targets(:field, "#id" => value)` | **Cross-root visibility**: the component that owns the field declares which **outside**, id-allowlisted elements it governs (a nav tab, a panel in another pane) — the visibility parallel of `mirror:`. Spread on the **root** via `mix(reactive_root, …)`, **once per root** — several fields go in one call via the hash form. The value uses the same `where`-style vocabulary (`"advanced"`, `%w[a b]`, `10..`). Id selectors only (raise at render + client warn-skip); toggles `hidden` only. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
 | `reactive_filter(input:, option:, group: nil, empty: nil)` | **Client-side option filtering** for a preloaded combobox: spread onto the root — typing in the named input shows/hides the options by their `data-reactive-filter-text` haystack, **zero round trips**. Optional `group:` collapses an all-hidden group header; `empty:` reveals a no-matches node. See [Client-side option filtering](#client-side-option-filtering-reactive_filter). |
 | `reactive_listnav("[role=option]")` | The **standalone** combobox keyboard wiring (Arrow/Enter/Escape) for an input that fires **no action** — the preload-and-filter case. Same behavior as `on(…, listnav:)`, minus the POST. |
-| `reactive_compute :name, inputs: { title: :string, qty: :number }, outputs:` | **Typed** inputs: a `:string` reaches the JS reducer raw, a `:number` is coerced through `Number`. The array form (`inputs: %i[a b]`) stays all-numeric. |
+| `reactive_compute :name, inputs: { title: :string, qty: :number }, outputs:` | **Typed** inputs: a `:string` reaches the JS reducer raw, a `:number` is coerced through `Number`. The array form (`inputs: %i[a b]`) stays all-numeric; the **permit-style** form (`inputs: [:qty, title: :string]`) mixes both — bare symbols default `:number`, a trailing hash types the exceptions. `outputs:` is the field allowlist; a reducer-result key also paints any owned `reactive_text` node by presence and any `mirror:` id, so an `outputs:` entry that exists only to reach a text node is redundant (harmless — a widening). |
 | `reactive_compute :name, ..., mirror: { sum: "#summary-sum" }` | **Cross-root text mirrors**: paint a compute value into declared, id-allowlisted nodes **outside** the reactive root (a recap in another tab pane) via `textContent` — no bespoke listener. See [Cross-root mirrors](#cross-root-mirrors-mirror--painting-a-recap-outside-the-root). |
 | `reactive_root(track_dirty: true, warn_unsaved: true)` / `reactive_field(:param, dirty: true)` | **Dirty tracking** against the DOM's own `defaultValue`/`defaultChecked`/`defaultSelected` — no client state. Marks changed fields + the root `data-reactive-dirty`; `warn_unsaved:` arms a `beforeunload`/`turbo:before-visit` guard. Style with `[data-reactive-dirty]`. See [Dirty-field tracking](#dirty-field-tracking-dirty--track_dirty--warn_unsaved). |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
@@ -996,9 +996,8 @@ reactive_compute :preview,
   inputs: { title: :string, qty: :number },  # typed: :string raw, :number → Number
   outputs: %i[title_preview char_count]       # written with no round trip
 
-div(**mix(reactive_root, reactive_compute_attrs(:preview))) do
-  input(**mix(reactive_field(:title, value: @post.title),
-              data: { action: "input->reactive#recompute" }))
+div(**reactive_root(compute: :preview)) do
+  input(**reactive_field(:title, value: @post.title))
   h2    { reactive_text(:title_preview, @post.title) }  # a text-node output
   small { reactive_text(:char_count) }                  # another text-node output
 end
@@ -1012,18 +1011,31 @@ setComputeReducer("preview", ({ title }) => ({
 }))
 ```
 
+- **`reactive_root(compute: :name)` binds AND listens at the root.** It emits the
+  compute descriptors plus the `input->reactive#recompute` delegation on the root
+  element, so no field needs any per-field compute wiring. `nil` (e.g.
+  `reactive_root(compute: (:preview unless @post.persisted?))`) collapses to no
+  binding at all — one expression for conditional compute.
 - **Typed inputs.** `inputs:` takes a **hash** to type each input: a `:number` is
   coerced through `Number` (blank/NaN → 0 — the array-form default), a `:string`
   reaches the reducer **raw** so a live text preview reads real text. The **array
-  form** (`inputs: %i[a b]`) stays all-numeric and byte-identical on the wire.
+  form** (`inputs: %i[a b]`) stays all-numeric and byte-identical on the wire. The
+  **permit-style form** (`inputs: [:qty, title: :string]`) combines both in one
+  declaration — bare symbols default to `:number`, a trailing hash types the
+  exceptions.
 - **`reactive_text(:name, initial)`** mirrors a value into a **text node** via
-  `textContent` (XSS-safe by construction). An output whose name matches an owned
-  form field writes that field's `.value`; an output with **no** matching field
-  writes every owned `[data-reactive-text="<name>"]` node. It carries **no
-  `name`**, so it's never collected or POSTed as a param.
-- **Reducer-less mirrors.** A declared **input** also mirrors into its own
-  `reactive_text(:same_name)` node on every keystroke with **no reducer at all** —
-  so `reactive_text(:title)` is a live field echo out of the box.
+  `textContent` (XSS-safe by construction). Every reducer-result key paints any
+  matching sink: an owned **field** if declared in `outputs:`, any owned
+  **`reactive_text`** node by presence, or a declared **`mirror:`** id — so an
+  `outputs:` entry that exists only to reach a text node is redundant (existing
+  declarations keep working; it's a widening, not a breaking change). It carries
+  **no `name`**, so it's never collected or POSTed as a param.
+- **Reducer-less mirrors, and reactive_values seeding.** A declared **input** also
+  mirrors into its own `reactive_text(:same_name)` node on every keystroke with
+  **no reducer at all** — so `reactive_text(:title)` is a live field echo out of
+  the box. And `reactive_text(:name)` called with **no explicit `initial`** seeds
+  its first paint from `reactive_values` when the component declares one and
+  covers that name — the same no-flash first-paint contract `reactive_show` uses.
 - **Seed the server render.** Your `view_template` must seed each mirror with the
   same derived value the reducer would (`reactive_text(:char_count, "5/80")`), or
   a later morph repaints stale text — the same reconcile contract the whole

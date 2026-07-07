@@ -496,6 +496,98 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  # Issue #183: reactive_root(compute: :name) binds the compute AT THE ROOT — the
+  # root carries the data-reactive-compute-* descriptors AND the recompute
+  # delegation, so fields need ZERO per-field input->reactive#recompute wiring.
+  # A nil compute: emits no binding (the conditional-binding collapse).
+  describe "#reactive_root compute binding (issue #183)" do
+    subject(:instance) { compute_root_klass.new }
+
+    let(:compute_root_klass) do
+      Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "ComputeRootThing"
+
+        reactive_state :total, :allowance
+        reactive_compute :split, inputs: %i[allowance total], outputs: %i[allowance]
+        def initialize(total: 0, allowance: 0)
+          @total = total
+          @allowance = allowance
+        end
+
+        def id = "compute-root"
+      end
+    end
+
+    it "emits the compute descriptors at the root for compute: :name" do
+      attrs = instance.send(:reactive_root, compute: :split)
+      expect(attrs[:data][:reactive_compute_reducer_param]).to eq("split")
+      expect(JSON.parse(attrs[:data][:reactive_compute_inputs_param])).to eq(%w[allowance total])
+      expect(JSON.parse(attrs[:data][:reactive_compute_outputs_param])).to eq(%w[allowance])
+    end
+
+    it "delegates the input event to recompute at the root" do
+      attrs = instance.send(:reactive_root, compute: :split)
+      expect(attrs[:data][:action]).to include("input->reactive#recompute")
+    end
+
+    it "keeps the full reactive root (id + controller + token)" do
+      attrs = instance.send(:reactive_root, compute: :split)
+      expect(attrs[:data][:controller]).to eq("reactive")
+      expect(attrs[:id]).to eq("compute-root")
+      expect(attrs[:data][:reactive_token_value]).to be_a(String)
+    end
+
+    it "emits NO compute binding for compute: nil (conditional collapse)" do
+      attrs = instance.send(:reactive_root, compute: nil)
+      expect(attrs[:data]).not_to have_key(:reactive_compute_reducer_param)
+      # Unconditional: a recompute delegation leaking onto a compute-nil root is
+      # exactly the regression to catch, so never guard it away.
+      expect(attrs[:data][:action].to_s).not_to include("recompute")
+      expect(attrs).not_to have_key(:compute)
+    end
+
+    it "does NOT emit compute: as a literal HTML attribute (kwarg consumed pre-mix)" do
+      attrs = instance.send(:reactive_root, compute: :split)
+      expect(attrs).not_to have_key(:compute)
+    end
+
+    it "composes the recompute descriptor with a caller's own data-action (token-join)" do
+      attrs = instance.send(:reactive_root, compute: :split, data: { action: "scroll->reactive#dispatch" })
+      expect(attrs[:data][:action]).to include("scroll->reactive#dispatch")
+      expect(attrs[:data][:action]).to include("input->reactive#recompute")
+    end
+
+    it "raises for an undeclared compute name" do
+      expect { instance.send(:reactive_root, compute: :nope) }
+        .to raise_error(Phlex::Reactive::Error, /reactive_compute/)
+    end
+  end
+
+  # Issue #183: reactive_compute_attrs is removed as a public helper — the compute
+  # binding lives on reactive_root(compute:). It raises a guided error naming it.
+  describe "#reactive_compute_attrs removed (issue #183)" do
+    subject(:instance) { compute_root_klass.new }
+
+    let(:compute_root_klass) do
+      Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "ComputeAttrsGone"
+        reactive_compute :split, inputs: %i[a], outputs: %i[a]
+        def id = "gone"
+      end
+    end
+
+    it "raises a guided error naming reactive_root(compute:)" do
+      expect { instance.send(:reactive_compute_attrs, :split) }
+        .to raise_error(ArgumentError, /reactive_root\(compute:/)
+    end
+  end
+
   describe "#reactive_attrs debug flag (issue #108)" do
     subject(:instance) { state_klass.new }
 
@@ -1237,18 +1329,26 @@ RSpec.describe Phlex::Reactive::Component do
       end
     end
 
-    describe "#reactive_compute_attrs (data attributes for the root)" do
+    # The wire emission the root's compute binding produces (issue #183 moved it
+    # from reactive_compute_attrs into the private compute_binding helper that
+    # reactive_root(compute:) calls).
+    describe "#compute_binding (root compute descriptors)" do
       subject(:instance) { compute_klass.new }
 
       it "emits the reducer key and the input/output field names as data attrs" do
-        attrs = instance.send(:reactive_compute_attrs, :payment_split)
+        attrs = instance.send(:compute_binding, :payment_split)
         expect(attrs[:data][:reactive_compute_reducer_param]).to eq("payment_split")
         expect(JSON.parse(attrs[:data][:reactive_compute_inputs_param])).to eq(%w[allowance cash leasing total])
         expect(JSON.parse(attrs[:data][:reactive_compute_outputs_param])).to eq(%w[allowance cash leasing])
       end
 
+      it "carries the recompute action descriptor" do
+        attrs = instance.send(:compute_binding, :payment_split)
+        expect(attrs[:data][:action]).to eq("input->reactive#recompute")
+      end
+
       it "raises for an undeclared compute (fail fast, not a silent no-op)" do
-        expect { instance.send(:reactive_compute_attrs, :nope) }
+        expect { instance.send(:compute_binding, :nope) }
           .to raise_error(Phlex::Reactive::Error, /reactive_compute/)
       end
     end
@@ -1273,7 +1373,7 @@ RSpec.describe Phlex::Reactive::Component do
       it "keeps the ARRAY form's inputs param a byte-identical JSON array" do
         # The exact serialized string the client parses — pinned so the typed-
         # inputs change can never silently alter the shipped array-form wire.
-        attrs = compute_klass.new.send(:reactive_compute_attrs, :payment_split)
+        attrs = compute_klass.new.send(:compute_binding, :payment_split)
         expect(attrs[:data][:reactive_compute_inputs_param])
           .to eq('["allowance","cash","leasing","total"]')
       end
@@ -1292,15 +1392,73 @@ RSpec.describe Phlex::Reactive::Component do
       end
 
       it "emits the HASH form's inputs param as a JSON object of name→type" do
-        attrs = typed_klass.new.send(:reactive_compute_attrs, :preview)
+        attrs = typed_klass.new.send(:compute_binding, :preview)
         expect(JSON.parse(attrs[:data][:reactive_compute_inputs_param]))
           .to eq("title" => "string", "qty" => "number")
       end
 
       it "still emits the outputs param as a JSON array for the hash form" do
-        attrs = typed_klass.new.send(:reactive_compute_attrs, :preview)
+        attrs = typed_klass.new.send(:compute_binding, :preview)
         expect(JSON.parse(attrs[:data][:reactive_compute_outputs_param]))
           .to eq(%w[title_preview char_count])
+      end
+    end
+
+    # Issue #183: the PERMIT shape unifies the array and hash dialects. Bare
+    # symbols default to :number; a trailing Hash types the exceptions. Both old
+    # dialects are degenerate cases of this one form (a pure array = all bare; a
+    # pure hash arrives as one trailing Hash with no bare names).
+    describe "permit-style inputs (issue #183)" do
+      let(:permit_klass) do
+        Class.new do
+          include Phlex::Reactive::Component
+
+          def self.name = "PermitCompute"
+
+          reactive_compute :preview, inputs: [:qty, { title: :string }], outputs: %i[char_count]
+        end
+      end
+
+      it "types a bare symbol as :number (the default)" do
+        expect(permit_klass.reactive_compute(:preview).input_types[:qty]).to eq(:number)
+      end
+
+      it "types a trailing-hash exception as declared" do
+        expect(permit_klass.reactive_compute(:preview).input_types[:title]).to eq(:string)
+      end
+
+      it "captures the input names in declaration order (bare first, then hash keys)" do
+        expect(permit_klass.reactive_compute(:preview).inputs).to eq(%i[qty title])
+      end
+
+      it "emits the mixed inputs as a JSON object of name→type" do
+        attrs = permit_klass.new.send(:compute_binding, :preview)
+        expect(JSON.parse(attrs[:data][:reactive_compute_inputs_param]))
+          .to eq("qty" => "number", "title" => "string")
+      end
+
+      it "keeps a pure bare-symbol array untyped (byte-identical array wire)" do
+        klass = Class.new do
+          include Phlex::Reactive::Component
+
+          def self.name = "BareArrayCompute"
+          reactive_compute :t, inputs: %i[price qty], outputs: %i[total]
+        end
+        attrs = klass.new.send(:compute_binding, :t)
+        expect(attrs[:data][:reactive_compute_inputs_param]).to eq('["price","qty"]')
+      end
+
+      it "does NOT mutate or raise on a frozen/shared inputs array (dup before pop)" do
+        frozen_inputs = [:qty, { title: :string }].freeze
+        expect do
+          Class.new do
+            include Phlex::Reactive::Component
+
+            def self.name = "FrozenInputsCompute"
+          end.reactive_compute(:preview, inputs: frozen_inputs, outputs: %i[char_count])
+        end.not_to raise_error
+        # The caller's array is untouched (the trailing Hash is still there).
+        expect(frozen_inputs).to eq([:qty, { title: :string }])
       end
     end
 
@@ -1360,13 +1518,13 @@ RSpec.describe Phlex::Reactive::Component do
       end
 
       it "emits the mirror map as a JSON object of name → [ids] on the root attrs" do
-        attrs = mirror_klass.new.send(:reactive_compute_attrs, :split)
+        attrs = mirror_klass.new.send(:compute_binding, :split)
         expect(JSON.parse(attrs[:data][:reactive_compute_mirror_param]))
           .to eq("sum_a" => ["#sum_a"], "sum_total" => ["#sum_total", "#footer-total"])
       end
 
       it "emits NO mirror param when undeclared (the wire stays byte-identical)" do
-        attrs = compute_klass.new.send(:reactive_compute_attrs, :payment_split)
+        attrs = compute_klass.new.send(:compute_binding, :payment_split)
         expect(attrs[:data]).not_to have_key(:reactive_compute_mirror_param)
       end
     end
@@ -1414,6 +1572,55 @@ RSpec.describe Phlex::Reactive::Component do
 
     it "carries NO name attribute (so it is never collected/POSTed as a param)" do
       expect(text_klass.new.call).not_to include("name=")
+    end
+
+    # Issue #183: reactive_text(:name) with NO explicit initial seeds its first
+    # paint from reactive_values (Phase A) when that key is covered — so the server
+    # render matches what the reducer would paint, with no hand-passed seed.
+    describe "first-paint seeding from reactive_values (issue #183)" do
+      let(:seeded_klass) do
+        Class.new(Phlex::HTML) do
+          include Phlex::Reactive::Component
+
+          def self.name = "SeededTextMirror"
+
+          def reactive_values = { char_count: 42, greeting: "Hi Ada" }
+
+          def view_template
+            reactive_text(:char_count)
+            reactive_text(:greeting)
+          end
+        end
+      end
+
+      it "seeds the span from reactive_values when no explicit initial is given" do
+        html = seeded_klass.new.call
+        expect(html).to include('data-reactive-text="char_count"')
+        expect(html).to include(">42</span>")
+        expect(html).to include(">Hi Ada</span>")
+      end
+
+      it "an explicit initial still wins over reactive_values" do
+        klass = Class.new(Phlex::HTML) do
+          include Phlex::Reactive::Component
+
+          def self.name = "ExplicitWins"
+          def reactive_values = { char_count: 42 }
+          def view_template = reactive_text(:char_count, 7)
+        end
+        expect(klass.new.call).to include(">7</span>")
+      end
+
+      it "renders empty for a name reactive_values does not cover" do
+        klass = Class.new(Phlex::HTML) do
+          include Phlex::Reactive::Component
+
+          def self.name = "PartialValues"
+          def reactive_values = { other: 1 }
+          def view_template = reactive_text(:char_count)
+        end
+        expect(klass.new.call).to match(%r{<span[^>]*data-reactive-text="char_count"[^>]*></span>})
+      end
     end
   end
 

@@ -127,11 +127,16 @@ module Phlex
           root_id = id if root_id.nil? && respond_to?(:id)
           track_dirty = overrides.delete(:track_dirty)
           warn_unsaved = overrides.delete(:warn_unsaved)
+          # Issue #183: bind a client-side compute AT THE ROOT — the descriptors +
+          # the recompute delegation ride here so no field needs per-field wiring.
+          # nil (the conditional-binding collapse) emits nothing.
+          compute = overrides.delete(:compute)
 
           attrs = mix({ **reactive_attrs }, overrides)
           attrs = mix(attrs, { id: root_id }) unless root_id.nil?
           attrs = mix(attrs, { data: { action: "input->reactive#trackDirty" } }) if track_dirty
           attrs = mix(attrs, { data: { reactive_warn_unsaved: "true" } }) if warn_unsaved
+          attrs = mix(attrs, compute_binding(compute)) if compute
           attrs
         end
 
@@ -419,7 +424,24 @@ module Phlex
         # reducer would, or a morph repaints stale text (same reconcile contract
         # reactive_compute documents). Extra attrs merge over the binding.
         def reactive_text(name, initial = nil, **attrs)
+          # Issue #183: with no explicit initial, seed the first paint from
+          # reactive_values (Phase A) when the component declares it and covers this
+          # name — so the server render matches what the reducer would paint (the
+          # same no-flash reconcile contract reactive_show's first paint uses).
+          initial = reactive_text_seed(name) if initial.nil?
           span(**mix({ data: { reactive_text: name.to_s } }, attrs)) { initial }
+        end
+
+        # The reactive_values first-paint seed for a reactive_text name, stringified
+        # the way the client reports a field (via show_value_string), or nil when
+        # the component declares no reactive_values or doesn't cover the name.
+        def reactive_text_seed(name)
+          return nil unless respond_to?(:reactive_values)
+
+          values = reactive_values
+          return nil unless values.is_a?(Hash) && values.key?(name.to_sym)
+
+          show_value_string(values[name.to_sym])
         end
 
         # Value-conditional visibility (issue #180) — the x-show / data-show /
@@ -607,20 +629,27 @@ module Phlex
           { data: { reactive_busy_on: action.to_s } }
         end
 
-        # Data attributes declaring a client-side compute for the root element.
-        # Spread ALONGSIDE reactive_root so the generic controller can find the
-        # reducer and the named input/output fields inside this root:
-        #   div(**mix(reactive_root, reactive_compute_attrs(:payment_split))) { … }
-        #
-        # It emits the reducer key plus the input/output field names as JSON so the
-        # client runs the reducer on `input`, writes the outputs with no round trip,
-        # then the debounced POST reconciles from the server reply. Raises for an
-        # undeclared compute — a silent no-op would leave the field wiring dead.
+        # REMOVED in issue #183 — the compute binding moved to
+        # reactive_root(compute: :name), which emits the descriptors AND the
+        # recompute delegation at the root, so no field carries per-field wiring:
+        #   div(**reactive_root(compute: :payment_split)) { … }
+        # This helper now raises a guided ArgumentError printing that rewrite.
         def reactive_compute_attrs(name)
+          raise ArgumentError,
+            "reactive_compute_attrs(#{name.inspect}) was removed in issue #183 — " \
+            "pass reactive_root(compute: #{name.inspect}) instead (bind + listen at the root)"
+        end
+
+        # The root's compute descriptors + the recompute delegation (issue #183).
+        # Emits the same data-reactive-compute-* attrs as before PLUS the
+        # input->reactive#recompute action, all on the root element. Raises for an
+        # undeclared name (fail fast, not a silent no-op).
+        def compute_binding(name)
           definition = self.class.reactive_compute_def(name)
           raise Error, "#{self.class} has no reactive_compute #{name.inspect}" unless definition
 
           data = {
+            action: "input->reactive#recompute",
             reactive_compute_reducer_param: definition.reducer,
             reactive_compute_inputs_param: compute_inputs_param(definition),
             reactive_compute_outputs_param: definition.outputs.map(&:to_s).to_json

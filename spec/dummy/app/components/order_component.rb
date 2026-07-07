@@ -79,25 +79,19 @@ class OrderComponent < ApplicationComponent
 
   private
 
-  # The reactive root. On a new draft it also carries the compute binding so the
-  # client reducer can find the reducer key + the input/output fields.
+  # The reactive root. On a new draft it binds the client compute AT THE ROOT
+  # (issue #183: reactive_root(compute:) emits the descriptors + the recompute
+  # delegation, so no field needs per-field wiring). nil = no binding (persisted).
   def root_attrs
-    if @order.persisted?
-      reactive_root
-    else
-      mix(reactive_root, reactive_compute_attrs(:payment_split))
-    end
+    reactive_root(compute: (:payment_split unless @order.persisted?))
   end
 
   # Trigger attrs for the editable allowance field. A new draft recomputes
-  # in-browser on `input` (no network); a persisted order round-trips the
-  # rebalance action on `change` (server reconciles). Returns a full attrs hash.
+  # in-browser via the ROOT's compute binding (issue #183 — no per-field wiring);
+  # a persisted order round-trips the rebalance action on `change` (server
+  # reconciles). Returns a full attrs hash (empty for the new-draft branch).
   def allowance_wiring
-    if @order.persisted?
-      on(:rebalance, event: "change")
-    else
-      { data: { action: "input->reactive#recompute" } }
-    end
+    @order.persisted? ? on(:rebalance, event: "change") : {}
   end
 
   # `extra` is a full attrs hash (its own data:/type:) mixed onto the field so a
