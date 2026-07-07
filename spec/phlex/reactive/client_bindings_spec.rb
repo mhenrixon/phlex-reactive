@@ -81,4 +81,67 @@ RSpec.describe Phlex::Reactive::ClientBindings do
     end
     expect(full.ancestors).to include(described_class)
   end
+
+  # A ClientBindings component has no Identity/Streamable, so a server-action
+  # macro can never actually work — it would sign nothing and dispatch nowhere.
+  # Declaring one must fail LOUDLY at class-definition time, not silently no-op.
+  describe "server-action macros raise on a client-only class (default-deny)" do
+    it "raises for action" do
+      expect do
+        Class.new(Phlex::HTML) do
+          include Phlex::Reactive::ClientBindings
+
+          def self.name = "ClientWithAction"
+          action :save
+        end
+      end.to raise_error(ArgumentError, /action.*ClientBindings.*Phlex::Reactive::Component/m)
+    end
+
+    it "raises for reactive_record" do
+      expect do
+        Class.new(Phlex::HTML) do
+          include Phlex::Reactive::ClientBindings
+
+          def self.name = "ClientWithRecord"
+          reactive_record :todo
+        end
+      end.to raise_error(ArgumentError, /reactive_record.*needs.*Component/m)
+    end
+
+    it "raises for reactive_state" do
+      expect do
+        Class.new(Phlex::HTML) do
+          include Phlex::Reactive::ClientBindings
+
+          def self.name = "ClientWithState"
+          reactive_state :count
+        end
+      end.to raise_error(ArgumentError, /reactive_state.*needs.*Component/m)
+    end
+
+    it "still allows the client-only macros (reactive_scope, reactive_compute)" do
+      expect do
+        Class.new(Phlex::HTML) do
+          include Phlex::Reactive::ClientBindings
+
+          def self.name = "ClientWithComputes"
+          reactive_scope :form
+          reactive_compute :total, inputs: %i[a b], outputs: %i[total]
+        end
+      end.not_to raise_error
+    end
+
+    it "does NOT raise for those macros on a full Component (Identity present)" do
+      expect do
+        Class.new(Phlex::HTML) do
+          include Phlex::Reactive::Component
+
+          def self.name = "FullWithMacros"
+          reactive_record :todo
+          reactive_state :editing
+          action :save
+        end
+      end.not_to raise_error
+    end
+  end
 end

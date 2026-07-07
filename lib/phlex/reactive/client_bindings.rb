@@ -29,11 +29,16 @@ module Phlex
     #     end
     #   end
     #
-    # It includes the DECLARATION DSL (reactive_scope/reactive_compute — and the
-    # rest of the macros, harmless when unused) and the view Helpers, but NOT
-    # Streamable (nothing to clobber) or Identity (no token). So a ClientBindings
-    # class never enters Streamable.registered_classes and is invisible to
+    # It includes the DECLARATION DSL and the view Helpers, but NOT Streamable
+    # (nothing to clobber) or Identity (no token). So a ClientBindings class never
+    # enters Streamable.registered_classes and is invisible to
     # phlex_reactive:doctor's #id check — no dummy #id, no nag.
+    #
+    # The client-only DSL macros (reactive_scope, reactive_compute) work; the
+    # SERVER-ACTION macros (action, reactive_record, reactive_state) RAISE at
+    # class-definition time — without Identity they could only silently no-op
+    # (sign nothing, dispatch nowhere), so the guard fails loudly (the guard lives
+    # in Component::DSL#require_server_actions!, keyed on Identity presence).
     #
     # Helpers is token-tolerant (issue #180): reactive_attrs emits a token only
     # when reactive_token is available, and reactive_root uses #id only when
