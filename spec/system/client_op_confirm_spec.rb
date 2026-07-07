@@ -38,7 +38,10 @@ RSpec.describe "Confirmation-gated client op (issue #178)", type: :system do
     page.execute_script("window.confirm = () => true")
     find("[data-testid='clear']").click
 
-    expect(page).to have_css("[data-testid='draft']", text: "")
+    # exact_text: "", not text: "" — an empty string is a substring of every
+    # string, so text: "" would pass even if the draft still read "unsaved draft".
+    # exact_text requires the element to actually be blank (the op really ran).
+    expect(page).to have_css("[data-testid='draft']", exact_text: "")
     expect(page.evaluate_script("window.__noReload")).to eq("alive")
   end
 
@@ -78,7 +81,7 @@ RSpec.describe "Confirmation-gated client op (issue #178)", type: :system do
 
     find("[data-testid='clear']").click
 
-    expect(page).to have_css("[data-testid='draft']", text: "")
+    expect(page).to have_css("[data-testid='draft']", exact_text: "")
     expect(page.evaluate_script("window.__confirmMessage")).to eq("Discard this draft?")
   end
 
