@@ -1271,7 +1271,7 @@ export default class extends Controller {
   // the component resets whatever they toggled (by design — a signed action
   // owns state that must survive re-renders).
   runOps(event) {
-    const { ops, outside, window: windowBound } = event.params
+    const { ops, confirm, outside, window: windowBound } = event.params
 
     // Outside guard FIRST — identical semantics to dispatch() (issue #80): an
     // outside: trigger is a COMPLETE no-op for events inside this root, before
@@ -1281,10 +1281,29 @@ export default class extends Controller {
     // Element-bound triggers preventDefault (a bare button inside a <form>
     // must not submit it); window-bound triggers (window:/outside:) never do —
     // they hear every matching event on the page, and preventDefault-ing those
-    // would kill native clicks site-wide (issue #80 rationale).
+    // would kill native clicks site-wide (issue #80 rationale). Runs BEFORE the
+    // (possibly async) confirm gate below — a native default can't wait for a
+    // pending dialog (same ordering as dispatch()).
     if (!windowBound) event.preventDefault()
 
-    this.#applyOps(this.#parseOps(ops))
+    // No confirm → apply straight away (unchanged fast path, no prompt).
+    if (!confirm) return this.#applyOps(this.#parseOps(ops))
+
+    // Confirmation gate for client ops (issue #178) — the SAME confirmResolver
+    // gate on(:action, confirm:) uses (issues #52/#55), reused verbatim so a
+    // themed dialog set with setConfirmResolver covers BOTH paths. A destructive
+    // client op (clear a draft, reset a form) gets the one-line themed confirm
+    // without a round trip. Call the resolver INSIDE the chain (leading .then)
+    // so even a SYNCHRONOUS override throw rejects here instead of escaping
+    // runOps — a throwing dialog is a cancel, like dismissing it. The gate is
+    // here (the user gesture), NOT in #applyOps: that applier is shared with the
+    // server-pushed reactive:js stream action, which must NEVER prompt.
+    Promise.resolve()
+      .then(() => confirmResolver(confirm))
+      .catch(() => false)
+      .then((ok) => {
+        if (ok) this.#applyOps(this.#parseOps(ops))
+      })
   }
 
   // Dirty tracking (issue #103). Wired by reactive_field(dirty: true) /

@@ -365,7 +365,7 @@ module Phlex
         # Validation is loud: only a non-empty Phlex::Reactive::JS chain is
         # accepted — a dead trigger should fail at render, not no-op in the
         # browser.
-        def on_client(event, ops, window: false, once: false, outside: false)
+        def on_client(event, ops, window: false, once: false, outside: false, confirm: nil)
           unless ops.is_a?(Phlex::Reactive::JS)
             raise ArgumentError,
               "on_client expects a Phlex::Reactive::JS chain (e.g. js.toggle(\"#menu\")), " \
@@ -385,6 +385,13 @@ module Phlex
           # on()'s flags above.
           attrs[:data][:reactive_outside_param] = "true" if outside
           attrs[:data][:reactive_window_param] = "true" if window_bound
+          # Issue #178: confirm: gates the client-op chain behind the SAME
+          # overridable confirmResolver on(:action, confirm:) uses (#52/#55). Emits
+          # the identical data-reactive-confirm-param; the client's runOps prompts
+          # via confirmResolver BEFORE applying the ops (a falsy resolve cancels
+          # the chain), so a destructive client op gets the themed dialog with no
+          # round trip. The conditional (predicate) forms are issue #179.
+          attrs[:data][:reactive_confirm_param] = confirm if confirm
           attrs[:type] = "button" if event == "click" && !window_bound
           attrs
         end

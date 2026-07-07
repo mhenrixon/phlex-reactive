@@ -1285,6 +1285,29 @@ RSpec.describe Phlex::Reactive::Component do
       expect { instance.send(:on_client, :click, instance.js) }
         .to raise_error(ArgumentError, /no ops/)
     end
+
+    # Issue #178: confirm: on on_client emits the SAME data-reactive-confirm-param
+    # as on(...), so the client-op path routes through the identical confirmResolver
+    # gate — a destructive client op gets the app's themed dialog, no round trip.
+    it "emits data-reactive-confirm-param when confirm: is given" do
+      attrs = instance.send(:on_client, :click, ops, confirm: "Discard this draft?")
+
+      expect(attrs[:data][:reactive_confirm_param]).to eq("Discard this draft?")
+      expect(attrs[:data][:action]).to eq("click->reactive#runOps")
+    end
+
+    it "omits the confirm param when confirm: is absent (byte-stable wire for existing callers)" do
+      attrs = instance.send(:on_client, :click, ops)
+
+      expect(attrs[:data]).not_to have_key(:reactive_confirm_param)
+    end
+
+    it "composes confirm: with window:/outside: (the gate rides any binding)" do
+      attrs = instance.send(:on_client, :click, ops, outside: true, confirm: "Sure?")
+
+      expect(attrs[:data][:reactive_confirm_param]).to eq("Sure?")
+      expect(attrs[:data][:reactive_outside_param]).to eq("true")
+    end
   end
 
   # A record-backed component whose record is UNSAVED (new_record?) has no

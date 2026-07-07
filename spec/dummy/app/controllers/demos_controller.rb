@@ -204,6 +204,14 @@ class DemosController < ActionController::Base
     render_component ConfirmComponent.new
   end
 
+  # Issue #178: confirm: on on_client. A destructive-feeling client op (clear a
+  # draft) gated behind the themed confirmResolver — zero round trips. The system
+  # spec overrides window.confirm to prove decline leaves the marker, accept
+  # clears it, neither navigates. Declares no actions (client-op only).
+  def client_op_confirm
+    render html: render_to_string(ClientOpConfirmComponent.new, layout: false).html_safe, layout: true
+  end
+
   # Optimistic visual hints (issue #98): a checkbox that flips natively before
   # the (deliberately slow) morph, a failing action whose hint reverts, and a
   # hide-then-remove delete. A fresh, unfinished Todo each visit.

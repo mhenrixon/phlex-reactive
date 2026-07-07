@@ -32,6 +32,7 @@ Rails.application.routes.draw do
   get "client_tabs" => "demos#client_tabs"
   get "conditional_fieldset" => "demos#conditional_fieldset"
   get "confirm" => "demos#confirm"
+  get "client_op_confirm" => "demos#client_op_confirm"
   get "optimistic" => "demos#optimistic"
   get "loading_button" => "demos#loading_button"
   get "defer" => "demos#defer"
