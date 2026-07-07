@@ -3,7 +3,7 @@
 require 'rails_helper'
 
 # State-backed loading-states demo: save bumps the signed count and re-renders.
-# The disable_with: / busy_on affordances are client-side, so the endpoint
+# The busy: / busy_on affordances are client-side, so the endpoint
 # contract is just the increment + default-deny.
 RSpec.describe 'LoadingButton actions', type: :request do
   it 'increments the signed count on save' do

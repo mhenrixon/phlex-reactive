@@ -5,9 +5,9 @@ require 'system_helper'
 # The docs-owned latency toggle (issue #149 step 2). The loading-states page ships
 # a FAST server action (LoadingButtonComponent#save has no sleep), so the busy
 # window is unobservable on localhost. Flipping the toggle injects a client-side
-# delay via the gem's enableLatencySim, making disable_with: + busy_on observable.
+# delay via the gem's enableLatencySim, making busy: + busy_on observable.
 RSpec.describe 'Latency toggle', type: :system do
-  it 'makes the disable_with: label + busy spinner observable when the sim is on' do
+  it 'makes the busy: label + busy spinner observable when the sim is on' do
     visit '/docs/example-loading-states'
 
     # Baseline: the button reads "Save" and is enabled.
