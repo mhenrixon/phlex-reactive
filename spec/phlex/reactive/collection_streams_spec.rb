@@ -185,6 +185,57 @@ RSpec.describe "reactive_collection streams (issue #35)", type: :request do
     end
   end
 
+  # Issue #186: reply.append/prepend thread extra kwargs to the row component's
+  # new(model:, **kwargs) — the class API + broadcast_append_to already do this;
+  # Response.collection_* was the only caller forwarding nothing.
+  describe "row kwargs (issue #186)" do
+    let(:kw_row) do
+      Class.new(ApplicationComponent) do
+        include Phlex::Reactive::Streamable
+
+        def self.name = "KwRow"
+        def self.model_param_name = :todo
+
+        def initialize(todo:, autofocus: false)
+          @todo = todo
+          @autofocus = autofocus
+        end
+
+        def id = dom_id(@todo)
+        def view_template = li(id:, autofocus: @autofocus) { @todo.title }
+      end
+    end
+
+    let(:kw_container) do
+      row = kw_row
+      Class.new(ApplicationComponent) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "KwList"
+        reactive_collection :todos, item: row, container: "todos-list"
+        def initialize(size: 0) = @size = size
+        def id = "kw-list-root"
+        def view_template = div(id:, **reactive_attrs) { "" }
+      end
+    end
+
+    it "threads a row kwarg to the row component (append)" do
+      response = kw_container.new.reply.append(todo, to: :todos, autofocus: true)
+      expect(response.streams.first.to_s).to include("autofocus")
+    end
+
+    it "threads a row kwarg to the row component (prepend)" do
+      response = kw_container.new.reply.prepend(todo, to: :todos, autofocus: true)
+      expect(response.streams.first.to_s).to include("autofocus")
+    end
+
+    it "is additive — a no-kwarg append still works" do
+      response = kw_container.new.reply.append(todo, to: :todos)
+      expect(response.streams.first.to_s).not_to include("autofocus")
+    end
+  end
+
   describe "errors" do
     it "raises a clear error for an undeclared collection" do
       expect { container_class.new.reply.append(todo, to: :nope) }

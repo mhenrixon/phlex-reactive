@@ -211,19 +211,23 @@ RSpec.describe Phlex::Reactive::JS do
     end
   end
 
-  # --- Issue #96: the transition: kwarg on show/hide/toggle ---
-
+  # --- Issue #96/#186: the transition: kwarg on show/hide/toggle ---
+  # Issue #186: transition: takes NAMED legs ({ during:, from:, to: }); it compiles
+  # to the same [during, from, to] wire array (zero client change). The old
+  # positional Array form raises with the caller's own values in the named form.
   describe "transition: kwarg on show/hide/toggle" do
-    it "carries [during, from, to] class lists on the visibility op" do
-      ops = js.toggle("#menu", transition: %w[transition-opacity opacity-0 opacity-100]).to_json
+    it "compiles named legs to the [during, from, to] wire array" do
+      ops = js.toggle("#menu",
+        transition: { during: "transition-opacity", from: "opacity-0", to: "opacity-100" }).to_json
       expect(JSON.parse(ops).dig(0, 1, "transition"))
         .to eq(%w[transition-opacity opacity-0 opacity-100])
     end
 
     it "works on show and hide too" do
-      expect(JSON.parse(js.show("#x", transition: %w[t f to]).to_json).dig(0, 1, "transition"))
+      legs = { during: "t", from: "f", to: "to" }
+      expect(JSON.parse(js.show("#x", transition: legs).to_json).dig(0, 1, "transition"))
         .to eq(%w[t f to])
-      expect(JSON.parse(js.hide("#x", transition: %w[t f to]).to_json).dig(0, 1, "transition"))
+      expect(JSON.parse(js.hide("#x", transition: legs).to_json).dig(0, 1, "transition"))
         .to eq(%w[t f to])
     end
 
@@ -231,9 +235,14 @@ RSpec.describe Phlex::Reactive::JS do
       expect(JSON.parse(js.toggle("#x").to_json).dig(0, 1)).not_to have_key("transition")
     end
 
-    it "rejects a transition list that is not exactly [during, from, to]" do
-      expect { js.toggle("#x", transition: %w[only two]) }
-        .to raise_error(ArgumentError, /during, from, to/)
+    it "raises for the removed Array form, slotting the caller's values into named legs" do
+      expect { js.toggle("#x", transition: %w[fade fade-from fade-to]) }
+        .to raise_error(ArgumentError, /during: "fade".*from: "fade-from".*to: "fade-to"/m)
+    end
+
+    it "raises for a Hash missing a leg" do
+      expect { js.toggle("#x", transition: { during: "fade", from: "a" }) }
+        .to raise_error(ArgumentError, /during.*from.*to/m)
     end
   end
 

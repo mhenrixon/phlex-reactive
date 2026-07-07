@@ -32,7 +32,7 @@ module Phlex
         # — it raises loudly and broadcasts NOTHING, OUTSIDE the render rescue
         # below (a component with actions can't be forged past the signed
         # identity anyway, so this never fires for a real defer).
-        unless klass.respond_to?(:reactive_action?) && klass.include?(Phlex::Reactive::Component)
+        unless klass.respond_to?(:reactive_actions) && klass.include?(Phlex::Reactive::Component)
           raise ::ArgumentError,
             "#{component_class_name} is not a reactive component — refusing the deferred render"
         end

@@ -198,6 +198,26 @@ module Views
                   code { 'streamables' }
                   plain ' (the key count).'
                 end
+                li do
+                  code { 'defer.phlex_reactive' }
+                  plain ' — one per deferred render (the '
+                  code { 'reply.defer' }
+                  plain ' endpoint). Payload: '
+                  code { 'component' }
+                  plain ', '
+                  code { 'outcome' }
+                  plain ' ('
+                  code { 'ok' }
+                  plain '/'
+                  code { 'no_content' }
+                  plain '/'
+                  code { 'invalid_token' }
+                  plain '/'
+                  code { 'not_found' }
+                  plain '/'
+                  code { 'unauthorized' }
+                  plain ').'
+                end
               end
               p do
                 strong { 'Payloads carry names, the outcome, and sizes only' }
@@ -230,6 +250,7 @@ module Views
               # [reactive] Counter#drop_table denied_undeclared (0.2ms)
               # [reactive] render Counter 512B (0.9ms)
               # [reactive] broadcast replace Counter →2 (1.4ms)
+              # [reactive] defer SlowTotals ok (18.2ms)
             RUBY
             DocsUI::Callout(:tip) do
               plain 'The events fire whether or not you enable the LogSubscriber — the flag only controls the '

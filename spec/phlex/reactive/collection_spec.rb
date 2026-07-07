@@ -39,12 +39,12 @@ RSpec.describe Phlex::Reactive::Component, "reactive_collection" do
 
   describe "declaration storage" do
     it "registers the collection under its name" do
-      expect(container_klass.reactive_collection?(:items)).to be(true)
-      expect(container_klass.reactive_collection?(:nope)).to be(false)
+      expect(container_klass.reactive_collections.key?(:items)).to be(true)
+      expect(container_klass.reactive_collections.key?(:nope)).to be(false)
     end
 
     it "captures the item component, container id, count id and empty component" do
-      collection = container_klass.reactive_collection_def(:items)
+      collection = container_klass.reactive_collections[:items]
       expect(collection.item).to eq(row_klass)
       expect(collection.container).to eq("items-list")
       expect(collection.count).to eq("items-count")
@@ -52,7 +52,7 @@ RSpec.describe Phlex::Reactive::Component, "reactive_collection" do
     end
 
     it "evaluates the size resolver against a component instance" do
-      collection = container_klass.reactive_collection_def(:items)
+      collection = container_klass.reactive_collections[:items]
       expect(collection.size_for(container_klass.allocate)).to eq(3)
     end
   end
@@ -69,13 +69,13 @@ RSpec.describe Phlex::Reactive::Component, "reactive_collection" do
     end
 
     it "allows omitting count, empty and size" do
-      collection = minimal_klass.reactive_collection_def(:rows)
+      collection = minimal_klass.reactive_collections[:rows]
       expect(collection.count).to be_nil
       expect(collection.empty).to be_nil
     end
 
     it "size defaults to nil when no resolver is declared" do
-      collection = minimal_klass.reactive_collection_def(:rows)
+      collection = minimal_klass.reactive_collections[:rows]
       expect(collection.size_for(minimal_klass.allocate)).to be_nil
     end
   end
@@ -85,13 +85,13 @@ RSpec.describe Phlex::Reactive::Component, "reactive_collection" do
       parent = container_klass
       child = Class.new(parent) do
         def self.name = "ChildList"
-        reactive_collection :extras, item: parent.reactive_collection_def(:items).item, container: "extras"
+        reactive_collection :extras, item: parent.reactive_collections[:items].item, container: "extras"
       end
 
-      expect(child.reactive_collection?(:items)).to be(true)
-      expect(child.reactive_collection?(:extras)).to be(true)
+      expect(child.reactive_collections.key?(:items)).to be(true)
+      expect(child.reactive_collections.key?(:extras)).to be(true)
       # parent is not polluted by the child's addition
-      expect(parent.reactive_collection?(:extras)).to be(false)
+      expect(parent.reactive_collections.key?(:extras)).to be(false)
     end
   end
 end

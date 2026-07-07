@@ -47,12 +47,9 @@ class FilterComboboxComponent < ApplicationComponent
   def view_template
     div(**mix(
       reactive_root(data: { testid: "filter-combobox" }),
-      reactive_filter(
-        input: "#filter-combobox-search",
-        option: "[role=option]",
-        group: "[data-filter-group]",
-        empty: "#filter-combobox-empty"
-      )
+      # Issue #186: name the driving field (:q → [name="q"]); option defaults to the
+      # [role=option] convention; group/empty are opt-in.
+      reactive_filter(:q, group: "[data-filter-group]", empty: "#filter-combobox-empty")
     )) do
       search_input
       CATALOG.each { |category, entries| group(category, entries) }
@@ -67,9 +64,10 @@ class FilterComboboxComponent < ApplicationComponent
   # Arrow/Enter/Escape standalone (Enter clicks the highlighted option's own
   # reactive trigger, so selection stays a signed action).
   def search_input
+    # name="q" is the field reactive_filter(:q) compiles to [name="q"] (issue #186).
     input(**mix(
       reactive_listnav("[role=option]"),
-      id: "filter-combobox-search",
+      id: "filter-combobox-search", name: "q",
       type: "search", autocomplete: "off",
       data: { testid: "filter-query" }
     ))

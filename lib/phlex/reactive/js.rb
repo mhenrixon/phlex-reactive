@@ -240,15 +240,23 @@ module Phlex
         self.class.assert_allowed_attr(name)
       end
 
-      # A transition must be exactly [during, from, to] class lists (strings).
+      # A transition is NAMED legs { during:, from:, to: } (issue #186), compiled to
+      # the [during, from, to] wire array (zero client change). The old positional
+      # Array form is removed — it raises with the caller's OWN values slotted into
+      # the named form, so the rewrite is copy-pasteable.
       def normalize_transition(transition)
-        list = Array(transition)
-        unless list.size == 3
+        if transition.is_a?(Array)
+          d, f, t = transition
           raise ArgumentError,
-            "#{self.class}: transition: must be [during, from, to] class lists, got #{transition.inspect}"
+            "#{self.class}: transition: takes named legs (issue #186) — " \
+            "transition: { during: #{d.inspect}, from: #{f.inspect}, to: #{t.inspect} }"
+        end
+        unless transition.is_a?(Hash) && %i[during from to].all? { transition.key?(it) }
+          raise ArgumentError,
+            "#{self.class}: transition: must name during:, from:, to: class lists, got #{transition.inspect}"
         end
 
-        list.map(&:to_s).freeze
+        [transition[:during], transition[:from], transition[:to]].map(&:to_s).freeze
       end
 
       def class_args(to, classes, global:)

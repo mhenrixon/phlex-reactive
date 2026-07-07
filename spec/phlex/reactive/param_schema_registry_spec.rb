@@ -35,7 +35,7 @@ RSpec.describe "Phlex::Reactive.param_schema (issue #184)" do # rubocop:disable 
       def self.name = "SchemaByName"
       action :save, params: :todo
     end
-    coerced = klass.reactive_action(:save).schema.coerce({ "title" => "hi", "done" => "true", "x" => "1" }, nil)
+    coerced = klass.reactive_actions[:save].schema.coerce({ "title" => "hi", "done" => "true", "x" => "1" }, nil)
     expect(coerced).to eq(title: "hi", done: true) # x dropped by the schema
   end
 
@@ -47,7 +47,7 @@ RSpec.describe "Phlex::Reactive.param_schema (issue #184)" do # rubocop:disable 
       def self.name = "SchemaComposed"
       action :bulk, params: { **Phlex::Reactive.param_schema(:todo), note: :string }
     end
-    coerced = klass.reactive_action(:bulk).schema.coerce({ "title" => "t", "note" => "n" }, nil)
+    coerced = klass.reactive_actions[:bulk].schema.coerce({ "title" => "t", "note" => "n" }, nil)
     expect(coerced).to eq(title: "t", note: "n")
   end
 
@@ -75,7 +75,7 @@ RSpec.describe "Phlex::Reactive.param_schema (issue #184)" do # rubocop:disable 
       def self.name = "SchemaHashStillWorks"
       action :save, params: { title: :string }
     end
-    expect(klass.reactive_action(:save).schema.coerce({ "title" => "x" }, nil)).to eq(title: "x")
+    expect(klass.reactive_actions[:save].schema.coerce({ "title" => "x" }, nil)).to eq(title: "x")
   end
 
   describe "registry frozen after boot" do

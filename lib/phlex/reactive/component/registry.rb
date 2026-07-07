@@ -126,7 +126,10 @@ module Phlex
             fetch(klass, kind) do
               inherited = inherited_value(klass, reader)
               own = own(klass, kind)
-              (inherited || EMPTY_HASH).merge(own || EMPTY_HASH)
+              # FROZEN (issue #186): the resolved hash is the public dispatch table
+              # (reactive_actions[:x] is the default-deny source of truth) — handing
+              # out a mutable memo would let a caller corrupt it. Mutation raises.
+              (inherited || EMPTY_HASH).merge(own || EMPTY_HASH).freeze
             end
           end
 

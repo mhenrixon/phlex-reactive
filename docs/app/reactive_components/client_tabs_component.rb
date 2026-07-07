@@ -73,7 +73,7 @@ class ClientTabsComponent < Phlex::HTML
   # inside the drawer — the exact accessible-disclosure pattern, one op chain.
   def drawer
     open = js
-           .toggle('#ct-drawer', transition: %w[ct-fade ct-fade-from ct-fade-to])
+           .toggle('#ct-drawer', transition: { during: 'ct-fade', from: 'ct-fade-from', to: 'ct-fade-to' })
            .set_attr(:root, 'aria-expanded', 'true')
            .focus_first('#ct-drawer')
 

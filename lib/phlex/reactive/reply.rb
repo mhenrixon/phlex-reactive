@@ -56,12 +56,15 @@ module Phlex
       #   def remove_item(id:) = (@list.items.find(id).destroy!;   reply.remove(id, from: :items))
       #
       # `model` is the row's record; remove also accepts the row's dom-id string.
-      def append(model = UNSET_ARG, legacy_model = UNSET_ARG, to: UNSET_ARG)
-        collection_build!(:build_collection_append, :append, model, legacy_model, to)
+      # Extra kwargs (issue #186) thread to the row component's new(model:, **row_kwargs)
+      # — e.g. reply.append(item, to: :items, autofocus: true) → ItemRow.new(item:,
+      # autofocus: true). Additive: a no-kwarg call is byte-identical to before.
+      def append(model = UNSET_ARG, legacy_model = UNSET_ARG, to: UNSET_ARG, **row_kwargs)
+        collection_build!(:build_collection_append, :append, model, legacy_model, to, row_kwargs)
       end
 
-      def prepend(model = UNSET_ARG, legacy_model = UNSET_ARG, to: UNSET_ARG)
-        collection_build!(:build_collection_prepend, :prepend, model, legacy_model, to)
+      def prepend(model = UNSET_ARG, legacy_model = UNSET_ARG, to: UNSET_ARG, **row_kwargs)
+        collection_build!(:build_collection_prepend, :prepend, model, legacy_model, to, row_kwargs)
       end
 
       # Two forms, dispatched on the PRESENCE of `from:` (issue #182 — no sentinel
@@ -133,7 +136,7 @@ module Phlex
       # Shared append/prepend build: catch the old two-positional form, require the
       # `to:` keyword, reject a Symbol-first model, then delegate to the Response
       # builder (name first, model second — its internal order).
-      def collection_build!(builder, verb, model, legacy_model, to)
+      def collection_build!(builder, verb, model, legacy_model, to, row_kwargs)
         # Old form `reply.append(:name, model)` passes a SECOND positional — the
         # arity would just error, so intercept it with the guided rewrite.
         reject_legacy_form!(verb, model, legacy_model)
@@ -142,7 +145,7 @@ module Phlex
             "reply.#{verb} needs a target collection — reply.#{verb}(model, to: :name)"
         end
         reject_symbol_first!(verb, model, :to, to)
-        Response.public_send(builder, @component, to, resolve_row_arg(model))
+        Response.public_send(builder, @component, to, resolve_row_arg(model), **row_kwargs)
       end
 
       # The pre-#182 call `reply.<verb>(:name, model)` — a Symbol name first, the

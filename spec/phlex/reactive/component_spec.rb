@@ -34,17 +34,17 @@ RSpec.describe Phlex::Reactive::Component do
 
   describe "action declarations (default-deny)" do
     it "registers declared actions" do
-      expect(state_klass.reactive_action?(:increment)).to be(true)
-      expect(state_klass.reactive_action(:set).params).to eq({ count: :integer })
+      expect(state_klass.reactive_actions.key?(:increment)).to be(true)
+      expect(state_klass.reactive_actions[:set].params).to eq({ count: :integer })
     end
 
     it "does not register undeclared methods" do
-      expect(state_klass.reactive_action?(:wat)).to be(false)
-      expect(state_klass.reactive_action(:wat)).to be_nil
+      expect(state_klass.reactive_actions.key?(:wat)).to be(false)
+      expect(state_klass.reactive_actions[:wat]).to be_nil
     end
 
     it "compiles the param schema at declaration (issue #109)" do
-      expect(state_klass.reactive_action(:set).schema).to be_a(Phlex::Reactive::ParamSchema)
+      expect(state_klass.reactive_actions[:set].schema).to be_a(Phlex::Reactive::ParamSchema)
     end
 
     it "raises UnknownParamType at CLASS LOAD for a typo'd type symbol (issue #109)" do
@@ -281,11 +281,11 @@ RSpec.describe Phlex::Reactive::Component do
         def decrement = @count -= 1
       end
 
-      expect(child.reactive_action?(:increment)).to be(true) # inherited
-      expect(child.reactive_action?(:decrement)).to be(true) # own
+      expect(child.reactive_actions.key?(:increment)).to be(true) # inherited
+      expect(child.reactive_actions.key?(:decrement)).to be(true) # own
       expect(child.reactive_state_keys).to include(:count)
       # parent unaffected
-      expect(state_klass.reactive_action?(:decrement)).to be(false)
+      expect(state_klass.reactive_actions.key?(:decrement)).to be(false)
     end
   end
 
@@ -1378,22 +1378,22 @@ RSpec.describe Phlex::Reactive::Component do
 
     describe "declaration registry" do
       it "registers a declared compute" do
-        expect(compute_klass.reactive_compute?(:payment_split)).to be(true)
+        expect(compute_klass.reactive_computes.key?(:payment_split)).to be(true)
       end
 
       it "does not register an undeclared name" do
-        expect(compute_klass.reactive_compute?(:wat)).to be(false)
-        expect(compute_klass.reactive_compute(:wat)).to be_nil
+        expect(compute_klass.reactive_computes.key?(:wat)).to be(false)
+        expect(compute_klass.reactive_computes[:wat]).to be_nil
       end
 
       it "captures the inputs and outputs" do
-        definition = compute_klass.reactive_compute(:payment_split)
+        definition = compute_klass.reactive_computes[:payment_split]
         expect(definition.inputs).to eq(%i[allowance cash leasing total])
         expect(definition.outputs).to eq(%i[allowance cash leasing])
       end
 
       it "defaults the reducer key to the compute name" do
-        expect(compute_klass.reactive_compute(:payment_split).reducer).to eq("payment_split")
+        expect(compute_klass.reactive_computes[:payment_split].reducer).to eq("payment_split")
       end
 
       it "honors an explicit reducer key" do
@@ -1403,7 +1403,7 @@ RSpec.describe Phlex::Reactive::Component do
           def self.name = "CustomReducer"
           reactive_compute :split, inputs: %i[a], outputs: %i[b], reducer: "shared_split"
         end
-        expect(klass.reactive_compute(:split).reducer).to eq("shared_split")
+        expect(klass.reactive_computes[:split].reducer).to eq("shared_split")
       end
     end
 
@@ -1414,9 +1414,9 @@ RSpec.describe Phlex::Reactive::Component do
           reactive_compute :totals, inputs: %i[price qty], outputs: %i[total]
         end
 
-        expect(child.reactive_compute?(:payment_split)).to be(true) # inherited
-        expect(child.reactive_compute?(:totals)).to be(true)        # own
-        expect(compute_klass.reactive_compute?(:totals)).to be(false) # parent unaffected
+        expect(child.reactive_computes.key?(:payment_split)).to be(true) # inherited
+        expect(child.reactive_computes.key?(:totals)).to be(true)        # own
+        expect(compute_klass.reactive_computes.key?(:totals)).to be(false) # parent unaffected
       end
     end
 
@@ -1470,16 +1470,16 @@ RSpec.describe Phlex::Reactive::Component do
       end
 
       it "captures the input names in declaration order" do
-        expect(typed_klass.reactive_compute(:preview).inputs).to eq(%i[title qty])
+        expect(typed_klass.reactive_computes[:preview].inputs).to eq(%i[title qty])
       end
 
       it "captures the per-input types keyed by name" do
-        expect(typed_klass.reactive_compute(:preview).input_types)
+        expect(typed_klass.reactive_computes[:preview].input_types)
           .to eq(title: :string, qty: :number)
       end
 
       it "reports nil input_types for the array form (untyped, numeric)" do
-        expect(compute_klass.reactive_compute(:payment_split).input_types).to be_nil
+        expect(compute_klass.reactive_computes[:payment_split].input_types).to be_nil
       end
 
       it "emits the HASH form's inputs param as a JSON object of name→type" do
@@ -1511,15 +1511,15 @@ RSpec.describe Phlex::Reactive::Component do
       end
 
       it "types a bare symbol as :number (the default)" do
-        expect(permit_klass.reactive_compute(:preview).input_types[:qty]).to eq(:number)
+        expect(permit_klass.reactive_computes[:preview].input_types[:qty]).to eq(:number)
       end
 
       it "types a trailing-hash exception as declared" do
-        expect(permit_klass.reactive_compute(:preview).input_types[:title]).to eq(:string)
+        expect(permit_klass.reactive_computes[:preview].input_types[:title]).to eq(:string)
       end
 
       it "captures the input names in declaration order (bare first, then hash keys)" do
-        expect(permit_klass.reactive_compute(:preview).inputs).to eq(%i[qty title])
+        expect(permit_klass.reactive_computes[:preview].inputs).to eq(%i[qty title])
       end
 
       it "emits the mixed inputs as a JSON object of name→type" do
@@ -1574,14 +1574,18 @@ RSpec.describe Phlex::Reactive::Component do
       end
 
       it "captures the mirror map normalized to name → array of id selectors" do
-        expect(mirror_klass.reactive_compute(:split).mirror)
+        expect(mirror_klass.reactive_computes[:split].mirror)
           .to eq(sum_a: ["#sum_a"], sum_total: ["#sum_total", "#footer-total"])
       end
 
       it "reports nil mirror when undeclared" do
-        expect(compute_klass.reactive_compute(:payment_split).mirror).to be_nil
+        expect(compute_klass.reactive_computes[:payment_split].mirror).to be_nil
       end
 
+      # Issue #186: reactive_compute with no inputs:/outputs: now always hits the
+      # removed-bare-getter guard first (that overload collision predates mirror:
+      # validation), so mirror: alone can never reach normalize_compute_mirror —
+      # the call still fails loudly, just via the getter-removed message.
       it "rejects mirror: on the bare GETTER form LOUDLY (never silently drops it)" do
         expect do
           Class.new do
@@ -1590,7 +1594,7 @@ RSpec.describe Phlex::Reactive::Component do
             def self.name = "MirrorOnly"
             reactive_compute :split, mirror: { sum: "#sum" }
           end
-        end.to raise_error(ArgumentError, /mirror:.*inputs/m)
+        end.to raise_error(ArgumentError, /reactive_compute\(:split\).*removed in issue #186/m)
       end
 
       it "rejects a non-id selector LOUDLY at declare time (class, attribute, *, compound)" do
@@ -2002,7 +2006,12 @@ RSpec.describe Phlex::Reactive::Component do
   # client shows/hides options by their data-reactive-filter-text haystack on
   # every input — no round trip, no bespoke per-feature controller. Validation
   # is loud at render time: blank selectors are dead bindings.
-  describe "#reactive_filter (client-side option filtering, issue #163)" do
+  # Issue #186: reactive_filter names the FIELD that drives the filter, not four
+  # selectors. `reactive_filter(:q)` compiles `:q` to [name="q"] (scope-aware) for
+  # the input, defaults option to the [role=option] convention, and leaves
+  # group/empty opt-in. The client wire (selectors) is unchanged — a server-only
+  # compile. The old input:/option: kwarg form raises a guided error.
+  describe "#reactive_filter (field-driven, issue #186)" do
     subject(:instance) { filter_klass.new }
 
     let(:filter_klass) do
@@ -2014,56 +2023,61 @@ RSpec.describe Phlex::Reactive::Component do
       end
     end
 
-    it "emits the input and option selectors as root data attributes" do
-      attrs = instance.send(:reactive_filter, input: "#search", option: "[role=option]")
-      expect(attrs[:data][:reactive_filter_input]).to eq("#search")
+    it "compiles the field name to a [name=…] input selector + the option convention" do
+      attrs = instance.send(:reactive_filter, :q)
+      expect(attrs[:data][:reactive_filter_input]).to eq('[name="q"]')
       expect(attrs[:data][:reactive_filter_option]).to eq("[role=option]")
     end
 
-    it "omits group/empty entirely when not given (byte-stable wire)" do
-      attrs = instance.send(:reactive_filter, input: "#search", option: "[role=option]")
+    it "scope-prefixes the field name under reactive_scope" do
+      scoped = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "ScopedFilter"
+        reactive_scope :form
+      end
+      attrs = scoped.new.send(:reactive_filter, :q)
+      expect(attrs[:data][:reactive_filter_input]).to eq('[name="form[q]"]')
+    end
+
+    it "leaves group/empty opt-in (byte-stable wire — omitted by default)" do
+      attrs = instance.send(:reactive_filter, :q)
       expect(attrs[:data]).not_to have_key(:reactive_filter_group)
       expect(attrs[:data]).not_to have_key(:reactive_filter_empty)
     end
 
-    it "emits the optional group and empty selectors when given" do
-      attrs = instance.send(:reactive_filter,
-        input: "#search", option: "[role=option]",
-        group: "[data-filter-group]", empty: "#no-matches")
+    it "accepts kwarg overrides for option/group/empty" do
+      attrs = instance.send(:reactive_filter, :q,
+        option: ".opt", group: "[data-filter-group]", empty: "#no-matches")
+      expect(attrs[:data][:reactive_filter_option]).to eq(".opt")
       expect(attrs[:data][:reactive_filter_group]).to eq("[data-filter-group]")
       expect(attrs[:data][:reactive_filter_empty]).to eq("#no-matches")
     end
 
-    it "raises on a blank input selector (a dead binding must fail at render)" do
-      expect { instance.send(:reactive_filter, input: "", option: "[role=option]") }
-        .to raise_error(ArgumentError, /input:/)
+    it "raises a guided error for the removed input: kwarg form" do
+      expect { instance.send(:reactive_filter, input: "#search", option: "[role=option]") }
+        .to raise_error(ArgumentError, /reactive_filter\(:field\)|field/)
     end
 
-    it "raises on a blank option selector" do
-      expect { instance.send(:reactive_filter, input: "#search", option: " ") }
+    it "raises on a blank option override" do
+      expect { instance.send(:reactive_filter, :q, option: " ") }
         .to raise_error(ArgumentError, /option:/)
     end
 
-    it "raises on an explicitly blank group/empty selector" do
-      expect { instance.send(:reactive_filter, input: "#s", option: "[role=option]", group: "") }
-        .to raise_error(ArgumentError, /group:/)
-      expect { instance.send(:reactive_filter, input: "#s", option: "[role=option]", empty: "") }
-        .to raise_error(ArgumentError, /empty:/)
-    end
-
-    it "renders the wire attributes onto the root element" do
+    it "renders the compiled wire attributes onto the root element" do
       klass = Class.new(Phlex::HTML) do
         include Phlex::Reactive::Component
 
         def self.name = "FilterRender"
 
         def view_template
-          div(**reactive_filter(input: "#search", option: "[role=option]", empty: "#none"), id: "combo") { "c" }
+          div(**reactive_filter(:q, empty: "#none"), id: "combo") { "c" }
         end
       end
 
       html = klass.new.call
-      expect(html).to include('data-reactive-filter-input="#search"')
+      expect(html).to include('data-reactive-filter-input="[name=&quot;q&quot;]"')
       expect(html).to include('data-reactive-filter-option="[role=option]"')
       expect(html).to include('data-reactive-filter-empty="#none"')
     end
