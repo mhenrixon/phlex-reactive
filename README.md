@@ -388,7 +388,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_text(:name, initial)` | Mirror a compute output (or a declared input) into a **text node** — a live preview heading, a character counter, `"Hello, {name}"` — via `textContent` (XSS-safe). The text sibling of `reactive_field`; carries no `name`, so it's never POSTed. See [Client-side computes](#client-side-computes-reactive_compute--reactive_text). |
 | `reactive_show(if:/if_any:/unless:)` | **Value-conditional visibility** (the `x-show`/`data-show` case): spread onto the element to show/hide — it toggles `hidden` from the fields' **current values**, client-only, zero round trip. One conditions language: a **Hash is an AND**, an **Array is membership**, a **Range is a threshold**, `if_any:` is OR-of-AND, `unless:` negates. `reactive_values` computes first paint; `disable:` disables a hidden section's controls. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
 | `reactive_show_targets(:field, "#id" => value)` | **Cross-root visibility**: the component that owns the field declares which **outside**, id-allowlisted elements it governs (a nav tab, a panel in another pane) — the visibility parallel of `mirror:`. Spread on the **root** via `mix(reactive_root, …)`, **once per root** — several fields go in one call via the hash form. The value uses the same `where`-style vocabulary (`"advanced"`, `%w[a b]`, `10..`). Id selectors only (raise at render + client warn-skip); toggles `hidden` only. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
-| `reactive_filter(input:, option:, group: nil, empty: nil)` | **Client-side option filtering** for a preloaded combobox: spread onto the root — typing in the named input shows/hides the options by their `data-reactive-filter-text` haystack, **zero round trips**. Optional `group:` collapses an all-hidden group header; `empty:` reveals a no-matches node. See [Client-side option filtering](#client-side-option-filtering-reactive_filter). |
+| `reactive_filter(:field, option: nil, group: nil, empty: nil)` | **Client-side option filtering** for a preloaded combobox: spread onto the root and name the **field** that drives it — `reactive_filter(:q)` compiles `:q` to `[name="q"]` (scope-aware) and typing shows/hides the options by their `data-reactive-filter-text` haystack, **zero round trips**. `option:` defaults to `[role=option]`; optional `group:` collapses an all-hidden group header; `empty:` reveals a no-matches node. See [Client-side option filtering](#client-side-option-filtering-reactive_filter). |
 | `reactive_listnav("[role=option]")` | The **standalone** combobox keyboard wiring (Arrow/Enter/Escape) for an input that fires **no action** — the preload-and-filter case. Same behavior as `on(…, listnav:)`, minus the POST. |
 | `reactive_compute :name, inputs: { title: :string, qty: :number }, outputs:` | **Typed** inputs: a `:string` reaches the JS reducer raw, a `:number` is coerced through `Number`. The array form (`inputs: %i[a b]`) stays all-numeric; the **permit-style** form (`inputs: [:qty, title: :string]`) mixes both — bare symbols default `:number`, a trailing hash types the exceptions. `outputs:` is the field allowlist; a reducer-result key also paints any owned `reactive_text` node by presence and any `mirror:` id, so an `outputs:` entry that exists only to reach a text node is redundant (harmless — a widening). |
 | `reactive_compute :name, ..., mirror: { sum: "#summary-sum" }` | **Cross-root text mirrors**: paint a compute value into declared, id-allowlisted nodes **outside** the reactive root (a recap in another tab pane) via `textContent` — no bespoke listener. See [Cross-root mirrors](#cross-root-mirrors-mirror--painting-a-recap-outside-the-root). |
@@ -820,7 +820,7 @@ the same chain covers the rest of the client-only vocabulary:
 
 ```ruby
 button(**on_client(:click, js
-  .toggle("#menu", transition: %w[transition-opacity opacity-0 opacity-100])
+  .toggle("#menu", transition: { during: "transition-opacity", from: "opacity-0", to: "opacity-100" })
   .toggle_attr(:root, "aria-expanded")   # accessible disclosure state
   .focus_first("#menu")                   # move focus into the opened menu
   .dispatch("app:menu-toggled", detail: { open: true }))) { "Menu" }
@@ -846,7 +846,7 @@ button(**on_client(:click, js
   another component or a plain Stimulus controller can react to a client-only
   interaction — `to:` picks the element (default: the component root), `detail:`
   is the payload.
-- **`transition: [during, from, to]`** on `show`/`hide`/`toggle` animates the
+- **`transition: { during:, from:, to: }`** on `show`/`hide`/`toggle` animates the
   visibility flip: `during`+`from` are applied, then `from`→`to` swaps on the next
   frame, and the helper classes are cleaned up on `animationend` (with a timeout
   fallback, so an element with no animation never leaves them stuck). The op chain
@@ -1153,13 +1153,13 @@ root instead:
 
 ```ruby
 div(**mix(reactive_root, reactive_filter(
-  input:  "#exercise-search",       # the input whose value drives the filter
-  option: "[role=option]",          # the elements to show/hide
-  group:  "[data-filter-group]",    # optional: collapse a header when all its options hide
-  empty:  "#no-matches"             # optional: reveal when 0 options match
+  :q,                               # the FIELD that drives the filter → [name="q"] (scope-aware)
+  group: "[data-filter-group]",     # optional: collapse a header when all its options hide
+  empty: "#no-matches"              # optional: reveal when 0 options match
 ))) do
   # STANDALONE keyboard nav — no action on the input, so typing never POSTs.
-  input(id: "exercise-search", type: "search", **reactive_listnav("[role=option]"))
+  # name: "q" is the field reactive_filter(:q) binds to; option: defaults to [role=option].
+  input(name: "q", type: "search", **reactive_listnav("[role=option]"))
 
   categories.each do |category, exercises|
     div(data: { filter_group: "" }) do
@@ -2207,6 +2207,7 @@ events, all under the `phlex_reactive` namespace:
 | `action.phlex_reactive` | once per request | `component`, `action`, `outcome` (`ok`/`denied_undeclared`/`invalid_token`/`not_found`/`unauthorized`/`unverified`) |
 | `render.phlex_reactive` | per component render | `component`, `bytesize` |
 | `broadcast.phlex_reactive` | per `broadcast_to` call (Action Cable **and** pgbus) | `component`, `stream_action`, `streamables` |
+| `defer.phlex_reactive` | once per deferred render (the `reply.defer` pull/push endpoint) | `component`, `outcome` (`ok`/`no_content`/`invalid_token`/`not_found`/`unauthorized`) |
 
 Payloads carry **names, the outcome, and sizes only** — never the token, params,
 or state, so an event can't leak a secret. Subscribe from an initializer:

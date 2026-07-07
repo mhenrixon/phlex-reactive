@@ -119,7 +119,7 @@ module Phlex
         payload = verified_payload
         component_class = resolve_component(payload["c"])
         event[:component] = component_class.name
-        action_def = component_class.reactive_action(reactive_action_name)
+        action_def = component_class.reactive_actions[reactive_action_name.to_sym]
 
         # default-deny
         unless action_def
@@ -597,7 +597,7 @@ module Phlex
             diagnostic: :unknown_class
           )
         end
-        unless klass.respond_to?(:reactive_action?) && klass.include?(Phlex::Reactive::Component)
+        unless klass.respond_to?(:reactive_actions) && klass.include?(Phlex::Reactive::Component)
           raise Phlex::Reactive::InvalidToken.new(
             "#{name} resolved but does not include Phlex::Reactive::Component",
             diagnostic: :not_reactive_class

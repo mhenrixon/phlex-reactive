@@ -34,24 +34,24 @@ RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
       parent = reactive_class { action :ping }
       child = reactive_class(parent)
 
-      expect(child.reactive_action?(:ping)).to be(true)
-      expect(child.reactive_action(:ping).params).to eq({})
+      expect(child.reactive_actions.key?(:ping)).to be(true)
+      expect(child.reactive_actions[:ping].params).to eq({})
     end
 
     it "keeps a child's own action out of the parent (no upward leak)" do
       parent = reactive_class { action :ping }
       child = reactive_class(parent) { action :pong }
 
-      expect(child.reactive_action?(:pong)).to be(true)
-      expect(parent.reactive_action?(:pong)).to be(false)
+      expect(child.reactive_actions.key?(:pong)).to be(true)
+      expect(parent.reactive_actions.key?(:pong)).to be(false)
     end
 
     it "lets a child override a parent action's schema; the parent keeps its own" do
       parent = reactive_class { action :save, params: { title: :string } }
       child = reactive_class(parent) { action :save, params: { title: :string, count: :integer } }
 
-      expect(child.reactive_action(:save).params).to eq(title: :string, count: :integer)
-      expect(parent.reactive_action(:save).params).to eq(title: :string)
+      expect(child.reactive_actions[:save].params).to eq(title: :string, count: :integer)
+      expect(parent.reactive_actions[:save].params).to eq(title: :string)
     end
 
     it "merges a three-level chain, nearest declaration winning" do
@@ -60,9 +60,9 @@ RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
       child = reactive_class(parent) { action(:c) && action(:shared, params: { from: :integer }) }
 
       expect(child.reactive_actions.keys).to contain_exactly(:a, :shared, :b, :c)
-      expect(child.reactive_action(:shared).params).to eq(from: :integer)
-      expect(parent.reactive_action(:shared).params).to eq(from: :string)
-      expect(parent.reactive_action?(:c)).to be(false)
+      expect(child.reactive_actions[:shared].params).to eq(from: :integer)
+      expect(parent.reactive_actions[:shared].params).to eq(from: :string)
+      expect(parent.reactive_actions.key?(:c)).to be(false)
     end
 
     it "sees its OWN declaration made after its registry was read (write-through on self)" do
@@ -70,7 +70,7 @@ RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
       klass.reactive_actions # materialize the memo
       klass.class_eval { action :late }
 
-      expect(klass.reactive_action?(:late)).to be(true)
+      expect(klass.reactive_actions.key?(:late)).to be(true)
     end
 
     # UNIFIED (#115): pre-#115 this was the snapshot-dup divergence — the
@@ -83,8 +83,8 @@ RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
       child.reactive_actions # a prior read no longer freezes the parent's registry
       parent.class_eval { action :late }
 
-      expect(parent.reactive_action?(:late)).to be(true)
-      expect(child.reactive_action?(:late)).to be(true)
+      expect(parent.reactive_actions.key?(:late)).to be(true)
+      expect(child.reactive_actions.key?(:late)).to be(true)
     end
   end
 
@@ -134,10 +134,10 @@ RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
       parent = reactive_class { reactive_collection :items, item: row, container: "items" }
       child = reactive_class(parent) { reactive_collection :extras, item: row, container: "extras" }
 
-      expect(child.reactive_collection?(:items)).to be(true)
-      expect(child.reactive_collection_def(:items).container).to eq("items")
-      expect(child.reactive_collection?(:extras)).to be(true)
-      expect(parent.reactive_collection?(:extras)).to be(false)
+      expect(child.reactive_collections.key?(:items)).to be(true)
+      expect(child.reactive_collections[:items].container).to eq("items")
+      expect(child.reactive_collections.key?(:extras)).to be(true)
+      expect(parent.reactive_collections.key?(:extras)).to be(false)
     end
 
     it "lets a child override a parent collection by name; the parent keeps its own" do
@@ -145,8 +145,8 @@ RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
       parent = reactive_class { reactive_collection :items, item: row, container: "items" }
       child = reactive_class(parent) { reactive_collection :items, item: row, container: "narrow-items" }
 
-      expect(child.reactive_collection_def(:items).container).to eq("narrow-items")
-      expect(parent.reactive_collection_def(:items).container).to eq("items")
+      expect(child.reactive_collections[:items].container).to eq("narrow-items")
+      expect(parent.reactive_collections[:items].container).to eq("items")
     end
 
     # UNIFIED (#115): pre-#115 this was the same snapshot-dup divergence as
@@ -158,8 +158,8 @@ RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
       child.reactive_collections # a prior read no longer freezes the parent's registry
       parent.class_eval { reactive_collection :late, item: row, container: "late" }
 
-      expect(parent.reactive_collection?(:late)).to be(true)
-      expect(child.reactive_collection?(:late)).to be(true)
+      expect(parent.reactive_collections.key?(:late)).to be(true)
+      expect(child.reactive_collections.key?(:late)).to be(true)
     end
   end
 
@@ -168,27 +168,26 @@ RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
       parent = reactive_class { reactive_compute :split, inputs: %i[a], outputs: %i[b] }
       child = reactive_class(parent) { reactive_compute :totals, inputs: %i[p q], outputs: %i[t] }
 
-      expect(child.reactive_compute?(:split)).to be(true)
-      expect(child.reactive_compute(:split).reducer).to eq("split")
-      expect(child.reactive_compute?(:totals)).to be(true)
-      expect(parent.reactive_compute?(:totals)).to be(false)
+      expect(child.reactive_computes.key?(:split)).to be(true)
+      expect(child.reactive_computes[:split].reducer).to eq("split")
+      expect(child.reactive_computes.key?(:totals)).to be(true)
+      expect(parent.reactive_computes.key?(:totals)).to be(false)
     end
 
     it "lets a child override a parent compute by name; the parent keeps its own" do
       parent = reactive_class { reactive_compute :split, inputs: %i[a], outputs: %i[b] }
       child = reactive_class(parent) { reactive_compute :split, inputs: %i[a2], outputs: %i[b2] }
 
-      expect(child.reactive_compute(:split).inputs).to eq(%i[a2])
-      expect(parent.reactive_compute(:split).inputs).to eq(%i[a])
+      expect(child.reactive_computes[:split].inputs).to eq(%i[a2])
+      expect(parent.reactive_computes[:split].inputs).to eq(%i[a])
     end
 
-    it "exposes reactive_compute_def (issue #115) alongside the permanent reactive_compute getter alias" do
+    it "exposes the definition via reactive_computes[:name] (issue #115 registry, issue #186 hash access)" do
       parent = reactive_class { reactive_compute :split, inputs: %i[a], outputs: %i[b] }
       child = reactive_class(parent)
 
-      expect(child.reactive_compute_def(:split)).to eq(child.reactive_compute(:split))
-      expect(child.reactive_compute_def(:split).outputs).to eq(%i[b])
-      expect(child.reactive_compute_def(:nope)).to be_nil
+      expect(child.reactive_computes[:split].outputs).to eq(%i[b])
+      expect(child.reactive_computes[:nope]).to be_nil
     end
 
     # UNIFIED (#115): pre-#115 this was the same snapshot-dup divergence as
@@ -199,8 +198,8 @@ RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
       child.reactive_computes # a prior read no longer freezes the parent's registry
       parent.class_eval { reactive_compute :late, inputs: %i[a], outputs: %i[b] }
 
-      expect(parent.reactive_compute?(:late)).to be(true)
-      expect(child.reactive_compute?(:late)).to be(true)
+      expect(parent.reactive_computes.key?(:late)).to be(true)
+      expect(child.reactive_computes.key?(:late)).to be(true)
     end
   end
 
@@ -311,9 +310,9 @@ RSpec.describe Phlex::Reactive::Component, "registry inheritance" do
       first = reactive_class { action :a }
       second = reactive_class { action :b } # what a Zeitwerk reload produces: a NEW class object
 
-      expect(first.reactive_action?(:a)).to be(true)
-      expect(second.reactive_action?(:a)).to be(false)
-      expect(second.reactive_action?(:b)).to be(true)
+      expect(first.reactive_actions.key?(:a)).to be(true)
+      expect(second.reactive_actions.key?(:a)).to be(false)
+      expect(second.reactive_actions.key?(:b)).to be(true)
     end
   end
 end

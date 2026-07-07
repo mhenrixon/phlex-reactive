@@ -563,12 +563,15 @@ module Phlex
         # keystroke by substring-matching each option's haystack — no round
         # trip, no token, no bespoke per-feature controller:
         #
-        #   div(**mix(reactive_root, reactive_filter(
-        #     input:  "#exercise-search",
-        #     option: "[role=option]",
-        #     group:  "[data-filter-group]",   # optional: collapse empty group headers
-        #     empty:  "#no-matches"            # optional: reveal when 0 match
-        #   ))) { … }
+        # Issue #186: name the FIELD that drives the filter — reactive_filter(:q)
+        # compiles :q to [name="q"] (scope-aware) and defaults option to the
+        # [role=option] convention. group:/empty: stay opt-in; any selector kwarg
+        # overrides a convention:
+        #
+        #   div(**mix(reactive_root, reactive_filter(:q, empty: "#no-matches"))) do
+        #     input(name: "q", type: "search", **reactive_listnav)  # listnav → [role=option]
+        #     …
+        #   end
         #
         # Each option's haystack is its `data-reactive-filter-text` attribute
         # (server-rendered — pack in synonyms/categories), falling back to the
@@ -583,11 +586,25 @@ module Phlex
         # hidden options) and each option's own on(:select, …) trigger —
         # selection still round-trips as a signed action; only FILTERING is
         # local. Blank selectors raise: a dead binding must fail at render.
-        def reactive_filter(input:, option:, group: nil, empty: nil)
+        def reactive_filter(field = nil, input: :__removed, option: nil, group: nil, empty: nil)
+          # Issue #186: the four-selector kwarg form is removed — name the FIELD that
+          # drives the filter instead. A leftover input: means the old call shape.
+          unless input == :__removed
+            raise ArgumentError,
+              "reactive_filter(input:) was removed in issue #186 — name the driving field: " \
+              "reactive_filter(:q) (compiles to [name=\"q\"], scope-aware; option defaults to [role=option])."
+          end
+          raise ArgumentError, "reactive_filter needs a field name — reactive_filter(:q)" if field.nil?
+
           data = {
-            reactive_filter_input: filter_selector!(:input, input),
-            reactive_filter_option: filter_selector!(:option, option)
+            # Compile the field to a scoped [name="…"] selector (same scope convention
+            # reactive_field uses, so the filter input aligns with its own field).
+            reactive_filter_input: %([name="#{scoped_field_name(field)}"]),
+            # option defaults to the [role=option] convention; a kwarg overrides it.
+            reactive_filter_option: option ? filter_selector!(:option, option) : "[role=option]"
           }
+          # group/empty stay OPT-IN (no convention default — a default would change the
+          # byte-stable wire and always-emit an attribute the client would then query).
           data[:reactive_filter_group] = filter_selector!(:group, group) if group
           data[:reactive_filter_empty] = filter_selector!(:empty, empty) if empty
 
@@ -698,7 +715,7 @@ module Phlex
         # input->reactive#recompute action, all on the root element. Raises for an
         # undeclared name (fail fast, not a silent no-op).
         def compute_binding(name)
-          definition = self.class.reactive_compute_def(name)
+          definition = self.class.reactive_computes[name.to_sym]
           raise Error, "#{self.class} has no reactive_compute #{name.inspect}" unless definition
 
           data = {

@@ -57,7 +57,7 @@ module Views
               - **Outside-close menu:** `on_client(:click, js.hide("#ct-menu"),
                 outside: true)` on the **root** fires on any click *outside* the menu.
                 A client op costs nothing per stray page click (unlike a server action).
-              - **Accessible drawer:** `js.toggle("#ct-drawer", transition: [...])`
+              - **Accessible drawer:** `js.toggle("#ct-drawer", transition: { during:, from:, to: })`
                 animates it, `set_attr(:root, "aria-expanded", "true")` updates the
                 trigger, and `focus_first("#ct-drawer")` moves focus to the first
                 control inside — the exact accessible-disclosure pattern, one chain.

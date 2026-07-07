@@ -214,12 +214,17 @@ module Phlex
             Registry.resolve_hash(self, :actions, :reactive_actions)
           end
 
+          # Issue #186: the fetch-one readers are removed — the plural
+          # reactive_actions hash IS the fetch-one. Guided errors name the rewrite.
           def reactive_action(name)
-            reactive_actions[name.to_sym]
+            raise NoMethodError,
+              "reactive_action(#{name.inspect}) was removed in issue #186 — use reactive_actions[#{name.inspect}]"
           end
 
           def reactive_action?(name)
-            reactive_actions.key?(name.to_sym)
+            raise NoMethodError,
+              "reactive_action?(#{name.inspect}) was removed in issue #186 — " \
+              "use reactive_actions.key?(#{name.inspect})"
           end
 
           # Opt out of the default-ON verify_authorized guard (issue #168).
@@ -287,12 +292,17 @@ module Phlex
             Registry.resolve_hash(self, :collections, :reactive_collections)
           end
 
+          # Issue #186: use the plural reactive_collections hash directly.
           def reactive_collection_def(name)
-            reactive_collections[name.to_sym]
+            raise NoMethodError,
+              "reactive_collection_def(#{name.inspect}) was removed in issue #186 — " \
+              "use reactive_collections[#{name.inspect}]"
           end
 
           def reactive_collection?(name)
-            reactive_collections.key?(name.to_sym)
+            raise NoMethodError,
+              "reactive_collection?(#{name.inspect}) was removed in issue #186 — " \
+              "use reactive_collections.key?(#{name.inspect})"
           end
 
           # Declare a client-side computation, OR (called with just a name) read
@@ -350,17 +360,13 @@ module Phlex
           # the client interpreter re-checks the same shape).
           def reactive_compute(name, inputs: nil, outputs: nil, reducer: nil, mirror: nil)
             if inputs.nil? && outputs.nil?
-              # The bare form is the GETTER — a mirror: passed here would be
-              # silently dropped, so refuse it LOUDLY (declare-time validation,
-              # same posture as normalize_compute_mirror's selector check).
-              unless mirror.nil?
-                raise ArgumentError,
-                  "#{self}: reactive_compute(#{name.inspect}, mirror: ...) without inputs:/outputs: " \
-                  "is the getter form — the mirror would be silently dropped. Declare the mirror " \
-                  "alongside inputs:/outputs:."
-              end
-
-              return reactive_compute_def(name)
+              # Issue #186: the bare getter form is removed — reactive_compute is
+              # the SETTER now; read one compute via the plural hash. (Raising here
+              # keeps the getter/setter overload from silently misfiring.)
+              raise ArgumentError,
+                "reactive_compute(#{name.inspect}) getter was removed in issue #186 — " \
+                "use reactive_computes[#{name.inspect}]. reactive_compute is the declarative " \
+                "SETTER now: reactive_compute(:name, inputs:, outputs:)."
             end
 
             input_names, input_types = normalize_compute_inputs(inputs)
@@ -382,12 +388,17 @@ module Phlex
           # reactive_collection_def (issue #115). The bare reactive_compute(name)
           # getter above is a PERMANENT documented alias (it shipped in the same
           # minor series, #73); both stay, no deprecation.
+          # Issue #186: use the plural reactive_computes hash directly.
           def reactive_compute_def(name)
-            reactive_computes[name.to_sym]
+            raise NoMethodError,
+              "reactive_compute_def(#{name.inspect}) was removed in issue #186 — " \
+              "use reactive_computes[#{name.inspect}]"
           end
 
           def reactive_compute?(name)
-            reactive_computes.key?(name.to_sym)
+            raise NoMethodError,
+              "reactive_compute?(#{name.inspect}) was removed in issue #186 — " \
+              "use reactive_computes.key?(#{name.inspect})"
           end
 
           # Split the `inputs:` argument into [ordered names, types-or-nil].

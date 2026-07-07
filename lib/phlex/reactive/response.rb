@@ -110,15 +110,15 @@ module Phlex
         # container owns the add/remove trigger, so the endpoint appends its inert
         # `reactive:token` stream (the same #30 machinery reply.streams uses) to roll
         # the token forward without re-rendering the rows.
-        def build_collection_append(component, name, model)
+        def build_collection_append(component, name, model, **row_kwargs)
           definition = collection_def!(component, name)
-          new(streams: collection_add_streams(definition, component, model, :append),
+          new(streams: collection_add_streams(definition, component, model, :append, row_kwargs),
             render_self: false, token_component: component)
         end
 
-        def build_collection_prepend(component, name, model)
+        def build_collection_prepend(component, name, model, **row_kwargs)
           definition = collection_def!(component, name)
-          new(streams: collection_add_streams(definition, component, model, :prepend),
+          new(streams: collection_add_streams(definition, component, model, :prepend, row_kwargs),
             render_self: false, token_component: component)
         end
 
@@ -134,15 +134,17 @@ module Phlex
         # for an undeclared name (a typo'd collection should fail loudly, not
         # silently emit an empty Response).
         def collection_def!(component, name)
-          component.class.reactive_collection_def(name) ||
+          component.class.reactive_collections[name.to_sym] ||
             raise(Phlex::Reactive::Error, "undeclared reactive_collection :#{name} on #{component.class}")
         end
 
         # Row add (append/prepend) + count + empty-state clear. The empty-state is
         # removed only when the list just crossed 0->1 (size == 1) — appending to
         # an already-populated list leaves it untouched.
-        def collection_add_streams(definition, component, model, action)
-          streams = [definition.item.public_send(action, target: definition.container, model:)]
+        def collection_add_streams(definition, component, model, action, row_kwargs = {})
+          # row_kwargs (issue #186) thread to the row component's init via the class
+          # stream builder's **options passthrough (ItemRow.new(model:, **row_kwargs)).
+          streams = [definition.item.public_send(action, target: definition.container, model:, **row_kwargs)]
           append_count_stream(streams, definition, component)
 
           size = definition.size_for(component)

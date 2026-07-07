@@ -34,6 +34,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **BREAKING: small sharp knives — the last 0.11 API-clarity pass (#186).**
+  Four independent edges honed, one contract frozen:
+  - **`reactive_filter` speaks fields, not selectors.** `reactive_filter(:q)` names the
+    driving FIELD and compiles it to `[name="q"]` (scope-aware, like `reactive_field`
+    from #184); `option:` defaults to `[role=option]`. The old
+    `reactive_filter(input: "#search", …)` selector form raises a guided error. The
+    client wire is byte-identical (it still receives selectors) — this is a server-only
+    compile, no client change. `group:`/`empty:` stay opt-in (emit only when passed).
+  - **`transition:` takes named legs.** `js.toggle("#x", transition: { during:, from:, to: })`
+    replaces the positional `transition: [during, from, to]` array (which raises with the
+    caller's values slotted into the named form). Compiles to the same wire array — zero
+    client change.
+  - **BREAKING: one registry reader — the plural frozen hash IS the fetch-one.** The seven
+    singular getters (`reactive_action`, `reactive_action?`, `reactive_collection_def`,
+    `reactive_collection?`, `reactive_compute_def`, `reactive_compute?`, and the bare
+    `reactive_compute(:name)` GETTER form) are removed — each raises a guided error naming
+    the hash form (`reactive_actions[:name]`, `reactive_actions.key?(:name)`,
+    `reactive_computes[:name]`, `reactive_collections[:name]`). The resolved registries now
+    come back FROZEN — they are the memoized dispatch table, so mutation raises `FrozenError`
+    and can never corrupt default-deny. The `reactive_compute :name, inputs:, outputs:`
+    SETTER is unchanged.
+  - **`reply.append`/`reply.prepend` accept row kwargs (non-breaking).** Extra kwargs
+    (`reply.append(item, to: :items, autofocus: true)`) now thread through to the row
+    component's initializer (`ItemRow.new(item:, autofocus: true)`). Additive — no-kwarg
+    calls are unchanged.
+  - **`defer.phlex_reactive` joins the frozen instrumentation contract (non-breaking).**
+    The deferred-render endpoint's `ActiveSupport::Notifications` event now has a
+    request-spec contract test driving all five outcomes (`ok`/`no_content`/`invalid_token`/
+    `not_found`/`unauthorized`), freezing its `{ component:, outcome: }` payload shape (a
+    rename fails CI, like `action`/`render`/`broadcast`). Documented in the README
+    instrumentation table and the observability section of the performance docs page.
+
 - **BREAKING: one `broadcast_to` — verbs as kwargs, components as payloads (#185).**
   The 11 `broadcast_*_to` / `broadcast_*_to_each` methods collapse into ONE
   `broadcast_to` where the verb is a kwarg and its value is the payload:

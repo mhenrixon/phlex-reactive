@@ -31,4 +31,7 @@ Rails.application.config.after_initialize do
   # raises this so the request spec proves a genuine denial still 403s through
   # authorization_errors — NOT the verify guard's 500.
   Phlex::Reactive.authorization_errors << AuthorizedTodoComponent::Denied
+  # Defer :unauthorized contract fixture (issue #186): DeferAuthComponent raises on
+  # render, so a deferred render maps to 403 + the defer instrument's :unauthorized.
+  Phlex::Reactive.authorization_errors << DeferAuthComponent::Denied
 end

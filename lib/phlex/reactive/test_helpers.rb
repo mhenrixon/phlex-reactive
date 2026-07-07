@@ -88,7 +88,7 @@ module Phlex
       #      maps it to 403; a unit test asserts the real exception).
       def run_reactive(component, action, **params)
         klass = component.class
-        action_def = klass.reactive_action(action) || raise_undeclared(klass, action)
+        action_def = klass.reactive_actions[action.to_sym] || raise_undeclared(klass, action)
 
         rebuilt = rebuild_from_identity(component, klass)
         coerced = action_def.schema.coerce(stringify_params(params))
