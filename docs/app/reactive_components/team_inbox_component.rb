@@ -6,7 +6,7 @@
 #   * an optimistic: archive that hides the row in the same gesture, reverting if
 #     the server denies (a "locked" message);
 #   * busy: guarding the archive button against a double-click;
-#   * cross-tab broadcast_*_to so a teammate's tab stays in sync;
+#   * cross-tab broadcast_to so a teammate's tab stays in sync;
 #   * an on_client kebab menu on each row (pure client op, zero round trips);
 #   * error_flash + a self-dismissing dismiss_after: toast on the reply.
 #
@@ -46,8 +46,8 @@ class TeamInboxComponent < Phlex::HTML
     raise Locked, 'This message is locked and cannot be archived.' if message.sender == 'locked'
 
     message.destroy!
-    InboxMessageComponent.broadcast_remove_to(*InboxMessage.stream_key, model: message,
-                                                                        exclude: reactive_connection_id)
+    InboxMessageComponent.broadcast_to(*InboxMessage.stream_key, remove: message,
+                                                                 exclude: reactive_connection_id)
     reply.remove(message, from: :messages).flash(:notice, 'Archived', dismiss_after: 2000)
   end
 
@@ -56,18 +56,18 @@ class TeamInboxComponent < Phlex::HTML
   def mark_read(id:)
     message = InboxMessage.find(id)
     message.update!(read: true)
-    InboxMessageComponent.broadcast_replace_to(*InboxMessage.stream_key, model: message,
-                                                                         exclude: reactive_connection_id)
+    InboxMessageComponent.broadcast_to(*InboxMessage.stream_key, replace: message,
+                                                                 exclude: reactive_connection_id)
     reply.replace
   end
 
-  # Stand in for a teammate/job pushing a new message: create + broadcast_append to
+  # Stand in for a teammate/job pushing a new message: create + broadcast_to(append:)
   # every subscribed tab. reply.append updates the actor's own list + count + empty.
   def simulate_incoming
     message = InboxMessage.create!(subject: sample_subject, sender: sample_sender)
-    InboxMessageComponent.broadcast_append_to(*InboxMessage.stream_key, target: 'inbox-messages',
-                                                                        model: message,
-                                                                        exclude: reactive_connection_id)
+    InboxMessageComponent.broadcast_to(*InboxMessage.stream_key, append: message,
+                                                                 target: 'inbox-messages',
+                                                                 exclude: reactive_connection_id)
     reply.append(message, to: :messages)
   end
 

@@ -3,11 +3,11 @@
 require "rails_helper"
 require "turbo/broadcastable/test_helper"
 
-# Issue #119: broadcast_*_to_each — render ONCE, fan the shared payload out over
+# Issue #119: broadcast_to(each:) — render ONCE, fan the shared payload out over
 # K different stream keys. Broadcasting one component to K keys (a per-tenant
-# loop — "the list page stream AND the dashboard stream") with the classic
-# broadcast_*_to is K× build + K× render + K× HMAC for BYTE-IDENTICAL HTML,
-# because *streamables concatenates into ONE key. _to_each renders one component
+# loop — "the list page stream AND the dashboard stream") with a single-key
+# broadcast_to is K× build + K× render + K× HMAC for BYTE-IDENTICAL HTML,
+# because *streamables concatenates into ONE key. each: renders one component
 # and loops only the cheap channel call.
 #
 # These are the correctness guards behind the perf claim: every key receives the
@@ -19,15 +19,15 @@ RSpec.describe "broadcast_*_to_each fan-out (issue #119)", type: :request do
   include Turbo::Broadcastable::TestHelper
 
   # A per-tenant fan-out: the SAME component to N distinct stream keys. Each key
-  # is a [record-or-string, symbol] pair, exactly as broadcast_replace_to takes
-  # via *streamables.
+  # is a [record-or-string, symbol] pair, exactly as broadcast_to takes via
+  # *streamables (single-key form) or each: (fan-out form).
   let(:keys) { [["tenant:1", :counters], ["tenant:2", :counters], ["tenant:3", :counters]] }
 
-  describe ".broadcast_replace_to_each" do
+  describe ".broadcast_to(each:)" do
     it "broadcasts a replace to EVERY key" do
       keys.each do
         broadcasts = capture_turbo_stream_broadcasts(it) do
-          CounterComponent.broadcast_replace_to_each(keys, model: nil)
+          CounterComponent.broadcast_to(each: keys, replace: nil)
         end
         html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin
         expect(html).to include('action="replace"')
@@ -38,7 +38,7 @@ RSpec.describe "broadcast_*_to_each fan-out (issue #119)", type: :request do
     it "delivers BYTE-IDENTICAL HTML to each key (one render, shared payload)" do
       captured = keys.to_h do
         broadcasts = capture_turbo_stream_broadcasts(it) do
-          CounterComponent.broadcast_replace_to_each(keys, model: nil)
+          CounterComponent.broadcast_to(each: keys, replace: nil)
         end
         [it, broadcasts.map(&:to_s).join] # rubocop:disable Style/MapJoin
       end
@@ -49,7 +49,7 @@ RSpec.describe "broadcast_*_to_each fan-out (issue #119)", type: :request do
     it "renders the component EXACTLY ONCE for a K-key fan-out" do
       allow(CounterComponent).to receive(:render_component).and_call_original
 
-      CounterComponent.broadcast_replace_to_each(keys, model: nil)
+      CounterComponent.broadcast_to(each: keys, replace: nil)
 
       expect(CounterComponent).to have_received(:render_component).once
     end
@@ -57,7 +57,7 @@ RSpec.describe "broadcast_*_to_each fan-out (issue #119)", type: :request do
     it "makes one channel call per key with the identical html" do
       allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
 
-      CounterComponent.broadcast_replace_to_each(keys, model: nil)
+      CounterComponent.broadcast_to(each: keys, replace: nil)
 
       expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to).exactly(keys.size).times
     end
@@ -65,7 +65,7 @@ RSpec.describe "broadcast_*_to_each fan-out (issue #119)", type: :request do
     it "accepts a single key as a bare (non-nested) pair too" do
       allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
 
-      CounterComponent.broadcast_replace_to_each([["solo", :counters]], model: nil)
+      CounterComponent.broadcast_to(each: [["solo", :counters]], replace: nil)
 
       expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
         .with("solo", :counters, hash_including(target: "counter"))
@@ -74,7 +74,7 @@ RSpec.describe "broadcast_*_to_each fan-out (issue #119)", type: :request do
     it "carries method=\"morph\" to every key when morph: true" do
       allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
 
-      CounterComponent.broadcast_replace_to_each(keys, model: nil, morph: true)
+      CounterComponent.broadcast_to(each: keys, replace: nil, morph: true)
 
       expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to)
         .with(anything, anything, hash_including(attributes: { method: "morph" }))
@@ -98,7 +98,7 @@ RSpec.describe "broadcast_*_to_each fan-out (issue #119)", type: :request do
         seen << Thread.current[:pgbus_broadcast_exclude]
       end
 
-      CounterComponent.broadcast_replace_to_each(keys, model: nil, exclude: "conn-actor-1")
+      CounterComponent.broadcast_to(each: keys, replace: nil, exclude: "conn-actor-1")
 
       expect(seen).to eq(["conn-actor-1"] * keys.size)
       # …and it is cleared after the fan-out (never leaks to a later broadcast).
@@ -111,7 +111,7 @@ RSpec.describe "broadcast_*_to_each fan-out (issue #119)", type: :request do
         seen << Thread.current[:pgbus_broadcast_visible_to]
       end
 
-      CounterComponent.broadcast_replace_to_each(keys, model: nil, visible_to: "user:7")
+      CounterComponent.broadcast_to(each: keys, replace: nil, visible_to: "user:7")
 
       expect(seen).to eq(["user:7"] * keys.size)
     end
@@ -122,7 +122,7 @@ RSpec.describe "broadcast_*_to_each fan-out (issue #119)", type: :request do
         seen_kwargs << kwargs
       end
 
-      CounterComponent.broadcast_replace_to_each(keys, model: nil, exclude: "conn-actor-1")
+      CounterComponent.broadcast_to(each: keys, replace: nil, exclude: "conn-actor-1")
 
       expect(seen_kwargs).to all(satisfy { !it.key?(:exclude) && !it.key?(:visible_to) })
     end
@@ -153,7 +153,7 @@ RSpec.describe "broadcast_*_to_each fan-out (issue #119)", type: :request do
     it "never passes exclude:/visible_to: when none given (no ArgumentError)" do
       stub_const("Turbo::StreamsChannel", old_shape)
 
-      expect { CounterComponent.broadcast_replace_to_each(keys, model: nil) }.not_to raise_error
+      expect { CounterComponent.broadcast_to(each: keys, replace: nil) }.not_to raise_error
       expect(old_shape.calls.size).to eq(keys.size)
       expect(old_shape.calls).to all(include(target: "counter"))
     end
@@ -162,29 +162,29 @@ RSpec.describe "broadcast_*_to_each fan-out (issue #119)", type: :request do
   # Every other verb gets the same fan-out primitive. One spec per verb, mocking
   # the channel, so the contract (once render, per-key channel call) is pinned.
   describe "the other verbs fan out the same way" do
-    it "broadcast_update_to_each" do
+    it "broadcast_to(each:, update:)" do
       allow(Turbo::StreamsChannel).to receive(:broadcast_update_to)
-      CounterComponent.broadcast_update_to_each(keys, model: nil)
+      CounterComponent.broadcast_to(each: keys, update: nil)
       expect(Turbo::StreamsChannel).to have_received(:broadcast_update_to).exactly(keys.size).times
     end
 
-    it "broadcast_append_to_each" do
+    it "broadcast_to(each:, append:)" do
       allow(Turbo::StreamsChannel).to receive(:broadcast_append_to)
-      CounterComponent.broadcast_append_to_each(keys, target: "list", model: nil)
+      CounterComponent.broadcast_to(each: keys, append: nil, target: "list")
       expect(Turbo::StreamsChannel).to have_received(:broadcast_append_to)
         .with(anything, anything, hash_including(target: "list")).exactly(keys.size).times
     end
 
-    it "broadcast_prepend_to_each" do
+    it "broadcast_to(each:, prepend:)" do
       allow(Turbo::StreamsChannel).to receive(:broadcast_prepend_to)
-      CounterComponent.broadcast_prepend_to_each(keys, target: "list", model: nil)
+      CounterComponent.broadcast_to(each: keys, prepend: nil, target: "list")
       expect(Turbo::StreamsChannel).to have_received(:broadcast_prepend_to)
         .with(anything, anything, hash_including(target: "list")).exactly(keys.size).times
     end
 
-    it "broadcast_remove_to_each (no render — remove has no body)" do
+    it "broadcast_to(each:, remove:) (no render — remove has no body)" do
       allow(Turbo::StreamsChannel).to receive(:broadcast_remove_to)
-      CounterComponent.broadcast_remove_to_each(keys, model: nil)
+      CounterComponent.broadcast_to(each: keys, remove: nil)
       expect(Turbo::StreamsChannel).to have_received(:broadcast_remove_to)
         .with(anything, anything, hash_including(target: "counter")).exactly(keys.size).times
     end

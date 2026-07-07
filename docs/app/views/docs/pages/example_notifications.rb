@@ -33,10 +33,10 @@ module Views
             md <<~MD
               A **real** live bell. Click "Simulate a background event" — it stands
               in for a job finishing. The count bumps and the bell re-renders via a
-              `broadcast_replace_to`, so **every tab** you have open on this page
-              updates (open a second tab to see it). It also fires a
-              `broadcast_js_to` pulse — a whitelisted DOM op, not HTML — so the bell
-              on the *other* tabs bounces to grab attention, with no re-render at all.
+              `broadcast_to(replace: ...)`, so **every tab** you have open on this
+              page updates (open a second tab to see it). It also fires a
+              `broadcast_to(js: ...)` pulse — a whitelisted DOM op, not HTML — so the
+              bell on the *other* tabs bounces to grab attention, with no re-render at all.
             MD
             render Views::Examples::LiveExample.new(
               component: NotificationBellComponent.new(unread: 0),
@@ -88,8 +88,8 @@ module Views
             MD
             DocsUI::Code(<<~RUBY, lexer: :ruby)
               # Only connections whose id is in this set receive the broadcast.
-              NotificationsBadge.broadcast_replace_to(
-                account, :notifications, model: user,
+              NotificationsBadge.broadcast_to(
+                account, :notifications, replace: user,
                 visible_to: [user.reactive_connection_id]   # per-subscriber authorization
               )
             RUBY
@@ -99,7 +99,7 @@ module Views
                 notifications stream — it decides *who* receives the push.
                 Broadcasting a user's unread count to the wrong subscribers leaks
                 one person's activity into another's UI. Scope every shared-stream
-                broadcast; a per-user stream (`broadcast_*_to(user, …)`) is already
+                broadcast; a per-user stream (`broadcast_to(user, …)`) is already
                 scoped by its key. `visible_to:` is honored on **pgbus**; on Action
                 Cable it is inert (every subscriber of the stream receives it), so
                 on Action Cable rely on a per-user stream key instead.
@@ -123,8 +123,8 @@ module Views
               def mark_all_read
                 @user.notifications.unread.update_all(read_at: Time.current)
                 # Live-update every OTHER tab; this tab already re-rendered via the reply.
-                NotificationsBadge.broadcast_replace_to(
-                  @user, :notifications, model: @user,
+                NotificationsBadge.broadcast_to(
+                  @user, :notifications, replace: @user,
                   exclude: reactive_connection_id
                 )
                 reply.replace
@@ -142,26 +142,26 @@ module Views
         end
 
         def light_the_bell
-          DocsUI::Section('Light up the bell without a re-render (broadcast_js_to)') do
+          DocsUI::Section('Light up the bell without a re-render (broadcast_to js:)') do
             md <<~MD
               The classic notification nudge doesn't need a re-render at all — you
               just want a **has-unread** class on the bell in every viewer's tab.
-              `broadcast_js_to` pushes declared client DOM ops (the same `js`
-              builder as `on_client` / `reply.js`) over the stream, so the server
+              `broadcast_to(..., js: ops)` pushes declared client DOM ops (the same
+              `js` builder as `on_client` / `reply.js`) over the stream, so the server
               lights the bell with **no HTML swap**:
             MD
             DocsUI::Code(<<~RUBY, lexer: :ruby)
               # In a model callback or job — light the bell in every viewer's tab,
               # minus the actor's own (who already knows).
-              Notifications::Badge.broadcast_js_to(
+              Notifications::Badge.broadcast_to(
                 user, :alerts,
-                js.add_class("#bell", "has-unread"),
+                js: js.add_class("#bell", "has-unread"),
                 exclude: reactive_connection_id
               )
             RUBY
             DocsUI::Callout(:note) do
               md <<~MD
-                `broadcast_js_to` **refuses focus ops** (`focus` / `focus_first`
+                `broadcast_to(..., js: ops)` **refuses focus ops** (`focus` / `focus_first`
                 raise `ArgumentError`) — broadcasting focus would steal it in every
                 subscriber's tab, so focus stays an actor-reply concern (`reply.js`).
                 Class and attribute toggles and `dispatch` broadcast fine. Like all
@@ -197,9 +197,9 @@ module Views
               reply.replace.flash(:notice, "Marked all read", dismiss_after: 4000)
 
               # A broadcast flash self-cleans too (the container is a plain host div).
-              NotificationsFlash.broadcast_append_to(
-                user, :notifications, target: "flash",
-                model: notification, exclude: reactive_connection_id
+              NotificationsFlash.broadcast_to(
+                user, :notifications, append: notification, target: "flash",
+                exclude: reactive_connection_id
               )
             RUBY
             md <<~MD
@@ -236,7 +236,7 @@ module Views
           DocsUI::Section('When to use this vs a full reactive component') do
             md <<~MD
               - Server pushes a re-render (job, callback, another user) →
-                `Streamable` + `broadcast_*_to`.
+                `Streamable` + `broadcast_to`.
               - User clicks/types and the same component updates → add `Component` +
                 `action`.
               - Both → add `Component`; broadcast from inside the action.
@@ -318,7 +318,7 @@ module Views
             class Notification < ApplicationRecord
               belongs_to :user
               after_create_commit do
-                NotificationsBadge.broadcast_replace_to(user, :notifications, model: user)
+                NotificationsBadge.broadcast_to(user, :notifications, replace: user)
               end
             end
           RUBY
@@ -330,7 +330,7 @@ module Views
               def perform(import)
                 import.run!
                 # Re-render a status component for everyone watching this import.
-                Imports::Status.broadcast_replace_to(import, model: import)
+                Imports::Status.broadcast_to(import, replace: import)
               end
             end
           RUBY

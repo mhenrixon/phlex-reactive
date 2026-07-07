@@ -28,7 +28,7 @@ RSpec.describe "Structured Stream value object (issue #114)", type: :request do
     it "the instance builders return Phlex::Reactive::Stream instances" do
       # A fresh instance per call — a Phlex component may only render once.
       expect(CounterComponent.new(count: 1).to_stream_replace).to be_a(Phlex::Reactive::Stream)
-      expect(CounterComponent.new(count: 1).to_stream_morph).to be_a(Phlex::Reactive::Stream)
+      expect(CounterComponent.new(count: 1).to_stream_replace(morph: true)).to be_a(Phlex::Reactive::Stream)
       expect(CounterComponent.new(count: 1).to_stream_update).to be_a(Phlex::Reactive::Stream)
       expect(CounterComponent.new(count: 1).to_stream_remove).to be_a(Phlex::Reactive::Stream)
       expect(CounterComponent.new(count: 1).to_stream_token).to be_a(Phlex::Reactive::Stream)

@@ -41,7 +41,7 @@ module Components
             s.rect(x: 250, y: 86, width: 200, height: 80, rx: '12',
                    fill: 'none', stroke: 'var(--color-primary)', stroke_width: '1.5')
             text_c(s, 350, 116, 'render ONCE', color: 'var(--color-primary)', weight: '700', size: '16')
-            text_c(s, 350, 138, 'broadcast_replace_to', size: '12', opacity: '0.75')
+            text_c(s, 350, 138, 'broadcast_to(replace:)', size: '12', opacity: '0.75')
             text_c(s, 350, 154, '→ one shared payload', size: '11.5', opacity: '0.6')
 
             s.path(d: 'M200 126 H250', fill: 'none', stroke: 'var(--color-primary)',

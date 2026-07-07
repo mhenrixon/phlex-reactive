@@ -415,7 +415,7 @@ module Views
                   plain ' to '
                   code { 'turbo_stream_from' }
                   plain ' and '
-                  code { 'broadcast_*_to' }
+                  code { 'broadcast_to' }
                   plain '.'
                 end
                 li do

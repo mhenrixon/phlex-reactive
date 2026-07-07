@@ -15,17 +15,24 @@ RSpec.describe "Streamable morph (issue #28)" do
   # several of these stream the same component twice (once per assertion).
   let(:todo) { Todo.create!(title: "t", done: false) }
 
-  describe "#to_stream_morph (instance primitive)" do
+  # Issue #185: morph is a kwarg — to_stream_replace(morph: true) replaces the
+  # deleted to_stream_morph. Byte-identical wire (action replace, method="morph").
+  describe "#to_stream_replace(morph: true) (instance primitive)" do
     it "emits a replace action with method=\"morph\" targeting self" do
-      stream = CounterComponent.new(count: 0).to_stream_morph
+      stream = CounterComponent.new(count: 0).to_stream_replace(morph: true)
       expect(stream).to include('action="replace"')
       expect(stream).to include('method="morph"')
       expect(stream).to include('target="counter"')
     end
 
     it "carries the re-rendered root (fresh signed token)" do
-      stream = CounterComponent.new(count: 0).to_stream_morph
+      stream = CounterComponent.new(count: 0).to_stream_replace(morph: true)
       expect(stream).to include("data-reactive-token-value=")
+    end
+
+    it "to_stream_morph raises a guided error naming to_stream_replace(morph: true)" do
+      expect { CounterComponent.new(count: 0).to_stream_morph }
+        .to raise_error(NoMethodError, /to_stream_replace\(morph: true\)/)
     end
   end
 

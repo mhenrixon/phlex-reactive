@@ -34,6 +34,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **BREAKING: one `broadcast_to` — verbs as kwargs, components as payloads (#185).**
+  The 11 `broadcast_*_to` / `broadcast_*_to_each` methods collapse into ONE
+  `broadcast_to` where the verb is a kwarg and its value is the payload:
+
+  ```ruby
+  # before                                          # after
+  Item.broadcast_replace_to(@list, :todos,          Item.broadcast_to(@list, :todos,
+    model: @todo, morph: true)                        replace: @todo, morph: true)
+  Row.broadcast_append_to(@list, target: t,         Row.broadcast_to(@list, append: item, target: t)
+    model: item)
+  Counter.broadcast_replace_to_each(keys,           Counter.broadcast_to(each: keys, replace: counter)
+    model: counter)
+  Badge.broadcast_js_to(user, :alerts, ops)         Badge.broadcast_to(user, :alerts, js: ops)
+  ```
+
+  A Hash payload is the component's init kwargs verbatim (`update: { room:, author: }`),
+  killing the old `**options` collision (a component with an init kwarg named
+  `target`/`morph`/`exclude` is broadcastable again). Payloads can be BUILT
+  components, and the new module-level `Phlex::Reactive.broadcast_to(@list, :todos,
+  update: TodoCount.new(...), target: "todos-count")` broadcasts a NON-Streamable
+  component (a count badge) — instrumented — without hand-rolling the raw channel +
+  render. Self-targeting verbs (`replace:`/`remove:`) require a Streamable payload
+  (its `#id` is the target); container verbs (`update:`/`append:`/`prepend:`) take any
+  component. Every removed method raises a guided error printing the `broadcast_to`
+  rewrite. `exclude:`/`visible_to:` still thread to pgbus through the capability-gated
+  thread-local path — unchanged (verified against pgbus 0.11.0).
+
+- **BREAKING: `to_stream_morph` is removed — morph is a kwarg (#185).**
+  Use `to_stream_replace(morph: true)` (byte-identical wire). `reply.morph` /
+  `reply.replace(morph: true)` are unchanged.
+
 - **BREAKING: forms & fields — scope everywhere, one dirty declaration, named schemas (#184).**
   - **`reactive_scope` extends to `reactive_field` and the param unwrap:** a scoped
     field emits `name="scope[field]"` and the endpoint peels one scope level, so the

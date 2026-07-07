@@ -81,8 +81,8 @@ module Views
               row's component to every OTHER subscribed tab**, and re-renders self
               so the actor sees the row and the empty-state clears.
 
-              - **`broadcast_append_to(..., exclude: reactive_connection_id)`** is
-                the load-bearing detail. An `append` *inserts* a child — it is not
+              - **`broadcast_to(..., append: todo, exclude: reactive_connection_id)`**
+                is the load-bearing detail. An `append` *inserts* a child — it is not
                 id-deduped the way a `replace`/`morph` of an existing element is.
                 Without `exclude:`, the actor's own subscribed tab would receive the
                 broadcast and append the row a **second** time, on top of the copy
@@ -106,16 +106,16 @@ module Views
               reply.** The one rule that keeps it correct is
               `exclude: reactive_connection_id` on the broadcast:
 
-              - **`add` → `broadcast_append_to`** — an append inserts a child, so
-                the actor MUST be excluded or the row double-applies (append is not
-                id-deduped).
-              - **`toggle` / `rename` → `broadcast_replace_to`** — a replace/morph
-                is keyed by dom id, so idiomorph dedupes it for the actor even
-                without `exclude:`. Passing `exclude:` anyway keeps every action on
-                one consistent pattern and avoids a redundant echo.
-              - **`archive` → `broadcast_remove_to`** — remove is idempotent, so a
-                double remove is invisible; `exclude:` still spares the actor a
-                redundant echo they already handled via `reply.remove`.
+              - **`add` → `broadcast_to(..., append: todo)`** — an append inserts a
+                child, so the actor MUST be excluded or the row double-applies
+                (append is not id-deduped).
+              - **`toggle` / `rename` → `broadcast_to(..., replace: todo)`** — a
+                replace/morph is keyed by dom id, so idiomorph dedupes it for the
+                actor even without `exclude:`. Passing `exclude:` anyway keeps every
+                action on one consistent pattern and avoids a redundant echo.
+              - **`archive` → `broadcast_to(..., remove: todo)`** — remove is
+                idempotent, so a double remove is invisible; `exclude:` still spares
+                the actor a redundant echo they already handled via `reply.remove`.
             MD
             DocsUI::Callout(:tip) do
               md <<~MD

@@ -36,7 +36,7 @@ RSpec.describe "Reactive action re-rendering a CSRF form (issue #42)", type: :re
   # CSRF-form component must render through the request-bound context too.
   it "broadcasts the CSRF form component without crashing" do
     broadcasts = capture_turbo_stream_broadcasts(todo) do
-      CsrfFormComponent.broadcast_replace_to(todo, model: todo)
+      CsrfFormComponent.broadcast_to(todo, replace: todo)
     end
 
     html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin

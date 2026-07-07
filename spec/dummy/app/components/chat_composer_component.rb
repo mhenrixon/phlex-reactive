@@ -22,11 +22,14 @@ class ChatComposerComponent < ApplicationComponent
     return if body.blank?
 
     message = ChatMessage.create!(room: @room, author: @author, body:)
-    ChatMessageComponent.broadcast_append_to(
+    # Issue #185: one broadcast_to — the verb (append:) is the kwarg, its value the
+    # record payload; target: is the container element, exclude: suppresses the
+    # actor's own echo.
+    ChatMessageComponent.broadcast_to(
       *ChatMessage.stream_key(@room),
+      append: message,
       target: "chat-messages-#{@room}",
-      model: message,
-      exclude: reactive_connection_id # suppress the actor's own echo
+      exclude: reactive_connection_id
     )
   end
 

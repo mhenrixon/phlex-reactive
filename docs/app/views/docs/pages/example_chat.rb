@@ -70,7 +70,7 @@ module Views
 
                 # The RAW stream key parts both subscribers and broadcasters agree on.
                 # Return the parts, not a pre-built "chat:lobby" string — both sides
-                # splat this so turbo_stream_from and broadcast_append_to build the
+                # splat this so turbo_stream_from and broadcast_to build the
                 # same key. (Double-keying a pre-built string trips pgbus's separator guard.)
                 def self.stream_key(room) = ["chat", room]
               end
@@ -143,10 +143,10 @@ module Views
                   # every subscribed tab. Splat the RAW key parts so subscribe and
                   # broadcast agree; exclude the actor's own connection so the SENDER
                   # doesn't get a doubled message (they already got the action's reply).
-                  Chat::Message.broadcast_append_to(
+                  Chat::Message.broadcast_to(
                     *ChatMessage.stream_key(@room),
+                    append: message,
                     target: "chat-messages-#{@room}",
-                    model: message,
                     exclude: reactive_connection_id      # suppress the actor's own echo
                   )
                 end
@@ -239,7 +239,7 @@ module Views
               2. The endpoint verifies the signed token, rebuilds the composer, and
                  runs `send_message` inside a transaction.
               3. `send_message` creates the `ChatMessage` and calls
-                 `broadcast_append_to(..., exclude: reactive_connection_id)`.
+                 `broadcast_to(..., append: message, exclude: reactive_connection_id)`.
               4. The broadcast fans the rendered `Chat::Message` out over the stream
                  transport to every subscribed room — **except** the sender's own
                  connection, which `exclude:` filters out.

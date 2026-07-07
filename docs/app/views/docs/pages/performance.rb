@@ -46,7 +46,7 @@ module Views
                 strong { 'broadcasts' }
                 plain ', which have no HTTP overhead to amortize against. To be precise about the fan-out: '
                 plain 'a '
-                code { 'broadcast_*_to' }
+                code { 'broadcast_to' }
                 plain ' call renders the component '
                 strong { 'once' }
                 plain ' and hands the finished HTML to the transport, so every subscriber of that stream '
@@ -54,10 +54,10 @@ module Views
                 plain 'render cost multiplies per '
                 strong { 'call' }
                 plain ': pushing one change to K different stream keys with a hand-written loop over '
-                code { 'broadcast_*_to' }
+                code { 'broadcast_to' }
                 plain ' is K builds + K renders + K token signings of byte-identical HTML. For that same-payload, '
-                plain 'many-key fan-out, '
-                code { 'broadcast_*_to_each' }
+                plain 'many-key fan-out, passing '
+                code { 'each:' }
                 plain ' (issue #119) renders '
                 strong { 'once' }
                 plain ' and loops only the cheap channel call — measured at ~9.5× throughput and ~8× fewer '
@@ -189,8 +189,8 @@ module Views
                 li do
                   code { 'broadcast.phlex_reactive' }
                   plain ' — around each '
-                  code { 'broadcast_*_to' }
-                  plain ' (fires on Action Cable AND pgbus). Payload: '
+                  code { 'broadcast_to' }
+                  plain ' call (fires on Action Cable AND pgbus). Payload: '
                   code { 'component' }
                   plain ', '
                   code { 'stream_action' }
@@ -496,9 +496,9 @@ module Views
                 plain ' bench doubles the transport out to a no-op, so what is measured is the server-side '
                 plain 'build + render + identity-HMAC cost a broadcast pays before the wire. Fanning one '
                 plain 'component out to K=10 stream keys, a hand-written loop over '
-                code { 'broadcast_replace_to' }
+                code { 'broadcast_to(key, replace:)' }
                 plain ' vs '
-                code { 'broadcast_replace_to_each' }
+                code { 'broadcast_to(each: keys, replace:)' }
                 plain ':'
               end
               ul do

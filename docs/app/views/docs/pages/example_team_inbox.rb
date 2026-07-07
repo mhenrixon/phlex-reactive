@@ -54,7 +54,7 @@ module Views
               | **Optimistic archive** — `optimistic: { hide: true }` hides the row in the same gesture | the row's Archive |
               | **Revert on failure** — a denied archive snaps the row back + shows an error flash | the "locked" message |
               | **`busy:`** — the Archive / Simulate buttons dedupe a double-click | container + row |
-              | **Cross-tab broadcast** — `broadcast_append_to` / `broadcast_remove_to` / `broadcast_replace_to` | every mutating action |
+              | **Cross-tab broadcast** — `broadcast_to(append:)` / `broadcast_to(remove:)` / `broadcast_to(replace:)` | every mutating action |
               | **`on_client` menu** — the ⋯ kebab toggles with zero round trips | the row |
               | **`error_flash` + `dismiss_after:`** — a self-dismissing confirmation / error toast | the reply |
             MD
@@ -69,8 +69,8 @@ module Views
               `reply.remove`, broadcasts the removal to teammates, and chains a
               `.flash(dismiss_after: 2000)`. `mark_read` persists + broadcasts the
               updated row. `simulate_incoming` creates a message and
-              `broadcast_append_to`s it (excluding the actor, who gets it from their
-              own `reply.append`).
+              `broadcast_to(..., append: message)`s it (excluding the actor, who gets
+              it from their own `reply.append`).
             MD
             DocsUI::Code(read_component('team_inbox_component.rb'),
                          lexer: :ruby, filename: 'app/components/team_inbox_component.rb')

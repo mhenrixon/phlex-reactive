@@ -57,7 +57,7 @@ RSpec.describe "Reactive actions", type: :request do
 
       expect do
         broadcasts = capture_turbo_stream_broadcasts(stream) do
-          TodoItemComponent.broadcast_replace_to(stream, model: todo)
+          TodoItemComponent.broadcast_to(stream, replace: todo)
         end
 
         html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin
@@ -71,7 +71,7 @@ RSpec.describe "Reactive actions", type: :request do
     # its focus/caret on the morphed row. Default broadcasts stay a plain swap.
     it "broadcasts a morphing replace when morph: true (issue #28)" do
       broadcasts = capture_turbo_stream_broadcasts("todos") do
-        TodoItemComponent.broadcast_replace_to("todos", model: todo, morph: true)
+        TodoItemComponent.broadcast_to("todos", replace: todo, morph: true)
       end
       html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin
       expect(html).to include('action="replace"')
@@ -80,13 +80,13 @@ RSpec.describe "Reactive actions", type: :request do
 
     it "broadcasts a plain replace (no morph attr) by default" do
       broadcasts = capture_turbo_stream_broadcasts("todos") do
-        TodoItemComponent.broadcast_replace_to("todos", model: todo)
+        TodoItemComponent.broadcast_to("todos", replace: todo)
       end
       html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin
       expect(html).not_to include("method=")
     end
 
-    # Issue #113: broadcast_update_to gains the same morph: flag. A cross-tab
+    # Issue #113: broadcast_to(update:) gains the same morph: flag. A cross-tab
     # update into a component a peer is editing morphs in place, so the peer
     # keeps its focus/caret instead of an inner-HTML clobber. The morph flag
     # rides through `attributes:` (the broadcast path has no method: kwarg).
@@ -94,7 +94,7 @@ RSpec.describe "Reactive actions", type: :request do
     # morph: true is asked for.
     it "broadcasts a morphing update when morph: true (issue #113)" do
       broadcasts = capture_turbo_stream_broadcasts("todos") do
-        TodoItemComponent.broadcast_update_to("todos", model: todo, morph: true)
+        TodoItemComponent.broadcast_to("todos", update: todo, morph: true)
       end
       html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin
       expect(html).to include('action="update"')
@@ -103,7 +103,7 @@ RSpec.describe "Reactive actions", type: :request do
 
     it "broadcasts a plain update (no morph attr) by default" do
       broadcasts = capture_turbo_stream_broadcasts("todos") do
-        TodoItemComponent.broadcast_update_to("todos", model: todo)
+        TodoItemComponent.broadcast_to("todos", update: todo)
       end
       html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin
       expect(html).to include('action="update"')

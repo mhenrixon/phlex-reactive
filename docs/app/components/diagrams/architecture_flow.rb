@@ -114,7 +114,7 @@ module Components
       def transport_fanout(s)
         # a model change fans the same render out over the transport
         node(s, x: 330, y: 300, w: 250, h: 44,
-                title: 'broadcast_*_to — same render',
+                title: 'broadcast_to — same render',
                 fill: 'var(--color-accent)', stroke: 'var(--color-accent)')
         # accent boxes ~ other viewers, each getting the identical render
         2.times do |i|

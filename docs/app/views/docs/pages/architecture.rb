@@ -119,7 +119,7 @@ module Views
             DocsUI::Callout(:tip, title: 'The reply is the actor’s reply') do
               plain 'It governs only the clicking user’s HTTP response. Cross-tab updates still go '
               plain 'out via '
-              code { 'broadcast_*_to' }
+              code { 'broadcast_to' }
               plain ' — see The transport.'
             end
           end
@@ -146,11 +146,11 @@ module Views
                 plain 'Under the hood '
                 code { 'reply.morph' }
                 plain ' calls '
-                code { 'Streamable#to_stream_morph' }
+                code { 'Streamable#to_stream_replace(morph: true)' }
                 plain ', the morph variant of '
                 code { 'to_stream_replace' }
                 plain '. Broadcasts morph too: '
-                code { 'broadcast_replace_to(..., morph: true)' }
+                code { 'broadcast_to(..., replace: model, morph: true)' }
                 plain ' keeps a peer tab’s focus on the morphed row.'
               end
             end
@@ -170,7 +170,7 @@ module Views
                 plain 'The reply above reaches only the actor. To update '
                 strong { 'other tabs and other users' }
                 plain ', a model change (or a job) calls a class-level '
-                code { 'broadcast_*_to' }
+                code { 'broadcast_to' }
                 plain ' — the SAME render, pushed over the stream transport instead of returned as an HTTP reply.'
               end
               p do
@@ -211,7 +211,7 @@ module Views
                         'Including it pulls in Streamable automatically (one include is enough).'
                 end
                 li do
-                  plain 'Streamable mixin — #id, replace/morph/append, broadcast_*_to over the transport. ' \
+                  plain 'Streamable mixin — #id, replace/morph/append, broadcast_to over the transport. ' \
                         'Record-backed components default #id to dom_id(record).'
                 end
               end
@@ -285,8 +285,8 @@ module Views
             # In a model callback or job — light up every
             # OTHER viewer's tab with the same render,
             # pushed over the transport (not returned).
-            Chat::Message.broadcast_append_to(
-              @room, target: "messages", model: message,
+            Chat::Message.broadcast_to(
+              @room, append: message, target: "messages",
               exclude: reactive_connection_id # skip actor
             )
           RUBY
