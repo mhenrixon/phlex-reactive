@@ -96,83 +96,70 @@ module Views
           DocsUI::Section('Value-conditional visibility (reactive_show)') do
             md <<~MD
               `on_client` ops are *unconditional* — they can't read the triggering
-              field's value to **decide** show vs hide. `reactive_show` (#161) covers
+              field's value to **decide** show vs hide. `reactive_show` (#180) covers
               exactly that gap, the Alpine `x-show` / Datastar `data-show` / Livewire
-              `wire:show` case: spread it onto the element to show/hide, name the
-              controlling field, declare **one literal predicate** — and the generic
-              controller toggles the `hidden` attribute from the field's current
-              value on every `input`/`change`. Still client-only: no token, no POST.
+              `wire:show` case, in ONE Ruby-native conditions language: `if:` /
+              `if_any:` / `unless:`, with `where`-style values. The generic
+              controller toggles the `hidden` attribute from the fields' current
+              values on every `input`/`change`. Still client-only: no token, no POST.
+
+              A **Hash is an AND**, an **Array is membership**, a **Range is a
+              threshold**, and `unless:` **negates** — the whole value vocabulary:
 
               ```ruby
-              div(**reactive_show(:mode, not: "off"))        { "shipping details" }
-              div(**reactive_show(:gift, equals: true))      { "gift message" }    # checkbox: checked
-              div(**reactive_show(:delivery, equals: "ship")) { "address fields" } # radio: checked value
-              div(**reactive_show(:size, in: %w[l xl]))      { "surcharge note" }
+              div(**reactive_show(unless: { mode: "off" }))            { "shipping details" }
+              div(**reactive_show(if: { gift: true }))                 { "gift message" }   # checkbox checked
+              div(**reactive_show(if: { delivery: "ship" }))           { "address fields" } # radio value
+              div(**reactive_show(if: { size: %w[l xl] }))             { "surcharge note" } # membership
+              div(**reactive_show(if: { quantity: 10.. }))             { "bulk note" }      # threshold
               ```
 
-              The predicate is a **declared literal match** — `equals:`, `not:`, or
-              `in:` (a list) — never an expression, so there is no eval surface.
-              Exactly one predicate is enforced loudly at render; extra attrs
-              deep-merge through the helper. Render the initial `hidden:` yourself
-              from the same server state that renders the field, so the first paint
-              doesn't flash.
+              Extra HTML attrs pass through unambiguously (conditions live in `if:`),
+              so `div(**reactive_show(if: { size: %w[l xl] }, class: "note"))` works.
 
-              **Compound & numeric predicates (#176).** Two common form shapes fall
-              just outside a single literal match: visibility that depends on **more
-              than one field**, and visibility gated on a **threshold**. Both stay
-              inside the eval-free contract.
-
-              `all:` / `any:` fold a list of per-field terms with **one fixed
-              connective** — still no expression surface, just AND vs OR over the
-              same literal vocabulary. One flat binding replaces the wrapper-div
-              nesting AND is the only way to express OR:
+              **OR-of-AND without the distributive law.** `if_any:` takes an array of
+              AND-hashes — one level of disjunction, which covers every boolean
+              visibility rule. This is the case that used to force hand-applied
+              distributive law encoded as nested wrapper divs:
 
               ```ruby
-              # visible while type == "individual" AND country != "domestic"
-              div(**reactive_show(all: [
-                { field: :type,    equals: "individual" },
-                { field: :country, not:    "domestic" }
+              # visible while director OR (shareholder AND role == "individual")
+              div(**reactive_show(if_any: [
+                { director: true },
+                { shareholder: true, role: "individual" }
               ]))
-              # visible while director OR shareholder is checked
-              div(**reactive_show(any: [
-                { field: :director,    equals: true },
-                { field: :shareholder, equals: true }
-              ]))
+              # AND across fields, with negation, in one binding:
+              div(**reactive_show(if: { type: "individual" }, unless: { country: "domestic" }))
               ```
 
-              `gte:` / `gt:` / `lte:` / `lt:` compare the field value coerced to a
-              Number against a literal number baked into the binding (the RHS must
-              be a real `Numeric` in Ruby — a typo fails at render). A non-numeric
-              field value is `NaN` → hidden, the safe reveal-on-threshold default.
-              Numeric predicates work standalone and as a compound term:
+              **First paint is computed for you.** Declare `reactive_values` once and
+              every binding whose fields are all provided renders the correct initial
+              `hidden:` server-side — no per-section mirror method, no flash:
 
               ```ruby
-              div(**reactive_show(:quantity, gte: 10))   # visible while qty >= 10
-              div(**reactive_show(all: [
-                { field: :type,   equals: "order" },
-                { field: :amount, gte:    5000 }
-              ]))
+              def reactive_values = { director: @director, role: @role, quantity: @qty }
+              # …then every reactive_show computes hidden: from these, automatically.
               ```
 
-              A malformed compound term folds **false** (fail-closed: a broken AND
-              term can't pass, a broken OR term can't reveal) — the same default-deny
-              posture as the rest of the vocabulary. Numeric predicates also carry
-              into `reactive_show_targets` maps.
+              `reactive_scope :form` lets bindings use bare symbols while the client
+              resolves `[name="form[field]"]`, and `disable: true` disables a hidden
+              section's own controls so a switched-away value never submits. A blank
+              or non-numeric field fails a numeric term **closed** (stays hidden) —
+              the safe default. There is no expression surface: every term is a
+              declared literal, the same default-deny posture as before.
 
               A plain `reactive_show` is root-scoped by design. When the dependents
               live **outside** the control's root — a nav tab, a panel in another
               tab pane, a sidebar note — `reactive_show_targets` (#164) is the
-              declared escape, the visibility parallel of the cross-root text
-              mirror: the component that **owns** the field declares which outside
-              ids it governs, spread on the root. Id selectors only (raise at
-              render, warn-and-skip on the client — two-sided default-deny), same
-              literal predicates, `hidden` only; a target id not on the page is
-              silently skipped.
+              declared escape: the component that **owns** the field declares which
+              outside ids it governs, spread on the root, using the same `where`-style
+              values. Id selectors only (raise at render, warn-and-skip on the client
+              — two-sided default-deny); a target id not on the page is skipped.
 
               ```ruby
               div(**mix(reactive_root, reactive_show_targets(:mode,
-                "#advanced-tab" => { equals: "advanced" },
-                "#basic-note"   => { not: "advanced" })))
+                "#advanced-tab" => "advanced",         # equals
+                "#premium-note" => %w[gold platinum])))  # membership
               ```
             MD
             render Views::Examples::LiveExample.new(

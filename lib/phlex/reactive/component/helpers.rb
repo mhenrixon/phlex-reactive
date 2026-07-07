@@ -73,16 +73,24 @@ module Phlex
         # signed identity token. Spread onto the root:
         #   div(id:, **reactive_attrs) { ... }
         def reactive_attrs
-          data = {
-            controller: "reactive",
-            reactive_token_value: reactive_token
-          }
+          data = { controller: "reactive" }
+          # A CLIENT-ONLY component (Phlex::Reactive::ClientBindings, issue #180)
+          # has no Identity, so no token — the root is tokenless (show/filter/
+          # compute need no signed round trip). reactive_token is private, so the
+          # include-private `respond_to?` mirrors to_stream_token's guard.
+          data[:reactive_token_value] = reactive_token if respond_to?(:reactive_token, true)
           # Client debug mode (issue #108): stamp the flag so the generic controller
           # console.groups every dispatch. STRING "true", not boolean — Phlex renders
           # a boolean-true attr VALUELESS, which getAttribute reads as "" (falsy in
           # JS), so the client's attr check would never fire (the on()/warn_unsaved
           # precedent). Off by default → no key, no string, zero client surface.
           data[:reactive_debug] = "true" if Phlex::Reactive.debug
+          # Field-name scope (issue #180): the client prefixes bare binding field
+          # names with `scope[...]`. Omitted entirely when undeclared — byte-stable
+          # wire for unscoped components.
+          if self.class.respond_to?(:reactive_scope) && (scope = self.class.reactive_scope)
+            data[:reactive_scope] = scope.to_s
+          end
           { data: }
         end
 
@@ -112,11 +120,16 @@ module Phlex
         # guard (STRING "true" — a boolean-true attr renders valueless, which the
         # client's param reader sees as "" → falsy).
         def reactive_root(**overrides)
-          root_id = overrides.delete(:id) || id
+          # A CLIENT-ONLY component (ClientBindings, issue #180) needs no #id —
+          # there's no token to self-match by id. Use an explicit override, else
+          # #id when the component defines one, else nothing (no id attr).
+          root_id = overrides.delete(:id)
+          root_id = id if root_id.nil? && respond_to?(:id)
           track_dirty = overrides.delete(:track_dirty)
           warn_unsaved = overrides.delete(:warn_unsaved)
 
-          attrs = mix({ **reactive_attrs }, overrides, { id: root_id })
+          attrs = mix({ **reactive_attrs }, overrides)
+          attrs = mix(attrs, { id: root_id }) unless root_id.nil?
           attrs = mix(attrs, { data: { action: "input->reactive#trackDirty" } }) if track_dirty
           attrs = mix(attrs, { data: { reactive_warn_unsaved: "true" } }) if warn_unsaved
           attrs
@@ -416,62 +429,62 @@ module Phlex
           span(**mix({ data: { reactive_text: name.to_s } }, attrs)) { initial }
         end
 
-        # Value-conditional visibility (issue #161) — the x-show / data-show /
-        # wire:show equivalent, entirely client-side. Spread onto the element to
-        # show/hide; it declares which OWNED field controls it plus ONE literal
-        # predicate, and the generic controller toggles the `hidden` attribute
-        # from the field's CURRENT value on every input/change — no round trip,
-        # no token, no bespoke Stimulus controller:
+        # Value-conditional visibility (issue #180) — the x-show / data-show /
+        # wire:show equivalent, entirely client-side, in ONE Ruby-native
+        # conditions language. Spread onto the element to show/hide; declare an
+        # if:/if_any:/unless: condition with where-style values, and the generic
+        # controller toggles `hidden` from the fields' CURRENT values on every
+        # input/change — no round trip, no token, no bespoke Stimulus controller.
         #
-        #   div(**reactive_show(:mode, not: "off"))        { "details" }
-        #   div(**reactive_show(:kind, equals: "premium")) { "premium panel" }
-        #   div(**reactive_show(:size, in: %w[l xl]))      { "surcharge note" }
-        #   div(**reactive_show(:gift, equals: true))      { "gift message" }
+        # THE VALUE LANGUAGE (Phlex::Reactive::ShowConditions):
+        #   Hash    = AND (multiple keys ANDed)          if: { a: "x", b: "y" }
+        #   Array   = membership                          if: { size: %w[l xl] }
+        #   Range   = threshold (10.. / ..10 / ...10 / 10..20)  if: { qty: 10.. }
+        #   true/false = checkbox checked-state           if: { gift: true }
+        #   nil     = blank                               if: { note: nil }
+        #   unless: = negation (composes with if:/if_any:)
         #
-        # Exactly one predicate — equals:, not:, or in: (a list) — and every
-        # value is STRINGIFIED for a literal match against the field's value
-        # (a checkbox compares its checked state as "true"/"false", so
-        # `equals: true` is the checkbox form; a radio group reads the checked
-        # radio's value). This is a DECLARED LITERAL MATCH, never an expression
-        # — there is no eval surface (default-deny, like the op vocabulary).
-        #
-        # Scope: presentational only, strictly less powerful than the js ops —
-        # it reads an owned field (#15 ownership) and toggles `hidden` on an
-        # owned element. The client seeds visibility at connect and reconciles
-        # after a morph; render the initial `hidden:` yourself (from the same
-        # server state that renders the field) to avoid a first-paint flash.
-        # Extra attrs deep-merge over the binding (mix), like reactive_field.
-        # Compound forms (issue #176 part A) — visibility that depends on MORE
-        # THAN ONE field, or a threshold, staying inside the eval-free literal
-        # contract. `all:`/`any:` fold a list of per-field terms (each the same
-        # equals:/not:/in:/gte:/gt:/lte:/lt: vocabulary) with one fixed
-        # connective; the compound has no single controlling field, so it
-        # serializes as ONE JSON attr (data-reactive-show) like
-        # reactive_show_targets rather than the flat data-reactive-show-* attrs:
-        #
-        #   # visible while type == "individual" AND country != "domestic"
-        #   div(**reactive_show(all: [
-        #     { field: :type,    equals: "individual" },
-        #     { field: :country, not:    "domestic" }
+        #   div(**reactive_show(unless: { mode: "off" }))          { "details" }
+        #   div(**reactive_show(if: { size: %w[l xl] }))           { "surcharge" }
+        #   div(**reactive_show(if: { qty: 10.. }))                { "bulk note" }
+        #   # OR-of-AND — director OR (shareholder AND role == "individual"):
+        #   div(**reactive_show(if_any: [
+        #     { director: true },
+        #     { shareholder: true, role: "individual" }
         #   ]))
-        #   # visible while director OR shareholder is checked
-        #   div(**reactive_show(any: [
-        #     { field: :director,    equals: true },
-        #     { field: :shareholder, equals: true }
-        #   ]))
-        #   # a numeric threshold, single field or as a compound term
-        #   div(**reactive_show(:quantity, gte: 10))            # visible while qty >= 10
-        #   div(**reactive_show(all: [{ field: :amount, gte: 5000 }, ...]))
         #
-        # `all:`/`any:` are additive and mutually exclusive with the single-field
-        # form and with each other — enforced loudly at render, like the
-        # one-predicate rule. A single-field `all:` with one term degrades to the
-        # flat form's behaviour client-side.
+        # There is no expression surface — every term is a declared literal, so
+        # the same default-deny posture as before. Everything normalizes to ONE
+        # DNF wire attr (data-reactive-show='{"any":[[term,…],…]}').
+        #
+        # FIRST PAINT is computed for you: declare reactive_values (an instance
+        # method returning { field => value }) and every binding whose fields are
+        # all provided renders the correct initial `hidden:` server-side — no
+        # per-section mirror method, no flash. An explicit `hidden:` always wins;
+        # a per-call `values:` override merges over reactive_values.
+        #
+        # `disable: true` disables the section's OWNED controls while it is hidden
+        # so a switched-away value never submits. `reactive_scope :form` lets
+        # bindings use bare field symbols ([name="form[field]"] on the client).
+        #
+        # Scope: presentational only, strictly less powerful than the js ops — it
+        # reads owned fields (#15 ownership) and toggles `hidden` (+ optionally
+        # `disabled`) on owned elements. Extra attrs deep-merge over the binding
+        # (mix), like reactive_field.
         def reactive_show(field = nil, **options)
-          connectives = options.slice(*SHOW_CONNECTIVE_KEYS)
-          return reactive_show_compound(field, connectives, options) if connectives.any?
+          reject_legacy_show_surface!(field, options)
 
-          reactive_show_single(field, options)
+          conditions = options.slice(*SHOW_CONDITION_KEYS)
+          disable = options.delete(:disable)
+          values_override = options.delete(:values)
+          attrs = options.except(*SHOW_CONDITION_KEYS)
+
+          groups = Phlex::Reactive::ShowConditions.normalize(**conditions)
+          data = { reactive_show: { "any" => groups }.to_json }
+          data[:reactive_show_disable] = "true" if disable
+
+          result = mix({ data: }, attrs)
+          apply_first_paint_hidden(result, groups, values_override)
         end
 
         # Client-side option filtering for the searchable combobox (issue #163)
@@ -544,33 +557,35 @@ module Phlex
         # reactive_root — the client reads it off the controller element):
         #
         #   div(**mix(reactive_root, reactive_show_targets(:mode,
-        #     "#advanced-tab"   => { equals: "advanced" },
-        #     "#advanced-panel" => { equals: "advanced" },
-        #     "#basic-note"     => { not: "advanced" })))
+        #     "#advanced-tab"   => "advanced",          # equals
+        #     "#advanced-panel" => "advanced",
+        #     "#premium-note"   => %w[gold platinum]))) # membership
         #
         # Same posture as mirror: — opt-in and declared, never implicit (a plain
         # reactive_show stays root-isolated); targets are SINGLE ID SELECTORS
         # only, enforced here at declare time AND warn-and-skipped by the client
-        # interpreter (two-sided default-deny); the predicate is the same
-        # literal-only reactive_show vocabulary (exactly one of equals:/not:/
-        # in:, no expressions); and the toggle is `hidden` only — no innerHTML,
-        # no attribute freedom. The FIELD read stays owned (#15): you can only
-        # drive outside visibility from a field this root owns. A target id not
-        # on the page is silently skipped (an unrendered tab pane is normal).
+        # interpreter (two-sided default-deny); the value uses the same where-
+        # style conditions vocabulary (scalar/Array/Range, no expressions); and
+        # the toggle is `hidden` only — no innerHTML, no attribute freedom. The
+        # FIELD read stays owned (#15): you can only drive outside visibility from
+        # a field this root owns. A target id not on the page is silently skipped
+        # (an unrendered tab pane is normal). A target value is positive-only (no
+        # per-target unless:) — express "not X" as a membership Array over the
+        # remaining options.
         #
         # ONE call per root. Phlex `mix` space-joins duplicate STRING data
         # values, so a second call's JSON would concatenate into an unparseable
         # attr and the client would drop BOTH maps (it warns when that
         # happens). Several fields therefore go in ONE call via the hash form:
         #
-        #   reactive_show_targets(mode: { "#advanced-tab" => { equals: "advanced" } },
-        #                         kind: { "#premium-note" => { not: "basic" } })
+        #   reactive_show_targets(mode: { "#advanced-tab" => "advanced" },
+        #                         kind: { "#premium-note" => %w[gold platinum] })
         def reactive_show_targets(field, targets = nil)
           field_maps = targets.nil? ? field : { field => targets }
           unless field_maps.is_a?(Hash) && field_maps.any?
             raise ArgumentError,
               "reactive_show_targets needs at least one target " \
-              "(:field, \"#id\" => { equals:/not:/in: ... }), got #{field_maps.inspect}"
+              "(:field, \"#id\" => value), got #{field_maps.inspect}"
           end
 
           normalized = field_maps.to_h do |name, map|
@@ -675,33 +690,17 @@ module Phlex
           reactive_record_for_nested.update!(**nested_attributes(association, attrs), **extra)
         end
 
-        # The declared reactive_show predicates: a literal match on the
-        # controlling field's current value. Exactly one per binding — enforced
-        # loudly at render (a dead binding must not no-op in the browser).
-        # `not`/`in` are Ruby keywords, so they arrive via **options rather than
-        # named kwargs. Issue #161 shipped the string-literal trio; issue #176
-        # adds the numeric-threshold quartet below.
-        SHOW_LITERAL_KEYS = %i[equals not in].freeze
+        # The conditions-language kwargs (issue #180): if:/if_any:/unless: —
+        # compiled by Phlex::Reactive::ShowConditions into the DNF wire. The ONE
+        # vocabulary; there are no predicate kwargs any more.
+        SHOW_CONDITION_KEYS = %i[if if_any unless].freeze
 
-        # The numeric-threshold predicates (issue #176 part B): gte/gt/lte/lt
-        # compare the field value coerced to a Number against a literal number.
-        # Still a declared literal — the RHS is a number baked into the
-        # attribute, never an expression — the only new capability is ordered
-        # comparison. The RHS must be an actual Numeric in Ruby (stricter, so a
-        # typo like gte: "10" fails at render, not silently in the browser).
-        SHOW_NUMERIC_KEYS = %i[gte gt lte lt].freeze
-
-        # Every predicate key a reactive_show / reactive_show_targets binding may
-        # declare — the literal trio plus the numeric quartet. Exactly one of
-        # these decides a single binding; a compound term declares one too.
-        SHOW_PREDICATE_KEYS = (SHOW_LITERAL_KEYS + SHOW_NUMERIC_KEYS).freeze
-
-        # The compound connectives (issue #176 part A): fold a list of per-field
-        # literal/numeric terms with ONE fixed keyword. Not an expression surface
-        # — the connective is one of two fixed keywords, each term is the same
-        # declared predicate vocabulary. Mutually exclusive with a single field
-        # and with each other (enforced loudly at render).
-        SHOW_CONNECTIVE_KEYS = %i[all any].freeze
+        # The removed 0.9.5 surface (issue #180 clean break): each of these
+        # kwargs — and a positional field — now raises a GUIDED error printing
+        # the if:/if_any:/unless: rewrite. Kept only to detect the legacy call
+        # shape; nothing here reaches the wire.
+        LEGACY_SHOW_PREDICATE_KEYS = %i[equals not in gte gt lte lt].freeze
+        LEGACY_SHOW_CONNECTIVE_KEYS = %i[all any].freeze
 
         # The declared optimistic-hint class ops (issue #98): the cosmetic class
         # vocabulary the client applies instantly and reverts on failure. Enforced
@@ -726,154 +725,110 @@ module Phlex
           selector
         end
 
-        # Normalize + validate ONE field's target map (issue #164): each key a
-        # single id selector (loud raise — the declare-time half of the
-        # two-sided default-deny), each value one literal predicate. Shared by
-        # both reactive_show_targets call forms.
+        # Normalize + validate ONE field's target map (issue #180): each key a
+        # single id selector (loud raise — the declare-time half of the two-sided
+        # default-deny), each value a where-style condition value (scalar/Array/
+        # Range) that compiles to ONE DNF group (terms ANDed). Shared by both
+        # reactive_show_targets call forms.
         def normalize_show_target_map(field, targets)
           unless targets.is_a?(Hash) && targets.any?
             raise ArgumentError,
               "reactive_show_targets(#{field.inspect}) needs at least one target " \
-              "(\"#id\" => { equals:/not:/in: ... }), got #{targets.inspect}"
+              "(\"#id\" => value), got #{targets.inspect}"
           end
 
-          targets.to_h do |selector, predicate|
+          targets.to_h do |selector, value|
             selector = selector.to_s
             unless selector.match?(DSL::MIRROR_ID_SELECTOR)
               raise ArgumentError,
                 "reactive_show_targets(#{field.inspect}) target #{selector.inspect} must be a single " \
                 "ID selector (\"#id\") — cross-root visibility is id-allowlisted, like mirror: (#159)"
             end
+            if value.is_a?(Hash)
+              raise ArgumentError,
+                "reactive_show_targets(#{field.inspect}) target #{selector.inspect}: the { equals: ... } " \
+                "predicate form was removed — pass a bare value (#{selector.inspect} => \"advanced\", " \
+                "=> %w[a b] for a set, => 10.. for a threshold)"
+            end
 
-            context = "reactive_show_targets(#{field.inspect}) target #{selector.inspect}"
-            [selector, normalize_show_predicate(predicate.is_a?(Hash) ? predicate : {}, context)]
+            # A target compiles to ONE group: the field-vs-value condition.
+            groups = Phlex::Reactive::ShowConditions.normalize(if: { field => value })
+            [selector, groups.first]
           end
         end
 
-        # Validate ONE declared show predicate (issues #161/#164/#176) and
-        # return its wire form — { "equals" => "v" } / { "not" => "v" } /
-        # { "in" => ["a", …] } / { "gte" => 10 } (a numeric RHS stays a real
-        # Number so the wire carries a JSON number, not a string). reactive_show
-        # JSON-encodes an in: array into its own attr; the reactive_show_targets
-        # map and a compound term embed the predicate directly. Shared by every
-        # helper so the vocabulary and the loud validation can never drift.
-        # `context` names the call site in the error.
-        def normalize_show_predicate(predicates, context)
-          unless predicates.size == 1 && SHOW_PREDICATE_KEYS.include?(predicates.keys.first)
-            raise ArgumentError,
-              "#{context} needs exactly one predicate — equals:, not:, in:, or " \
-              "gte:/gt:/lte:/lt: — got #{predicates.keys.inspect}"
-          end
-
-          key, value = predicates.first
-          return normalize_show_numeric(key, value, context) if SHOW_NUMERIC_KEYS.include?(key)
-          return { key.to_s => value.to_s } unless key == :in
-
-          list = Array(value).map(&:to_s)
-          raise ArgumentError, "#{context} in: needs at least one value" if list.empty?
-
-          { "in" => list }
-        end
-
-        # Validate a numeric threshold predicate (issue #176 part B): the RHS
-        # must be an actual Numeric (a String "10" is a typo caught here, not a
-        # silent NaN in the browser). It rides the wire as a JSON number so the
-        # client compares Number(value) against it directly.
-        def normalize_show_numeric(key, value, context)
-          unless value.is_a?(Numeric)
-            raise ArgumentError,
-              "#{context} #{key}: needs a number (an ordered comparison against a literal), " \
-              "got #{value.inspect}"
-          end
-
-          { key.to_s => value }
-        end
-
-        # The single-field reactive_show form (issue #161, extended for numeric
-        # thresholds in #176): one owned field + one predicate → flat
-        # data-reactive-show-* attrs. An in: list JSON-encodes into its own attr;
-        # a numeric threshold or a literal stringifies into the flat attr and the
-        # client Number()-coerces the numeric case back on read.
-        def reactive_show_single(field, options)
-          if field.nil?
-            raise ArgumentError,
-              "reactive_show needs a field (reactive_show(:mode, equals: …)) or a compound " \
-              "connective (reactive_show(all: [...]) / any:) — got neither"
-          end
-
-          predicates = options.slice(*SHOW_PREDICATE_KEYS)
-          attrs = options.except(*SHOW_PREDICATE_KEYS)
-          unless predicates.size == 1
-            raise ArgumentError,
-              "reactive_show(#{field.inspect}) needs exactly one predicate — equals:, not:, in:, " \
-              "or gte:/gt:/lte:/lt: — got #{predicates.keys.inspect}"
-          end
-
-          key, value = normalize_show_predicate(predicates, "reactive_show(#{field.inspect})").first
-          data = { reactive_show_field: field.to_s }
-          # in: → JSON array; a numeric threshold or a literal → the value as-is.
-          # Phlex stringifies it into the flat attr; the client re-reads via
-          # getAttribute (always a string) and Number()-coerces the numeric case.
-          data[:"reactive_show_#{key}"] = key == "in" ? value.to_json : value.to_s
-
-          mix({ data: }, attrs)
-        end
-
-        # The compound reactive_show form (issue #176 part A): `all:`/`any:` fold
-        # a list of per-field terms with one fixed connective, serialized as one
-        # JSON attr (data-reactive-show). A field alongside a connective, or two
-        # connectives, is a contradiction — raise. Each term is validated through
-        # the SAME predicate normalizer, so a term's vocabulary never drifts from
-        # the single-field form.
-        def reactive_show_compound(field, connectives, options)
+        # Reject the removed 0.9.5 reactive_show surface (issue #180 clean break)
+        # with a GUIDED error printing the if:/if_any:/unless: rewrite. A
+        # positional field, a predicate kwarg (equals:/not:/in:/gte:/…), or a
+        # connective (all:/any:) all land here before any conditions parsing.
+        def reject_legacy_show_surface!(field, options)
           unless field.nil?
             raise ArgumentError,
-              "reactive_show got a field AND all:/any: — the compound and single-field forms are " \
-              "mutually exclusive; use one flat binding OR a compound list, not both"
-          end
-          unless connectives.size == 1
-            raise ArgumentError,
-              "reactive_show needs exactly one of all:/any: (one fixed connective), " \
-              "got #{connectives.keys.inspect}"
+              "reactive_show no longer takes a positional field — the conditions language is " \
+              "keyword-only: reactive_show(if: { #{field}: <value> }) (a Range is a threshold, " \
+              "an Array is a set, unless: negates). See the 0.10 upgrade notes."
           end
 
-          connective, terms = connectives.first
-          # A top-level predicate alongside a connective (reactive_show(all: [...],
-          # equals: "x")) is a misuse — predicates belong INSIDE terms. Catch it
-          # loudly at render rather than leaking `equals="x"` as a bogus HTML attr
-          # (the mix at the tail treats every leftover kwarg as a literal
-          # attribute). Same default-deny posture as the single-field path.
-          if (stray = options.slice(*SHOW_PREDICATE_KEYS)).any?
+          if (pred = options.keys & LEGACY_SHOW_PREDICATE_KEYS).any?
             raise ArgumentError,
-              "reactive_show #{connective}: got a top-level predicate #{stray.keys.inspect} — " \
-              "predicates belong INSIDE each term ({ field: …, #{stray.keys.first}: … }), not beside the connective"
+              "reactive_show(#{pred.first}: ...) was removed — use the conditions language: " \
+              "reactive_show(if: { field: value }). equals:/not: → if:/unless:, in: → an Array value, " \
+              "gte:/gt:/lte:/lt: → a Range value (10.., ..10, ...10)."
           end
-
-          attrs = options.except(*SHOW_CONNECTIVE_KEYS)
-          unless terms.is_a?(Array) && terms.any?
+          if (conn = options.keys & LEGACY_SHOW_CONNECTIVE_KEYS).any?
+            replacement = conn.first == :all ? "if: { … }" : "if_any: [{ … }, { … }]"
             raise ArgumentError,
-              "reactive_show #{connective}: needs at least one term " \
-              "({ field: …, equals:/not:/in:/gte:/… }), got #{terms.inspect}"
+              "reactive_show(#{conn.first}: [...]) was removed — use #{replacement}. " \
+              "all: → if: (one AND group); any: → if_any: (OR of AND groups). Terms are now " \
+              "field => value pairs, not { field:, equals: } hashes."
           end
-
-          normalized = terms.map { normalize_show_term(connective, it) }
-          mix({ data: { reactive_show: { connective.to_s => normalized }.to_json } }, attrs)
         end
 
-        # Normalize + validate ONE compound term (issue #176 part A): a Hash with
-        # a :field and exactly one predicate. The predicate goes through the
-        # shared normalizer; the field is stringified into the term. Returns
-        # { "field" => name, <predicate> } so the wire is uniform with the
-        # reactive_show_targets embedded-predicate shape.
-        def normalize_show_term(connective, term)
-          context = "reactive_show #{connective}: term"
-          unless term.is_a?(Hash) && term.key?(:field)
-            raise ArgumentError, "#{context} — each term needs a field (got #{term.inspect})"
-          end
+        # Compute the first-paint `hidden:` from reactive_values (issue #180) so
+        # the author never restates the predicate as a Ruby mirror method. Fires
+        # only when EVERY field the binding references is provided (by
+        # reactive_values, merged under a per-call `values:` override); otherwise
+        # the attrs are returned untouched. An explicit `hidden:` in the caller's
+        # attrs always wins (it survives the mix, so this is a no-op then).
+        def apply_first_paint_hidden(attrs, groups, values_override)
+          return attrs if attrs.key?(:hidden)
 
-          field = term[:field]
-          predicate = normalize_show_predicate(term.except(:field), "#{context} (field #{field.inspect})")
-          { "field" => field.to_s }.merge(predicate)
+          provided = show_values(values_override)
+          return attrs if provided.nil?
+
+          referenced = Phlex::Reactive::ShowConditions.fields(groups)
+          return attrs unless referenced.all? { provided.key?(it) }
+
+          visible = Phlex::Reactive::ShowConditions.match?(groups, provided)
+          attrs.merge(hidden: !visible)
+        end
+
+        # The { field => current-string-value } map the first-paint evaluator
+        # reads: reactive_values (if the component declares it) merged under a
+        # per-call values: override, both stringified the way the client reads a
+        # field (checkbox → "true"/"false", nil → ""). nil when neither source
+        # exists — first paint then no-ops (no flash guarantee is the author's,
+        # exactly as before).
+        def show_values(values_override)
+          base = respond_to?(:reactive_values) ? reactive_values : nil
+          return nil if base.nil? && values_override.nil?
+
+          merged = {}
+          merged.merge!(base) if base
+          merged.merge!(values_override) if values_override
+          merged.to_h { |name, value| [name.to_s, show_value_string(value)] }
+        end
+
+        # Stringify a reactive_values entry the way the client's #showFieldValue
+        # reports the live field: a boolean is the checkbox checked-state string,
+        # nil is blank, everything else is to_s.
+        def show_value_string(value)
+          case value
+          when true then "true"
+          when false then "false"
+          when nil then ""
+          else value.to_s
+          end
         end
 
         # True when the hint declares checked: :keep — the click-bound

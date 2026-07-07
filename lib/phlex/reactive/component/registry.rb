@@ -51,6 +51,8 @@ module Phlex
           collections: :@reactive_own_collections,
           computes: :@reactive_own_computes,
           record_key: :@reactive_own_record_key,
+          # Form-field namespace — reactive_scope (issue #180).
+          scope: :@reactive_own_scope,
           # Deferred reply segments — reactive_lazy (issue #165).
           lazy: :@reactive_own_lazy,
           # verify_authorized opt-out (issue #168): a scalar bare flag (skip the

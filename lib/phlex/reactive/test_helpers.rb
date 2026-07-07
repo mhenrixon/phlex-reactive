@@ -276,7 +276,15 @@ module Phlex
           end
 
           if @response.render_self? && streams.none? { it.include?("data-reactive-token-value") }
-            streams = [@component.to_stream_replace, *streams]
+            # Mirror the endpoint (issue #180): a self-render reply gets the full
+            # replace; a companion-only reply.with (no subject_component) gets a
+            # token-only refresh instead.
+            streams =
+              if @response.subject_component
+                [@component.to_stream_replace, *streams]
+              else
+                [*streams, @component.to_stream_token]
+              end
           end
           streams
         end

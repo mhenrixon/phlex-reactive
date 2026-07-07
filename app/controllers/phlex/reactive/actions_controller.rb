@@ -328,8 +328,21 @@ module Phlex
         # ground-truth flag (rx_carries_token?), a raw string from a substring
         # scan. Deliberately NOT rx_refreshes_token_for? (target-scoped): scoping
         # this guard would regress update/morph of self on an aliased id.
+        #
+        # A self-render reply (Response.replace/update/morph — subject_component
+        # set) whose streams somehow carry no token gets the full self-replace
+        # (defensive, unchanged). A companion-only reply.with (NO subject, NO
+        # token_component) that doesn't re-render the root gets a token-ONLY
+        # refresh instead — issue #180 automatic token refresh: reply.with and
+        # reply.streams converge, the author never picks a verb to keep the token
+        # fresh, and a live input is never clobbered by a forced replace.
         elsif result.render_self? && streams.none? { stream_carries_token?(it) }
-          streams = [component.to_stream_replace, *streams]
+          streams =
+            if result.subject_component
+              [component.to_stream_replace, *streams]
+            else
+              [*streams, component.to_stream_token]
+            end
         end
 
         append_deferred_streams(streams, result)

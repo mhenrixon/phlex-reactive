@@ -29,10 +29,31 @@ module Phlex
         MIRROR_ID_SELECTOR = /\A#[A-Za-z_][\w-]*\z/
 
         class_methods do
+          # Guard the three SERVER-ACTION macros (issue #180). ClientBindings
+          # includes this DSL for its client-only macros (reactive_scope,
+          # reactive_compute) but does NOT include Identity/Streamable — so a
+          # signed token is never minted and no action endpoint dispatches to
+          # this class. Declaring action/reactive_record/reactive_state there
+          # would silently no-op (an action that can never fire, a record that
+          # signs nothing). Fail LOUDLY at class-definition time instead — the
+          # default-deny posture. Keyed on Identity presence: a full
+          # Phlex::Reactive::Component includes it (passes); a ClientBindings-only
+          # class does not (raises).
+          def require_server_actions!(macro)
+            return if include?(Phlex::Reactive::Component::Identity)
+
+            raise ArgumentError,
+              "#{self}: `#{macro}` needs the full Phlex::Reactive::Component — it signs a token / " \
+              "dispatches a server action, which Phlex::Reactive::ClientBindings deliberately omits " \
+              "(client-only: no token, no endpoint). Include Phlex::Reactive::Component for actions, " \
+              "or drop `#{macro}` and use the client-only helpers (reactive_show/filter/compute, on_client)."
+          end
+
           # Declare the ActiveRecord (GlobalID-able) record this component is
           # rebuilt from. The signed token carries its GlobalID; the server
           # re-finds it on each action. State lives in the DB.
           def reactive_record(name)
+            require_server_actions!(:reactive_record)
             Registry.write_scalar(self, :record_key, name.to_sym)
           end
 
@@ -44,9 +65,24 @@ module Phlex
             Registry.resolve_scalar(self, :record_key, :reactive_record_key)
           end
 
+          # Declare (with a name) OR read (bare) a form-field NAMESPACE for this
+          # component's bindings (issue #180). With `reactive_scope :form`,
+          # reactive_show / reactive_values use bare symbols (`:director`) and the
+          # client resolves the owned field as `[name="form[director]"]`; the root
+          # emits `data-reactive-scope="form"`. Bare `reactive_scope` reads the
+          # nearest declared scope up the ancestry (nil when none) — the
+          # dual-purpose form matching reactive_compute's getter/setter. A
+          # per-binding raw string field name still passes through unscoped.
+          def reactive_scope(name = nil)
+            return Registry.resolve_scalar(self, :scope, :reactive_scope) if name.nil?
+
+            Registry.write_scalar(self, :scope, name.to_sym)
+          end
+
           # Opt into signed STATE for record-less components only.
           #   reactive_state :count, :open
           def reactive_state(*names)
+            require_server_actions!(:reactive_state)
             Registry.append(self, :state_keys, names.map(&:to_sym))
           end
 
@@ -112,6 +148,7 @@ module Phlex
           # Array params accept BOTH a JSON array and a Rails-style index hash
           # ({ "0" => ..., "1" => ... }), so a fields_for collection works either way.
           def action(name, params: {})
+            require_server_actions!(:action)
             Registry.write_entry(
               self, :actions, name.to_sym,
               Action.new(name: name.to_sym, params: params, schema: Phlex::Reactive::ParamSchema.compile(params))

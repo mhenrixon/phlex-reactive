@@ -1,0 +1,230 @@
+{
+  "_comment": "Issue #180 Phase A — the Ruby<->JS parity contract for the DNF show evaluator. Each vector is a pre-normalized DNF `groups` array (array of groups; terms AND within a group, groups OR), a `values` map of field->current string value, and the expected boolean. Consumed by spec/phlex/reactive/show_conditions_parity_spec.rb (ShowConditions.match?) AND spec/javascript/reactive_show_dnf.test.js (anyOfAllsMatches, via the controller). Neither side may edit only one — the evaluators must agree on every vector.",
+  "vectors": [
+    {
+      "name": "equals match",
+      "groups": [[{ "field": "type", "equals": "individual" }]],
+      "values": { "type": "individual" },
+      "expect": true
+    },
+    {
+      "name": "equals miss",
+      "groups": [[{ "field": "type", "equals": "individual" }]],
+      "values": { "type": "company" },
+      "expect": false
+    },
+    {
+      "name": "checkbox true",
+      "groups": [[{ "field": "gift", "equals": "true" }]],
+      "values": { "gift": "true" },
+      "expect": true
+    },
+    {
+      "name": "checkbox false stays hidden under equals true",
+      "groups": [[{ "field": "gift", "equals": "true" }]],
+      "values": { "gift": "false" },
+      "expect": false
+    },
+    {
+      "name": "blank equals empty string",
+      "groups": [[{ "field": "note", "equals": "" }]],
+      "values": { "note": "" },
+      "expect": true
+    },
+    {
+      "name": "not match",
+      "groups": [[{ "field": "mode", "not": "off" }]],
+      "values": { "mode": "on" },
+      "expect": true
+    },
+    {
+      "name": "not miss",
+      "groups": [[{ "field": "mode", "not": "off" }]],
+      "values": { "mode": "off" },
+      "expect": false
+    },
+    {
+      "name": "in membership hit",
+      "groups": [[{ "field": "size", "in": ["l", "xl"] }]],
+      "values": { "size": "xl" },
+      "expect": true
+    },
+    {
+      "name": "in membership miss",
+      "groups": [[{ "field": "size", "in": ["l", "xl"] }]],
+      "values": { "size": "m" },
+      "expect": false
+    },
+    {
+      "name": "gte at boundary",
+      "groups": [[{ "field": "qty", "gte": 10 }]],
+      "values": { "qty": "10" },
+      "expect": true
+    },
+    {
+      "name": "gte below",
+      "groups": [[{ "field": "qty", "gte": 10 }]],
+      "values": { "qty": "9" },
+      "expect": false
+    },
+    {
+      "name": "gt strict at boundary",
+      "groups": [[{ "field": "amount", "gt": 5000 }]],
+      "values": { "amount": "5000" },
+      "expect": false
+    },
+    {
+      "name": "lte at boundary",
+      "groups": [[{ "field": "amount", "lte": 5000 }]],
+      "values": { "amount": "5000" },
+      "expect": true
+    },
+    {
+      "name": "lt below boundary",
+      "groups": [[{ "field": "amount", "lt": 5000 }]],
+      "values": { "amount": "4999" },
+      "expect": true
+    },
+    {
+      "name": "gte 0 with typed zero matches",
+      "groups": [[{ "field": "balance", "gte": 0 }]],
+      "values": { "balance": "0" },
+      "expect": true
+    },
+    {
+      "name": "gte 0 with blank fails closed (Number empty-string trap)",
+      "groups": [[{ "field": "balance", "gte": 0 }]],
+      "values": { "balance": "" },
+      "expect": false
+    },
+    {
+      "name": "lte 5 with blank fails closed",
+      "groups": [[{ "field": "balance", "lte": 5 }]],
+      "values": { "balance": "" },
+      "expect": false
+    },
+    {
+      "name": "numeric with garbage value fails closed",
+      "groups": [[{ "field": "qty", "gte": 10 }]],
+      "values": { "qty": "abc" },
+      "expect": false
+    },
+    {
+      "name": "negative threshold",
+      "groups": [[{ "field": "temp", "lt": -5 }]],
+      "values": { "temp": "-10" },
+      "expect": true
+    },
+    {
+      "name": "float threshold",
+      "groups": [[{ "field": "ratio", "gt": 0.5 }]],
+      "values": { "ratio": "0.75" },
+      "expect": true
+    },
+    {
+      "name": "bounded range both terms (in range)",
+      "groups": [[{ "field": "score", "gte": 10 }, { "field": "score", "lte": 20 }]],
+      "values": { "score": "15" },
+      "expect": true
+    },
+    {
+      "name": "bounded range both terms (above)",
+      "groups": [[{ "field": "score", "gte": 10 }, { "field": "score", "lte": 20 }]],
+      "values": { "score": "25" },
+      "expect": false
+    },
+    {
+      "name": "AND across fields (both match)",
+      "groups": [[{ "field": "type", "equals": "individual" }, { "field": "country", "not": "domestic" }]],
+      "values": { "type": "individual", "country": "foreign" },
+      "expect": true
+    },
+    {
+      "name": "AND across fields (one fails)",
+      "groups": [[{ "field": "type", "equals": "individual" }, { "field": "country", "not": "domestic" }]],
+      "values": { "type": "individual", "country": "domestic" },
+      "expect": false
+    },
+    {
+      "name": "OR of ANDs — first group matches (director)",
+      "groups": [
+        [{ "field": "director", "equals": "true" }],
+        [{ "field": "shareholder", "equals": "true" }, { "field": "role", "equals": "individual" }]
+      ],
+      "values": { "director": "true", "shareholder": "false", "role": "company" },
+      "expect": true
+    },
+    {
+      "name": "OR of ANDs — second group matches (shareholder+individual)",
+      "groups": [
+        [{ "field": "director", "equals": "true" }],
+        [{ "field": "shareholder", "equals": "true" }, { "field": "role", "equals": "individual" }]
+      ],
+      "values": { "director": "false", "shareholder": "true", "role": "individual" },
+      "expect": true
+    },
+    {
+      "name": "OR of ANDs — neither group matches (company shareholder)",
+      "groups": [
+        [{ "field": "director", "equals": "true" }],
+        [{ "field": "shareholder", "equals": "true" }, { "field": "role", "equals": "individual" }]
+      ],
+      "values": { "director": "false", "shareholder": "true", "role": "company" },
+      "expect": false
+    },
+    {
+      "name": "unless complement (lt 10) blank fails closed",
+      "groups": [[{ "field": "qty", "lt": 10 }]],
+      "values": { "qty": "" },
+      "expect": false
+    },
+    {
+      "name": "unless complement (lt 10) below matches",
+      "groups": [[{ "field": "qty", "lt": 10 }]],
+      "values": { "qty": "3" },
+      "expect": true
+    },
+    {
+      "name": "bounded-range unless split — below low group",
+      "groups": [
+        [{ "field": "score", "lt": 10 }],
+        [{ "field": "score", "gt": 20 }]
+      ],
+      "values": { "score": "5" },
+      "expect": true
+    },
+    {
+      "name": "bounded-range unless split — inside range (neither group)",
+      "groups": [
+        [{ "field": "score", "lt": 10 }],
+        [{ "field": "score", "gt": 20 }]
+      ],
+      "values": { "score": "15" },
+      "expect": false
+    },
+    {
+      "name": "referenced field absent reads as blank (fail-closed)",
+      "groups": [[{ "field": "director", "equals": "true" }]],
+      "values": {},
+      "expect": false
+    },
+    {
+      "name": "absent field under not: reads blank, so not-off matches",
+      "groups": [[{ "field": "mode", "not": "off" }]],
+      "values": {},
+      "expect": true
+    },
+    {
+      "name": "multi-field unless De Morgan — hidden only when BOTH match",
+      "groups": [[{ "field": "a", "not": "1" }], [{ "field": "b", "not": "2" }]],
+      "values": { "a": "1", "b": "2" },
+      "expect": false
+    },
+    {
+      "name": "multi-field unless De Morgan — shown when only one matches",
+      "groups": [[{ "field": "a", "not": "1" }], [{ "field": "b", "not": "2" }]],
+      "values": { "a": "1", "b": "9" },
+      "expect": true
+    }
+  ]
+}

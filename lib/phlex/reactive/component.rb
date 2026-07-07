@@ -57,13 +57,24 @@ module Phlex
     #     end
     #   end
     #
-    # Assembled from three cohesive concerns (issue #115) — one include, zero
-    # public API change:
-    #   * Component::DSL      — the five declaration registries (via
-    #     Component::Registry) + from_identity
-    #   * Component::Identity — reactive_token + the hot-path ivar precomputation
-    #   * Component::Helpers  — reply/js, reactive_attrs/root, on/on_client,
-    #     the field/select/text bindings, and the nested-attributes helpers
+    # Assembled from cohesive concerns (issue #115, restructured in #180) — one
+    # include, zero public API change. The include stack, in order:
+    #   * Phlex::Reactive::Streamable — the render/broadcast/#id surface (mixed in
+    #     first, so its methods sit below the component's own).
+    #   * Phlex::Reactive::ClientBindings — the CLIENT-ONLY surface (issue #180),
+    #     itself Component::DSL (the declaration registries via Component::Registry
+    #     + from_identity) + Component::Helpers (reply/js, reactive_attrs/root,
+    #     on/on_client, the field/select/text bindings, reactive_show/filter/
+    #     compute, and the nested-attributes helpers). ClientBindings is the ONE
+    #     implementation of that surface, shared with the standalone client-only
+    #     include; it carries NO token machinery.
+    #   * Component::Identity — reactive_token + the hot-path ivar precomputation.
+    #     Its presence is what makes the server-action macros (action/
+    #     reactive_record/reactive_state) legal here — they raise on a
+    #     ClientBindings-only class that lacks it.
+    #   * Component::Lazy — reactive_lazy (deferred initial mount, issue #165).
+    # So a full, token-bearing reactive component is a SUPERSET of a client-only
+    # one, not a fork.
     module Component
       extend ActiveSupport::Concern
       include Phlex::Reactive::Streamable
@@ -111,9 +122,12 @@ module Phlex
         end
       end
 
-      include DSL
+      # ClientBindings (issue #180) is the client-only surface (DSL + Helpers),
+      # tokenless and Streamable-free. Component includes it as the ONE
+      # implementation, then layers Identity + Lazy (and Streamable, above) on
+      # top — a token-bearing root is a superset of the client-only one.
+      include ClientBindings
       include Identity
-      include Helpers
       include Lazy
     end
   end

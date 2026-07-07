@@ -387,8 +387,8 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_input(:param, **attrs)` / `reactive_select(:param, **attrs)` | Render a control already bound to an action param (no magic `name:`). |
 | `reactive_field(:param, **attrs)` | The attribute hash behind the above — spread onto any control. |
 | `reactive_text(:name, initial)` | Mirror a compute output (or a declared input) into a **text node** — a live preview heading, a character counter, `"Hello, {name}"` — via `textContent` (XSS-safe). The text sibling of `reactive_field`; carries no `name`, so it's never POSTed. See [Client-side computes](#client-side-computes-reactive_compute--reactive_text). |
-| `reactive_show(:field, equals:/not:/in:)` | **Value-conditional visibility** (the `x-show`/`data-show` case): spread onto the element to show/hide — it toggles `hidden` from the named field's **current value**, client-only, zero round trip. One literal predicate: `equals:`, `not:`, or `in: [...]`; `equals: true` reads a checkbox's checked state. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
-| `reactive_show_targets(:field, "#id" => { equals: … })` | **Cross-root visibility**: the component that owns the field declares which **outside**, id-allowlisted elements it governs (a nav tab, a panel in another pane) — the visibility parallel of `mirror:`. Spread on the **root** via `mix(reactive_root, …)`, **once per root** — several fields go in one call via the hash form (`reactive_show_targets(mode: { … }, kind: { … })`). Id selectors only (raise at render + client warn-skip); same literal predicates; toggles `hidden` only. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
+| `reactive_show(if:/if_any:/unless:)` | **Value-conditional visibility** (the `x-show`/`data-show` case): spread onto the element to show/hide — it toggles `hidden` from the fields' **current values**, client-only, zero round trip. One conditions language: a **Hash is an AND**, an **Array is membership**, a **Range is a threshold**, `if_any:` is OR-of-AND, `unless:` negates. `reactive_values` computes first paint; `disable:` disables a hidden section's controls. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
+| `reactive_show_targets(:field, "#id" => value)` | **Cross-root visibility**: the component that owns the field declares which **outside**, id-allowlisted elements it governs (a nav tab, a panel in another pane) — the visibility parallel of `mirror:`. Spread on the **root** via `mix(reactive_root, …)`, **once per root** — several fields go in one call via the hash form. The value uses the same `where`-style vocabulary (`"advanced"`, `%w[a b]`, `10..`). Id selectors only (raise at render + client warn-skip); toggles `hidden` only. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
 | `reactive_filter(input:, option:, group: nil, empty: nil)` | **Client-side option filtering** for a preloaded combobox: spread onto the root — typing in the named input shows/hides the options by their `data-reactive-filter-text` haystack, **zero round trips**. Optional `group:` collapses an all-hidden group header; `empty:` reveals a no-matches node. See [Client-side option filtering](#client-side-option-filtering-reactive_filter). |
 | `reactive_listnav("[role=option]")` | The **standalone** combobox keyboard wiring (Arrow/Enter/Escape) for an input that fires **no action** — the preload-and-filter case. Same behavior as `on(…, listnav:)`, minus the POST. |
 | `reactive_compute :name, inputs: { title: :string, qty: :number }, outputs:` | **Typed** inputs: a `:string` reaches the JS reducer raw, a `:number` is coerced through `Number`. The array form (`inputs: %i[a b]`) stays all-numeric. |
@@ -892,52 +892,58 @@ free as an ordinary action-param name (`on(:switch, key: "pgbus")` still passes
 
 `on_client` covers the *unconditional* client-only interactions; the last gap
 was **show/hide from a form field's current value** — the Alpine `x-show` /
-Datastar `data-show` / Livewire `wire:show` case ("reveal the details panel
-*while* this select isn't `none`"). That used to force a hand-written
-`change`-listener Stimulus controller back into an otherwise declarative form.
-`reactive_show` closes it: spread it onto the element to show/hide, name the
-controlling field, declare **one literal predicate** — the generic controller
-toggles the `hidden` attribute from the field's current value on every
-`input`/`change`. Client-only, **no token, no POST, ever**:
+Datastar `data-show` / Livewire `wire:show` case. `reactive_show` closes it with
+ONE Ruby-native conditions language: spread it onto the element to show/hide and
+declare an `if:` / `if_any:` / `unless:` condition with `where`-style values —
+the generic controller toggles the `hidden` attribute from the fields' current
+values on every `input`/`change`. Client-only, **no token, no POST, ever**:
 
 ```ruby
 def view_template
   div(**reactive_root) do
     select(name: "mode") { shipping_options }
-    div(**reactive_show(:mode, not: "off", hidden: @order.mode == "off")) { shipping_details }
+    div(**reactive_show(unless: { mode: "off" })) { shipping_details }
 
     input(type: "checkbox", name: "gift")
-    div(**reactive_show(:gift, equals: true, hidden: true)) { gift_message_field }
+    div(**reactive_show(if: { gift: true })) { gift_message_field }
 
     select(name: "size") { size_options }
-    div(**reactive_show(:size, in: %w[l xl], hidden: true)) { surcharge_note }
+    div(**reactive_show(if: { size: %w[l xl] })) { surcharge_note }        # membership
+
+    input(type: "number", name: "quantity")
+    div(**reactive_show(if: { quantity: 10.. })) { bulk_note }             # threshold
   end
 end
 ```
 
-- **One predicate per binding** — `equals:`, `not:`, or `in:` (a list); zero or
-  two raise at render (a dead binding must not silently no-op). Values are
-  **stringified literals** matched against the field's value — never an
-  expression, so there is no eval surface.
-- **Field reads follow the collection rules**: a checkbox compares its
-  *checked* state as `"true"`/`"false"` (so `equals: true` is the checkbox
-  form — its `.value` is the constant `"on"`, and it wins over the hidden
-  input Rails pairs with it); a radio group reads the **checked** radio's
-  value (`""` when none is); everything else reads `.value`. Ownership is the
-  usual rule — a nested reactive component's fields and bindings belong to the
-  nested component.
-- **Initial state**: the client seeds visibility at connect and reconciles
-  after a morph, but render the initial `hidden:` yourself (from the same
-  server state that renders the field, as above) so the first paint doesn't
-  flash.
-- **Extra attrs ride through the helper** (`reactive_show(:mode, not: "off",
-  class: "panel", data: { testid: "details" })`) and deep-merge — a bare
-  `data:` spread *beside* it would clobber the binding, same as `on(...)`.
+- **The value language**: a **Hash is an AND** (multiple keys ANDed), an
+  **Array is membership**, a **Range is a threshold** (`10..` ≥ 10, `..10` ≤ 10,
+  `...10` < 10, `10..20` between), `true`/`false` compare a checkbox's checked
+  state, `nil` matches blank. `unless:` **negates** and composes with `if:`.
+  Never an expression — every term is a declared literal, so there is no eval
+  surface. A blank/non-numeric value fails a numeric term **closed** (hidden).
+- **OR-of-AND** — `if_any:` takes an array of AND-hashes (`if_any: [{ director:
+  true }, { shareholder: true, role: "individual" }]`), so
+  `director || (shareholder && individual)` is **one flat binding**, no nested
+  wrapper divs, no hand-applied distributive law.
+- **First paint is computed for you** — declare `reactive_values` once
+  (`def reactive_values = { mode: @order.mode, gift: @order.gift? }`) and every
+  binding whose fields are all provided renders the correct initial `hidden:`
+  server-side. No per-section mirror method, no flash. An explicit `hidden:`
+  always wins; a per-call `values:` override merges over `reactive_values`.
+- **`reactive_scope :form`** lets bindings and `reactive_values` use bare
+  symbols while the client resolves `[name="form[field]"]`.
+- **`disable: true`** disables a hidden section's own controls so a
+  switched-away value never submits (the stale-value fix).
+- **Field reads follow the collection rules**: a checkbox compares its *checked*
+  state; a radio group reads the **checked** radio's value; everything else
+  reads `.value`. Ownership is the usual rule — a nested reactive component's
+  fields and bindings belong to the nested component.
 - **Composes with computes**: a `reactive_compute` output write dispatches a
   real `input` event, so a *derived* value can drive visibility too.
-- Presentational only, strictly weaker than the js ops: it reads an owned
-  field and toggles `hidden` on an owned element — no `innerHTML`, no
-  attribute freedom. Cross-root writes take the **declared** escape below.
+- Presentational only, strictly weaker than the js ops: it reads owned fields
+  and toggles `hidden` (+ optionally `disabled`) on owned elements — no
+  `innerHTML`, no attribute freedom. Cross-root writes take the escape below.
 
 **Cross-root targets (`reactive_show_targets`).** A plain `reactive_show` is
 root-scoped by design — but "a mode selector reveals dependent sections
@@ -946,13 +952,13 @@ sidebar note) routinely puts the dependents **outside** the control's root.
 `reactive_show_targets` is the declared escape, the visibility parallel of the
 [cross-root text mirror](#cross-root-mirrors-mirror--painting-a-recap-outside-the-root):
 the component that **owns** the field declares which outside ids it governs,
-spread on the **root**:
+spread on the **root**, using the same `where`-style values:
 
 ```ruby
 div(**mix(reactive_root, reactive_show_targets(:mode,
-  "#advanced-tab"   => { equals: "advanced" },
-  "#advanced-panel" => { equals: "advanced" },
-  "#basic-note"     => { not: "advanced" }))) do
+  "#advanced-tab"   => "advanced",            # equals
+  "#advanced-panel" => "advanced",
+  "#premium-note"   => %w[gold platinum]))) do  # membership
   select(name: "mode") { mode_options }
   # …
 end
@@ -961,11 +967,10 @@ end
 Same posture as `mirror:`: **opt-in and declared, never implicit** — a plain
 `reactive_show` stays root-isolated; targets are **single id selectors only**
 (a class/compound selector raises at render AND is warn-and-skipped by the
-client — two-sided default-deny); the predicate is the same literal-only
-vocabulary; and the toggle is `hidden` only. The field read stays **owned** —
-you can only drive outside visibility from a field the declaring root owns. A
-target id not on the page is silently skipped, so a target inside an
-unrendered tab pane is fine.
+client — two-sided default-deny); values use the same vocabulary; and the
+toggle is `hidden` only. The field read stays **owned** — you can only drive
+outside visibility from a field the declaring root owns. A target id not on the
+page is silently skipped, so a target inside an unrendered tab pane is fine.
 
 **One call per root.** Phlex `mix` space-joins duplicate string `data:`
 values, so a *second* `reactive_show_targets` call on the same root would
@@ -973,8 +978,8 @@ concatenate two JSON payloads into an unparseable attribute (the client warns
 and ignores it). Several fields go in **one call** via the hash form:
 
 ```ruby
-reactive_show_targets(mode: { "#advanced-tab" => { equals: "advanced" } },
-                      kind: { "#premium-note" => { not: "basic" } })
+reactive_show_targets(mode: { "#advanced-tab" => "advanced" },
+                      kind: { "#premium-note" => %w[gold platinum] })
 ```
 
 ### Client-side computes (`reactive_compute` + `reactive_text`)
