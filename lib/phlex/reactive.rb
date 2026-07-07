@@ -279,6 +279,82 @@ module Phlex
         @param_types_frozen = false
       end
 
+      # Register (with a schema Hash) OR read (bare name) a NAMED param schema
+      # (issue #184) — a reusable, boot-declared schema so sibling components stop
+      # duplicating verbatim constants that drift. Follows the param_type contract:
+      # register in an INITIALIZER (the registry freezes after boot).
+      #
+      #   # config/initializers/phlex_reactive.rb
+      #   Phlex::Reactive.param_schema :todo, title: :string, done: :boolean
+      #   # then: action :save, params: :todo
+      #   # compose:  action :bulk, params: { **Phlex::Reactive.param_schema(:todo), note: :string }
+      #
+      # Reading an unknown name raises, listing the registered ones. The stored
+      # schema is frozen; the reader returns it (compose with ** for a new Hash).
+      def param_schema(name, schema = nil)
+        return fetch_param_schema(name) if schema.nil?
+
+        if param_schemas_frozen?
+          raise Error, "Phlex::Reactive.param_schema(#{name.inspect}) called after boot — the param-schema " \
+                       "registry is frozen once the app is initialized. Register named schemas in an " \
+                       "initializer (config/initializers/phlex_reactive.rb)."
+        end
+
+        param_schemas[name.to_sym] = deep_freeze_schema(schema.transform_keys(&:to_sym))
+      end
+
+      def param_schemas
+        @param_schemas ||= {}
+      end
+
+      def param_schema?(name)
+        param_schemas.key?(name.to_sym)
+      end
+
+      def freeze_param_schemas!
+        param_schemas.freeze
+        @param_schemas_frozen = true
+      end
+
+      def param_schemas_frozen?
+        @param_schemas_frozen ||= false
+      end
+
+      # Drop the named-schema registry and unfreeze it (tests only).
+      def reset_param_schemas!
+        @param_schemas = {}
+        @param_schemas_frozen = false
+      end
+
+      private
+
+      # Deep-freeze a registered schema so a nested Hash/Array (a nested-param
+      # schema like { address: { street: :string } }) can't be mutated through the
+      # memoized object fetch_param_schema returns — a top-level freeze alone leaves
+      # inner structures writable, poisoning the shared registry entry. Symbolizes
+      # nested keys too so composed-in nested schemas stay canonical.
+      def deep_freeze_schema(value)
+        case value
+        when Hash then value.to_h { |k, v| [k.to_sym, deep_freeze_schema(v)] }.freeze
+        when Array then value.map { deep_freeze_schema(it) }.freeze
+        else value
+        end
+      end
+
+      # Resolve a registered named schema, raising a guided error (listing the
+      # registered names) for an unknown one — the action macro calls this to turn
+      # `params: :todo` into the schema Hash.
+      def fetch_param_schema(name)
+        param_schemas.fetch(name.to_sym) do
+          known = param_schemas.keys.sort.join(", ")
+          raise ::ArgumentError,
+            "Phlex::Reactive.param_schema(#{name.inspect}) is not registered. " \
+            "Registered schemas: #{known.empty? ? "(none)" : known}."
+        end
+      end
+
+      public
+
       # Emit an `<event>.phlex_reactive` ActiveSupport::Notifications event around
       # a block, yielding the mutable payload so a rescue can finalize the outcome
       # (issue #107). ASN.instrument is cheap when nothing is subscribed (the hot

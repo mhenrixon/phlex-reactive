@@ -76,7 +76,50 @@ module Phlex
           def reactive_scope(name = nil)
             return Registry.resolve_scalar(self, :scope, :reactive_scope) if name.nil?
 
-            Registry.write_scalar(self, :scope, name.to_sym)
+            scope = name.to_sym
+            # Issue #184: catch an action already declared with a schema nested under
+            # THIS scope key (the action-first declaration order) — the endpoint
+            # unwraps ONE scope level, so a schema pre-nested under it would be dead.
+            reactive_actions.each_value { assert_no_scope_double_nesting!(scope, it.params, it.name) }
+            Registry.write_scalar(self, :scope, scope)
+          end
+
+          # Raise a guided ArgumentError when a param schema is ALREADY nested under
+          # the scope key (issue #184): the endpoint peels one scope level, so
+          # params: { <scope>: { … } } would double-unwrap to nothing. Shared by both
+          # macros so neither declaration order can dodge the guard. A nested key that
+          # is NOT the scope (a real nested_attributes param) is fine.
+          def assert_no_scope_double_nesting!(scope, params, action_name)
+            return unless params.is_a?(Hash) && params[scope].is_a?(Hash)
+
+            raise ArgumentError,
+              "#{self}: action #{action_name.inspect} nests its schema under the reactive_scope " \
+              "key #{scope.inspect} (params: { #{scope}: { … } }). The endpoint unwraps one scope " \
+              "level already — declare the schema FLAT: params: { #{params[scope].keys.first || :field}: … }."
+          end
+
+          # Issue #184: ONE dirty-tracking declaration, class-level. Replaces
+          # reactive_root(track_dirty:, warn_unsaved:) + reactive_field(dirty:).
+          #
+          #   reactive_dirty                       # track every field via the root
+          #   reactive_dirty warn_unsaved: true    # + warn before navigating away
+          #   reactive_dirty only: %i[title]       # track only these fields (per-field)
+          #
+          # Stored as a frozen config the render helpers read; the emitted DOM is
+          # byte-identical to the old kwargs, so the client is unchanged. `only:`
+          # switches to per-field descriptors (no root-level input delegation);
+          # otherwise the root delegates for the whole subtree.
+          def reactive_dirty(warn_unsaved: false, only: nil)
+            Registry.write_scalar(self, :dirty, {
+              warn_unsaved: warn_unsaved ? true : false,
+              only: only && Array(only).map(&:to_sym).freeze
+            }.freeze)
+          end
+
+          # The resolved dirty config (or nil when reactive_dirty was never
+          # declared), inherited through the Registry like every other scalar.
+          def reactive_dirty_config
+            Registry.resolve_scalar(self, :dirty, :reactive_dirty_config)
           end
 
           # Opt into signed STATE for record-less components only.
@@ -149,6 +192,13 @@ module Phlex
           # ({ "0" => ..., "1" => ... }), so a fields_for collection works either way.
           def action(name, params: {})
             require_server_actions!(:action)
+            # Issue #184: params: :symbol resolves a registered named schema.
+            params = Phlex::Reactive.param_schema(params) if params.is_a?(Symbol)
+            # If a scope is already declared, reject a schema nested under the scope
+            # key here (the scope-first declaration order). The action-first order is
+            # caught in reactive_scope.
+            scope = reactive_scope
+            assert_no_scope_double_nesting!(scope, params, name.to_sym) if scope
             Registry.write_entry(
               self, :actions, name.to_sym,
               Action.new(name: name.to_sym, params: params, schema: Phlex::Reactive::ParamSchema.compile(params))

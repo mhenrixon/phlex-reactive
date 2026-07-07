@@ -318,6 +318,33 @@ test("compute resolves scoped bare names as [name=\"scope[x]\"] (issue #183)", (
   expect(cash.value).toBe("400") // resolved order[cash] and wrote it
 })
 
+test("meta.changed reports the BARE input name for a scoped field (issue #184)", () => {
+  // The edited DOM field is name="order[allowance]", but the reducer declares the
+  // BARE input `allowance` — so meta.changed must strip the scope prefix, else a
+  // multi-way rebalance branching on `changed` breaks under a scope.
+  const allowance = makeField("order[allowance]", "100")
+  const total = makeField("order[total]", "500")
+  const cash = makeField("order[cash]", "0")
+  let seenChanged = "unset"
+  computeModule.setComputeReducer("split", ({ allowance: a, total: t }, { changed }) => {
+    seenChanged = changed
+    return { cash: t - a }
+  })
+
+  const controller = buildController(
+    makeRoot({
+      reducer: "split",
+      inputs: ["allowance", "total"],
+      outputs: ["cash"],
+      scope: "order",
+      fields: { "order[allowance]": allowance, "order[total]": total, "order[cash]": cash },
+    }),
+  )
+  controller.recompute({ target: allowance })
+
+  expect(seenChanged).toBe("allowance") // the BARE name, not "order[allowance]"
+})
+
 test("an UNCHANGED text-node write is skipped (the change guard applies to textContent too)", () => {
   const fields = { title: makeField("title", "Hi") }
   const preview = makeTextNode("title_preview", "Hi")

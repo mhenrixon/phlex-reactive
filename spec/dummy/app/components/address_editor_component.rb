@@ -29,7 +29,7 @@ class AddressEditorComponent < ApplicationComponent
 
   def view_template
     div(id:, **reactive_attrs) do
-      reactive_input(:"address[street]", value: @account.address&.street)
+      input(**reactive_field(:"address[street]", value: @account.address&.street))
       button(**mix(on(:save), data: { testid: "save" })) { "Save" }
     end
   end

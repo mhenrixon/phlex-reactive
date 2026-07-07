@@ -310,9 +310,56 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
-  describe "#reactive_field dirty tracking (issue #103)" do
-    # A real Phlex component so `mix` (Phlex::Helpers) is present, exactly as in
-    # production — reactive_field(dirty:) deep-merges its trackDirty descriptor.
+  # Issue #184: under reactive_scope, reactive_field emits the SCOPED wire name
+  # (name="invoice[date]"), so the POST arrives bracketed and the endpoint unwraps
+  # one level to match a flat schema. This also aligns the field with the client
+  # show/compute resolvers, which already query [name="scope[x]"].
+  describe "#reactive_field under reactive_scope (issue #184)" do
+    subject(:instance) { scoped_klass.new }
+
+    let(:scoped_klass) do
+      Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "ScopedFieldThing"
+
+        reactive_state :count
+        reactive_scope :invoice
+        def initialize(count: 0) = @count = count
+        def id = "scoped"
+      end
+    end
+
+    it "emits the scope-prefixed wire name for a bare param" do
+      attrs = instance.send(:reactive_field, :date)
+      expect(attrs[:name]).to eq("invoice[date]")
+    end
+
+    it "does NOT double-scope an explicit name: that already carries a bracket" do
+      attrs = instance.send(:reactive_field, :date, name: "other[thing]")
+      expect(attrs[:name]).to eq("other[thing]")
+    end
+
+    it "keeps an unscoped component's field name bare (additive)" do
+      unscoped = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "UnscopedFieldThing"
+        reactive_state :count
+        def initialize(count: 0) = @count = count
+        def id = "unscoped"
+      end
+      expect(unscoped.new.send(:reactive_field, :date)[:name]).to eq("date")
+    end
+  end
+
+  # Issue #184: per-field dirty tracking is declared class-level via
+  # `reactive_dirty only: %i[...]`; a named field then carries the trackDirty
+  # descriptor. (The old reactive_field(dirty:) kwarg is removed — see the guided
+  # error block below.)
+  describe "#reactive_field dirty tracking via reactive_dirty only: (issue #184)" do
     subject(:instance) { field_klass.new }
 
     let(:field_klass) do
@@ -320,33 +367,26 @@ RSpec.describe Phlex::Reactive::Component do
         include Phlex::Reactive::Streamable
         include Phlex::Reactive::Component
 
-        def self.name = "DirtyFieldThing"
+        def self.name = "DirtyOnlyFieldThing"
 
         reactive_state :count
+        reactive_dirty only: %i[title]
         def initialize(count: 0) = @count = count
       end
     end
 
-    it "wires the trackDirty action on dirty: true" do
-      attrs = instance.send(:reactive_field, :title, dirty: true)
+    it "wires the trackDirty action on a field named in only:" do
+      attrs = instance.send(:reactive_field, :title)
       expect(attrs[:name]).to eq("title")
       expect(attrs[:data][:action]).to eq("input->reactive#trackDirty")
     end
 
-    it "does not consume dirty: as a literal HTML attribute" do
-      attrs = instance.send(:reactive_field, :title, dirty: true)
-      expect(attrs).not_to have_key(:dirty)
-    end
-
-    it "omits the trackDirty wiring when dirty is falsey (the default)" do
-      expect(instance.send(:reactive_field, :title)).not_to have_key(:data)
-      expect(instance.send(:reactive_field, :title, dirty: false)).not_to have_key(:data)
+    it "omits the trackDirty wiring on a field NOT in only:" do
+      expect(instance.send(:reactive_field, :body)).not_to have_key(:data)
     end
 
     it "token-joins trackDirty onto a caller's own data-action instead of clobbering it" do
-      # A field that also carries its own descriptor (mix deep-merges data-action).
-      attrs = instance.send(:reactive_field, :title, dirty: true,
-        data: { action: "blur->reactive#dispatch" })
+      attrs = instance.send(:reactive_field, :title, data: { action: "blur->reactive#dispatch" })
       expect(attrs[:data][:action]).to eq("blur->reactive#dispatch input->reactive#trackDirty")
     end
   end
@@ -416,83 +456,134 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
-  describe "#reactive_root dirty tracking (issue #103)" do
-    subject(:instance) { root_klass.new }
+  # Issue #184: ONE dirty-tracking declaration — reactive_dirty (class-level)
+  # replaces reactive_root(track_dirty:, warn_unsaved:) + reactive_field(dirty:).
+  # The EMITTED DOM is unchanged (zero client change): reactive_root reads the
+  # class config and emits the SAME trackDirty descriptor + warn-unsaved marker.
+  describe "#reactive_dirty (issue #184)" do
+    subject(:instance) { dirty_klass.new }
 
-    let(:root_klass) do
+    let(:dirty_klass) do
       Class.new(Phlex::HTML) do
         include Phlex::Reactive::Streamable
         include Phlex::Reactive::Component
 
-        def self.name = "DirtyRootThing"
+        def self.name = "DirtyMacroThing"
 
         reactive_state :count
+        reactive_dirty warn_unsaved: true
         def initialize(count: 0) = @count = count
 
         def id = "dirty-root"
       end
     end
 
-    it "mixes the trackDirty descriptor onto the root's data-action for track_dirty: true" do
-      attrs = instance.send(:reactive_root, track_dirty: true)
+    it "mixes the trackDirty descriptor onto the root's data-action" do
+      attrs = instance.send(:reactive_root)
       expect(attrs[:data][:action]).to eq("input->reactive#trackDirty")
-      # still a full reactive root
       expect(attrs[:data][:controller]).to eq("reactive")
       expect(attrs[:id]).to eq("dirty-root")
     end
 
-    it "does NOT emit track_dirty as a literal HTML attribute (kwarg consumed pre-mix)" do
-      attrs = instance.send(:reactive_root, track_dirty: true)
-      expect(attrs).not_to have_key(:track_dirty)
-      expect(attrs.dig(:data, :track_dirty)).to be_nil
-    end
-
-    it "emits the warn-unsaved marker for warn_unsaved: true" do
-      attrs = instance.send(:reactive_root, warn_unsaved: true)
-      # STRING "true" (Phlex renders a boolean-true attr valueless → JS sees "" → falsy)
+    it "emits the warn-unsaved marker (STRING true) from warn_unsaved: true" do
+      attrs = instance.send(:reactive_root)
       expect(attrs[:data][:reactive_warn_unsaved]).to eq("true")
-      expect(attrs).not_to have_key(:warn_unsaved)
     end
 
-    it "does NOT emit warn_unsaved as a literal HTML attribute (kwarg consumed pre-mix)" do
-      attrs = instance.send(:reactive_root, warn_unsaved: false)
-      expect(attrs).not_to have_key(:warn_unsaved)
-      expect(attrs.dig(:data, :reactive_warn_unsaved)).to be_nil
-    end
+    it "tracks WITHOUT warn_unsaved when only reactive_dirty (no flag) is declared" do
+      klass = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
 
-    it "composes track_dirty with a caller's own data-action (token-join, not clobber)" do
-      attrs = instance.send(:reactive_root, track_dirty: true,
-        data: { action: "scroll->reactive#dispatch" })
-      expect(attrs[:data][:action]).to eq("scroll->reactive#dispatch input->reactive#trackDirty")
-      expect(attrs[:data][:controller]).to eq("reactive")
-    end
-
-    it "supports both flags at once, preserving id + controller + token" do
-      attrs = instance.send(:reactive_root, track_dirty: true, warn_unsaved: true, class: "card")
-      expect(attrs[:data][:action]).to eq("input->reactive#trackDirty")
-      expect(attrs[:data][:reactive_warn_unsaved]).to eq("true")
-      expect(attrs[:data][:controller]).to eq("reactive")
-      expect(attrs[:data][:reactive_token_value]).to be_a(String)
-      expect(attrs[:id]).to eq("dirty-root")
-      expect(attrs[:class]).to eq("card")
-    end
-
-    it "renders no literal track-dirty/warn-unsaved attribute in the output" do
-      render_klass = Class.new(root_klass) do
-        def self.name = "RenderDirtyRoot"
-        def view_template = div(**reactive_root(track_dirty: true, warn_unsaved: true)) { "hi" }
+        def self.name = "DirtyNoWarn"
+        reactive_state :count
+        reactive_dirty
+        def initialize(count: 0) = @count = count
+        def id = "dn"
       end
-      # NB: the trackDirty descriptor value contains a literal `>` (input->…), so a
-      # /<div [^>]*>/ regex would truncate mid-attribute — assert on the whole tag.
-      html = render_klass.new.call
+      attrs = klass.new.send(:reactive_root)
+      expect(attrs[:data][:action]).to eq("input->reactive#trackDirty")
+      expect(attrs[:data]).not_to have_key(:reactive_warn_unsaved)
+    end
 
-      expect(html).to include('data-action="input->reactive#trackDirty"')
-      expect(html).to include('data-reactive-warn-unsaved="true"')
-      # the raw kwargs never leak through as attributes (no `track-dirty` /
-      # `warn-unsaved` attribute, no `track_dirty`/`warn_unsaved` token anywhere)
-      expect(html).not_to include("track-dirty")
-      expect(html).not_to match(/\btrack_dirty\b/)
-      expect(html).not_to match(/\bwarn_unsaved\b/)
+    it "emits NO dirty wiring for a component that does not declare reactive_dirty" do
+      klass = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "NoDirty"
+        reactive_state :count
+        def initialize(count: 0) = @count = count
+        def id = "nd"
+      end
+      attrs = klass.new.send(:reactive_root)
+      expect(attrs[:data][:action]).to be_nil
+      expect(attrs[:data]).not_to have_key(:reactive_warn_unsaved)
+    end
+
+    it "wires the field-level trackDirty descriptor on a field in only:" do
+      klass = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "DirtyOnly"
+        reactive_state :count
+        reactive_dirty only: %i[title]
+        def initialize(count: 0) = @count = count
+      end
+      attrs = klass.new.send(:reactive_field, :title)
+      expect(attrs[:data][:action]).to eq("input->reactive#trackDirty")
+    end
+
+    it "does NOT wire a field OUTSIDE only:" do
+      klass = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "DirtyOnlyOther"
+        reactive_state :count
+        reactive_dirty only: %i[title]
+        def initialize(count: 0) = @count = count
+      end
+      attrs = klass.new.send(:reactive_field, :body)
+      expect(attrs[:data]).to be_nil
+    end
+  end
+
+  # Issue #184: reactive_input/reactive_select collapse into reactive_field (one
+  # binding helper; the element is the caller's). The stubs raise a guided error.
+  describe "removed reactive_input/reactive_select (issue #184 — guided errors)" do
+    subject(:instance) { state_klass.new }
+
+    it "raises for reactive_input naming reactive_field" do
+      expect { instance.send(:reactive_input, :value) }
+        .to raise_error(ArgumentError, /reactive_field/)
+    end
+
+    it "raises for reactive_select naming reactive_field" do
+      expect { instance.send(:reactive_select, :status) }
+        .to raise_error(ArgumentError, /reactive_field/)
+    end
+  end
+
+  # Issue #184: the old dirty kwargs are removed → guided errors printing the
+  # reactive_dirty line.
+  describe "removed dirty kwargs (issue #184 — guided errors)" do
+    subject(:instance) { state_klass.new }
+
+    it "raises for reactive_root(track_dirty:)" do
+      expect { instance.send(:reactive_root, track_dirty: true) }
+        .to raise_error(ArgumentError, /reactive_dirty/)
+    end
+
+    it "raises for reactive_root(warn_unsaved:)" do
+      expect { instance.send(:reactive_root, warn_unsaved: true) }
+        .to raise_error(ArgumentError, /reactive_dirty/)
+    end
+
+    it "raises for reactive_field(dirty:)" do
+      expect { instance.send(:reactive_field, :title, dirty: true) }
+        .to raise_error(ArgumentError, /reactive_dirty/)
     end
   end
 
@@ -1663,6 +1754,48 @@ RSpec.describe Phlex::Reactive::Component do
       end
       child = Class.new(parent) { def self.name = "ScopedChild" }
       expect(child.reactive_scope).to eq(:order)
+    end
+
+    # Issue #184: the scope unwraps ONE level at the endpoint, so a schema ALREADY
+    # nested under the scope key would be double-unwrapped (dead). Raise a guided
+    # error from whichever macro completes the pair — regardless of declaration
+    # order, so it can't be dodged by declaring the action before the scope.
+    describe "double-nesting guard (issue #184)" do
+      it "raises when the action declares a schema nested under the scope key (scope first)" do
+        expect do
+          Class.new(Phlex::HTML) do
+            include Phlex::Reactive::Component
+
+            def self.name = "NestedSchemaScopeFirst"
+            reactive_scope :invoice
+            action :save, params: { invoice: { date: :string } }
+          end
+        end.to raise_error(ArgumentError, /reactive_scope|nested|invoice/)
+      end
+
+      it "raises when the scope is declared AFTER the nested action (action first)" do
+        expect do
+          Class.new(Phlex::HTML) do
+            include Phlex::Reactive::Component
+
+            def self.name = "NestedSchemaActionFirst"
+            action :save, params: { invoice: { date: :string } }
+            reactive_scope :invoice
+          end
+        end.to raise_error(ArgumentError, /reactive_scope|nested|invoice/)
+      end
+
+      it "allows a nested schema whose key is NOT the scope (a real nested param)" do
+        expect do
+          Class.new(Phlex::HTML) do
+            include Phlex::Reactive::Component
+
+            def self.name = "RealNestedUnderScope"
+            reactive_scope :invoice
+            action :save, params: { address: { street: :string } } # nested_attributes, not the scope
+          end
+        end.not_to raise_error
+      end
     end
   end
 

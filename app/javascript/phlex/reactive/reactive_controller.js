@@ -1412,7 +1412,7 @@ export default class extends Controller {
     // the raw event target) — NOT this resolver. The issue-#15 nested-rejection
     // test depends on that path being unchanged. ONE run, from the ONE pre-write
     // snapshot above (issue #183): its result drives the whole single-pass write.
-    const result = reduce(values, { changed: this.#changedComputeField(event, inputs) }) || {}
+    const result = reduce(values, { changed: this.#changedComputeField(event, inputs, scope) }) || {}
 
     // Issue #183 — SINGLE-PASS WRITE SET. Three ordered phases, so declared output
     // order stops being semantics and a wrong order can no longer corrupt values:
@@ -1571,11 +1571,26 @@ export default class extends Controller {
   // named form control OWNED by this root (not a nested reactive root's, issue
   // #15) AND its name is among the declared compute inputs; anything else
   // (a direct call, an unowned/undeclared target) yields null.
-  #changedComputeField(event, inputs) {
+  //
+  // Scope-aware (issue #184): under data-reactive-scope, the edited field's DOM
+  // name is scoped (order[allowance]) while the declared inputs are BARE
+  // (allowance). Strip the scope prefix off the DOM name before comparing, and
+  // return the BARE name — so a reducer branching on `changed` sees the same
+  // names it declared, scoped or not.
+  #changedComputeField(event, inputs, scope) {
     const target = event?.target
     if (!target?.name || typeof target.closest !== "function") return null
-    if (!inputs.includes(target.name)) return null
-    return this.#ownsField(target) ? target.name : null
+    const bare = this.#unscopeName(target.name, scope)
+    if (!inputs.includes(bare)) return null
+    return this.#ownsField(target) ? bare : null
+  }
+
+  // Strip a leading `scope[…]` wrapper off a DOM field name, returning the bare
+  // inner name; a name that isn't wrapped in this scope passes through unchanged.
+  #unscopeName(name, scope) {
+    if (!scope) return name
+    const prefix = `${scope}[`
+    return name.startsWith(prefix) && name.endsWith("]") ? name.slice(prefix.length, -1) : name
   }
 
   // Write `value` into every owned [data-reactive-text="<name>"] node via

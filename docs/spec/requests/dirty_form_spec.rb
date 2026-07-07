@@ -2,10 +2,11 @@
 
 require 'rails_helper'
 
-# Dirty tracking: the signed root carries track_dirty:/warn_unsaved: descriptors,
-# and save morphs so the field re-renders with a fresh default (badge clears). The
-# dirty detection itself is client-side (defaultValue vs value) — the endpoint
-# contract is the persist + morph reply + the descriptors on the root.
+# Dirty tracking: the class-level `reactive_dirty warn_unsaved: true` declaration
+# carries the trackDirty/warn_unsaved descriptors onto the root, and save morphs
+# so the field re-renders with a fresh default (badge clears). The dirty
+# detection itself is client-side (defaultValue vs value) — the endpoint contract
+# is the persist + morph reply + the descriptors on the root.
 RSpec.describe 'DirtyForm actions', type: :request do
   let!(:todo) { Todo.create!(title: 'original') }
 

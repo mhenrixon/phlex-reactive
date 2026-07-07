@@ -110,34 +110,47 @@ module Phlex
         # (an explicit override wins as a clean replace, not a `mix` string-concat —
         # mix would join two String ids into "default override").
         #
-        # `track_dirty:`/`warn_unsaved:` (issue #103) are CONSUMED here — deleted
-        # from overrides BEFORE the mix — because reactive_root treats every leftover
-        # kwarg as a literal HTML attribute override (only :id is special-cased), so
-        # an unconsumed `track_dirty: true` would render a bogus `track-dirty="true"`
-        # attribute. track_dirty mixes the trackDirty descriptor onto the root's
-        # data-action (mix token-joins, so a caller's own data-action survives);
-        # warn_unsaved emits the marker the client reads to arm the navigate-away
-        # guard (STRING "true" — a boolean-true attr renders valueless, which the
-        # client's param reader sees as "" → falsy).
+        # Dirty tracking (issue #103, #184) is now a CLASS-LEVEL reactive_dirty
+        # declaration, not a reactive_root kwarg. reactive_root reads
+        # self.class.reactive_dirty_config and emits the SAME DOM as before: the
+        # trackDirty descriptor on the root's data-action (mix token-joins, so a
+        # caller's own data-action survives) UNLESS `only:` scoped tracking to named
+        # fields, and — for warn_unsaved: true — the navigate-away marker (STRING
+        # "true", since a boolean-true attr renders valueless → "" → falsy client-
+        # side). The removed track_dirty:/warn_unsaved: kwargs raise a guided error.
         def reactive_root(**overrides)
           # A CLIENT-ONLY component (ClientBindings, issue #180) needs no #id —
           # there's no token to self-match by id. Use an explicit override, else
           # #id when the component defines one, else nothing (no id attr).
+          reject_removed_dirty_kwargs!(overrides)
           root_id = overrides.delete(:id)
           root_id = id if root_id.nil? && respond_to?(:id)
-          track_dirty = overrides.delete(:track_dirty)
-          warn_unsaved = overrides.delete(:warn_unsaved)
           # Issue #183: bind a client-side compute AT THE ROOT — the descriptors +
           # the recompute delegation ride here so no field needs per-field wiring.
           # nil (the conditional-binding collapse) emits nothing.
           compute = overrides.delete(:compute)
+          # Issue #184: dirty tracking is a class-level reactive_dirty declaration.
+          dirty = self.class.reactive_dirty_config if self.class.respond_to?(:reactive_dirty_config)
 
           attrs = mix({ **reactive_attrs }, overrides)
           attrs = mix(attrs, { id: root_id }) unless root_id.nil?
-          attrs = mix(attrs, { data: { action: "input->reactive#trackDirty" } }) if track_dirty
-          attrs = mix(attrs, { data: { reactive_warn_unsaved: "true" } }) if warn_unsaved
+          # Root-level delegation tracks the whole subtree UNLESS only: scoped it to
+          # named fields (those carry their own descriptor via reactive_field).
+          attrs = mix(attrs, { data: { action: "input->reactive#trackDirty" } }) if dirty && dirty[:only].nil?
+          attrs = mix(attrs, { data: { reactive_warn_unsaved: "true" } }) if dirty&.dig(:warn_unsaved)
           attrs = mix(attrs, compute_binding(compute)) if compute
           attrs
+        end
+
+        # Issue #184: track_dirty:/warn_unsaved: on reactive_root are removed in
+        # favor of the class-level reactive_dirty macro. Guided error naming it.
+        def reject_removed_dirty_kwargs!(overrides)
+          removed = overrides.keys & %i[track_dirty warn_unsaved]
+          return if removed.empty?
+
+          raise ArgumentError,
+            "reactive_root(#{removed.first}:) was removed in issue #184 — declare " \
+            "`reactive_dirty warn_unsaved: true` (class-level) instead."
         end
 
         # Attributes for an element that triggers an action.
@@ -386,27 +399,67 @@ module Phlex
         # hatch). The trigger (on(:save)) stays on the button, not the field — so
         # focusing the input doesn't dispatch and collapse edit mode.
         #
-        # `dirty: true` (issue #103) wires the field to the generic controller's
-        # trackDirty action, so a change re-scans this reactive root's owned fields
-        # and marks the changed ones `data-reactive-dirty` (and the root with a
-        # count). NO client state is shipped — the baseline is the DOM's own
-        # `defaultValue`/`defaultChecked`/`defaultSelected`, i.e. the attributes from
-        # the last server render; dirty = current ≠ default. It deep-merges the
-        # descriptor via mix, so a caller's own data-action is token-joined, not
-        # clobbered (CLAUDE.md Never-Do #8 — combining with other data:/on() still
-        # needs mix at the call site).
-        def reactive_field(param, dirty: false, **attrs)
-          binding_attrs = { name: param.to_s, **attrs }
-          return binding_attrs unless dirty
+        # Dirty tracking is class-level now (issue #184): the per-field `dirty:`
+        # kwarg is REMOVED (reject_removed_field_dirty! raises a guided error). A
+        # field carries the trackDirty descriptor only when `reactive_dirty only:`
+        # names it (field_dirty_tracked?) — otherwise the root delegates for the
+        # whole subtree via reactive_root. The client behavior is unchanged (issue
+        # #103): a change re-scans this root's owned fields and marks the changed
+        # ones `data-reactive-dirty` (the root gets a count); NO client state ships —
+        # the baseline is the DOM's own `defaultValue`/`defaultChecked`/
+        # `defaultSelected` from the last server render (dirty = current ≠ default).
+        # The descriptor deep-merges via mix, so a caller's own data-action is
+        # token-joined, not clobbered (CLAUDE.md Never-Do #8).
+        def reactive_field(param, **attrs)
+          # Issue #184: the removed dirty: kwarg lands in **attrs — catch it and
+          # print the reactive_dirty rewrite.
+          reject_removed_field_dirty!(attrs)
+          # Under reactive_scope, emit the SCOPED wire name (name="invoice[date]")
+          # so the POST arrives bracketed (the endpoint unwraps one level) AND the
+          # field matches the client show/compute resolvers, which already query
+          # [name="scope[x]"]. An explicit name: in attrs still wins via the spread
+          # (a third-party wire name, never re-scoped) — the escape hatch.
+          binding_attrs = { name: scoped_field_name(param), **attrs }
+          # Per-field dirty descriptor when reactive_dirty only: names this field
+          # (issue #184) — otherwise the root delegates for the whole subtree.
+          return binding_attrs unless field_dirty_tracked?(param)
 
           mix(binding_attrs, { data: { action: "input->reactive#trackDirty" } })
         end
 
-        # Render an <input> already bound to an action param (issue #23). Sugar for
-        # input(**reactive_field(param, **attrs)); the value/type/etc. pass through.
-        #   reactive_input(:value, value: @record.name, type: "text")
-        def reactive_input(param, **attrs)
-          input(**reactive_field(param, **attrs))
+        # The removed reactive_field(dirty:) kwarg (issue #184) — now a guided error.
+        def reject_removed_field_dirty!(attrs)
+          return unless attrs.key?(:dirty)
+
+          raise ArgumentError,
+            "reactive_field(dirty:) was removed in issue #184 — declare " \
+            "`reactive_dirty only: %i[...]` (class-level) instead."
+        end
+
+        # True when reactive_dirty only: names this field, so it carries its own
+        # trackDirty descriptor (issue #184).
+        def field_dirty_tracked?(param)
+          return false unless self.class.respond_to?(:reactive_dirty_config)
+
+          only = self.class.reactive_dirty_config&.dig(:only)
+          only&.include?(param.to_sym) || false
+        end
+
+        # The wire name for a bare field param: `scope[param]` when the component
+        # declares reactive_scope, else the bare param. Read self.class.reactive_scope
+        # the way reactive_attrs does (helpers.rb) so scoped + unscoped stay aligned.
+        def scoped_field_name(param)
+          scope = self.class.reactive_scope if self.class.respond_to?(:reactive_scope)
+          scope ? "#{scope}[#{param}]" : param.to_s
+        end
+
+        # REMOVED in issue #184 — one binding helper (reactive_field); the element
+        # is the caller's: input(**reactive_field(:value, value: @record.name)).
+        # Raises a guided error printing that rewrite.
+        def reactive_input(param, **)
+          raise ArgumentError,
+            "reactive_input was removed in issue #184 — use " \
+            "input(**reactive_field(#{param.inspect}, …)) (one binding helper; the element is yours)."
         end
 
         # Mirror a compute output (or a declared input) into a TEXT NODE — a live
@@ -680,12 +733,13 @@ module Phlex
           definition.inputs.to_h { [it.to_s, types[it].to_s] }.to_json
         end
 
-        # Render a <select> bound to an action param (issue #23). The options block
-        # is the element's content, so the awkward FormBuilder positional split
-        # (where name: lands after the options/html-options args) goes away:
-        #   reactive_select(:status) { @statuses.each { |s| option(value: s, selected: s == @record.status) { s } } }
-        def reactive_select(param, **attrs, &)
-          select(**reactive_field(param, **attrs), &)
+        # REMOVED in issue #184 — one binding helper (reactive_field); the element
+        # is the caller's: select(**reactive_field(:status)) { status_options }.
+        # Raises a guided error printing that rewrite.
+        def reactive_select(param, **, &)
+          raise ArgumentError,
+            "reactive_select was removed in issue #184 — use " \
+            "select(**reactive_field(#{param.inspect})) { … } (one binding helper; the element is yours)."
         end
 
         # Map a declared nested param onto Rails' <assoc>_attributes, carrying the

@@ -485,11 +485,29 @@ module Phlex
       # skipped — zero extra work on the production path.
       def coerce_params(action_def, component_class: nil, action_name: nil)
         dropped = Phlex::Reactive.verbose_errors ? [] : nil
-        raw = params.fetch(:params, {})
+        raw = unwrap_scope(params.fetch(:params, {}), component_class)
 
         coerced = action_def.schema.coerce(raw, dropped)
         log_dropped_params(dropped, action_def.params, component_class, action_name)
         coerced
+      end
+
+      # Issue #184: a scoped component's fields POST bracketed (todo[title]), which
+      # Rails expands to { "todo" => { "title" => … } } before the action runs. Peel
+      # exactly ONE scope level so the FLAT schema { title: :string } matches (the
+      # #67 bracket-drop footgun). Only when the component declares reactive_scope
+      # AND the raw params carry that single key mapping to a Hash — otherwise the
+      # raw params pass through untouched (unscoped components + nested_attributes
+      # shapes are unaffected).
+      def unwrap_scope(raw, component_class)
+        scope = component_class.reactive_scope if component_class.respond_to?(:reactive_scope)
+        return raw unless scope
+
+        # At the endpoint `raw` is ActionController::Parameters, so `raw[scope]` is
+        # too — NOT a Hash. Accept either shape (both answer to the schema's
+        # coerce): unwrap only when the scope key maps to a nested params/hash.
+        nested = raw[scope.to_s]
+        nested.is_a?(Hash) || nested.is_a?(ActionController::Parameters) ? nested : raw
       end
 
       # ---- verbose_errors dropped-param logging --------------------------

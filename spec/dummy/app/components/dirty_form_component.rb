@@ -23,6 +23,9 @@ class DirtyFormComponent < ApplicationComponent
   include Phlex::Reactive::Component
 
   reactive_record :todo
+  # Issue #184: ONE dirty declaration — replaces reactive_root(track_dirty:,
+  # warn_unsaved:) + reactive_field(dirty:). Emitted DOM is unchanged.
+  reactive_dirty warn_unsaved: true
   action :save, params: { title: :string }
 
   def initialize(todo:)
@@ -37,10 +40,10 @@ class DirtyFormComponent < ApplicationComponent
   end
 
   def view_template
-    div(**reactive_root(track_dirty: true, warn_unsaved: true)) do
+    div(**reactive_root) do
       # The field's baseline is its own defaultValue (= @todo.title from this
-      # render). dirty: true also wires trackDirty onto the field itself.
-      input(**mix(reactive_field(:title, value: @todo.title, dirty: true), data: { testid: "title" }))
+      # render); reactive_dirty warn_unsaved: tracks the whole subtree via the root.
+      input(**mix(reactive_field(:title, value: @todo.title), data: { testid: "title" }))
       # Revealed purely by CSS while the root is dirty — no Ruby toggles it.
       span(class: "unsaved-badge", data: { testid: "badge" }) { "Unsaved" }
       button(**mix(on(:save), data: { testid: "save" })) { "Save" }
