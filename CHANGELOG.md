@@ -6,7 +6,43 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`reactive_compute` output order no longer silently corrupts values (#183).**
+  Each output write used to dispatch an `input` event **mid-loop**, re-entering the
+  reducer synchronously from a **half-written DOM** — so a wrong `outputs:` order
+  could commit wrong values (a real money-corruption class), settling only if the
+  reducer was convergent in exactly the declared order. The client now runs the
+  reducer **once** from one pre-write input snapshot, writes all changed outputs as
+  a **batch**, paints text/mirror sinks from the settled values, then dispatches the
+  `input` events — each self-marked so the root skips re-running its own reducer
+  while other listeners (chained repaint, dirty tracking, `reactive_show`, sibling
+  roots) still fire. Declared output order is no longer semantics. Covered by a JS
+  order-independence test (declare outputs in the historically-wrong order — values
+  stay correct) and a self-re-entry-suppression test.
+
 ### Changed
+
+- **BREAKING: `reactive_compute` is scope-aware, root-bound, and permit-shaped (#183).**
+  - **Bind + listen at the root:** `reactive_root(compute: :name)` emits the compute
+    descriptors AND the `input->reactive#recompute` delegation, so fields carry
+    ZERO per-field wiring. Conditional binding collapses to one expression
+    (`reactive_root(compute: (:split unless @order.persisted?))`; `nil` = no binding).
+    `reactive_compute_attrs(...)` raises a guided error naming the new form.
+  - **Scope-resolved names:** under `reactive_scope :order`, a bare compute input/
+    output `cash` resolves as `[name="order[cash]"]` client-side (the same
+    convention `reactive_show`/`reactive_field` use); a bracketed literal passes
+    through unscoped.
+  - **Permit-style inputs:** `inputs: [:qty, title: :string]` — bare symbols default
+    to `:number`, a trailing Hash types the exceptions. The old array form
+    (`%i[a b]`) and hash form (`{ a: :number }`) are degenerate cases (zero shim,
+    byte-identical wire).
+  - **Sinks declare themselves:** every reducer result key paints into any matching
+    sink — an owned field iff in `outputs:` (the allowlist), any owned
+    `reactive_text` node by presence, any declared `mirror:` id. An `outputs:` entry
+    that existed only to reach a text node is now redundant (old declarations keep
+    working). `reactive_text(:name)` with no explicit initial seeds its first paint
+    from `reactive_values` when covered.
 
 - **BREAKING: `reply` is the only door — the `Response` class verbs are removed (#182).**
   `Phlex::Reactive::Response.replace(self)` / `.morph` / `.update` / `.remove` /

@@ -82,12 +82,13 @@ function makeTextNode(name, text = "") {
 // ([data-reactive-text="x"]) from a flat registry, mirroring how the real DOM's
 // querySelectorAll would return each. `inputs` may be an array (array form) or
 // an object (hash form) — serialized verbatim to the inputs param.
-function makeRoot({ reducer, inputs, outputs, fields = {}, texts = {} }) {
+function makeRoot({ reducer, inputs, outputs, fields = {}, texts = {}, scope = null }) {
   const attrs = {
     "data-reactive-compute-reducer-param": reducer,
     "data-reactive-compute-inputs-param": JSON.stringify(inputs),
     "data-reactive-compute-outputs-param": JSON.stringify(outputs),
   }
+  if (scope) attrs["data-reactive-scope"] = scope
   const root = {
     id: "preview",
     getAttribute: (k) => attrs[k] ?? null,
@@ -230,7 +231,7 @@ test("an output with no owned field writes to its [data-reactive-text] node via 
   expect(preview.textContent).toBe("Hi")
 })
 
-test("an output writes to a FIELD in preference to a same-named text node", () => {
+test("a result key paints BOTH a same-named field and text node (issue #183 — sinks declare themselves)", () => {
   const field = makeField("shared", "old")
   const text = makeTextNode("shared", "old")
   computeModule.setComputeReducer("preview", () => ({ shared: "new" }))
@@ -246,8 +247,54 @@ test("an output writes to a FIELD in preference to a same-named text node", () =
   )
   controller.recompute({ target: controller.element.querySelectorAll('[name="seed"]')[0] })
 
-  expect(field.value).toBe("new") // field won
-  expect(text.textContent).toBe("old") // the text node was NOT touched
+  // Issue #183: every result key paints into ANY matching sink — the field (it is
+  // in outputs:) AND the text node (by presence). The old field-XOR-text rule is
+  // gone; a text node no longer needs to be smuggled into outputs: to receive a value.
+  expect(field.value).toBe("new")
+  expect(text.textContent).toBe("new")
+})
+
+test("a text-node sink NOT in outputs: still paints (issue #183 — no smuggling into outputs:)", () => {
+  const text = makeTextNode("greeting", "old")
+  // The reducer returns `greeting`, but it is NOT declared in outputs: — under the
+  // old rule it would never reach the text node. Issue #183: sinks declare
+  // themselves, so a matching reactive_text node paints by presence.
+  computeModule.setComputeReducer("preview", ({ name }) => ({ greeting: `Hi ${name}` }))
+
+  const controller = buildController(
+    makeRoot({
+      reducer: "preview",
+      inputs: { name: "string" },
+      outputs: [], // greeting is NOT an output — it is a pure text sink
+      fields: { name: makeField("name", "Ada") },
+      texts: { greeting: text },
+    }),
+  )
+  controller.recompute({ target: controller.element.querySelectorAll('[name="name"]')[0] })
+
+  expect(text.textContent).toBe("Hi Ada")
+})
+
+test("compute resolves scoped bare names as [name=\"scope[x]\"] (issue #183)", () => {
+  // Under data-reactive-scope="order", the bare compute name `cash` resolves to the
+  // scoped DOM field [name="order[cash]"] — the same convention reactive_show uses.
+  const cash = makeField("order[cash]", "0")
+  const allowance = makeField("order[allowance]", "100")
+  const total = makeField("order[total]", "500")
+  computeModule.setComputeReducer("split", ({ allowance: a, total: t }) => ({ cash: t - a }))
+
+  const controller = buildController(
+    makeRoot({
+      reducer: "split",
+      inputs: ["allowance", "total"],
+      outputs: ["cash"],
+      scope: "order",
+      fields: { "order[cash]": cash, "order[allowance]": allowance, "order[total]": total },
+    }),
+  )
+  controller.recompute({ target: allowance })
+
+  expect(cash.value).toBe("400") // resolved order[cash] and wrote it
 })
 
 test("an UNCHANGED text-node write is skipped (the change guard applies to textContent too)", () => {

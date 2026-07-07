@@ -241,9 +241,10 @@ test("overlapping inputs/outputs (payment_split shape) settle — no infinite re
       fields,
     }),
   )
-  // Wire every output like the DOM would: a dispatched input re-enters recompute
-  // (input->reactive#recompute bubbles to the root). Without the change guard
-  // this recurses forever; with it, the second pass writes nothing and stops.
+  // Wire every output like the DOM would: a dispatched input bubbles to the root
+  // (input->reactive#recompute). Issue #183: the reducer runs ONCE — the events
+  // it dispatches for its own writes are self-marked and do NOT re-run the reducer
+  // on THIS root (single-pass write set), so no re-entry and no convergence proof.
   for (const name of ["allowance", "cash", "leasing"]) {
     fields[name].addEventListener("input", (e) => controller.recompute(e))
   }
@@ -253,8 +254,77 @@ test("overlapping inputs/outputs (payment_split shape) settle — no infinite re
   expect(fields.cash.value).toBe("400")
   expect(fields.allowance.value).toBe("100")
   expect(fields.leasing.value).toBe("0")
-  // Initial run + exactly one re-entry per changed output (cash) — then settled.
-  expect(reducerCalls).toBe(2)
+  // Issue #183: EXACTLY ONE reducer run — self-re-entry is suppressed, not relied on.
+  expect(reducerCalls).toBe(1)
+})
+
+// Issue #183: the single-pass write set makes declared OUTPUT ORDER irrelevant.
+// Under the old mid-loop-dispatch model, a wrong output order re-entered the
+// reducer from a half-written DOM and could commit wrong values. Here the reducer
+// runs ONCE from a pre-write snapshot and all outputs are written as a batch, so
+// the SAME reducer with outputs declared in the historically-wrong order lands the
+// SAME correct values.
+test("output order is NOT load-bearing — a wrong-order declaration stays correct (issue #183)", () => {
+  const build = (outputs) => {
+    const fields = {
+      a: makeField("a", 10),
+      b: makeField("b", 0),
+      c: makeField("c", 0),
+      total: makeField("total", 100),
+    }
+    // A reducer whose outputs are interdependent: b = total - a, c = total - a - b.
+    // If a mid-pass re-entry saw b half-written, c would be wrong.
+    computeModule.setComputeReducer("chain", ({ a, total }) => {
+      const b = total - a
+      const c = total - a - b
+      return { b, c }
+    })
+    const controller = buildController(
+      makeRoot({ reducer: "chain", inputs: ["a", "b", "c", "total"], outputs, fields }),
+    )
+    for (const name of outputs) fields[name].addEventListener("input", (e) => controller.recompute(e))
+    controller.recompute({ target: fields.a })
+    return fields
+  }
+
+  const rightOrder = build(["b", "c"])
+  const wrongOrder = build(["c", "b"]) // the historically-corrupting order
+
+  // b = 100 - 10 = 90; c = 100 - 10 - 90 = 0 — regardless of declared order.
+  expect(rightOrder.b.value).toBe("90")
+  expect(rightOrder.c.value).toBe("0")
+  expect(wrongOrder.b.value).toBe("90")
+  expect(wrongOrder.c.value).toBe("0")
+})
+
+// Issue #183: the reducer's own output-write events are self-marked, so they do
+// NOT re-run the reducer on THIS root — but they DO still fire as real `input`
+// events (chained listeners, dirty tracking, sibling roots depend on that).
+test("an output-write event is dispatched but does NOT re-run this root's reducer (issue #183)", () => {
+  const fields = {
+    allowance: makeField("allowance", 100),
+    cash: makeField("cash", 0),
+    total: makeField("total", 500),
+  }
+  let reducerCalls = 0
+  let chainedHeard = 0
+  computeModule.setComputeReducer("split", ({ allowance, total }) => {
+    reducerCalls++
+    return { cash: total - allowance }
+  })
+  const controller = buildController(
+    makeRoot({ reducer: "split", inputs: ["allowance", "total"], outputs: ["cash"], fields }),
+  )
+  // The root re-runs recompute on any input (the real wiring).
+  fields.cash.addEventListener("input", (e) => controller.recompute(e))
+  // A SEPARATE chained listener that must still hear the output write.
+  fields.cash.addEventListener("input", () => chainedHeard++)
+
+  controller.recompute({ target: fields.allowance })
+
+  expect(fields.cash.value).toBe("400")
+  expect(reducerCalls).toBe(1) // the self-dispatched cash event did NOT re-run the reducer
+  expect(chainedHeard).toBe(1) // …but the event DID fire for the chained listener
 })
 
 test("a chained listener on an output field fires via the dispatched event (summary repaint)", () => {
@@ -397,9 +467,10 @@ test("three-way rebalance: one reducer branches on changed; both directions sett
   controller.recompute({ target: fields.field_a })
   expect(fields.field_c.value).toBe("250") // 500 - 200 - 50
   expect(fields.field_a.value).toBe("200")
-  // Initial pass + the re-entrant pass from field_c's dispatched input, which
-  // (changed === "field_c") recomputes field_a to its current value → settled.
-  expect(reducerCalls).toBe(2)
+  // Issue #183: ONE reducer run — the single-pass write set never half-writes, so
+  // there is no re-entrant "recompute field_a to its current value" correction to
+  // make. field_c's dispatched input is self-marked and does not re-run the reducer.
+  expect(reducerCalls).toBe(1)
   expect(Number(fields.field_a.value) + Number(fields.field_b.value) + Number(fields.field_c.value)).toBe(500)
 
   // Edit field_c: 250 → 100. Now field_a is the derived field.
@@ -408,7 +479,7 @@ test("three-way rebalance: one reducer branches on changed; both directions sett
   controller.recompute({ target: fields.field_c })
   expect(fields.field_a.value).toBe("350") // 500 - 100 - 50
   expect(fields.field_c.value).toBe("100")
-  expect(reducerCalls).toBe(2) // bounded: initial + one convergent re-entry
+  expect(reducerCalls).toBe(1) // issue #183: one run, no re-entry
   expect(Number(fields.field_a.value) + Number(fields.field_b.value) + Number(fields.field_c.value)).toBe(500)
 })
 

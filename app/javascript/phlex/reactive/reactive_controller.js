@@ -1012,6 +1012,11 @@ export default class extends Controller {
   #busyActions = new Map() // action -> in-flight count (root's space-separated busy set + busy_on)
   #busyTokenCounts = new WeakMap() // element -> Map(action -> count): its data-reactive-busy token set
   #textDisableSnapshots = new Map() // trigger -> { count, disabled, html } refcounted text/disable snapshot (issue #181)
+  // Issue #183: the `input` events recompute dispatches for its OWN output writes,
+  // marked so a re-entrant recompute on THIS root skips re-running the reducer
+  // (single-pass write set). Per-instance, so another root's events are never
+  // swallowed. WeakSet: entries drop when the short-lived Event is GC'd.
+  #computeSelfDispatched = new WeakSet()
   // Dirty tracking (issue #103): the bound re-scan (turbo:morph-element) and the
   // navigate-away guard handlers, held so disconnect() can remove exactly them.
   #boundScanDirty
@@ -1312,6 +1317,16 @@ export default class extends Controller {
   // changed = that output's name — the reducer must be convergent (see
   // compute.js) so the change guard settles the chain.
   recompute(event) {
+    // Issue #183 — single-pass write set: an `input` event this method dispatched
+    // for its OWN output writes is self-marked. Re-running the reducer on it would
+    // re-enter from a partially-written DOM (the old mid-loop-dispatch corruption
+    // class). Skip the reducer for our own event — but ONLY ours: the marker lives
+    // in a per-instance WeakSet, so a genuinely different root's compute event (or
+    // a real user edit) is never swallowed. The event still bubbled and fired every
+    // OTHER listener (dirty tracking, show bindings, sibling roots) before reaching
+    // here; we simply don't recompute a second time from our own write.
+    if (event && this.#computeSelfDispatched.has(event)) return
+
     // Inputs may be a JSON ARRAY of names (array form — every input coerced
     // through Number, the shipped behavior) or a JSON OBJECT of name→type (hash
     // form, issue #104 — :number coerced, :string read raw). #parseComputeInputs
@@ -1337,12 +1352,19 @@ export default class extends Controller {
     // The memo is per-CALL only: an output write dispatches `input` (issue #76),
     // re-entering recompute, which correctly rebuilds a fresh map (a morph may
     // have replaced the nodes) — it is NEVER stored on the instance.
+    // Scope (issue #183, mirroring #showFieldValue): a bare compute name `cash`
+    // under `data-reactive-scope="order"` resolves as `[name="order[cash]"]`. A
+    // name already carrying a bracket (a raw wire name the author passed) is used
+    // verbatim — so bracketed literals pass through unscoped.
+    const scope = this.element.getAttribute?.("data-reactive-scope") || null
+    const scoped = (name) => (scope && !name.includes("[") ? `${scope}[${name}]` : name)
+
     const owns = this.#ownershipFilter()
     const byName = new Map()
     const ownedField = (name) => {
       if (byName.has(name)) return byName.get(name)
       let found = null
-      for (const el of this.element.querySelectorAll(`[name="${name}"]`)) {
+      for (const el of this.element.querySelectorAll(`[name="${scoped(name)}"]`)) {
         if (owns(el)) {
           found = el // FIRST-WINS (radio groups, Rails hidden+checkbox name pairs)
           break
@@ -1388,36 +1410,55 @@ export default class extends Controller {
 
     // meta.changed stays on #changedComputeField (its own #ownsField check over
     // the raw event target) — NOT this resolver. The issue-#15 nested-rejection
-    // test depends on that path being unchanged.
+    // test depends on that path being unchanged. ONE run, from the ONE pre-write
+    // snapshot above (issue #183): its result drives the whole single-pass write.
     const result = reduce(values, { changed: this.#changedComputeField(event, inputs) }) || {}
+
+    // Issue #183 — SINGLE-PASS WRITE SET. Three ordered phases, so declared output
+    // order stops being semantics and a wrong order can no longer corrupt values:
+    //
+    //   1. BATCH the field writes from the ONE result. Each output name in the
+    //      allowlist (outputs:) whose owned field's value actually changes is
+    //      written now (change-guarded) and remembered — but NO `input` event is
+    //      dispatched yet, so nothing re-enters mid-batch.
+    //   2. PAINT the sinks from the SETTLED values: any owned reactive_text node by
+    //      presence (issue #183 change #4 — a text node no longer needs its name in
+    //      outputs:), then the cross-root mirror: ids (issue #159).
+    //   3. DISPATCH a self-marked `input` on each changed field. The marker (a
+    //      per-instance WeakSet) makes recompute skip re-running the reducer for our
+    //      own write, while the event still fires every OTHER listener (chained
+    //      repaint, dirty tracking, show bindings, sibling roots).
+    const changedFields = []
     for (const name of outputs) {
       if (!(name in result)) continue
       const field = ownedField(name)
-      // Output resolution (issue #104): write to the owned named FIELD if one
-      // exists, ELSE mirror to every owned [data-reactive-text="<name>"] node.
-      if (field) {
-        // Real browsers do NOT fire `input` on a programmatic .value write (issue
-        // #76), so after writing we dispatch a bubbling `input` ourselves — that's
-        // what drives a chained repaint (a summary listener, a second compute),
-        // matching the server's set_value + dispatch("input") contract. The write
-        // is CHANGE-GUARDED: an unchanged value is skipped entirely (no write, no
-        // event). The guard is what lets a reducer with overlapping inputs/outputs
-        // (the shipped payment_split shape) settle — an unconditional dispatch
-        // would re-enter input->reactive#recompute forever.
-        if (String(result[name]) === field.value) continue
-        field.value = result[name]
-        field.dispatchEvent(new Event("input", { bubbles: true }))
-      } else {
-        // A text-node output: textContent, XSS-safe by construction. Change-
-        // guarded too (compare before writing), but NO input dispatch — a text
-        // node has no listener contract, so nothing chains off it.
-        this.#mirrorText(name, result[name])
-      }
+      if (!field) continue // a non-field output paints as a text sink in phase 2
+      if (String(result[name]) === field.value) continue // change-guard — unchanged, skip
+      field.value = result[name]
+      changedFields.push(field)
     }
 
-    // Cross-root text mirrors (issue #159) — AFTER the outputs are applied, so
-    // a mirror keyed on a just-written output paints the settled value.
+    // Phase 2 — text sinks declare themselves (issue #183 change #4): every result
+    // key paints into any owned [data-reactive-text="<name>"] node by PRESENCE,
+    // regardless of outputs: membership. Runs from settled field values.
+    for (const name of Object.keys(result)) this.#mirrorText(name, result[name])
+
+    // Cross-root text mirrors (issue #159) — AFTER the batch + text sinks, so a
+    // mirror keyed on a just-written output paints the settled value.
     this.#applyComputeMirrors(result, ownedField)
+
+    // Phase 3 — dispatch the deferred `input` events (issue #183). Real browsers
+    // do NOT fire `input` on a programmatic .value write (issue #76), so we do it
+    // ourselves, matching the server's set_value + dispatch("input") contract.
+    // Each event is SELF-MARKED so our own re-entry skips the reducer (guard at the
+    // top of recompute) — but the event still bubbles and fires every other
+    // listener. Dispatched AFTER all writes + paints, so a chained listener reads
+    // SETTLED values, never a half-written DOM.
+    for (const field of changedFields) {
+      const inputEvent = new Event("input", { bubbles: true })
+      this.#computeSelfDispatched.add(inputEvent)
+      field.dispatchEvent(inputEvent)
+    }
   }
 
   // Client-side list navigation (combobox keyboard nav, issue #72). Wired by

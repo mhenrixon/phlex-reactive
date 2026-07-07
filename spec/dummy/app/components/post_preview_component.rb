@@ -47,7 +47,7 @@ class PostPreviewComponent < ApplicationComponent
   end
 
   def view_template
-    div(**mix(reactive_root, reactive_compute_attrs(:preview))) do
+    div(**reactive_root(compute: :preview)) do
       # The live preview heading — an identity mirror of `title`. Seed it with the
       # server's current value so the first paint (and any morph) is correct.
       h2(data: { testid: "preview" }) { reactive_text(:title, @todo.title) }
@@ -61,13 +61,11 @@ class PostPreviewComponent < ApplicationComponent
       # uses it as the barrier that the save round trip actually reconciled.
       span(data: { testid: "saved" }) { @todo.title }
 
-      # The title field drives BOTH: the client recompute/mirror on `input` (no
-      # round trip) AND, on the save button, the reactive save action. mix so the
-      # recompute action deep-merges with reactive_field's data: (Never-Do #8).
-      input(**mix(
-        reactive_field(:title, value: @todo.title, type: "text", data: { testid: "title" }),
-        { data: { action: "input->reactive#recompute" } }
-      ))
+      # The title field drives the client recompute/mirror on `input` — but the
+      # recompute delegation now lives on the ROOT (issue #183:
+      # reactive_root(compute: :preview) above), so the field needs ZERO compute
+      # wiring. The save button carries the reactive save action.
+      input(**reactive_field(:title, value: @todo.title, type: "text", data: { testid: "title" }))
       # mix so the extra data: (testid) deep-merges with on()'s data-action /
       # -params instead of clobbering them (Never-Do #8).
       button(**mix(on(:save), data: { testid: "save" })) { "Save" }

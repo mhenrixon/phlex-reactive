@@ -46,7 +46,7 @@ class PostPreviewComponent < Phlex::HTML
   end
 
   def view_template
-    div(**mix(reactive_root(class: 'flex flex-col gap-3'), reactive_compute_attrs(:preview))) do
+    div(**reactive_root(class: 'flex flex-col gap-3', compute: :preview)) do
       # The live preview heading — an identity mirror of `title`. Seed it with the
       # server's current value so the first paint (and any morph) is correct.
       h3(class: 'text-lg font-semibold', data: { testid: 'preview' }) do
@@ -59,14 +59,11 @@ class PostPreviewComponent < Phlex::HTML
         reactive_text(:char_count, char_count(@todo.title))
       end
 
-      # The title field drives BOTH: the client recompute/mirror on `input` (no
-      # round trip) AND, on the save button, the reactive save action. mix so the
-      # recompute action deep-merges with reactive_field's data: (Never-Do #8).
-      input(**mix(
-        reactive_field(:title, value: @todo.title, type: 'text',
-                               class: 'input input-bordered', data: { testid: 'title' }),
-        { data: { action: 'input->reactive#recompute' } }
-      ))
+      # The title field carries ZERO compute wiring — the root's compute: binding
+      # (above) delegates the input->reactive#recompute listener for the whole
+      # root. On the save button, the reactive save action still fires.
+      input(**reactive_field(:title, value: @todo.title, type: 'text',
+                                     class: 'input input-bordered', data: { testid: 'title' }))
       button(**mix(on(:save), class: 'btn btn-sm btn-primary w-fit', data: { testid: 'save' })) { 'Save' }
 
       # A SERVER-ONLY echo of the PERSISTED title (a plain text node, NOT a

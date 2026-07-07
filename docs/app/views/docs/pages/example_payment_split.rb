@@ -46,10 +46,12 @@ module Views
               Before the payment-split walkthrough, here's the `reactive_compute` +
               `reactive_text` shape in its smallest form: a live post preview. Type
               in the field — the heading mirrors the title and the counter recomputes
-              **in the browser with no round trip** (an `input->reactive#recompute`
-              runs the `preview` JS reducer). Click **Save** and the server persists
-              and re-renders, seeding the identical derived text — the one-math-two-
-              sites contract `reactive_compute` exists to enforce.
+              **in the browser with no round trip** (the root's `reactive_root(compute:
+              :preview)` binding delegates `input->reactive#recompute` for the whole
+              root, so the field itself carries zero wiring, and runs the `preview` JS
+              reducer). Click **Save** and the server persists and re-renders, seeding
+              the identical derived text — the one-math-two-sites contract
+              `reactive_compute` exists to enforce.
             MD
             render Views::Examples::LiveExample.new(
               component: PostPreviewComponent.new(todo: preview_demo_todo),
@@ -266,7 +268,12 @@ module Views
               p do
                 plain 'For a NEW, unsaved invoice the running total should feel instant. '
                 code { 'reactive_compute' }
-                plain ' declares a client-side reducer that runs on '
+                plain ' declares a client-side reducer, and '
+                code { 'reactive_root(compute: :name)' }
+                plain ' binds it AT THE ROOT — the descriptors and the '
+                code { 'input->reactive#recompute' }
+                plain ' delegation both live there, so no field needs its own compute '
+                plain 'wiring. It runs on '
                 code { 'input' }
                 plain ' and writes the derived amounts straight into the DOM — no round '
                 plain 'trip. When the component also carries '
@@ -499,9 +506,10 @@ module Views
               end
 
               def view_template
-                # Spread reactive_compute_attrs ALONGSIDE reactive_root so the generic
-                # controller finds the reducer and the named fields inside this root.
-                div(**mix(reactive_root, reactive_compute_attrs(:payment_split))) do
+                # reactive_root(compute:) binds the reducer AND the input->reactive#
+                # recompute delegation at the ROOT — the fields below carry ZERO
+                # per-field compute wiring.
+                div(**reactive_root(compute: :payment_split)) do
                   FIELDS.each do |field|
                     # `input`-triggered + debounced: recompute on the client every
                     # keystroke, POST 300ms after the last one.
