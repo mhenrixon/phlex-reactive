@@ -24,6 +24,40 @@ namespace :spec do
       sh({ "CAPYBARA_SERVER" => server }, "bundle exec rspec spec/system")
     end
   end
+
+  desc "Run the browser system specs across server × transport (puma/falcon × cable/pgbus)"
+  task :system_matrix do
+    # Issue #187: the full transport matrix, mirroring :system_servers one
+    # dimension over. The pgbus cells need Postgres + the pgbus schema (rake
+    # pgbus:prepare_test_db); they're SKIPPED with a clear note when Postgres
+    # isn't reachable locally, so the cable cells still prove the round trip.
+    servers = %w[puma falcon]
+    transports = %w[cable pgbus]
+    postgres = system("pg_isready", %i[out err] => File::NULL)
+    warn "\e[1;33m\n### Postgres not reachable — skipping pgbus cells (cable only) ###\e[0m" unless postgres
+
+    servers.each do |server|
+      transports.each do |transport|
+        pgbus = transport == "pgbus"
+        next puts("\e[1;33m### SKIP #{server}/pgbus (no Postgres) ###\e[0m") if pgbus && !postgres
+
+        sh({ "TRANSPORT" => "pgbus" }, "bundle exec rake pgbus:prepare_test_db") if pgbus
+        puts "\e[1;35m\n### system specs — CAPYBARA_SERVER=#{server} TRANSPORT=#{transport} ###\e[0m"
+        sh({ "CAPYBARA_SERVER" => server, "TRANSPORT" => transport }, "bundle exec rspec spec/system")
+      end
+    end
+  end
+end
+
+namespace :pgbus do
+  desc "Prepare the Postgres test DB for the pgbus transport cell (schema + PGMQ) — issue #187"
+  task :prepare_test_db do
+    # The setup lives in spec/support/prepare_pgbus_db.rb (boots the dummy under
+    # TRANSPORT=pgbus, loads the app schema, installs pgbus's vendored PGMQ — no
+    # CREATE EXTENSION, so a plain postgres:18 works). Used by CI and :system_matrix.
+    sh({ "TRANSPORT" => "pgbus", "RAILS_ENV" => "test" },
+      "bundle exec ruby spec/support/prepare_pgbus_db.rb")
+  end
 end
 
 require "rubocop/rake_task"

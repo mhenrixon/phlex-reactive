@@ -64,39 +64,47 @@ RSpec.describe "broadcast_js_to (issue #97)", type: :request do
       .to raise_error(ArgumentError, /no ops/)
   end
 
-  # Transport opts (exclude:/visible_to:) pass through broadcast_transport_opts
-  # to the stream — the pgbus SSE dispatcher reads them; Action Cable ignores
-  # them. We assert the call threads them through (the same contract every other
-  # broadcast_*_to method upholds), so the pgbus-present path suppresses the
-  # actor's own echo and the pgbus-absent path is unaffected.
-  describe "transport opts pass-through (pgbus-present vs pgbus-absent)" do
-    it "forwards exclude: to Turbo::StreamsChannel.broadcast_action_to" do
-      allow(Turbo::StreamsChannel).to receive(:broadcast_action_to)
+  # Transport opts (exclude:/visible_to:) thread to pgbus via THREAD-LOCALS (its
+  # broadcast_stream_to patch reads Thread.current[:pgbus_broadcast_*]), NOT via
+  # StreamsChannel kwargs (turbo-rails swallows unknown kwargs — issue #187). So
+  # broadcast_js_to sets the thread-local when pgbus is present, and passes NO
+  # transport kwargs to broadcast_action_to (Action Cable ignores them anyway).
+  describe "transport opts thread to pgbus (pgbus-present)" do
+    before { allow(Phlex::Reactive).to receive(:pgbus_streams?).and_return(true) }
+
+    it "sets the exclude thread-local during the broadcast" do
+      seen = nil
+      allow(Turbo::StreamsChannel).to receive(:broadcast_action_to) do
+        seen = Thread.current[:pgbus_broadcast_exclude]
+      end
 
       TodoItemComponent.broadcast_js_to("alerts", ops, exclude: "conn-actor-1")
 
-      expect(Turbo::StreamsChannel).to have_received(:broadcast_action_to)
-        .with("alerts", hash_including(action: "reactive:js", exclude: "conn-actor-1"))
+      expect(seen).to eq("conn-actor-1")
+      expect(Thread.current[:pgbus_broadcast_exclude]).to be_nil # cleared after
     end
 
-    it "forwards visible_to: when given" do
-      allow(Turbo::StreamsChannel).to receive(:broadcast_action_to)
+    it "sets the visible_to thread-local during the broadcast" do
+      seen = nil
+      allow(Turbo::StreamsChannel).to receive(:broadcast_action_to) do
+        seen = Thread.current[:pgbus_broadcast_visible_to]
+      end
 
       TodoItemComponent.broadcast_js_to("alerts", ops, visible_to: "user:7")
 
-      expect(Turbo::StreamsChannel).to have_received(:broadcast_action_to)
-        .with("alerts", hash_including(visible_to: "user:7"))
+      expect(seen).to eq("user:7")
     end
 
-    it "omits transport opts entirely when none given (pgbus-absent path unchanged)" do
-      allow(Turbo::StreamsChannel).to receive(:broadcast_action_to)
-
-      TodoItemComponent.broadcast_js_to("alerts", ops)
-
-      expect(Turbo::StreamsChannel).to have_received(:broadcast_action_to) do |*, **kwargs|
-        expect(kwargs).not_to have_key(:exclude)
-        expect(kwargs).not_to have_key(:visible_to)
+    it "never passes exclude:/visible_to: as broadcast_action_to kwargs" do
+      seen_kwargs = nil
+      allow(Turbo::StreamsChannel).to receive(:broadcast_action_to) do |*_a, **kwargs|
+        seen_kwargs = kwargs
       end
+
+      TodoItemComponent.broadcast_js_to("alerts", ops, exclude: "conn-actor-1", visible_to: "user:7")
+
+      expect(seen_kwargs).not_to have_key(:exclude)
+      expect(seen_kwargs).not_to have_key(:visible_to)
     end
   end
 

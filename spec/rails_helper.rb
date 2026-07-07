@@ -19,6 +19,22 @@ RSpec.configure do
   it.infer_spec_type_from_file_location!
   it.use_transactional_fixtures = true
 
+  # Issue #187: the pgbus real-SSE specs (:pgbus tag) need the actor's write to
+  # COMMIT so pgbus's ephemeral LISTEN/NOTIFY broadcast actually fires (NOTIFY is
+  # transactional — it delivers only at commit; inside a rolled-back test
+  # transaction the observer's SSE connection never sees it). rspec-rails reads
+  # use_transactional_tests off the EXAMPLE GROUP, so flip it there (a
+  # prepend_before(:context) runs before the per-example DB transaction opens),
+  # and truncate after each. Only the pgbus cell loads these (they skip
+  # otherwise), so the default suite is untouched.
+  it.prepend_before(:context, :pgbus) { self.class.use_transactional_tests = false }
+  it.after(:each, :pgbus) do
+    conn = ActiveRecord::Base.connection
+    (conn.tables - %w[schema_migrations ar_internal_metadata]).each { conn.truncate(it) }
+  rescue StandardError => e
+    warn "[pgbus cleanup] #{e.class}: #{e.message}"
+  end
+
   # fixture_file_upload (multipart upload specs, issue #34) resolves files here.
   it.file_fixture_path = File.expand_path("fixtures/files", __dir__)
   it.include ActionDispatch::TestProcess::FixtureFile

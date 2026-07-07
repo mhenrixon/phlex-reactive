@@ -18,6 +18,14 @@ require "phlex/reactive"
 # (e.g. unit specs using spec_helper running before system specs).
 require "phlex/reactive/engine"
 
+# Issue #187: under TRANSPORT=pgbus, require pgbus HERE (it's require: false in
+# the Gemfile) — BEFORE Rails runs its initializers — so pgbus's engine
+# initializer ("pgbus.streams.turbo_broadcastable", after: load_config_initializers)
+# actually joins the run list and patches Turbo::StreamsChannel + turbo_stream_from
+# for the Postgres-SSE transport. Requiring it later (in config/initializers/)
+# registers the engine too late and the patch silently never installs.
+require "pgbus" if ENV["TRANSPORT"] == "pgbus"
+
 module Dummy
   class Application < Rails::Application
     config.load_defaults Rails::VERSION::STRING.to_f

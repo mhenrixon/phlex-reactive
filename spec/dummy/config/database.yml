@@ -1,3 +1,24 @@
+<%# The default suite (and CI's `cable` transport leg) runs on SQLite — zero
+    external services, per the testing invariant. TRANSPORT=pgbus switches to
+    Postgres so the browser suite can exercise pgbus's real Postgres-backed SSE
+    (issue #187). DATABASE_URL wins when set (CI); else a local default. %>
+<% if ENV["TRANSPORT"] == "pgbus" %>
+<% if ENV["DATABASE_URL"] %>
+test:
+  url: <%= ENV["DATABASE_URL"] %>
+development:
+  url: <%= ENV["DATABASE_URL"] %>
+<% else %>
+test:
+  adapter: postgresql
+  database: phlex_reactive_pgbus_test
+  host: localhost
+development:
+  adapter: postgresql
+  database: phlex_reactive_pgbus_dev
+  host: localhost
+<% end %>
+<% else %>
 development:
   adapter: sqlite3
   database: db/development.sqlite3
@@ -5,3 +26,4 @@ development:
 test:
   adapter: sqlite3
   database: ":memory:"
+<% end %>
