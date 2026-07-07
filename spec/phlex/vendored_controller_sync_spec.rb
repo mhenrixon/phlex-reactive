@@ -20,6 +20,7 @@ RSpec.describe "vendored client modules" do
   vendored_modules = {
     "reactive_controller.js" => "reactive_controller.min.js",
     "confirm.js" => "confirm.min.js",
+    "confirm_predicate.js" => "confirm_predicate.min.js",
     "compute.js" => "compute.min.js",
     "inspect.js" => "inspect.min.js"
   }

@@ -26,10 +26,12 @@
           "@hotwired/stimulus": "/vendor/stimulus.js",
           "reactive_controller": "/vendor/reactive_controller.js",
           "phlex/reactive/confirm": "/vendor/confirm.js",
+          "phlex/reactive/confirm_predicate": "/vendor/confirm_predicate.js",
           "phlex/reactive/compute": "/vendor/compute.js",
           "phlex/reactive/inspect": "/vendor/inspect.js",
           "payment_split_reducer": "/vendor/payment_split_reducer.js",
-          "post_preview_reducer": "/vendor/post_preview_reducer.js"<% if ENV["TRANSPORT"] == "pgbus" %>,
+          "post_preview_reducer": "/vendor/post_preview_reducer.js",
+          "confirm_predicate_registration": "/vendor/confirm_predicate_registration.js"<% if ENV["TRANSPORT"] == "pgbus" %>,
           <%# Issue #187: pgbus's turbo_stream_from injects `import
               "pgbus/stream_source_element"`; pin it to the vendored engine asset
               (this app has no asset pipeline / importmap-rails auto-pin). %>
@@ -44,6 +46,7 @@
       import ReactiveController from "reactive_controller"
       import { registerPaymentSplit } from "payment_split_reducer"
       import { registerPostPreview } from "post_preview_reducer"
+      import { registerConfirmPredicates } from "confirm_predicate_registration"
 
       const application = Application.start()
       // Register eagerly so a click right after load is never missed.
@@ -55,6 +58,7 @@
       // new-draft path runs payment_split; PostPreviewComponent runs preview.
       registerPaymentSplit()
       registerPostPreview()
+      registerConfirmPredicates()
     </script>
   </head>
   <body>

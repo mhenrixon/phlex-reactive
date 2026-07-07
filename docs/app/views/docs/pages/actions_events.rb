@@ -282,7 +282,7 @@ module Views
               | `window:` | bind to the window |
               | `outside:` | fire only outside the root (implies `window:`) |
               | `once:` | fire at most once |
-              | `confirm:` | gate behind a confirmation dialog |
+              | `confirm:` | gate behind a confirmation dialog — a String (always), or a Hash (conditional, #179) |
               | `optimistic:` | reversible cosmetic hint applied before the round trip |
               | `busy:` | declarative pending state on the trigger |
 
@@ -295,6 +295,27 @@ module Views
               Combobox keyboard navigation is no longer an `on(...)` keyword — it's
               the standalone `reactive_listnav` helper, composed via `mix`, e.g.
               `mix(on(:search, event: "input"), reactive_listnav)`.
+
+              **Conditional confirm (#179).** `confirm:` also takes a Hash to warn
+              *only when the field values look suspect* — soft-validation before submit,
+              evaluated client-side over the same collected fields, no bespoke handler:
+
+              ```ruby
+              # Declarative — reuses reactive_show's conditions language (scalar = equals,
+              # Range = threshold, Array = membership). Prompts only when it MATCHES.
+              on(:save, confirm: { when: { total: 0 }, message: "Total is 0 — continue?" })
+              on(:save, confirm: { when: { qty: 100.. }, message: "Large order — sure?" })
+
+              # Named predicate — for multi-field logic. Register a pure function at boot
+              # (the setComputeReducer twin); it runs over the collected fields.
+              #   setConfirmPredicate("end_before_start", ({ starts_at, ends_at }) => ends_at < starts_at)
+              on(:save, confirm: { predicate: "end_before_start", message: "End precedes start — continue?" })
+              ```
+
+              The Hash form works on `on_client(...)` too. It is **soft-validation UX, not
+              authorization** — a user can bypass any client predicate and the action still
+              hits the endpoint's real `authorize!` / default-deny. Never let a predicate
+              stand in for a server-side check.
             MD
           end
         end

@@ -13,6 +13,9 @@ import { confirmResolver } from "phlex/reactive/confirm"
 // Client-side computes (data bindings): the reducer registry behind
 // reactive_compute. Bare specifier for the same import-map reason as confirm.
 import { computeReducer } from "phlex/reactive/compute"
+// Conditional-confirm predicates (issue #179): the registry behind the
+// confirm: { predicate: "name" } escape hatch. Same bare-specifier reason.
+import { confirmPredicate } from "phlex/reactive/confirm_predicate"
 
 // The ONE generic controller behind every reactive Phlex component. It
 // replaces the per-feature Stimulus controllers you'd otherwise hand-write
@@ -1191,7 +1194,7 @@ export default class extends Controller {
     // modifier params (issue #80). The client decides preventDefault behavior
     // from event.params — set by the Ruby on() — never by sniffing the
     // Stimulus descriptor.
-    const { action, params, debounce, throttle, confirm, outside, window: windowBound, optimistic } =
+    const { action, params, debounce, throttle, confirm, confirmWhen, outside, window: windowBound, optimistic } =
       event.params
     if (!action) return
 
@@ -1242,8 +1245,14 @@ export default class extends Controller {
     // `change` isn't cancelable, so preventDefault was already a no-op there.
     if (!windowBound && !this.#keepsNativeToggle(optimistic, target)) event.preventDefault()
 
-    // No confirm message → proceed straight away (unchanged fast path).
-    if (!confirm) return this.#proceed(target, action, params, debounce, throttle, optimistic, busy)
+    // Resolve the EFFECTIVE confirm message (issue #179): a plain string confirm:
+    // is that string (static, #52); a Hash confirm: (confirmWhen) evaluates its
+    // condition/predicate over the collected fields and returns the message ONLY
+    // when it fires, else null → no dialog. No confirm at all → also null.
+    const message = this.#effectiveConfirmMessage(confirm, confirmWhen)
+
+    // No message → proceed straight away (unchanged fast path).
+    if (!message) return this.#proceed(target, action, params, debounce, throttle, optimistic, busy)
 
     // Confirmation gate (issue #52, made overridable + async in #55). A reactive
     // trigger can't use Hotwire's data-turbo-confirm — this controller preempts
@@ -1257,7 +1266,7 @@ export default class extends Controller {
     // genuine bug inside #proceed is NOT silently swallowed. Enqueue ONLY on a
     // truthy resolution — nothing is enqueued, no timer scheduled, otherwise.
     Promise.resolve()
-      .then(() => confirmResolver(confirm))
+      .then(() => confirmResolver(message))
       .catch(() => false)
       .then((ok) => {
         if (ok) this.#proceed(target, action, params, debounce, throttle, optimistic, busy)
@@ -1271,7 +1280,7 @@ export default class extends Controller {
   // the component resets whatever they toggled (by design — a signed action
   // owns state that must survive re-renders).
   runOps(event) {
-    const { ops, confirm, outside, window: windowBound } = event.params
+    const { ops, confirm, confirmWhen, outside, window: windowBound } = event.params
 
     // Outside guard FIRST — identical semantics to dispatch() (issue #80): an
     // outside: trigger is a COMPLETE no-op for events inside this root, before
@@ -1286,8 +1295,12 @@ export default class extends Controller {
     // pending dialog (same ordering as dispatch()).
     if (!windowBound) event.preventDefault()
 
-    // No confirm → apply straight away (unchanged fast path, no prompt).
-    if (!confirm) return this.#applyOps(this.#parseOps(ops))
+    // Resolve the effective confirm message — static string, or the conditional
+    // Hash form (issue #179) evaluated over collected fields. Null → no dialog.
+    const message = this.#effectiveConfirmMessage(confirm, confirmWhen)
+
+    // No message → apply straight away (unchanged fast path, no prompt).
+    if (!message) return this.#applyOps(this.#parseOps(ops))
 
     // Confirmation gate for client ops (issue #178) — the SAME confirmResolver
     // gate on(:action, confirm:) uses (issues #52/#55), reused verbatim so a
@@ -1299,7 +1312,7 @@ export default class extends Controller {
     // here (the user gesture), NOT in #applyOps: that applier is shared with the
     // server-pushed reactive:js stream action, which must NEVER prompt.
     Promise.resolve()
-      .then(() => confirmResolver(confirm))
+      .then(() => confirmResolver(message))
       .catch(() => false)
       .then((ok) => {
         if (ok) this.#applyOps(this.#parseOps(ops))
@@ -2308,6 +2321,54 @@ export default class extends Controller {
     const nested = this.element.querySelectorAll('[data-controller~="reactive"]')
     if (nested.length === 0) return () => true
     return (el) => this.#ownsField(el)
+  }
+
+  // Resolve the effective confirm message (issue #179). A plain string is the
+  // static #52 form (always shown). A confirmWhen JSON payload is the CONDITIONAL
+  // form — evaluated over the SAME collected fields reactive_compute reads — and
+  // returns the message ONLY when it fires, else null (proceed, no dialog):
+  //   { groups, message }    — the reactive_show conditions fold (anyOfAllsMatches)
+  //   { predicate, message } — a registered fn (setConfirmPredicate) over the fields
+  // A missing predicate warns and returns null (PROCEED without a dialog) — the
+  // compute unknown-reducer posture. This is soft-validation UX; the endpoint's
+  // authorize/default-deny is the real gate, so failing OPEN here never grants
+  // anything the server wouldn't already allow.
+  #effectiveConfirmMessage(confirm, confirmWhen) {
+    if (confirm) return confirm
+    if (!confirmWhen) return null
+
+    // Stimulus auto-parses a JSON-object -param value, so confirmWhen usually
+    // arrives ALREADY parsed. Accept an object as-is; parse a string defensively
+    // (a hand-built attr, or a non-Stimulus caller). A malformed string warns and
+    // proceeds without a dialog (default-deny UX — the server is the real gate).
+    let payload = confirmWhen
+    if (typeof confirmWhen === "string") {
+      try {
+        payload = JSON.parse(confirmWhen)
+      } catch {
+        console.warn(`[phlex-reactive] malformed conditional confirm payload ${JSON.stringify(confirmWhen)} — skipped`)
+        return null
+      }
+    }
+    if (!payload || typeof payload !== "object") return null
+
+    const { fields } = this.#collectFields()
+    const fieldValue = (name) => fields[name]
+
+    let fires
+    if (typeof payload.predicate === "string") {
+      const fn = confirmPredicate(payload.predicate)
+      if (!fn) {
+        console.warn(`[phlex-reactive] confirm predicate "${payload.predicate}" is not registered — proceeding without a dialog (register it with setConfirmPredicate)`)
+        return null
+      }
+      fires = !!fn(fields)
+    } else {
+      // Declarative: the DNF groups fold, identical to reactive_show — matches → fire.
+      fires = anyOfAllsMatches(payload.groups?.any, fieldValue) === true
+    }
+
+    return fires ? payload.message : null
   }
 
   // One walk over THIS root's named controls (not a nested reactive root's),

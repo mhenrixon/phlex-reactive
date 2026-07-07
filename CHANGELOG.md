@@ -219,6 +219,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Conditional confirm — warn only when the values look suspect (#179).**
+  `confirm:` now takes a Hash for soft-validation-before-submit, so the dialog fires
+  ONLY when the field values are wrong — instead of a hand-written submit handler that
+  inspects fields and calls `confirm()` itself. Two forms, both evaluated client-side
+  over the same collected fields `reactive_compute` reads:
+  - **Declarative** — `confirm: { when: { total: 0 }, message: "Total is 0 — continue?" }`.
+    `when:` reuses `reactive_show`'s conditions language verbatim: a scalar is equals,
+    a `Range` is a threshold (`qty: 100..`), an `Array` is membership. Zero JS. The
+    dialog fires when the condition MATCHES; a clean value submits silently.
+  - **Named predicate** — `confirm: { predicate: "end_before_start", message: "…" }` for
+    multi-field logic the single-field form can't express. Register a pure function at
+    boot (`setConfirmPredicate("end_before_start", ({ starts_at, ends_at }) => ends_at < starts_at)`),
+    the twin of `setComputeReducer`. An unregistered name warns and proceeds without a
+    dialog. Works on `on(...)` AND `on_client(...)`. The predicate is soft-validation UX,
+    **not authorization** — a user can bypass it and the action still hits the endpoint's
+    real authorize/default-deny; never let it stand in for a server-side check.
+
+- **`confirm:` on `on_client(...)` — themed confirmation for zero-round-trip client ops (#178).**
+  The client-op path gains the SAME overridable `confirmResolver` gate `on(:action, confirm:)`
+  has (#52/#55). A destructive-feeling client op (clear a draft, reset a form) gets the
+  app's themed dialog with one line and no round trip:
+  `button(**on_client(:click, js.text("#draft", ""), confirm: "Discard this draft?"))`.
+  The gate lives in the user-gesture path (`runOps`), never in the shared op applier — a
+  server-pushed `reactive:js` op stream must not prompt. `setConfirmResolver` now themes
+  both paths at once.
+
 - **CI transport verification matrix — the browser suite runs on Action Cable AND pgbus (#187).**
   The system job is now `server × transport` (Puma/Falcon × cable/pgbus). The pgbus
   cells add a plain `postgres:18` (pgbus vendors the PGMQ schema via its own
