@@ -1289,8 +1289,8 @@ def update(quantity:, price:) = (@item.update!(quantity:, price:); reply.streams
 |---|---|
 | `reply.replace` / `reply.update(morph: false)` | re-render in place (default; `replace` swaps the whole element via outerHTML, `update` swaps only the inner HTML) |
 | `reply.morph` / `reply.replace(morph: true)` / `reply.update(morph: true)` | re-render in place via Idiomorph (`method="morph"`) — preserves the focused `<input>` + caret; for per-field reactive editing (`replace` #28; `update` #113) |
-| `.also(target => content, …)` | also re-render companion elements by DOM id; `content` is a plain string (escaped) or a Phlex component |
-| `.also(component, morph: false)` | also re-render another Streamable component, targeting its own `#id`; `morph: true` morphs it in place |
+| `.also(target => content, …)` | **UPDATE** (inner HTML) companion elements by DOM id; `content` is a plain string (escaped) or a Phlex component. The argument *type* picks the action — pairs mean `update` |
+| `.also(component, morph: false)` | **REPLACE** another Streamable component at its own `#id` (`morph: true` morphs in place). A component argument means `replace` |
 | `.flash(level, content, target: …)` | append a flash; `content` is a plain string (escaped, wrapped in a level-carrying `<div>` — see [Flash levels](#flash-levels)) or a Phlex component (rendered verbatim; off-request — no Rails `flash`); target defaults to `Phlex::Reactive.flash_target` (`"flash"`) |
 | `reply.remove` | remove the element (backed by `Streamable#to_stream_remove`) |
 | `reply.redirect(url)` | client-side `Turbo.visit` (pass a `*_url`); rides a `reactive:visit` turbo-stream, not an HTTP 3xx |

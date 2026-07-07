@@ -452,23 +452,35 @@ data-reactive-ops="#{ERB::Util.html_escape(json)}"></turbo-stream>).html_safe
       end
 
       # Also re-render COMPANION elements alongside self (issue #182 — one door,
-      # replacing also_update + also_replace). Two argument shapes:
+      # replacing also_update + also_replace). The ARGUMENT TYPE picks the Turbo
+      # action; there is no verb to choose:
       #
-      #   * target => content pairs — updates each element BY ID. Content is a
-      #     plain String (HTML-ESCAPED by Turbo, so a model value is safe), a Phlex
-      #     component (rendered + auto-escaped), or an html_safe String for raw HTML.
-      #     Written brace-less as keywords or as an explicit Hash:
-      #       reply.replace.also(page_heading: @record.name, badge: Badge.new(...))
-      #       reply.replace.also("dom-id-with-dashes" => @record.name)
-      #   * a Streamable COMPONENT (positional) — replaced at its OWN #id;
-      #     `morph: true` morphs it in place (issue #28) when it holds focusable
-      #     inputs to preserve:
-      #       reply.replace.also(SummaryCard.new(order: @order), morph: true)
+      #   .also(SummaryCard.new(order: @order))          -> REPLACE at the component's own #id
+      #   .also(SummaryCard.new(order: @order), morph:)  -> the same, MORPHED in place
+      #   .also(page_heading: @record.name)              -> UPDATE (inner HTML) of id "page_heading"
+      #   .also("nav-badge" => @record.name)             -> UPDATE of id "nav-badge" (dashed id)
+      #
+      # So the two shapes are:
+      #
+      #   * a Streamable COMPONENT (positional) — a `replace` targeting its OWN #id
+      #     (it self-targets, like every reactive component). `morph: true` morphs
+      #     it in place (issue #28) when it holds focusable inputs to preserve.
+      #   * target => content pairs — an `update` (inner HTML) of each id. The id
+      #     need NOT be a reactive component (it's any element), so the only sound
+      #     swap is its inner HTML. Content is a plain String (HTML-ESCAPED by
+      #     Turbo, so a model value is safe), a Phlex component (rendered +
+      #     auto-escaped), or an html_safe String for intentional raw HTML. Written
+      #     brace-less as keywords or as an explicit Hash.
+      #
+      # This is NOT for collection rows — a row add/remove goes through
+      # reply.append(model, to: :name) / reply.remove(id, from: :name), which also
+      # emit the count + empty-state streams. `.also` only re-renders EXISTING
+      # companion elements.
       #
       # Returns a NEW Response (immutable). `companion` is EITHER a positional
-      # component OR target=>content pairs — never both. The brace-less keyword
-      # form lands in **targets; an explicit Hash lands in `companion`. `morph:` is
-      # reserved for the component form.
+      # component OR target=>content pairs — never both (that raises). The
+      # brace-less keyword form lands in **targets; an explicit Hash lands in
+      # `companion`. `morph:` is reserved for the component form.
       def also(companion = :__none, morph: false, **targets)
         if companion != :__none && !targets.empty?
           raise ArgumentError, "reply.also takes EITHER a component OR target => content pairs, not both"
