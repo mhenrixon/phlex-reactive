@@ -189,7 +189,9 @@ module Phlex
         return unless callable
 
         message = callable.call(kind)
-        Phlex::Reactive::Response.flash_stream(:error, message, target: Phlex::Reactive.flash_target)
+        # flash_stream is a private Response builder (issue #182) — the endpoint's
+        # error path is an internal caller, so reach it via send.
+        Phlex::Reactive::Response.send(:flash_stream, :error, message, target: Phlex::Reactive.flash_target)
       rescue => e # rubocop:disable Style/RescueStandardError
         ::Rails.logger&.warn("[phlex-reactive] error_flash raised: #{e.message}") if defined?(::Rails) &&
                                                                                      ::Rails.respond_to?(:logger)
@@ -298,7 +300,7 @@ module Phlex
 
         streams = result.streams
 
-        # Partial update (Response.streams / reply.streams, issue #30): the action
+        # Partial update (reply.streams, issue #30): the action
         # re-rendered only PART of the component and opted out of the full-self
         # replace. Append a tiny token-only stream so the signed token still rolls
         # forward WITHOUT re-rendering (and clobbering) the live inputs. Skip it
@@ -320,7 +322,7 @@ module Phlex
         # for replace AND update of self (both re-render the root via
         # render_component, carrying the token), and still adds the fallback
         # replace when a hand-built `with(...)` stream omits it. Idempotent: a
-        # Response.replace(self)/update(self) already carries the token, so we
+        # reply.replace/update already carries the token, so we
         # don't double the self-render.
         #
         # GUARD 2 (issue #114): GLOBAL, un-scoped — "does ANY stream carry a
@@ -329,7 +331,7 @@ module Phlex
         # scan. Deliberately NOT rx_refreshes_token_for? (target-scoped): scoping
         # this guard would regress update/morph of self on an aliased id.
         #
-        # A self-render reply (Response.replace/update/morph — subject_component
+        # A self-render reply (reply.replace/update/morph — subject_component
         # set) whose streams somehow carry no token gets the full self-replace
         # (defensive, unchanged). A companion-only reply.with (NO subject, NO
         # token_component) that doesn't re-render the root gets a token-ONLY

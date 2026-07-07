@@ -562,7 +562,7 @@ module Phlex
       # Idiomorph morphs the subtree in place — preserving the focused <input> +
       # caret across the re-render — while still carrying the root's fresh
       # data-reactive-token-value (so the signed token refreshes). Used by
-      # Response.morph / Response.replace(self, morph: true).
+      # reply.morph / reply.replace(morph: true).
       def to_stream_morph
         Phlex::Reactive::Stream.wrap(
           self.class.turbo_stream_builder.replace(id, html: self.class.render_component(self), method: :morph),
@@ -575,7 +575,7 @@ module Phlex
       # focused <input> + caret across a per-field update. Default (morph:
       # false) is the unchanged plain update. Passing `method: :morph` inline
       # (as #to_stream_morph does) keeps the plain call's wire byte-identical.
-      # Used by Response.update.
+      # Used by reply.update.
       def to_stream_update(morph: false)
         builder = self.class.turbo_stream_builder
         html = self.class.render_component(self)
@@ -591,7 +591,7 @@ module Phlex
       # attribute (#extractToken) and an inert client action writes it onto the
       # root (a pure attribute set, so a focused <input> + caret survive). Unlike
       # to_stream_replace, it does NOT re-render the children, so a live input
-      # the user is typing into is never torn down. Used by Response.streams.
+      # the user is typing into is never torn down. Used by reply.streams.
       #
       # The component carries its token via Component#reactive_token; a Streamable
       # that isn't a Component (no token) simply has nothing to refresh — guarded
@@ -616,7 +616,7 @@ module Phlex
 
       # Render THIS instance as a remove stream. The component already knows its
       # own #id, so no record/class reconstruction is needed (works for record-
-      # and state-backed components alike). Used by Response.remove.
+      # and state-backed components alike). Used by reply.remove.
       def to_stream_remove
         Phlex::Reactive::Stream.wrap(
           self.class.turbo_stream_builder.remove(id),

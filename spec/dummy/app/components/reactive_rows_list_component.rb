@@ -23,7 +23,7 @@ class ReactiveRowsListComponent < ApplicationComponent
 
   def add(title:)
     todo = Todo.create!(title: title.to_s.strip, done: false)
-    reply.append(:rows, todo)
+    reply.append(todo, to: :rows)
   end
 
   def view_template

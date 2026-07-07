@@ -53,9 +53,9 @@ module Views
               action governs the reply with a single call — no hand-deriving the
               container id, the count, and the empty-state in every action.
 
-              - `reply.append(:notifications, record)` → row stream + count + clears
+              - `reply.append(record, to: :notifications)` → row stream + count + clears
                 the empty-state.
-              - `reply.remove(:notifications, record)` → row remove + count +
+              - `reply.remove(record, from: :notifications)` → row remove + count +
                 restores the empty-state.
 
               The size resolver reads `Notification.count` server-side, so the badge

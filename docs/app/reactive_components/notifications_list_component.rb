@@ -38,7 +38,7 @@ class NotificationsListComponent < Phlex::HTML
     NotificationRowComponent.broadcast_append_to(*Notification.stream_key, target: 'notifications',
                                                                            model: notification,
                                                                            exclude: reactive_connection_id)
-    reply.append(:notifications, notification)
+    reply.append(notification, to: :notifications)
   end
 
   # Remove the row + bump the count + restore the empty-state in ONE reply, plus a
@@ -48,7 +48,7 @@ class NotificationsListComponent < Phlex::HTML
     notification.destroy!
     NotificationRowComponent.broadcast_remove_to(*Notification.stream_key, model: notification,
                                                                            exclude: reactive_connection_id)
-    reply.remove(:notifications, notification).flash(:notice, 'Notification dismissed', dismiss_after: 3000)
+    reply.remove(notification, from: :notifications).flash(:notice, 'Notification dismissed', dismiss_after: 3000)
   end
 
   def view_template

@@ -1276,7 +1276,7 @@ def add(item:) = reply.replace.stream(Totals.update(@order))               # mul
 def update(name:) = (@row.update!(name:); reply.morph)
 
 # Re-render a COMPANION element (a heading mirroring the edited name) alongside self:
-def rename(value:) = (@account.update!(name: value); reply.replace.also_update("page_heading", html: @account.name))
+def rename(value:) = (@account.update!(name: value); reply.replace.also(page_heading: @account.name))
 
 # Update ONLY part of the component (issue #30): re-stream just the total cell,
 # NOT the whole row. reply.streams emits exactly your streams plus a tiny
@@ -1289,8 +1289,8 @@ def update(quantity:, price:) = (@item.update!(quantity:, price:); reply.streams
 |---|---|
 | `reply.replace` / `reply.update(morph: false)` | re-render in place (default; `replace` swaps the whole element via outerHTML, `update` swaps only the inner HTML) |
 | `reply.morph` / `reply.replace(morph: true)` / `reply.update(morph: true)` | re-render in place via Idiomorph (`method="morph"`) — preserves the focused `<input>` + caret; for per-field reactive editing (`replace` #28; `update` #113) |
-| `.also_update(target, html:)` | also re-render a companion element by DOM id; `html` is a plain string (escaped) or a Phlex component |
-| `.also_replace(component, morph: false)` | also re-render another Streamable component, targeting its own `#id`; `morph: true` morphs it in place |
+| `.also(target => content, …)` | **UPDATE** (inner HTML) companion elements by DOM id; `content` is a plain string (escaped) or a Phlex component. The argument *type* picks the action — pairs mean `update` |
+| `.also(component, morph: false)` | **REPLACE** another Streamable component at its own `#id` (`morph: true` morphs in place). A component argument means `replace` |
 | `.flash(level, content, target: …)` | append a flash; `content` is a plain string (escaped, wrapped in a level-carrying `<div>` — see [Flash levels](#flash-levels)) or a Phlex component (rendered verbatim; off-request — no Rails `flash`); target defaults to `Phlex::Reactive.flash_target` (`"flash"`) |
 | `reply.remove` | remove the element (backed by `Streamable#to_stream_remove`) |
 | `reply.redirect(url)` | client-side `Turbo.visit` (pass a `*_url`); rides a `reactive:visit` turbo-stream, not an HTTP 3xx |
@@ -1299,7 +1299,7 @@ def update(quantity:, price:) = (@item.update!(quantity:, price:); reply.streams
 | `.defer(component, placeholder:, morph:)` | take an **expensive segment off the actor's critical path** (issue #165) — the reply returns immediately and the real render streams to the SAME actor when ready; see [Deferred segments](#deferred-segments-replydefer--reactive_lazy) |
 | `reply.with(*streams)` / `#stream(*more)` | multi-stream (self re-render still injected for the token) |
 
-`.flash`/`.stream`/`.also_*` are additive on a self-replace, so the component's
+`.flash`/`.stream`/`.also` are additive on a self-replace, so the component's
 signed token always refreshes. **`reply.streams`** is the exception that proves
 the rule: it deliberately skips the full-self replace (so your hand-built streams
 update only the targets you name) and refreshes the token via a tiny inert
@@ -1479,9 +1479,11 @@ Prefer your own markup? Two escape hatches:
 #    (you own the markup entirely, including the level styling):
 reply.replace.flash(:error, Alert.new(level: :error, message: msg))
 
-# 2. Or configure a flash component ONCE — string flashes render through it
-#    (instantiated new(level:, content:)); component content still bypasses it:
-Phlex::Reactive.flash_component = MyFlash   # default nil → the built-in wrapper
+# 2. Or configure a flash component ONCE — string flashes render through it;
+#    component content still bypasses it. flash_component is an app-owned
+#    CALLABLE (issue #182): it maps (level, content) to your component —
+#    the gem never guesses kwargs:
+Phlex::Reactive.flash_component = ->(level, content) { MyFlash.new(level:, content:) }   # default nil → the built-in wrapper
 ```
 
 #### Server-pushed client ops (`reply.js` + `broadcast_js_to`, issue #97)
@@ -1565,9 +1567,10 @@ Broadcasting is deliberately omitted so peer tabs with their own in-flight edits
 aren't clobbered. Authorize the record as always — identity is never permission.
 
 > **Under the hood.** `reply.<verb>` returns a `Phlex::Reactive::Response` — the
-> immutable value object the endpoint reads. You can build one directly
-> (`Phlex::Reactive::Response.replace(self)`) and it still works, but `reply` is
-> the preferred surface; treat `Response` as an internal detail.
+> immutable value object the endpoint reads. `reply` is the ONE documented door
+> (issue #182): the old `Phlex::Reactive::Response.replace(self)` class verbs
+> are removed and raise a guided `ArgumentError` naming the `reply.<verb>`
+> rewrite; treat `Response` as an internal detail.
 > **`html:`/`content` escaping.** A plain string is **HTML-escaped** by Turbo, so
 > `html: @account.name` is safe even for user-supplied values. To emit intentional
 > markup, pass a **Phlex component** (`html: Heading.new(name: @record.name)`) —
@@ -1825,12 +1828,13 @@ class NotificationsList < ApplicationComponent
 
   def add(title:)
     todo = Todo.create!(title:)
-    reply.append(:notifications, todo)   # append row + bump count + clear empty-state
+    reply.append(todo, to: :notifications)   # append row + bump count + clear empty-state
   end
 
   def dismiss(id:)
-    Todo.find(id).destroy!
-    reply.remove(:notifications, id)     # remove row + bump count + restore empty-state at 0
+    todo = Todo.find(id)
+    todo.destroy!
+    reply.remove(todo, from: :notifications)   # remove row + bump count + restore empty-state at 0
   end
 
   # view_template renders the count, the container <ul>, and the empty-state on
@@ -1840,9 +1844,9 @@ end
 
 | Builder | Reply (one `Response`) |
 |---|---|
-| `reply.append(name, model)` | append the row into the container + update the count + remove the empty-state when the list crosses 0→1 |
-| `reply.prepend(name, model)` | as `append`, but the row goes to the top |
-| `reply.remove(name, model)` | remove the row by its `dom_id` + update the count + append the empty-state back when the list crosses →0 |
+| `reply.append(model, to: name)` | append the row into the container + update the count + remove the empty-state when the list crosses 0→1 |
+| `reply.prepend(model, to: name)` | as `append`, but the row goes to the top |
+| `reply.remove(model, from: name)` | remove the row by its `dom_id` + update the count + append the empty-state back when the list crosses →0 |
 
 - **`size:` is the source of truth** — it's *re-counted* server-side after the
   mutation, so the badge and the empty-state are correct-by-construction (no
@@ -1854,7 +1858,7 @@ end
   (correct on the first click, silently rejected after); the helper bakes the
   refresh in so you never hit it.
 - **`remove` takes the record or its `dom_id` string** — a just-destroyed
-  ActiveRecord still answers `dom_id` correctly, so `reply.remove(:items, todo)`
+  ActiveRecord still answers `dom_id` correctly, so `reply.remove(todo, from: :items)`
   works; pass the raw id only if your row `#id` matches `ActiveRecord::RecordIdentifier`.
 - **Reply governs the actor's HTTP response only.** For a *cross-tab* live list
   (other viewers see the row appear) keep broadcasting the row with

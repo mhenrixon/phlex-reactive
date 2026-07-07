@@ -218,9 +218,10 @@ module Phlex
           #     empty: ItemsEmptyComponent, # optional empty-state component
           #     size: -> { @record.items.size } # resolves the live size
           #
-          # An action then governs the reply with one call:
-          #   reply.append(:items, item)   # row append + count + clear empty-state
-          #   reply.remove(:items, id)     # row remove + count + restore empty-state
+          # An action then governs the reply with one call (the collection is
+          # named by the to:/from: keyword, issue #182):
+          #   reply.append(item, to: :items)   # row append + count + clear empty-state
+          #   reply.remove(id, from: :items)   # row remove + count + restore empty-state
           #
           # count/empty/size are optional: a list with just rows omits them and the
           # corresponding stream isn't emitted. See Phlex::Reactive::Reply and the

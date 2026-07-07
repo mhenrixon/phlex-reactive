@@ -48,7 +48,7 @@ class TeamInboxComponent < Phlex::HTML
     message.destroy!
     InboxMessageComponent.broadcast_remove_to(*InboxMessage.stream_key, model: message,
                                                                         exclude: reactive_connection_id)
-    reply.remove(:messages, message).flash(:notice, 'Archived', dismiss_after: 2000)
+    reply.remove(message, from: :messages).flash(:notice, 'Archived', dismiss_after: 2000)
   end
 
   # Mark read: persist, re-render the row for the actor, and broadcast the updated
@@ -68,7 +68,7 @@ class TeamInboxComponent < Phlex::HTML
     InboxMessageComponent.broadcast_append_to(*InboxMessage.stream_key, target: 'inbox-messages',
                                                                         model: message,
                                                                         exclude: reactive_connection_id)
-    reply.append(:messages, message)
+    reply.append(message, to: :messages)
   end
 
   def view_template

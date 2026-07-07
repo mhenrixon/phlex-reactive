@@ -263,8 +263,9 @@ module Views
                   size: -> { current_user.notifications.count }
 
                 def dismiss(id:)
-                  current_user.notifications.find(id).destroy!
-                  reply.remove(:notifications, id)  # row + count + empty-state at 0
+                  notification = current_user.notifications.find(id)
+                  notification.destroy!
+                  reply.remove(notification, from: :notifications)  # row + count + empty-state at 0
                 end
                 ```
 

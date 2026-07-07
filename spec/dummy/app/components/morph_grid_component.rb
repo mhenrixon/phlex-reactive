@@ -2,8 +2,8 @@
 
 # Issue #28: the "edit a row, it saves" grid. Each field fires a DEBOUNCED
 # `update` while the user is still typing/tabbing. The action returns
-# Response.morph(self), so the row re-renders via Idiomorph — the focused input
-# and its in-progress value survive the save. With a plain Response.replace this
+# reply.morph, so the row re-renders via Idiomorph — the focused input
+# and its in-progress value survive the save. With a plain reply.replace this
 # row would outerHTML-swap, blur the field, and drop the just-typed value.
 class MorphGridComponent < ApplicationComponent
   include Phlex::Reactive::Streamable

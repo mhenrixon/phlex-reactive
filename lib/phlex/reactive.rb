@@ -560,13 +560,29 @@ module Phlex
       # diagnostic still goes to the log.
       attr_accessor :error_flash
 
-      # Component class used to render STRING flash content (issue #77).
-      # Instantiated as flash_component.new(level:, content:) and rendered
-      # through the existing render path, replacing the built-in
-      # <div class="reactive-flash reactive-flash--{level}"> wrapper. Default
-      # nil (the built-in wrapper). Phlex component content passed to
+      # A CALLABLE that builds a flash component from STRING flash content (issue
+      # #182). Given (level, content), it returns a Phlex component the gem renders
+      # in place of the built-in <div class="reactive-flash reactive-flash--{level}">
+      # wrapper — so the APP owns the kwarg mapping (no hardcoded new(level:,
+      # content:) contract that collides with a real app's flash component):
+      #
+      #   Phlex::Reactive.flash_component = ->(level, content) { MyFlash.new(level:, message: content) }
+      #
+      # Default nil (the built-in wrapper). Phlex component content passed to
       # reply.flash always renders verbatim and bypasses this.
-      attr_accessor :flash_component
+      attr_reader :flash_component
+
+      # Reject a bare Class (the pre-#182 contract) with the exact lambda rewrite —
+      # the gem no longer guesses the component's kwargs.
+      def flash_component=(callable)
+        if callable.is_a?(Class)
+          raise ArgumentError,
+            "Phlex::Reactive.flash_component is now a callable (issue #182) — " \
+            "flash_component = ->(level, content) { #{callable}.new(level:, content:) }"
+        end
+
+        @flash_component = callable
+      end
 
       # Render a Phlex component to HTML with a full (off-request) view context.
       # Uses phlex-rails' #render_in against the memoized view context — a direct
@@ -584,7 +600,7 @@ module Phlex
       # A Turbo::Streams::TagBuilder bound to an off-request view context, used
       # to build standalone streams not tied to a specific component's id — a
       # Response flash append, a reactive_collection row removal, a count
-      # companion update, an also_update companion. Cached PER THREAD alongside
+      # companion update, an also() companion. Cached PER THREAD alongside
       # the context it's bound to (see off_request_view_context for why
       # per-thread). Renamed from flash_builder (issue #113): the builder does
       # far more than flashes, so the name misled. flash_builder stays a
@@ -615,11 +631,18 @@ module Phlex
         @off_request_view_context_generation = off_request_view_context_generation + 1
       end
 
-      # Permanent aliases for the pre-#113 names. Kept forever (no deprecation)
-      # so the engine's to_prepare hook and any app code calling the old names
-      # keep working unchanged.
-      alias flash_builder stream_builder
-      alias reset_flash_builder! reset_stream_builder!
+      # Issue #182: the pre-#113 aliases are removed (they contradicted the
+      # clean-break rule — two names for one thing). Each raises a guided error
+      # naming the real method. The engine (to_prepare) already uses the new names.
+      def flash_builder
+        raise NoMethodError,
+          "Phlex::Reactive.flash_builder was removed in issue #182 — use stream_builder"
+      end
+
+      def reset_flash_builder!
+        raise NoMethodError,
+          "Phlex::Reactive.reset_flash_builder! was removed in issue #182 — use reset_stream_builder!"
+      end
 
       def off_request_view_context_generation
         @off_request_view_context_generation ||= 0

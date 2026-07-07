@@ -30,13 +30,13 @@ class NotificationsListComponent < ApplicationComponent
     return reply.replace if title.blank?
 
     todo = Todo.create!(title:)
-    reply.append(:notifications, todo)
+    reply.append(todo, to: :notifications)
   end
 
   def dismiss(id:)
     todo = Todo.find(id)
     todo.destroy!
-    reply.remove(:notifications, todo)
+    reply.remove(todo, from: :notifications)
   end
 
   def view_template

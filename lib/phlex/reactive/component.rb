@@ -6,9 +6,9 @@ module Phlex
     # reactive unit: declare actions in Ruby, and the generic `reactive`
     # Stimulus controller wires clicks/inputs to an HTTP round trip that
     # re-renders the component and applies it back into the DOM (a plain replace
-    # by default; return Response.morph(self) to morph in place and keep the
-    # focused input — issue #28). No per-feature Stimulus controllers, no
-    # hand-picked Turbo targets.
+    # by default; return reply.morph to morph in place and keep the focused
+    # input — issue #28). No per-feature Stimulus controllers, no hand-picked
+    # Turbo targets.
     #
     # Including Component pulls in Phlex::Reactive::Streamable automatically
     # (Concern dependency — Streamable lands on the base first, exactly the old
