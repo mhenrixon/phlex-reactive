@@ -37,7 +37,7 @@ module Views
               - **Log set (skeleton)** — `placeholder: true` replaces the totals with
                 the component's `deferred_placeholder` shell immediately.
               - **Log set (sync)** — the deliberate anti-example: the same rollup
-                rendered synchronously (`also_replace`), so the **whole** reply —
+                rendered synchronously (`also`), so the **whole** reply —
                 set count included — freezes for the 400 ms the deferred variants
                 take off the critical path.
 

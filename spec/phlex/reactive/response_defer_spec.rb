@@ -14,7 +14,7 @@ RSpec.describe "Phlex::Reactive::Response#defer" do
 
   describe "recording segments" do
     it "returns a NEW frozen Response carrying the segment (immutable chain)" do
-      base = Phlex::Reactive::Response.replace(counter)
+      base = counter.reply.replace
       deferred = base.defer(totals)
 
       expect(deferred).not_to equal(base)
@@ -25,13 +25,13 @@ RSpec.describe "Phlex::Reactive::Response#defer" do
     end
 
     it "defaults to keep-content (no placeholder) and a plain replace arrival" do
-      segment = Phlex::Reactive::Response.replace(counter).defer(totals).deferred_segments.first
+      segment = counter.reply.replace.defer(totals).deferred_segments.first
       expect(segment.placeholder).to be_nil
       expect(segment.morph).to be(false)
     end
 
     it "records placeholder: and morph:" do
-      segment = Phlex::Reactive::Response.replace(counter)
+      segment = counter.reply.replace
         .defer(totals, placeholder: "<p>loading</p>", morph: true)
         .deferred_segments.first
 
@@ -41,31 +41,31 @@ RSpec.describe "Phlex::Reactive::Response#defer" do
 
     it "stacks multiple segments in order" do
       other = CounterComponent.new(count: 7)
-      response = Phlex::Reactive::Response.replace(counter).defer(totals).defer(other)
+      response = counter.reply.replace.defer(totals).defer(other)
 
       expect(response.deferred_segments.map(&:component)).to eq([totals, other])
     end
 
     it "deferred? reflects the presence of segments" do
-      # Fresh instances per Response.replace — a Phlex component renders once.
-      expect(Phlex::Reactive::Response.replace(CounterComponent.new(count: 0)).deferred?).to be(false)
-      expect(Phlex::Reactive::Response.replace(CounterComponent.new(count: 0)).defer(totals).deferred?).to be(true)
+      # Fresh instances per reply.replace — a Phlex component renders once.
+      expect(CounterComponent.new(count: 0).reply.replace.deferred?).to be(false)
+      expect(CounterComponent.new(count: 0).reply.replace.defer(totals).deferred?).to be(true)
     end
   end
 
   describe "chain preservation" do
-    it "survives .flash / .stream / .also_update chained AFTER defer" do
-      response = Phlex::Reactive::Response.replace(counter)
+    it "survives .flash / .stream / .also AFTER defer" do
+      response = counter.reply.replace
         .defer(totals)
         .flash(:notice, "saved")
-        .also_update("heading", html: "Hi")
+        .also("heading" => "Hi")
 
       expect(response.deferred_segments.size).to eq(1)
-      expect(response.streams.size).to eq(3) # replace + flash + also_update
+      expect(response.streams.size).to eq(3) # replace + flash + also
     end
 
     it "preserves token_component / render_self through the defer chain" do
-      response = Phlex::Reactive::Response.streams(counter, "<turbo-stream></turbo-stream>").defer(totals)
+      response = counter.reply.streams("<turbo-stream></turbo-stream>").defer(totals)
 
       expect(response.render_self?).to be(false)
       expect(response.token_component).to equal(counter)
@@ -74,7 +74,7 @@ RSpec.describe "Phlex::Reactive::Response#defer" do
 
   describe "loud failures at the call site" do
     it "rejects defer on a redirect reply (the client is navigating away)" do
-      expect { Phlex::Reactive::Response.redirect("/x").defer(totals) }
+      expect { counter.reply.redirect("/x").defer(totals) }
         .to raise_error(Phlex::Reactive::Error, /redirect/)
     end
 
@@ -84,12 +84,12 @@ RSpec.describe "Phlex::Reactive::Response#defer" do
         def view_template = div { "x" }
       end
 
-      expect { Phlex::Reactive::Response.replace(counter).defer(plain.new) }
+      expect { counter.reply.replace.defer(plain.new) }
         .to raise_error(ArgumentError, /Phlex::Reactive::Component/)
     end
 
     it "rejects a placeholder that is neither nil, true, a String, nor a Phlex component" do
-      expect { Phlex::Reactive::Response.replace(counter).defer(totals, placeholder: 42) }
+      expect { counter.reply.replace.defer(totals, placeholder: 42) }
         .to raise_error(ArgumentError, /placeholder/)
     end
   end

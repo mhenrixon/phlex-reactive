@@ -59,9 +59,9 @@ RSpec.describe "reactive_collection streams (issue #35)", type: :request do
   let(:todo) { Todo.create!(title: "buy milk", done: false) }
   let(:dom_id) { ActionView::RecordIdentifier.dom_id(todo) }
 
-  describe "reply.append(name, model)" do
+  describe "reply.append(model, to:)" do
     it "appends the row component into the container" do
-      response = container_class.new(size: 1).reply.append(:todos, todo)
+      response = container_class.new(size: 1).reply.append(todo, to: :todos)
       append = response.streams.find { it.include?('action="append"') }
       expect(append).to include('target="todos-list"')
       expect(append).to include(%(id="#{dom_id}"))
@@ -69,25 +69,25 @@ RSpec.describe "reactive_collection streams (issue #35)", type: :request do
     end
 
     it "updates the count companion with the fresh size" do
-      response = container_class.new(size: 1).reply.append(:todos, todo)
+      response = container_class.new(size: 1).reply.append(todo, to: :todos)
       count = response.streams.find { it.include?('target="todos-count"') }
       expect(count).to include('action="update"')
       expect(count).to include(">1<").or include("1")
     end
 
     it "removes the empty-state when the list crosses 0->1 (size becomes 1)" do
-      response = container_class.new(size: 1).reply.append(:todos, todo)
+      response = container_class.new(size: 1).reply.append(todo, to: :todos)
       empty = response.streams.find { it.include?('target="todos-empty"') }
       expect(empty).to include('action="remove"')
     end
 
     it "does NOT touch the empty-state when the list was already non-empty (size > 1)" do
-      response = container_class.new(size: 2).reply.append(:todos, todo)
+      response = container_class.new(size: 2).reply.append(todo, to: :todos)
       expect(response.streams).not_to include(a_string_including('target="todos-empty"'))
     end
 
     it "opts to render_self false (the row append is the update, not a self replace)" do
-      response = container_class.new(size: 1).reply.append(:todos, todo)
+      response = container_class.new(size: 1).reply.append(todo, to: :todos)
       expect(response.render_self?).to be(false)
     end
 
@@ -96,57 +96,57 @@ RSpec.describe "reactive_collection streams (issue #35)", type: :request do
     # so the endpoint appends its inert reactive:token stream (the #30 machinery).
     it "binds the container as token_component so its token rolls forward" do
       container = container_class.new(size: 1)
-      response = container.reply.append(:todos, todo)
+      response = container.reply.append(todo, to: :todos)
       expect(response.refresh_token?).to be(true)
       expect(response.token_component).to eq(container)
     end
   end
 
-  describe "reply.prepend(name, model)" do
+  describe "reply.prepend(model, to:)" do
     it "prepends the row into the container and still updates count" do
-      response = container_class.new(size: 1).reply.prepend(:todos, todo)
+      response = container_class.new(size: 1).reply.prepend(todo, to: :todos)
       expect(response.streams).to include(a_string_including('action="prepend"', 'target="todos-list"'))
       expect(response.streams).to include(a_string_including('target="todos-count"'))
     end
 
     it "binds the container as token_component (cosmos#1939)" do
       container = container_class.new(size: 1)
-      expect(container.reply.prepend(:todos, todo).token_component).to eq(container)
+      expect(container.reply.prepend(todo, to: :todos).token_component).to eq(container)
     end
   end
 
-  describe "reply.remove(name, model)" do
+  describe "reply.remove(model, from:)" do
     it "removes the row by its dom id" do
-      response = container_class.new(size: 0).reply.remove(:todos, todo)
+      response = container_class.new(size: 0).reply.remove(todo, from: :todos)
       remove = response.streams.find { it.include?(%(target="#{dom_id}")) }
       expect(remove).to include('action="remove"')
     end
 
     it "updates the count companion with the fresh size" do
-      response = container_class.new(size: 0).reply.remove(:todos, todo)
+      response = container_class.new(size: 0).reply.remove(todo, from: :todos)
       expect(response.streams).to include(a_string_including('target="todos-count"', 'action="update"'))
     end
 
     it "restores the empty-state when the list crosses ->0 (size becomes 0)" do
-      response = container_class.new(size: 0).reply.remove(:todos, todo)
+      response = container_class.new(size: 0).reply.remove(todo, from: :todos)
       empty = response.streams.find { it.include?('target="todos-list"') && it.include?("No todos yet") }
       expect(empty).to include('action="append"')
     end
 
     it "does NOT restore the empty-state while rows remain (size > 0)" do
-      response = container_class.new(size: 3).reply.remove(:todos, todo)
+      response = container_class.new(size: 3).reply.remove(todo, from: :todos)
       expect(response.streams).not_to include(a_string_including("No todos yet"))
     end
 
     it "binds the container as token_component so repeated removes work (cosmos#1939)" do
       container = container_class.new(size: 0)
-      response = container.reply.remove(:todos, todo)
+      response = container.reply.remove(todo, from: :todos)
       expect(response.refresh_token?).to be(true)
       expect(response.token_component).to eq(container)
     end
 
     it "accepts a dom-id string as well as a model" do
-      response = container_class.new(size: 0).reply.remove(:todos, dom_id)
+      response = container_class.new(size: 0).reply.remove(dom_id, from: :todos)
       remove = response.streams.find { it.include?('action="remove"') }
       expect(remove).to include(%(target="#{dom_id}"))
     end
@@ -167,7 +167,7 @@ RSpec.describe "reactive_collection streams (issue #35)", type: :request do
     end
 
     it "emits only the row stream when count/empty/size are not declared" do
-      response = minimal_container.new.reply.append(:todos, todo)
+      response = minimal_container.new.reply.append(todo, to: :todos)
       expect(response.streams.size).to eq(1)
       expect(response.streams.first).to include('action="append"')
     end
@@ -175,20 +175,25 @@ RSpec.describe "reactive_collection streams (issue #35)", type: :request do
 
   describe "chaining" do
     it "the returned Response chains .flash like any other reply" do
-      response = container_class.new(size: 1).reply.append(:todos, todo).flash(:notice, "added")
+      response = container_class.new(size: 1).reply.append(todo, to: :todos).flash(:notice, "added")
       expect(response.streams.last).to include('action="append"')
       expect(response.streams.last).to include("added")
     end
 
     it "the returned Response is frozen" do
-      expect(container_class.new(size: 1).reply.append(:todos, todo)).to be_frozen
+      expect(container_class.new(size: 1).reply.append(todo, to: :todos)).to be_frozen
     end
   end
 
   describe "errors" do
     it "raises a clear error for an undeclared collection" do
-      expect { container_class.new.reply.append(:nope, todo) }
+      expect { container_class.new.reply.append(todo, to: :nope) }
         .to raise_error(Phlex::Reactive::Error, /undeclared reactive_collection :nope/)
+    end
+
+    it "raises a guided ArgumentError for the removed Symbol-first form" do
+      expect { container_class.new.reply.append(:nope, todo) }
+        .to raise_error(ArgumentError, /to:/)
     end
   end
 end

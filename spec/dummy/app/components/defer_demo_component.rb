@@ -47,11 +47,11 @@ class DeferDemoComponent < ApplicationComponent
   # The synchronous baseline: SAME work, ON the actor's critical path.
   def bump_sync
     @count += 1
-    reply.streams(mirror_stream).also_replace(SlowTotalsComponent.new(value: @count * 2))
+    reply.streams(mirror_stream).also(SlowTotalsComponent.new(value: @count * 2))
   end
 
   # reply.defer with NO prior verb: the token rolls forward via a tiny
-  # token-only stream (Response.streams), NOT a full synchronous self-render —
+  # token-only stream (reply.streams), NOT a full synchronous self-render —
   # so deferring your own subject doesn't pay the acting component's render on
   # the request thread (issue #165 review fix).
   def bump_bare

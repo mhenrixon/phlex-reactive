@@ -47,7 +47,7 @@ module Phlex
 
         # Subject-bound reply builder — the preferred way to control an action's
         # reply. `reply.replace.flash(:error, msg)` reads cleaner than
-        # `Phlex::Reactive::Response.replace(self).flash(:error, msg)`: the
+        # `reply.replace.flash(:error, msg)`: the
         # component is the implicit subject (no `self` to thread) and there's no
         # constant to qualify (reply is a method, so a namespaced component needs
         # no `Response = …` alias). It returns the same immutable Response the

@@ -2,14 +2,17 @@
 
 require "rails_helper"
 
-# Component#reply returns a subject-bound facade over Response, so an action body
-# writes `reply.replace.flash(:error, msg)` instead of
-# `Phlex::Reactive::Response.replace(self).flash(:error, msg)` — no constant to
-# qualify (it's a method, resolved on the component) and no `self` to thread.
+# Component#reply returns a subject-bound facade that builds the Response value
+# object the endpoint reads, so an action body writes `reply.replace.flash(:error,
+# msg)` — no constant to qualify (it's a method, resolved on the component) and no
+# `self` to thread. Issue #182 made reply the ONLY door (the Response.* class
+# verbs are removed), so the builder logic lives on Response as private-by-name
+# `build_*` class methods that Reply calls.
 #
-# Reply is sugar: every verb returns the SAME frozen Response the endpoint reads,
-# so these specs lock parity with Response.* on the observable surface (streams,
-# redirect?, render_self?) rather than via == (Response has no value equality).
+# Reply is the ONE door (issue #182): every verb returns a frozen Response the
+# endpoint reads. These specs lock the observable surface (streams, redirect?,
+# render_self?) directly — the former Response.* class verbs are removed, so
+# there is nothing to mirror against, only the behavior to assert.
 RSpec.describe Phlex::Reactive::Reply do
   let(:counter) { CounterComponent.new(count: 0) }
   let(:todo) { Todo.create!(title: "t", done: false) }
@@ -43,56 +46,55 @@ RSpec.describe Phlex::Reactive::Reply do
     end
   end
 
-  describe "verbs return a real Response with the same surface as Response.*" do
-    it "replace mirrors Response.replace(self)" do
+  describe "verbs return a real Response with the expected surface" do
+    it "replace re-renders self in place (render_self, plain swap)" do
       via_reply = counter.reply.replace
-      via_class = Phlex::Reactive::Response.replace(CounterComponent.new(count: 0))
 
       expect(via_reply).to be_a(Phlex::Reactive::Response)
-      expect(via_reply.render_self?).to eq(via_class.render_self?)
+      expect(via_reply.render_self?).to be(true)
       expect(via_reply.streams.first).to include('action="replace"')
       expect(via_reply.streams.first).not_to include("method=") # plain swap by default
     end
 
-    it "replace(morph: true) mirrors Response.replace(self, morph: true)" do
+    it "replace(morph: true) emits a morph swap" do
       stream = counter.reply.replace(morph: true).streams.first
       expect(stream).to include('action="replace"')
       expect(stream).to include('method="morph"')
     end
 
-    it "morph mirrors Response.morph(self)" do
+    it "morph emits a morph swap" do
       stream = counter.reply.morph.streams.first
       expect(stream).to include('action="replace"')
       expect(stream).to include('method="morph"')
     end
 
-    it "update mirrors Response.update(self)" do
+    it "update emits a plain update stream" do
       stream = counter.reply.update.streams.first
       expect(stream).to include('action="update"')
       expect(stream).not_to include("method=") # plain update by default
     end
 
-    it "update(morph: true) mirrors Response.update(self, morph: true) — issue #113" do
+    it "update(morph: true) emits a morph update — issue #113" do
       stream = counter.reply.update(morph: true).streams.first
       expect(stream).to include('action="update"')
       expect(stream).to include('method="morph"')
     end
 
-    it "remove mirrors Response.remove(self) — render_self false" do
+    it "remove drops self, render_self false" do
       response = item.reply.remove
       expect(response.render_self?).to be(false)
       expect(response.streams.first).to include('action="remove"')
       expect(response.streams.first).to include(%(target="#{ActionView::RecordIdentifier.dom_id(todo)}"))
     end
 
-    it "redirect mirrors Response.redirect(url) — render_self false, carries url" do
+    it "redirect carries the url, render_self false" do
       response = counter.reply.redirect("/x")
       expect(response.redirect?).to be(true)
       expect(response.redirect_url).to eq("/x")
       expect(response.render_self?).to be(false)
     end
 
-    it "with mirrors Response.with(*streams)" do
+    it "with emits raw streams verbatim" do
       response = counter.reply.with("<turbo-stream></turbo-stream>")
       expect(response).to be_a(Phlex::Reactive::Response)
       expect(response.streams).to eq(["<turbo-stream></turbo-stream>"])
@@ -101,7 +103,7 @@ RSpec.describe Phlex::Reactive::Reply do
     # Issue #30: reply.streams(*) is the bound form of Response.streams(self, *) —
     # emit exactly these streams, refresh the token via a tiny stream (NOT a full
     # self replace), so per-field/partial updates don't clobber live inputs.
-    it "streams mirrors Response.streams(self, *streams) — render_self false, component bound" do
+    it "streams emits partial streams, render_self false, component bound" do
       response = counter.reply.streams(item.to_stream_update)
       expect(response).to be_a(Phlex::Reactive::Response)
       expect(response.render_self?).to be(false)
@@ -118,8 +120,8 @@ RSpec.describe Phlex::Reactive::Reply do
       expect(response.streams.last).to include("hi")
     end
 
-    it "reply.replace.also_update appends a companion stream" do
-      response = counter.reply.replace.also_update("page_heading", html: "New")
+    it "reply.replace.also appends a companion stream" do
+      response = counter.reply.replace.also(page_heading: "New")
       expect(response.streams.size).to eq(2)
       expect(response.streams.last).to include('target="page_heading"')
     end

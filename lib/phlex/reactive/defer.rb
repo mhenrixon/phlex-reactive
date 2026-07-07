@@ -309,7 +309,7 @@ data-reactive-defer-pending="true" aria-busy="true">#{inner}</div>)
         end
 
         # Resolve the segment's placeholder to inner HTML — nil means "no
-        # shell". Same content contract as flash/also_update: a Phlex component
+        # shell". Same content contract as flash/also: a Phlex component
         # renders through the configured renderer (auto-escaped), a plain
         # String is DATA and gets escaped, an html_safe String is intentional
         # markup and passes verbatim (ERB::Util.html_escape's own contract).

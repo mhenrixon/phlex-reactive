@@ -194,35 +194,27 @@ RSpec.describe "Streamable view-context memoization (performance)" do
     end
   end
 
-  # Issue #113: the builder is used well beyond flashes (row-removal, count
-  # updates, also_update), so flash_builder → stream_builder and
-  # reset_flash_builder! → reset_stream_builder!. The old names stay as
-  # permanent aliases so the engine's to_prepare hook and app code keep working.
-  describe "stream_builder / reset_stream_builder! rename (issue #113)" do
+  # Issue #113 renamed flash_builder → stream_builder; issue #182 REMOVED the old
+  # flash_builder / reset_flash_builder! aliases entirely (they contradicted the
+  # clean-break rule). Each old name now raises a guided NoMethodError.
+  describe "stream_builder / reset_stream_builder!" do
     it "exposes stream_builder returning a Turbo::Streams::TagBuilder" do
       expect(Phlex::Reactive.stream_builder).to be_a(Turbo::Streams::TagBuilder)
     end
 
-    it "keeps flash_builder as a permanent alias for stream_builder" do
-      expect(Phlex::Reactive.flash_builder).to be(Phlex::Reactive.stream_builder)
+    it "raises a guided error for the removed flash_builder alias (issue #182)" do
+      expect { Phlex::Reactive.flash_builder }
+        .to raise_error(NoMethodError, /stream_builder/)
     end
 
-    it "responds to reset_stream_builder! and reset_flash_builder! (permanent alias)" do
-      expect(Phlex::Reactive).to respond_to(:reset_stream_builder!)
-      expect(Phlex::Reactive).to respond_to(:reset_flash_builder!)
+    it "raises a guided error for the removed reset_flash_builder! alias (issue #182)" do
+      expect { Phlex::Reactive.reset_flash_builder! }
+        .to raise_error(NoMethodError, /reset_stream_builder!/)
     end
 
     it "reset_stream_builder! rebuilds the memoized builder" do
       first = Phlex::Reactive.stream_builder
       Phlex::Reactive.reset_stream_builder!
-      expect(Phlex::Reactive.stream_builder).not_to be(first)
-    ensure
-      Phlex::Reactive.reset_stream_builder!
-    end
-
-    it "reset_flash_builder! (the alias) also rebuilds the memoized builder" do
-      first = Phlex::Reactive.stream_builder
-      Phlex::Reactive.reset_flash_builder!
       expect(Phlex::Reactive.stream_builder).not_to be(first)
     ensure
       Phlex::Reactive.reset_stream_builder!

@@ -264,7 +264,7 @@ module Views
 
                 def dismiss(id:)
                   current_user.notifications.find(id).destroy!
-                  reply.remove(:notifications, id)  # row + count + empty-state at 0
+                  reply.remove(id, from: :notifications)  # row + count + empty-state at 0
                 end
                 ```
 

@@ -241,7 +241,7 @@ module Views
               # Phlex::Reactive.action_path = "/_r/actions"                   # custom endpoint
               # Phlex::Reactive.verifier    = ActiveSupport::MessageVerifier.new(ENV["REACTIVE_KEY"])
               # Phlex::Reactive.flash_target = "flash"                         # DOM id reply…flash appends into
-              # Phlex::Reactive.flash_component = MyFlash                      # renders string flashes: new(level:, content:)
+              # Phlex::Reactive.flash_component = ->(level, content) { MyFlash.new(level:, content:) } # renders string flashes
               # Phlex::Reactive.error_flash  = ->(kind) { "Something went wrong (#{kind})." } # flash on endpoint failures
             RUBY
             DocsUI::Prose() do

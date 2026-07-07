@@ -6,6 +6,66 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: `reply` is the only door — the `Response` class verbs are removed (#182).**
+  `Phlex::Reactive::Response.replace(self)` / `.morph` / `.update` / `.remove` /
+  `.redirect` / `.with` / `.streams` (and the collection class methods) are removed
+  as public entry points — each raises a guided `ArgumentError` naming the
+  `reply.<verb>` rewrite. Actions return `reply.<verb>` (the subject-bound door added
+  earlier); the immutable `Response` value object and its instance chain
+  (`.flash`/`.stream`/`.also`/`.js`/`.defer`) are unchanged, so the endpoint reads it
+  exactly as before. One concept, one entry point.
+
+- **BREAKING: reactive-collection replies read as Ruby — `to:`/`from:` keywords (#182).**
+  The collection name moved from a leading Symbol to a keyword, and the `UNSET`
+  sentinel that overloaded `reply.remove` is gone (dispatch keys on `from:`'s
+  presence):
+
+  | Before (removed) | After |
+  |---|---|
+  | `reply.append(:items, item)` | `reply.append(item, to: :items)` |
+  | `reply.prepend(:items, item)` | `reply.prepend(item, to: :items)` |
+  | `reply.remove(:items, id)` | `reply.remove(id, from: :items)` |
+  | `reply.remove` (bare) | `reply.remove` — unchanged (removes self) |
+
+  A Symbol in the model position (the old shape) raises a guided rewrite.
+
+- **BREAKING: one flash contract — `flash_component` is a callable (#182).**
+  `Phlex::Reactive.flash_component` is now a lambda the app owns, so the gem no
+  longer guesses your component's kwargs (the old hardcoded `new(level:, content:)`
+  collided with real flash components):
+
+  ```ruby
+  # before: Phlex::Reactive.flash_component = MyFlash   (gem calls MyFlash.new(level:, content:))
+  # after:
+  Phlex::Reactive.flash_component = ->(level, content) { MyFlash.new(level:, message: content) }
+  ```
+
+  Assigning a Class raises a guided error printing the one-line lambda. The internal
+  flash builders (`flash_stream`/`flash_html`/`default_flash_html`) are now private.
+
+- **BREAKING: `also_update` / `also_replace` collapse into one `.also` (#182).**
+  The lying `html:` kwarg (it accepted components too) and the per-companion method
+  choice are gone:
+
+  ```ruby
+  # before
+  reply.replace.also_update("page_heading", html: @account.name)
+  reply.replace.also_replace(SummaryCard.new(account: @account), morph: true)
+  # after
+  reply.replace.also(page_heading: @account.name)                        # target => content
+  reply.replace.also(SummaryCard.new(account: @account), morph: true)    # a component at its own id
+  ```
+
+  String content is HTML-escaped, component content rendered — the escaping contract
+  is verbatim. `also_update`/`also_replace` raise guided rewrites.
+
+- **BREAKING: the `flash_builder` / `reset_flash_builder!` aliases are removed (#182).**
+  They were "permanent aliases" for `stream_builder` / `reset_stream_builder!` that
+  contradicted the clean-break rule. Each old name now raises a guided `NoMethodError`
+  naming the real method.
+
 ### Fixed
 
 - **A pending-state text swap no longer destroys a composite trigger's icon (#181).**

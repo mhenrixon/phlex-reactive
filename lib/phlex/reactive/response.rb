@@ -10,20 +10,54 @@ module Phlex
     # A Response governs ONLY the actor's HTTP reply. Cross-tab updates still go
     # through Streamable's broadcast_*_to(..., exclude: reactive_connection_id).
     #
-    #   Response.replace(self)                          # re-render in place (the default, explicit)
-    #   Response.replace(self).flash(:error, msg)       # surface a validation error
-    #   Response.replace(self).also_update("heading", html: @record.name)  # + a companion element
-    #   Response.remove(self)                           # drop the element (e.g. moderation queue)
-    #   Response.redirect(article_url(@article))        # slug changed -> Turbo.visit the new URL
-    #   Response.replace(self).stream(Totals.update(@order))  # multi-stream
+    # An action builds one through `reply` (issue #182 — the ONE door; the former
+    # Response.* class verbs are removed and raise a guided rewrite):
+    #
+    #   reply.replace                          # re-render in place (the default, explicit)
+    #   reply.replace.flash(:error, msg)       # surface a validation error
+    #   reply.replace.also(heading: @record.name)  # + a companion element by id
+    #   reply.remove                           # drop the element (e.g. moderation queue)
+    #   reply.redirect(article_url(@article))  # slug changed -> Turbo.visit the new URL
+    #   reply.replace.stream(Totals.update(@order))  # multi-stream
     class Response
       attr_reader :streams, :redirect_url, :token_component, :subject_component
+
+      # Issue #182: `reply` is the ONE documented door. Each former public class
+      # verb (Response.replace(self), …) is removed — it raises a guided
+      # ArgumentError naming the `reply.<verb>` rewrite. The builder BODIES live
+      # on as private `build_*` class methods (the Response value object stays the
+      # single place that knows how to construct itself); Reply calls them. The
+      # rewrite shown for a collection verb points at the keyword form (issue #182).
+      REMOVED_CLASS_VERBS = {
+        replace: "reply.replace",
+        morph: "reply.morph",
+        update: "reply.update",
+        remove: "reply.remove",
+        redirect: "reply.redirect(url)",
+        with: "reply.with(*streams)",
+        streams: "reply.streams(*streams)",
+        collection_append: "reply.append(model, to: :name)",
+        collection_prepend: "reply.prepend(model, to: :name)",
+        collection_remove: "reply.remove(model, from: :name)"
+      }.freeze
+
+      # rubocop:disable Style/ItBlockParameter -- `it` is illegal inside the
+      # define_singleton_method block (it takes ordinary |*, **| params), so the
+      # outer each_key must name its param explicitly.
+      REMOVED_CLASS_VERBS.each_key do |verb|
+        define_singleton_method(verb) do |*, **|
+          raise ArgumentError,
+            "Phlex::Reactive::Response.#{verb} was removed in issue #182 — " \
+            "return #{REMOVED_CLASS_VERBS[verb]} from the action (reply is the only door)"
+        end
+      end
+      # rubocop:enable Style/ItBlockParameter
 
       class << self
         # Re-render the component in place (explicit form of today's default).
         # `morph: true` morphs the subtree (preserves the focused input + caret)
-        # instead of an outerHTML swap — see .morph (issue #28).
-        def replace(component, morph: false)
+        # instead of an outerHTML swap — see .build_morph (issue #28).
+        def build_replace(component, morph: false)
           new(streams: [morph ? component.to_stream_morph : component.to_stream_replace],
             subject_component: component)
         end
@@ -34,27 +68,27 @@ module Phlex
         # per-field reactive editing (a "spreadsheet" grid where a debounced save
         # fires while the user is still typing/tabbing). The morphed root still
         # carries the fresh signed token, so the next action verifies.
-        def morph(component) = new(streams: [component.to_stream_morph], subject_component: component)
+        def build_morph(component) = new(streams: [component.to_stream_morph], subject_component: component)
 
         # Update only inner HTML (preserves the root element + its token attr).
         # `morph: true` morphs the inner HTML in place (issue #113) instead of
         # replacing it, so a cross-tab update keeps a peer's focus/caret.
-        def update(component, morph: false)
+        def build_update(component, morph: false)
           new(streams: [component.to_stream_update(morph:)], subject_component: component)
         end
 
         # Remove the component's element from the DOM. Uses the instance
         # to_stream_remove (the component already knows its own #id — no
         # class-builder reconstruction; works for record- and state-backed).
-        def remove(component) = new(streams: [component.to_stream_remove], render_self: false)
+        def build_remove(component) = new(streams: [component.to_stream_remove], render_self: false)
 
         # Client-side full navigation (Turbo.visit). Use when the current URL
         # is dead (slug rename) or the outcome belongs on another page. Pass a
         # *_url (the off-request render context has no request host for *_path).
-        def redirect(url) = new(redirect_url: url, render_self: false)
+        def build_redirect(url) = new(redirect_url: url, render_self: false)
 
         # Escape hatch / multi-stream root: zero or more raw turbo-stream strings.
-        def with(*strings) = new(streams: strings.flatten)
+        def build_with(*strings) = new(streams: strings.flatten)
 
         # --- Reactive collections (issue #35) ---
         # Add/remove a row in a declared reactive_collection, emitting the row
@@ -75,19 +109,19 @@ module Phlex
         # container owns the add/remove trigger, so the endpoint appends its inert
         # `reactive:token` stream (the same #30 machinery reply.streams uses) to roll
         # the token forward without re-rendering the rows.
-        def collection_append(component, name, model)
+        def build_collection_append(component, name, model)
           definition = collection_def!(component, name)
           new(streams: collection_add_streams(definition, component, model, :append),
             render_self: false, token_component: component)
         end
 
-        def collection_prepend(component, name, model)
+        def build_collection_prepend(component, name, model)
           definition = collection_def!(component, name)
           new(streams: collection_add_streams(definition, component, model, :prepend),
             render_self: false, token_component: component)
         end
 
-        def collection_remove(component, name, model)
+        def build_collection_remove(component, name, model)
           definition = collection_def!(component, name)
           new(streams: collection_remove_streams(definition, component, model),
             render_self: false, token_component: component)
@@ -162,11 +196,11 @@ module Phlex
         # spreadsheet-like grid where a debounced save re-streams only a total
         # cell and the user is still typing in a sibling field.
         #
-        #   Response.streams(self, Totals.update(@invoice))   # update only the totals
+        #   reply.streams(Totals.update(@invoice))   # update only the totals
         #
         # render_self is false (we do NOT inject the full replace); the token is
         # refreshed by the bound component's token stream instead.
-        def streams(component, *strings)
+        def build_streams(component, *strings)
           new(streams: strings.flatten, render_self: false, token_component: component)
         end
 
@@ -194,9 +228,11 @@ module Phlex
           # so dismiss_after has nowhere to hang — it wraps only string content.
           return render_html(content) if content.is_a?(::Phlex::SGML)
 
-          component_class = Phlex::Reactive.flash_component
-          if component_class
-            html = render_html(component_class.new(level:, content:))
+          builder = Phlex::Reactive.flash_component
+          if builder
+            # The app-owned callable maps (level, content) to its own component —
+            # the gem no longer guesses kwargs (issue #182).
+            html = render_html(builder.call(level, content))
             return dismiss_after ? wrap_dismiss(html, dismiss_after) : html
           end
 
@@ -225,6 +261,13 @@ module Phlex
 data-reactive-flash-level="#{level_attr}"#{dismiss_attr(dismiss_after)}>#{body}</div>).html_safe
         end
 
+        # Issue #182: flash rendering is an INTERNAL concern — the endpoint's
+        # error_flash path and Response#flash reach these via send. They are not
+        # part of the public reply surface. (Inside `class << self`, plain `private`
+        # marks these singleton methods private — private_class_method is for the
+        # class body, not here.)
+        private :flash_stream, :flash_html, :default_flash_html
+
         # The self-dismiss attribute, or "" when off. The value is forced through
         # to_i so a String/float (or an injection attempt) becomes a plain integer
         # — the client's document-level handler reads it as a timeout in ms.
@@ -242,7 +285,7 @@ data-reactive-flash-level="#{level_attr}"#{dismiss_attr(dismiss_after)}>#{body}<
         end
 
         # Build a turbo-stream that updates an arbitrary target id with `content`
-        # (a Phlex component instance or an HTML string). Used by #also_update to
+        # (a Phlex component instance or an HTML string). Used by #also to
         # re-render a companion element that isn't itself a Streamable component.
         def update_stream(target, content)
           Phlex::Reactive.stream_builder.update(target, html: render_html(content))
@@ -405,30 +448,55 @@ data-reactive-ops="#{ERB::Util.html_escape(json)}"></turbo-stream>).html_safe
       # container, so it works for reply AND broadcast flashes (issue #100). It
       # wraps only STRING content; a verbatim Phlex component owns its lifecycle.
       def flash(level, content, target: Phlex::Reactive.flash_target, dismiss_after: nil)
-        stream(self.class.flash_stream(level, content, target:, dismiss_after:))
+        stream(self.class.send(:flash_stream, level, content, target:, dismiss_after:))
       end
 
-      # Also re-render a COMPANION element alongside self — a page heading, a
-      # summary card, a badge that recomputes from the saved value (issue #25).
-      # `target` is the sibling element's DOM id. `html` is either:
-      #   * a plain String — HTML-ESCAPED by Turbo, so a model value is safe:
-      #       Response.replace(self).also_update("page_heading", html: @record.name)
-      #   * a Phlex component — rendered + auto-escaped through the renderer (use
-      #     this when the companion has its own markup), or an `html_safe` String
-      #     for intentional raw HTML.
-      # Returns a NEW Response (immutable). The common "re-render self + N
-      # siblings" case no longer needs raw turbo_stream_builder.
-      def also_update(target, html:)
-        stream(self.class.update_stream(target, html))
+      # Also re-render COMPANION elements alongside self (issue #182 — one door,
+      # replacing also_update + also_replace). Two argument shapes:
+      #
+      #   * target => content pairs — updates each element BY ID. Content is a
+      #     plain String (HTML-ESCAPED by Turbo, so a model value is safe), a Phlex
+      #     component (rendered + auto-escaped), or an html_safe String for raw HTML.
+      #     Written brace-less as keywords or as an explicit Hash:
+      #       reply.replace.also(page_heading: @record.name, badge: Badge.new(...))
+      #       reply.replace.also("dom-id-with-dashes" => @record.name)
+      #   * a Streamable COMPONENT (positional) — replaced at its OWN #id;
+      #     `morph: true` morphs it in place (issue #28) when it holds focusable
+      #     inputs to preserve:
+      #       reply.replace.also(SummaryCard.new(order: @order), morph: true)
+      #
+      # Returns a NEW Response (immutable). `companion` is EITHER a positional
+      # component OR target=>content pairs — never both. The brace-less keyword
+      # form lands in **targets; an explicit Hash lands in `companion`. `morph:` is
+      # reserved for the component form.
+      def also(companion = :__none, morph: false, **targets)
+        if companion != :__none && !targets.empty?
+          raise ArgumentError, "reply.also takes EITHER a component OR target => content pairs, not both"
+        end
+
+        case companion
+        when :__none
+          also_targets(targets)
+        when ::Phlex::SGML
+          stream(morph ? companion.to_stream_morph : companion.to_stream_replace)
+        when Hash
+          also_targets(companion)
+        else
+          raise ArgumentError,
+            "reply.also expects target => content pairs or a Streamable component, got #{companion.class}"
+        end
       end
 
-      # Like #also_update, but renders ANOTHER Streamable component and replaces
-      # it by its own #id — for a companion that is itself a component.
-      #   Response.replace(self).also_replace(SummaryCard.new(order: @order))
-      # `morph: true` morphs the companion in place (issue #28) — use it when the
-      # companion also holds focusable inputs that must survive the re-render.
-      def also_replace(component, morph: false)
-        stream(morph ? component.to_stream_morph : component.to_stream_replace)
+      # Issue #182: also_update / also_replace collapsed into #also. Guided errors
+      # naming the rewrite (the html: kwarg lied — it accepted components too).
+      def also_update(target, **)
+        raise ArgumentError,
+          "also_update was removed in issue #182 — use also(#{target.inspect} => content)"
+      end
+
+      def also_replace(*, **)
+        raise ArgumentError,
+          "also_replace was removed in issue #182 — use also(component, morph: …)"
       end
 
       def redirect? = !@redirect_url.nil?
@@ -447,6 +515,14 @@ data-reactive-ops="#{ERB::Util.html_escape(json)}"></turbo-stream>).html_safe
       # document-scoped unless the caller passes target: explicitly.
       def default_js_target
         (@subject_component || @token_component)&.id
+      end
+
+      # Build one update stream per { target_id => content } pair (issue #182). An
+      # empty call is a dead reply.also — fail loudly rather than return unchanged.
+      def also_targets(targets)
+        raise ArgumentError, "reply.also needs target => content pairs (or a component) — got nothing" if targets.empty?
+
+        stream(*targets.map { |target, content| self.class.update_stream(target, content) })
       end
     end
   end

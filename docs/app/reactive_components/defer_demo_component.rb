@@ -10,7 +10,7 @@
 #   * Log set (skeleton)  — placeholder: true replaces the totals with the
 #     component's deferred_placeholder shell immediately.
 #   * Log set (sync)      — the deliberate ANTI-example: the SAME rollup
-#     rendered synchronously via also_replace, so the whole reply (set count
+#     rendered synchronously via also, so the whole reply (set count
 #     included) freezes for the 400 ms defer takes off the critical path.
 class DeferDemoComponent < Phlex::HTML
   include Phlex::Reactive::Streamable
@@ -43,7 +43,7 @@ class DeferDemoComponent < Phlex::HTML
   # The anti-example: the same rollup ON the critical path.
   def log_set_sync
     @sets += 1
-    reply.streams(sets_stream).also_replace(SessionTotalsComponent.new(sets: @sets))
+    reply.streams(sets_stream).also(SessionTotalsComponent.new(sets: @sets))
   end
 
   def view_template
