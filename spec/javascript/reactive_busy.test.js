@@ -1,21 +1,25 @@
-// Unit tests for declarative loading states on reactive triggers (issue #99).
+// Unit tests for the declarative pending-state vocabulary on reactive triggers
+// (issue #181 — busy:, unifying the former loading:/disable_with:).
 //
-// `on(:x, loading: { … })` / `on(:x, disable_with: "…")` emit
-// data-reactive-loading-param (JSON) that Stimulus surfaces as
-// event.params.loading. The controller, when a request is ENQUEUED (covering the
-// queue wait, not just the fetch):
+// `on(:x, busy: { … })` / `on(:x, busy: "…")` emit data-reactive-busy-param
+// (JSON) that Stimulus surfaces as event.params.busy. The controller, when a
+// request is ENQUEUED (covering the queue wait, not just the fetch):
 //
 //   * marks the TRIGGER with data-reactive-busy="<action>" and the root with the
 //     SAME action token in a SPACE-SEPARATED set (two queued actions never
 //     clobber), plus aria-busy via a PENDING COUNTER (removed only at zero),
-//   * applies the loading class, disables the trigger, swaps its text — but the
-//     disable + text swap happen at ENQUEUE, never during a debounce quiet
-//     period (a debounced input's element must not be disabled mid-typing),
+//   * applies the busy hint's cosmetic ops (add_class/remove_class/toggle_class/
+//     hide/show), disables the trigger, swaps its INNERHTML — but the disable +
+//     swap happen at ENQUEUE, never during a debounce quiet period (a debounced
+//     input's element must not be disabled mid-typing),
 //   * scopes busy_on elements: data-reactive-busy-on="save" gets
 //     data-reactive-busy toggled only while `save` is in flight,
 //   * on settle (success OR failure) restores the trigger, GUARDED — skipped if
-//     the trigger disconnected, and the text is not clobbered if a morph rendered
-//     a new server label (textContent no longer equals the disable_with text).
+//     the trigger disconnected, and the label is not clobbered if a morph
+//     rendered a new server label (innerHTML no longer equals the swapped text).
+//
+// text swaps INNERHTML, not textContent: a composite trigger (icon + label span)
+// must keep its icon through the swap — the child-preservation test proves it.
 //
 // The trigger is event.currentTarget (a <button><span> click's target is the
 // span, which carries no params) — captured in dispatch and threaded through.
@@ -37,15 +41,18 @@ beforeAll(async () => {
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // A fake element with a classList over a Set, a token-store for attributes, a
-// `disabled` flag, and `textContent`. `isConnected` defaults true. Records
-// blur/input listeners so a debounce flush can be driven.
-function makeEl({ owner = null } = {}) {
+// `disabled` flag, and `innerHTML`. `isConnected` defaults true. Records
+// blur/input listeners so a debounce flush can be driven. innerHTML is a plain
+// string here (the controller only reads/writes it as an opaque markup blob), so
+// setting it to "Saving…" and back exactly models the DOM's byte round trip —
+// including the composite-trigger case where the original holds child markup.
+function makeEl({ owner = null, innerHTML = "" } = {}) {
   const listeners = {}
   const attrs = {}
   const el = {
     isConnected: true,
     disabled: false,
-    textContent: "",
+    innerHTML,
     classes: new Set(),
     closest: () => owner,
     getAttribute: (n) => (n in attrs ? attrs[n] : null),
@@ -122,15 +129,16 @@ function buildController(responses, { rootMatches = {}, hold = null } = {}) {
   }
   globalThis.document = { querySelector: () => null, dispatchEvent: () => {} }
   globalThis.window = { Turbo: { renderStreamMessage: () => {} } }
+  globalThis.queueMicrotask ??= (fn) => Promise.resolve().then(fn)
   return { controller, calls: () => calls }
 }
 
-// Fire a dispatch with a loading hint. `trigger` is event.currentTarget.
-function fireDispatch(controller, trigger, loading, extra = {}) {
+// Fire a dispatch with a busy hint. `trigger` is event.currentTarget.
+function fireDispatch(controller, trigger, busy, extra = {}) {
   const event = {
     target: trigger,
     currentTarget: trigger,
-    params: { action: "save", params: "{}", loading, ...extra },
+    params: { action: "save", params: "{}", busy, ...extra },
     defaultPrevented: false,
     preventDefault() {
       this.defaultPrevented = true
@@ -146,9 +154,9 @@ test("the trigger is event.currentTarget, not event.target (a nested span click)
   const button = makeEl()
   const span = makeEl() // the inner <span> the click actually landed on
   const event = {
-    target: span, // the span carries no loading/params
+    target: span, // the span carries no busy/params
     currentTarget: button, // on() is spread onto the button
-    params: { action: "save", params: "{}", loading: { class: ["busy"] } },
+    params: { action: "save", params: "{}", busy: { add_class: ["busy"] } },
     defaultPrevented: false,
     preventDefault() {
       this.defaultPrevented = true
@@ -194,31 +202,80 @@ test("sets aria-busy on the root during the pending window", async () => {
   expect(root.hasAttribute("aria-busy")).toBe(false)
 })
 
-test("applies the loading class + disable + text swap on enqueue", async () => {
+test("applies add_class + disable + text swap on enqueue", async () => {
   let release
   const hold = new Promise((r) => (release = r))
   const { controller } = buildController([{}], { hold })
-  const trigger = makeEl()
-  trigger.textContent = "Save"
+  const trigger = makeEl({ innerHTML: "Save" })
 
-  const { promise } = fireDispatch(controller, trigger, { disable: true, class: ["opacity-50"], text: "Saving…" })
+  const { promise } = fireDispatch(controller, trigger, { disable: true, add_class: ["opacity-50"], text: "Saving…" })
   expect(trigger.disabled).toBe(true)
   expect(trigger.classes.has("opacity-50")).toBe(true)
-  expect(trigger.textContent).toBe("Saving…")
+  expect(trigger.innerHTML).toBe("Saving…")
   release()
   await promise
 })
 
-test("a to: selector applies the loading class to owned matches, not the trigger", async () => {
+test("the String shorthand disables + swaps the label (busy: 'Saving…')", async () => {
+  // The Ruby side expands "Saving…" to { disable: true, text: … }; the client
+  // receives the expanded hash. This mirrors that wire form.
+  let release
+  const hold = new Promise((r) => (release = r))
+  const { controller } = buildController([{}], { hold })
+  const trigger = makeEl({ innerHTML: "Save" })
+
+  const { promise } = fireDispatch(controller, trigger, { disable: true, text: "Saving…" })
+  expect(trigger.disabled).toBe(true)
+  expect(trigger.innerHTML).toBe("Saving…")
+  release()
+  await promise
+})
+
+test("supports remove_class, toggle_class, hide and show", async () => {
+  const { controller } = buildController([{}])
+  const trigger = makeEl()
+  trigger.classes.add("idle")
+
+  const { promise } = fireDispatch(controller, trigger, {
+    remove_class: ["idle"],
+    toggle_class: ["spin"],
+    hide: true,
+  })
+  expect(trigger.classes.has("idle")).toBe(false)
+  expect(trigger.classes.has("spin")).toBe(true)
+  expect(trigger.hidden).toBe(true)
+  await promise
+  // All revert on settle.
+  expect(trigger.classes.has("idle")).toBe(true)
+  expect(trigger.classes.has("spin")).toBe(false)
+  expect(trigger.hidden).toBe(false)
+})
+
+test("a to: selector applies the class ops to owned matches, not the trigger", async () => {
   const spinner = makeEl()
   spinner.closest = () => root
   const { controller } = buildController([{}], { rootMatches: { ".spinner": [spinner] } })
   const trigger = makeEl()
 
-  const { promise } = fireDispatch(controller, trigger, { class: ["on"], to: ".spinner" })
+  const { promise } = fireDispatch(controller, trigger, { add_class: ["on"], to: ".spinner" })
   expect(spinner.classes.has("on")).toBe(true)
   expect(trigger.classes.has("on")).toBe(false)
   await promise
+})
+
+// --- composite trigger (innerHTML preserves child markup) -------------------
+
+test("text swap preserves a composite trigger's markup (icon + label round-trip)", async () => {
+  const { controller } = buildController([{}])
+  // A button with an icon AND a label — the exact case textContent would flatten.
+  const trigger = makeEl({ innerHTML: '<svg class="icon"></svg> Save' })
+
+  const { promise } = fireDispatch(controller, trigger, { disable: true, text: "Saving…" })
+  // During flight the label is swapped wholesale (the hint replaces the content).
+  expect(trigger.innerHTML).toBe("Saving…")
+  await promise
+  // On settle the ORIGINAL markup — icon included — is restored byte-for-byte.
+  expect(trigger.innerHTML).toBe('<svg class="icon"></svg> Save')
 })
 
 // --- busy_on scoping --------------------------------------------------------
@@ -258,22 +315,20 @@ test("busy_on element for a DIFFERENT action is not marked", async () => {
 
 // --- restore on settle (success) --------------------------------------------
 
-test("restores disabled + text on success settle", async () => {
+test("restores disabled + label on success settle", async () => {
   const { controller } = buildController([{}])
-  const trigger = makeEl()
-  trigger.textContent = "Save"
+  const trigger = makeEl({ innerHTML: "Save" })
 
   const { promise } = fireDispatch(controller, trigger, { disable: true, text: "Saving…" })
   await promise
   expect(trigger.disabled).toBe(false)
-  expect(trigger.textContent).toBe("Save")
+  expect(trigger.innerHTML).toBe("Save")
   expect(trigger.hasAttribute("data-reactive-busy")).toBe(false)
 })
 
-test("restores disabled + text on failure settle", async () => {
+test("restores disabled + label on failure settle", async () => {
   const { controller } = buildController([{ ok: false, status: 500 }])
-  const trigger = makeEl()
-  trigger.textContent = "Save"
+  const trigger = makeEl({ innerHTML: "Save" })
   const originalError = console.error
   console.error = () => {}
   try {
@@ -283,14 +338,14 @@ test("restores disabled + text on failure settle", async () => {
     console.error = originalError
   }
   expect(trigger.disabled).toBe(false)
-  expect(trigger.textContent).toBe("Save")
+  expect(trigger.innerHTML).toBe("Save")
 })
 
-test("removes the loading class on settle", async () => {
+test("removes an add_class op on settle", async () => {
   const { controller } = buildController([{}])
   const trigger = makeEl()
 
-  const { promise } = fireDispatch(controller, trigger, { class: ["opacity-50"] })
+  const { promise } = fireDispatch(controller, trigger, { add_class: ["opacity-50"] })
   await promise
   expect(trigger.classes.has("opacity-50")).toBe(false)
 })
@@ -299,27 +354,25 @@ test("removes the loading class on settle", async () => {
 
 test("restore is SKIPPED when the trigger left the DOM (guarded by isConnected)", async () => {
   const { controller } = buildController([{}])
-  const trigger = makeEl()
-  trigger.textContent = "Save"
+  const trigger = makeEl({ innerHTML: "Save" })
 
   const { promise } = fireDispatch(controller, trigger, { disable: true, text: "Saving…" })
   trigger.isConnected = false // a plain replace detached the trigger
   await promise
-  // No restore against a detached node — text stays as swapped (the node is gone).
-  expect(trigger.textContent).toBe("Saving…")
+  // No restore against a detached node — label stays as swapped (the node is gone).
+  expect(trigger.innerHTML).toBe("Saving…")
 })
 
-test("does NOT clobber a server-rendered new label (textContent changed by the morph)", async () => {
+test("does NOT clobber a server-rendered new label (innerHTML changed by the morph)", async () => {
   const { controller } = buildController([{}])
-  const trigger = makeEl()
-  trigger.textContent = "Save"
+  const trigger = makeEl({ innerHTML: "Save" })
 
   const { promise } = fireDispatch(controller, trigger, { disable: true, text: "Saving…" })
   // A morph re-rendered the trigger with a fresh label before the settle lands.
-  trigger.textContent = "Saved ✓"
+  trigger.innerHTML = "Saved ✓"
   await promise
   // The restore must NOT overwrite the server's new label with the old "Save".
-  expect(trigger.textContent).toBe("Saved ✓")
+  expect(trigger.innerHTML).toBe("Saved ✓")
   // The disabled flag is still restored (it's the client's, not the server's).
   expect(trigger.disabled).toBe(false)
 })
@@ -353,6 +406,7 @@ test("aria-busy survives A's settle while B is still queued (pending counter)", 
   }
   globalThis.document = { querySelector: () => null, dispatchEvent: () => {} }
   globalThis.window = { Turbo: { renderStreamMessage: () => {} } }
+  globalThis.queueMicrotask ??= (fn) => Promise.resolve().then(fn)
 
   const triggerA = makeEl()
   const triggerB = makeEl()
@@ -411,6 +465,26 @@ test("two different queued actions keep both tokens in the space-separated set",
   await controller.queue
 })
 
+// --- overlapping text swaps restore the TRUE original (refcounted snapshot) --
+
+test("an overlapping text swap restores the true pre-busy label, not the swapped one", async () => {
+  let release
+  const hold = new Promise((r) => (release = r))
+  const { controller } = buildController([{}, {}], { hold })
+  const trigger = makeEl({ innerHTML: "Save" })
+
+  // Two overlapping enqueues on the SAME trigger. The second must NOT snapshot
+  // the already-swapped "Saving…" as the original.
+  fireDispatch(controller, trigger, { disable: true, text: "Saving…" })
+  fireDispatch(controller, trigger, { disable: true, text: "Saving…" })
+  expect(trigger.innerHTML).toBe("Saving…")
+
+  release()
+  await controller.queue
+  // Both settled → the TRUE original label is restored.
+  expect(trigger.innerHTML).toBe("Save")
+})
+
 // --- debounce: disable only at flush, not during the quiet period -----------
 
 test("a debounced trigger is NOT disabled during the quiet period, only at flush", async () => {
@@ -421,7 +495,6 @@ test("a debounced trigger is NOT disabled during the quiet period, only at flush
   const hold = new Promise((r) => (release = r))
   const { controller } = buildController([{}], { hold })
   const input = makeEl()
-  input.textContent = ""
 
   // Fire a debounced dispatch; the disable must NOT apply yet (still typing) —
   // the debounced input's element must not be disabled during the quiet period.
@@ -437,16 +510,38 @@ test("a debounced trigger is NOT disabled during the quiet period, only at flush
   await controller.queue
 })
 
-// --- always-on busy vocabulary (no loading hint needed) ---------------------
+// --- deploy-overlap read shim (legacy data-reactive-loading-param) ----------
 
-test("the busy vocabulary is ALWAYS-ON — a bare on() (no loading hint) still marks busy", async () => {
+test("reads a legacy loading param (deploy overlap) and remaps class: to add_class:", async () => {
+  const { controller } = buildController([{}])
+  const trigger = makeEl()
+  // A page rendered by the PREVIOUS gem emits `loading`, not `busy`, and its
+  // class-op key is `class:` — the shim remaps it to add_class:.
+  const event = {
+    target: trigger,
+    currentTarget: trigger,
+    params: { action: "save", params: "{}", loading: { class: ["busy"], disable: true } },
+    defaultPrevented: false,
+    preventDefault() {
+      this.defaultPrevented = true
+    },
+  }
+  controller.dispatch(event)
+  expect(trigger.classes.has("busy")).toBe(true)
+  expect(trigger.disabled).toBe(true)
+  await controller.queue
+})
+
+// --- always-on busy vocabulary (no busy hint needed) ------------------------
+
+test("the busy vocabulary is ALWAYS-ON — a bare on() (no busy hint) still marks busy", async () => {
   let release
   const hold = new Promise((r) => (release = r))
   const { controller } = buildController([{}], { hold })
   const trigger = makeEl()
 
-  // No loading hint at all — the always-on data-reactive-busy/aria-busy vocab
-  // still fires so an app styles a spinner with pure CSS and zero Ruby.
+  // No busy hint at all — the always-on data-reactive-busy/aria-busy vocab still
+  // fires so an app styles a spinner with pure CSS and zero Ruby.
   const { promise } = fireDispatch(controller, trigger, undefined)
   expect(trigger.getAttribute("data-reactive-busy")).toBe("save")
   expect(root.getAttribute("data-reactive-busy")).toBe("save")

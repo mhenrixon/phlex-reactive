@@ -6,10 +6,10 @@ module Views
       class ExampleLoadingStates < DocsUI::Page
         title 'Example: loading states'
         eyebrow 'Examples'
-        description 'Add Livewire-style loading states to reactive Phlex actions in Rails with disable_with, busy_on, and aria-busy CSS hooks that dedupe double-submits'
+        description 'Add Livewire-style loading states to reactive Phlex actions in Rails with busy:, busy_on, and aria-busy CSS hooks that dedupe double-submits'
 
         def lead
-          'Declarative pending affordances — `disable_with:` swaps a button label ' \
+          'Declarative pending affordances — `busy:` swaps a button label ' \
             'and disables it in flight, `busy_on` reveals a scoped spinner, and the ' \
             'always-on `aria-busy` / `data-reactive-busy` hooks let you style the ' \
             'wait with pure CSS. No Stimulus, no bespoke JavaScript.'
@@ -42,12 +42,12 @@ module Views
         end
 
         def disable_with
-          DocsUI::Section('disable_with: — swap the label, disable in flight') do
+          DocsUI::Section('busy: — swap the label, disable in flight') do
             md <<~MD
-              `on(:save, disable_with: "Saving…")` swaps the button's text and
+              `on(:save, busy: "Saving…")` swaps the button's text and
               disables it the instant the request is enqueued, reverting when the
-              round trip settles. It's the shorthand for
-              `loading: { disable: true, text: "Saving…" }` — Livewire's
+              round trip settles. The String is shorthand for
+              `busy: { disable: true, text: "Saving…" }` — Livewire's
               `wire:loading` + `phx-disable-with` without a Stimulus controller.
             MD
           end
@@ -73,7 +73,7 @@ module Views
               count still advances by **one**. A disabled button fires no further
               clicks, so the second press lands on a dead control and never
               enqueues a second POST. The client queue serializes requests per
-              component; `disable_with:` is what dedupes them.
+              component; `busy:` is what dedupes them.
             MD
           end
         end

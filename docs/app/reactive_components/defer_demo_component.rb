@@ -50,11 +50,11 @@ class DeferDemoComponent < Phlex::HTML
     pending_css
     div(**reactive_root(class: 'flex flex-col gap-4')) do
       div(class: 'flex flex-wrap items-center gap-3') do
-        button(**mix(on(:log_set, disable_with: 'Logging…'),
+        button(**mix(on(:log_set, busy: 'Logging…'),
                      class: 'btn btn-sm btn-primary', data: { testid: 'log-set' })) { 'Log set' }
-        button(**mix(on(:log_set_skeleton, disable_with: 'Logging…'),
+        button(**mix(on(:log_set_skeleton, busy: 'Logging…'),
                      class: 'btn btn-sm', data: { testid: 'log-set-skeleton' })) { 'Log set (skeleton)' }
-        button(**mix(on(:log_set_sync, disable_with: 'Logging…'),
+        button(**mix(on(:log_set_sync, busy: 'Logging…'),
                      class: 'btn btn-sm btn-ghost', data: { testid: 'log-set-sync' })) { 'Log set (sync)' }
         span(class: 'text-sm opacity-70') do
           plain 'Sets: '

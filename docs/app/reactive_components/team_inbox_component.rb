@@ -5,7 +5,7 @@
 #   * reactive_collection rows (archive/mark-read append/remove + count + empty);
 #   * an optimistic: archive that hides the row in the same gesture, reverting if
 #     the server denies (a "locked" message);
-#   * disable_with: guarding the archive button against a double-click;
+#   * busy: guarding the archive button against a double-click;
 #   * cross-tab broadcast_*_to so a teammate's tab stays in sync;
 #   * an on_client kebab menu on each row (pure client op, zero round trips);
 #   * error_flash + a self-dismissing dismiss_after: toast on the reply.
@@ -97,7 +97,7 @@ class TeamInboxComponent < Phlex::HTML
         span(id: 'inbox-count', class: 'badge badge-neutral badge-sm',
              data: { testid: 'inbox-count' }) { InboxMessage.count.to_s }
       end
-      button(**mix(on(:simulate_incoming, disable_with: '…'),
+      button(**mix(on(:simulate_incoming, busy: '…'),
                    class: 'btn btn-sm btn-primary', data: { testid: 'simulate-incoming' })) do
         'Simulate incoming'
       end

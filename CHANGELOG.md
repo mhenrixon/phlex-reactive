@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A pending-state text swap no longer destroys a composite trigger's icon (#181).**
+  The former `disable_with:`/`loading:` text swap wrote `trigger.textContent`, which
+  **flattens every child node** — a `<button><svg/> Save</button>` lost its icon the
+  instant the request enqueued, and it never came back on restore. `busy:`'s swap now
+  reads and restores `innerHTML`, so an icon-plus-label trigger round-trips intact.
+  Covered by a new composite-trigger browser assertion and a JS child-preservation
+  unit test.
+
 - **`exclude:`/`visible_to:` now actually reach pgbus — actor-echo suppression works over SSE (#187).**
   `broadcast_*_to`/`broadcast_*_to_each` passed `exclude:`/`visible_to:` as keyword
   arguments to `Turbo::StreamsChannel.broadcast_*_to`, but turbo-rails swallows
@@ -33,6 +41,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   transport, not a required one.
 
 ### Changed
+
+- **BREAKING: ONE pending-state vocabulary — `busy:` replaces `loading:` / `disable_with:` (#181).**
+  A trigger's declarative pending affordance is now a single `on(…, busy:)` kwarg
+  that shares `optimistic:`'s key vocabulary and normalizer — the only difference
+  is the lifecycle (`busy:` reverts on **settle**, `optimistic:` on **failure**).
+  `busy:` takes a **String shorthand** (`busy: "Saving…"` ≡ `{ disable: true, text:
+  "Saving…" }`) or a **Hash** with the same keys as `optimistic:`
+  (`add_class:`/`remove_class:`/`toggle_class:`/`hide:`/`show:`/`disable:`/`text:`/`to:`).
+  The removed `loading:` (with its odd `class:` key), `disable_with:`, and the
+  `on(…, listnav:)` kwarg each raise a **guided `ArgumentError`** printing the exact
+  rewrite. Combobox keyboard nav is now the standalone `reactive_listnav` (composed
+  via `mix`), which defaults its option selector to `[role=option]`. Migration:
+
+  | Before (removed) | After |
+  |---|---|
+  | `on(:save, disable_with: "Saving…")` | `on(:save, busy: "Saving…")` |
+  | `on(:save, loading: { disable: true, class: "opacity-50", text: "Saving…" })` | `on(:save, busy: { disable: true, add_class: "opacity-50", text: "Saving…" })` |
+  | `on(:search, event: "input", listnav: "[role=option]")` | `mix(on(:search, event: "input"), reactive_listnav)` |
+
+  The wire attribute is renamed `data-reactive-loading-param` → `data-reactive-busy-param`;
+  the client keeps a **read shim** for the old attribute for one minor so an
+  in-flight page rendered by the previous gem across a deploy keeps its affordance.
 
 - **BREAKING: `reactive_show` speaks ONE conditions language — `if:`/`if_any:`/`unless:` (#180).**
   The four accreted dialects (the positional-field predicate kwargs

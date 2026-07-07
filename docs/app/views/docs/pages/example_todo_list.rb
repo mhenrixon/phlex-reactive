@@ -35,7 +35,7 @@ module Views
               the server rebuilds the component from its signed token, runs the
               action, and re-renders in place — no Stimulus controller and no
               `.turbo_stream.erb` anywhere. Turn on the latency toggle to watch the
-              optimistic toggle/hide and the `disable_with:` guard.
+              optimistic toggle/hide and the `busy:` guard.
             MD
             render Views::Examples::LatencyToggle.new(delay_ms: 600)
             render Views::Examples::LiveExample.new(
@@ -65,7 +65,7 @@ module Views
                 focused input + caret — a plain `replace` would tear the field out
                 from under the typist. **`reply.remove`** (archive) drops the
                 actor's own row with no doomed self re-render.
-              - **`disable_with: "…"`** disables the archive button while the action
+              - **`busy: "…"`** disables the archive button while the action
                 is in flight, so a rapid double-click fires archive exactly once.
             MD
             DocsUI::Code(read_component('todo_item_component.rb'),
@@ -87,7 +87,7 @@ module Views
                 Without `exclude:`, the actor's own subscribed tab would receive the
                 broadcast and append the row a **second** time, on top of the copy
                 the self re-render already rendered.
-              - **`disable_with: "Adding…"`** stops a rapid double-click on **Add**
+              - **`busy: "Adding…"`** stops a rapid double-click on **Add**
                 from creating two todos.
               - **`on_client(:click, js.toggle("#todo-tips"))`** on the Tips button
                 shows/hides the hint client-side with no token, no POST — a
@@ -141,7 +141,7 @@ module Views
               - **Enter-to-add and Enter-to-save** via
                 `on(:add, event: "keydown.enter")` — Stimulus's native keyboard
                 filter, no custom JavaScript.
-              - **No double-submit:** `disable_with:` disables the Add / archive
+              - **No double-submit:** `busy:` disables the Add / archive
                 buttons while their action is in flight.
               - **Focus-preserving inline rename** via `reply.morph` (Idiomorph
                 keeps the caret in the field), and a client-only tips toggle via

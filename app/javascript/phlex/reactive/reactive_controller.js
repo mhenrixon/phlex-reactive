@@ -1011,7 +1011,7 @@ export default class extends Controller {
   #busyPending = 0 // root aria-busy pending counter (remove only at zero)
   #busyActions = new Map() // action -> in-flight count (root's space-separated busy set + busy_on)
   #busyTokenCounts = new WeakMap() // element -> Map(action -> count): its data-reactive-busy token set
-  #loadingSnapshots = new Map() // trigger element -> { count, disabled, text } refcounted snapshot
+  #textDisableSnapshots = new Map() // trigger -> { count, disabled, html } refcounted text/disable snapshot (issue #181)
   // Dirty tracking (issue #103): the bound re-scan (turbo:morph-element) and the
   // navigate-away guard handlers, held so disconnect() can remove exactly them.
   #boundScanDirty
@@ -1186,9 +1186,16 @@ export default class extends Controller {
     // modifier params (issue #80). The client decides preventDefault behavior
     // from event.params — set by the Ruby on() — never by sniffing the
     // Stimulus descriptor.
-    const { action, params, debounce, throttle, confirm, outside, window: windowBound, optimistic, loading } =
+    const { action, params, debounce, throttle, confirm, outside, window: windowBound, optimistic } =
       event.params
     if (!action) return
+
+    // The pending-state hint (issue #181): data-reactive-busy-param. During a
+    // deploy overlap a page rendered by the PREVIOUS gem still emits the old
+    // data-reactive-loading-param — read it as a fallback so an in-flight page
+    // keeps its pending affordance until the next full render. The old `class:`
+    // key is remapped to add_class: so it flows through the one hint applier.
+    const busy = event.params.busy ?? this.#legacyLoadingHint(event.params.loading)
 
     // Outside guard FIRST (issue #80): an outside: trigger only fires for
     // events whose target is OUTSIDE this component's ROOT (containment against
@@ -1231,7 +1238,7 @@ export default class extends Controller {
     if (!windowBound && !this.#keepsNativeToggle(optimistic, target)) event.preventDefault()
 
     // No confirm message → proceed straight away (unchanged fast path).
-    if (!confirm) return this.#proceed(target, action, params, debounce, throttle, optimistic, loading)
+    if (!confirm) return this.#proceed(target, action, params, debounce, throttle, optimistic, busy)
 
     // Confirmation gate (issue #52, made overridable + async in #55). A reactive
     // trigger can't use Hotwire's data-turbo-confirm — this controller preempts
@@ -1248,7 +1255,7 @@ export default class extends Controller {
       .then(() => confirmResolver(confirm))
       .catch(() => false)
       .then((ok) => {
-        if (ok) this.#proceed(target, action, params, debounce, throttle, optimistic, loading)
+        if (ok) this.#proceed(target, action, params, debounce, throttle, optimistic, busy)
       })
   }
 
@@ -1590,7 +1597,7 @@ export default class extends Controller {
   // Split out of dispatch so both the no-confirm fast path and the post-confirm
   // microtask share one place (issue #55). `target` is captured up front because
   // this can run in a later microtask, after event.target has been reset.
-  #proceed(target, action, params, debounce, throttle, optimistic, loading) {
+  #proceed(target, action, params, debounce, throttle, optimistic, busy) {
     // Lifecycle veto point (issue #79): one cancelable reactive:before-dispatch
     // per user gesture — post-preventDefault, post-confirm, PRE-debounce (and
     // PRE-throttle, the same timing). event.preventDefault() skips the
@@ -1608,21 +1615,21 @@ export default class extends Controller {
     // Debounced trigger (e.g. on(:update, event: "input", debounce: 300)):
     // coalesce rapid events into ONE round trip after a quiet period, instead of
     // one POST per keystroke (issue #17). A blur flushes a pending dispatch.
-    // The optimistic hint (issue #98) and the loading state (issue #99) ride to
+    // The optimistic hint (issue #98) and the busy state (issue #181) ride to
     // the flush too, so they apply ONCE per enqueue — a debounced input must not
     // flap toggle_class per keystroke, and its element must NOT be disabled
     // during the quiet period (that would break typing). Both apply at ENQUEUE.
     const ms = Number(debounce) || 0
-    if (ms > 0) return this.#debounceDispatch(target, ms, action, params, optimistic, loading)
+    if (ms > 0) return this.#debounceDispatch(target, ms, action, params, optimistic, busy)
 
     // Throttled trigger (e.g. on(:track, event: "scroll", window: true,
     // throttle: 250), issue #80): LEADING-EDGE rate limit — fire the first
     // event immediately, drop the rest until the window elapses. debounce and
     // throttle are mutually exclusive (the Ruby on() raises on both).
     const throttleMs = Number(throttle) || 0
-    if (throttleMs > 0) return this.#throttleDispatch(target, throttleMs, action, params, optimistic, loading)
+    if (throttleMs > 0) return this.#throttleDispatch(target, throttleMs, action, params, optimistic, busy)
 
-    return this.#enqueue(action, params, optimistic, target, loading)
+    return this.#enqueue(action, params, optimistic, target, busy)
   }
 
   // Apply the optimistic hint ONCE (recording its inverse) and chain the round
@@ -1631,29 +1638,55 @@ export default class extends Controller {
   // #98). Applying here — the single flush/enqueue point every path funnels
   // through — is what makes a hint apply once per enqueue, not per raw dispatch.
   //
-  // The loading state (issue #99) applies here too, for the same reason: enqueue
+  // The busy state (issue #181) applies here too, for the same reason: enqueue
   // is the moment the request is committed to the queue, so the always-on busy
   // vocabulary (data-reactive-busy on the trigger + root, aria-busy via a pending
-  // counter, busy_on scoping) and the loading hint (disable + class + text swap)
+  // counter, busy_on scoping) and the busy hint (disable + class + text swap)
   // cover the WHOLE pending window — queue wait included — not just the fetch. It
   // returns a `settle` closure that #perform runs in its finally (success OR
   // failure), guarded so a morph-replaced trigger is never clobbered.
-  #enqueue(action, params, optimistic, target, loading) {
+  #enqueue(action, params, optimistic, target, busy) {
     const inverse = this.#applyOptimistic(optimistic, target)
-    const settle = this.#applyLoading(action, target, loading)
-    this.queue = (this.queue ?? Promise.resolve()).then(() => this.#perform(action, params, inverse, settle))
+    const settle = this.#applyBusy(action, target, busy)
+    // Debug-only teaching aid (issue #181): if optimistic: { hide: true } is used
+    // for instant-delete but the reply RE-RENDERS the element (bringing it back),
+    // that hint was pointless — the developer likely wanted reply.remove. Capture
+    // the hidden nodes now; the success path re-checks the OBSERVED DOM after the
+    // morph (never inferred from the verb) and warns if any came back visible.
+    const resurrect = this.#debugEnabled() ? this.#buildResurrectionCheck(optimistic, target) : null
+    this.queue = (this.queue ?? Promise.resolve())
+      .then(() => this.#perform(action, params, inverse, settle, resurrect))
     return this.queue
+  }
+
+  // Snapshot the elements an optimistic hide: targeted (the trigger, or the `to:`
+  // selector) so the success path can detect a resurrection. Returns null unless
+  // a hide: hint is present — nothing else can be "resurrected".
+  #buildResurrectionCheck(optimistic, target) {
+    if (!optimistic?.hide) return null
+    const hidden = this.#hintTargets(optimistic, target)
+    if (!hidden.length) return null
+    return () => {
+      const back = hidden.filter((el) => el.isConnected && !el.hidden)
+      if (!back.length) return
+      console.warn(
+        "[phlex-reactive] optimistic: { hide: true } was undone by the reply's re-render — " +
+          "the element is visible again. For an instant delete, return reply.remove so the " +
+          "server removes it; otherwise the hide only flashes.",
+        back,
+      )
+    }
   }
 
   // Reset a per-element timer; only enqueue the round trip after `ms` of quiet.
   // Also flush immediately on blur so leaving the field never drops the last
   // edit (a long debounce shouldn't swallow a value the user tabbed away from).
-  #debounceDispatch(target, ms, action, params, optimistic, loading) {
+  #debounceDispatch(target, ms, action, params, optimistic, busy) {
     this.#clearDebounce(target)
 
     const flush = () => {
       this.#clearDebounce(target)
-      this.#enqueue(action, params, optimistic, target, loading)
+      this.#enqueue(action, params, optimistic, target, busy)
     }
     const timer = setTimeout(flush, ms)
     target?.addEventListener?.("blur", flush, { once: true })
@@ -1681,7 +1714,7 @@ export default class extends Controller {
   // are keyed on action + target, NOT target alone: window-bound scroll/resize
   // events all share event.target === document, so two window-bound triggers
   // on one component would otherwise collide on one timer.
-  #throttleDispatch(target, ms, action, params, optimistic, loading) {
+  #throttleDispatch(target, ms, action, params, optimistic, busy) {
     const timers = this.#throttleTimers.get(target) ?? new Map()
     if (timers.has(action)) return // inside the window — suppress
 
@@ -1691,7 +1724,7 @@ export default class extends Controller {
     }, ms)
     timers.set(action, timer)
     this.#throttleTimers.set(target, timers)
-    return this.#enqueue(action, params, optimistic, target, loading) // leading edge: fire NOW
+    return this.#enqueue(action, params, optimistic, target, busy) // leading edge: fire NOW
   }
 
   // Clear every throttle suppression timer (used on disconnect, alongside
@@ -1852,7 +1885,7 @@ export default class extends Controller {
     /* eslint-enable no-console */
   }
 
-  async #perform(action, params, inverse, settle) {
+  async #perform(action, params, inverse, settle, resurrect) {
     // Auto-collect named field values inside this component so a button-
     // triggered action still receives sibling inputs (Livewire-style), plus any
     // chosen file inputs in the SAME walk. Explicit params
@@ -2046,6 +2079,10 @@ export default class extends Controller {
       // replace (Response.morph) or an update morphs in place, preserving the
       // focused input + caret on unchanged nodes — see issue #28.
       window.Turbo.renderStreamMessage(html)
+      // Debug-only (issue #181): the morph may apply a microtask later, so check
+      // the resurrected-hide case AFTER it lands. Off the debug path, resurrect is
+      // null — zero cost.
+      if (resurrect) queueMicrotask(resurrect)
       // A successful apply CLEARS any prior failure marker (issue #100), so
       // error-driven CSS on the root (a red border, a shake) resets on recovery.
       this.#clearError()
@@ -2723,79 +2760,30 @@ export default class extends Controller {
     return type === "checkbox" || type === "radio"
   }
 
-  // Apply the optimistic hint (issue #98) to its targets NOW and return the
-  // INVERSE — the exact ops to replay on failure. Cosmetic only: class ops and
-  // hidden, applied to the trigger by default or to a `to:` selector scoped to
-  // the root. `checked: :keep` records the trigger's post-flip state so a
-  // failure snaps the native control back; it applies no DOM change itself (the
-  // browser already flipped it). Returns null when there is nothing to do, so
-  // the success/failure paths can cheaply skip.
+  // Apply the OPTIMISTIC hint (issue #98) NOW and return its `undo` closure — the
+  // exact ops to replay on FAILURE (optimistic reverts only when the round trip
+  // fails; success leaves server truth or the deliberately-standing hint). It is
+  // the same op vocabulary busy: uses (issue #181) via the one #applyHint engine;
+  // the ONLY optimistic-specific op is checked: :keep (honorChecked = true).
   #applyOptimistic(optimistic, trigger) {
     if (!optimistic) return null
-
-    // Class + hidden ops share one target set (trigger, or the `to:` selector).
-    const targets = this.#optimisticTargets(optimistic, trigger)
-    const undo = []
-    for (const el of targets) {
-      if (optimistic.add_class) {
-        // Undo only the classes this op ACTUALLY added — a class already present
-        // was not our change, so reverting it would strip a class the element
-        // legitimately had (the add was a no-op). Capture the real delta now.
-        const added = optimistic.add_class.filter((c) => !el.classList.contains(c))
-        el.classList.add(...added)
-        if (added.length) undo.push(() => el.classList.remove(...added))
-      }
-      if (optimistic.remove_class) {
-        // Symmetric: undo only the classes actually removed — one already absent
-        // wasn't our change, so re-adding it would introduce a class that wasn't
-        // there before.
-        const removed = optimistic.remove_class.filter((c) => el.classList.contains(c))
-        el.classList.remove(...removed)
-        if (removed.length) undo.push(() => el.classList.add(...removed))
-      }
-      if (optimistic.toggle_class) {
-        // toggle_class is its own inverse regardless of prior state — toggling
-        // the same classes back exactly restores it, no delta tracking needed.
-        optimistic.toggle_class.forEach((c) => el.classList.toggle(c))
-        undo.push(() => optimistic.toggle_class.forEach((c) => el.classList.toggle(c)))
-      }
-      if (optimistic.hide) {
-        el.hidden = true
-        undo.push(() => (el.hidden = false))
-      }
-    }
-
-    // checked: :keep — the native flip already happened on the trigger; record
-    // the inverse (flip it back) so a failure reverts the control's state.
-    if (optimistic.checked === "keep" && trigger && "checked" in trigger) {
-      const flipped = trigger.checked
-      undo.push(() => (trigger.checked = !flipped))
-    }
-
+    const undo = this.#applyHint(optimistic, trigger, true)
     return undo.length ? undo : null
   }
 
-  // Replay the recorded inverse ops on failure (issue #98), guarded by
-  // isConnected: a plain (non-morph) replace can detach this subtree before the
-  // failure lands, and reverting a stale/detached node is pointless (it's gone)
-  // — so a disconnected root skips the revert entirely. On success NOTHING calls
-  // this: the server re-render overwrites the hint, or (reply.remove /
-  // streams-only) the hint is deliberately left standing.
+  // Replay the recorded undo ops on failure (issue #98), guarded by isConnected:
+  // a plain (non-morph) replace can detach this subtree before the failure lands,
+  // and reverting a stale/detached node is pointless (it's gone) — so a
+  // disconnected root skips the revert entirely. On success NOTHING calls this:
+  // the server re-render overwrites the hint, or (reply.remove / streams-only)
+  // the hint is deliberately left standing.
   #revertOptimistic(inverse) {
     if (!inverse) return
     if (!this.element.isConnected) return
     for (const undo of inverse) undo()
   }
 
-  // The elements an optimistic class/hidden hint applies to: the `to:` selector
-  // (resolved like an op target — "@root" is the root, a selector is scoped to
-  // this root's owned matches) or, with no `to:`, the trigger itself.
-  #optimisticTargets(optimistic, trigger) {
-    if (optimistic.to == null) return trigger ? [trigger] : []
-    return this.#opTargets({ to: optimistic.to })
-  }
-
-  // Apply the loading state for THIS enqueue (issue #99) and return a `settle`
+  // Apply the BUSY state for THIS enqueue (issue #181) and return a `settle`
   // closure that undoes exactly this enqueue's contribution when the round trip
   // finishes (success OR any failure). Everything is refcounted so overlapping
   // enqueues never clobber: A's settle can't clear busy while B is still pending.
@@ -2806,21 +2794,119 @@ export default class extends Controller {
   //      space-separated, per-action refcounted set), aria-busy on the root (a
   //      pending counter), and data-reactive-busy on any busy_on element scoped
   //      to this action. Apps style a spinner with pure CSS and zero Ruby.
-  //   2. The loading HINT (only when loading:/disable_with: was declared):
-  //      disable the trigger, add a loading class (to the trigger or a `to:`
-  //      target), swap its text. These apply at ENQUEUE — never during a debounce
-  //      quiet period — so a debounced input is not disabled mid-typing.
-  #applyLoading(action, trigger, loading) {
+  //   2. The busy HINT (only when busy: was declared): the SAME cosmetic op set
+  //      as optimistic: (class ops, hide/show, disable, text), applied through
+  //      the one #applyHint engine and reverted on SETTLE (not on failure). These
+  //      apply at ENQUEUE — never during a debounce quiet period — so a debounced
+  //      input is not disabled mid-typing. checked: is optimistic-only, so busy:
+  //      passes honorChecked = false (the Ruby on() already rejects it — this is
+  //      belt-and-braces).
+  #applyBusy(action, trigger, busy) {
     this.#markBusy(action, trigger)
-    const restoreHint = this.#applyLoadingHint(action, trigger, loading)
+    const undo = busy ? this.#applyHint(busy, trigger, false) : []
 
     let settled = false
     return () => {
       if (settled) return // one settle per enqueue, even if called twice
       settled = true
       this.#unmarkBusy(action, trigger)
-      restoreHint()
+      // Busy reverts on SETTLE regardless of outcome, guarded per element.
+      for (const op of undo) op()
     }
+  }
+
+  // The ONE pending-state hint engine (issue #181), shared by optimistic: (revert
+  // on failure) and busy: (revert on settle) — they differ only in WHEN the
+  // returned undo ops run, never in the ops themselves. Applies the hint's
+  // cosmetic ops to their targets (the trigger by default, or a `to:` selector
+  // scoped to the root) and returns an array of undo closures. Class ops and
+  // hide/show use a DELTA inverse (undo only what THIS call changed, so it
+  // composes across overlapping enqueues); disable/text use a REFCOUNTED snapshot
+  // (the true pre-hint value survives an overlapping enqueue that would otherwise
+  // capture the already-swapped label as the "original"). `honorChecked` gates
+  // checked: :keep — an optimistic-only native-control revert.
+  #applyHint(hint, trigger, honorChecked) {
+    const undo = []
+    for (const el of this.#hintTargets(hint, trigger)) {
+      if (hint.add_class) {
+        // Undo only the classes this op ACTUALLY added — a class already present
+        // was not our change, so reverting it would strip a class the element
+        // legitimately had. Capture the real delta now.
+        const added = hint.add_class.filter((c) => !el.classList.contains(c))
+        el.classList.add(...added)
+        if (added.length) undo.push(() => el.classList.remove(...added))
+      }
+      if (hint.remove_class) {
+        // Symmetric: undo only the classes actually removed.
+        const removed = hint.remove_class.filter((c) => el.classList.contains(c))
+        el.classList.remove(...removed)
+        if (removed.length) undo.push(() => el.classList.add(...removed))
+      }
+      if (hint.toggle_class) {
+        // toggle_class is its own inverse regardless of prior state.
+        hint.toggle_class.forEach((c) => el.classList.toggle(c))
+        undo.push(() => hint.toggle_class.forEach((c) => el.classList.toggle(c)))
+      }
+      if (hint.hide) {
+        el.hidden = true
+        undo.push(() => (el.hidden = false))
+      }
+      if (hint.show) {
+        el.hidden = false
+        undo.push(() => (el.hidden = true))
+      }
+    }
+
+    // disable/text swap the TRIGGER (a `to:` retargets only the class/hide/show
+    // ops above — disable/text are inherently trigger affordances). Refcounted so
+    // overlapping enqueues restore correctly.
+    if (trigger && (hint.disable || hint.text != null)) {
+      undo.push(this.#applyTextDisable(hint, trigger))
+    }
+
+    // checked: :keep — the native flip already happened on the trigger; record
+    // the inverse (flip it back) so a revert restores the control's state.
+    if (honorChecked && hint.checked === "keep" && trigger && "checked" in trigger) {
+      const flipped = trigger.checked
+      undo.push(() => (trigger.checked = !flipped))
+    }
+
+    return undo
+  }
+
+  // The elements a hint's class/hide/show ops apply to: the `to:` selector
+  // (resolved like an op target — "@root" is the root, a selector is scoped to
+  // this root's owned matches) or, with no `to:`, the trigger itself.
+  #hintTargets(hint, trigger) {
+    if (hint.to == null) return trigger ? [trigger] : []
+    return this.#opTargets({ to: hint.to })
+  }
+
+  // Swap the trigger's disabled/innerHTML for a pending hint, snapshotting the
+  // ORIGINAL once per trigger (refcounted so an overlapping enqueue never
+  // snapshots the already-swapped "Saving…" as the original), and return the undo
+  // closure. text swaps innerHTML (issue #181), NOT textContent: a composite
+  // trigger like `<button><svg/> Save</button>` has child nodes, and
+  // textContent = "Saving…" would DESTROY the icon; innerHTML preserves the
+  // markup structure and restores it byte-for-byte.
+  #applyTextDisable(hint, trigger) {
+    const snap = this.#textDisableSnapshots.get(trigger)
+    if (snap) {
+      snap.count++
+    } else {
+      this.#textDisableSnapshots.set(trigger, {
+        count: 1,
+        disabled: trigger.disabled,
+        html: trigger.innerHTML,
+        hadText: hint.text != null,
+        swappedTo: hint.text,
+      })
+    }
+
+    if (hint.disable) trigger.disabled = true
+    if (hint.text != null) trigger.innerHTML = hint.text
+
+    return () => this.#restoreTextDisable(trigger, hint)
   }
 
   // Layer 1 — the always-on busy markers. Trigger + root carry the action token;
@@ -2886,72 +2972,35 @@ export default class extends Controller {
     )
   }
 
-  // Layer 2 — the loading HINT (disable + class + text). Snapshots the trigger's
-  // ORIGINAL disabled/text/classes on the FIRST enqueue for that trigger
-  // (refcounted so an overlapping enqueue never snapshots the already-swapped
-  // "Saving…" as the original), applies the swap, and returns a restore closure.
-  // With no hint, returns a no-op restore (the always-on busy markers still ran).
-  #applyLoadingHint(action, trigger, loading) {
-    if (!loading || !trigger) return () => {}
-
-    const classTargets = this.#loadingTargets(loading, trigger)
-    const classes = Array.isArray(loading.class) ? loading.class : []
-    const addedByTarget = []
-    for (const el of classTargets) {
-      const added = classes.filter((c) => !el.classList.contains(c))
-      el.classList.add(...added)
-      if (added.length) addedByTarget.push([el, added])
-    }
-
-    // Snapshot disabled/text ONCE per trigger (refcounted). A second overlapping
-    // enqueue increments the count but does NOT re-snapshot — so the recorded
-    // "original" is the true pre-loading state, never the swapped label.
-    const snap = this.#loadingSnapshots.get(trigger)
-    if (snap) {
-      snap.count++
-    } else if (loading.disable || loading.text != null) {
-      this.#loadingSnapshots.set(trigger, {
-        count: 1,
-        disabled: trigger.disabled,
-        text: trigger.textContent,
-        hadText: loading.text != null,
-      })
-    }
-
-    if (loading.disable) trigger.disabled = true
-    if (loading.text != null) trigger.textContent = loading.text
-
-    return () => {
-      for (const [el, added] of addedByTarget) if (el.isConnected) el.classList.remove(...added)
-      this.#restoreLoadingSnapshot(trigger, loading)
-    }
-  }
-
-  // Restore the trigger's disabled/text from its snapshot when the LAST enqueue
-  // for that trigger settles (refcount → 0). GUARDED: skip a disconnected
+  // Restore the trigger's disabled/innerHTML from its snapshot when the LAST
+  // enqueue for that trigger settles (refcount → 0). GUARDED: skip a disconnected
   // trigger (a plain replace detached it — the node is gone), and do NOT restore
-  // the text if it no longer equals what we swapped IN (a morph rendered a new
-  // server label — clobbering it with the old text would fight server truth).
-  #restoreLoadingSnapshot(trigger, loading) {
-    const snap = this.#loadingSnapshots.get(trigger)
+  // the label if it no longer equals what we swapped IN (a morph rendered a new
+  // server label — clobbering it with the old markup would fight server truth).
+  // The comparison + restore both use innerHTML so a composite trigger (icon +
+  // label) round-trips its full markup, not a flattened text run (issue #181).
+  #restoreTextDisable(trigger, hint) {
+    const snap = this.#textDisableSnapshots.get(trigger)
     if (!snap) return
     if (--snap.count > 0) return // another enqueue for this trigger is still pending
-    this.#loadingSnapshots.delete(trigger)
+    this.#textDisableSnapshots.delete(trigger)
 
     if (!trigger.isConnected) return // detached — nothing to restore
 
-    if (loading.disable) trigger.disabled = snap.disabled
-    // Only restore the label if the trigger still shows OUR swapped text; a
-    // changed textContent means the server morph relabeled it — leave it.
-    if (snap.hadText && trigger.textContent === loading.text) trigger.textContent = snap.text
+    if (hint.disable) trigger.disabled = snap.disabled
+    if (snap.hadText && trigger.innerHTML === snap.swappedTo) trigger.innerHTML = snap.html
   }
 
-  // The elements a loading class applies to: the `to:` selector (resolved like
-  // an op target — "@root" is the root, a selector is scoped to this root's
-  // owned matches) or, with no `to:`, the trigger itself.
-  #loadingTargets(loading, trigger) {
-    if (loading.to == null) return trigger ? [trigger] : []
-    return this.#opTargets({ to: loading.to })
+  // Deploy-overlap read shim (issue #181): a page still rendered by the PREVIOUS
+  // gem emits the old data-reactive-loading-param, whose `class:` key is the busy
+  // vocabulary's `add_class:`. Remap it so an in-flight legacy page keeps its
+  // pending affordance through the one #applyHint engine. Returns null for the
+  // common (no legacy param) case so the fast path is untouched. Drop this shim
+  // one minor after #181 ships (no page can still carry the old attr by then).
+  #legacyLoadingHint(loading) {
+    if (!loading || typeof loading !== "object") return null
+    const { class: cls, ...rest } = loading
+    return cls == null ? loading : { ...rest, add_class: cls }
   }
 
   // The action path comes from a <meta> tag that is fixed for the page's life,
