@@ -1440,8 +1440,14 @@ export default class extends Controller {
 
     // Phase 2 — text sinks declare themselves (issue #183 change #4): every result
     // key paints into any owned [data-reactive-text="<name>"] node by PRESENCE,
-    // regardless of outputs: membership. Runs from settled field values.
-    for (const name of Object.keys(result)) this.#mirrorText(name, result[name])
+    // regardless of outputs: membership. Runs from settled field values. A null/
+    // undefined result value is SKIPPED (never stringified to "null"/"undefined") —
+    // the same "no value this pass, don't paint" filter #applyComputeMirrors uses.
+    for (const name of Object.keys(result)) {
+      const value = result[name]
+      if (value === undefined || value === null) continue
+      this.#mirrorText(name, value)
+    }
 
     // Cross-root text mirrors (issue #159) — AFTER the batch + text sinks, so a
     // mirror keyed on a just-written output paints the settled value.

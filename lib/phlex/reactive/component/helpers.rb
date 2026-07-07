@@ -629,18 +629,11 @@ module Phlex
           { data: { reactive_busy_on: action.to_s } }
         end
 
-        # Data attributes declaring a client-side compute for the root element.
-        # Spread ALONGSIDE reactive_root so the generic controller can find the
-        # reducer and the named input/output fields inside this root:
-        #   div(**mix(reactive_root, reactive_compute_attrs(:payment_split))) { … }
-        #
-        # It emits the reducer key plus the input/output field names as JSON so the
-        # client runs the reducer on `input`, writes the outputs with no round trip,
-        # then the debounced POST reconciles from the server reply. Raises for an
-        # undeclared compute — a silent no-op would leave the field wiring dead.
-        # Issue #183: the compute binding moved to reactive_root(compute: :name) —
-        # bind + listen at the root, so no field carries per-field recompute
-        # wiring. The old helper raises a guided error printing the rewrite.
+        # REMOVED in issue #183 — the compute binding moved to
+        # reactive_root(compute: :name), which emits the descriptors AND the
+        # recompute delegation at the root, so no field carries per-field wiring:
+        #   div(**reactive_root(compute: :payment_split)) { … }
+        # This helper now raises a guided ArgumentError printing that rewrite.
         def reactive_compute_attrs(name)
           raise ArgumentError,
             "reactive_compute_attrs(#{name.inspect}) was removed in issue #183 — " \

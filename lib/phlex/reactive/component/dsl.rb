@@ -357,7 +357,10 @@ module Phlex
           def normalize_compute_inputs(inputs)
             return normalize_typed_compute_inputs(inputs) if inputs.is_a?(Hash)
 
-            list = Array(inputs)
+            # dup before popping: Array(inputs) returns the SAME object for an array
+            # arg, so an unguarded pop would mutate (or FrozenError on) a shared or
+            # frozen inputs array the caller still holds.
+            list = Array(inputs).dup
             trailing = list.last.is_a?(Hash) ? list.pop : nil
             names = list.map(&:to_sym)
 

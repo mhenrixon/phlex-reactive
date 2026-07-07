@@ -275,6 +275,27 @@ test("a text-node sink NOT in outputs: still paints (issue #183 — no smuggling
   expect(text.textContent).toBe("Hi Ada")
 })
 
+test("a null/undefined result value does NOT paint a text sink (never stringified to \"null\")", () => {
+  const text = makeTextNode("greeting", "keep me")
+  // The reducer returns greeting: null — a "no value this pass" signal. It must
+  // NOT overwrite the node with the string "null" (matching #applyComputeMirrors'
+  // nullish skip). The existing text stays.
+  computeModule.setComputeReducer("preview", () => ({ greeting: null, other: undefined }))
+
+  const controller = buildController(
+    makeRoot({
+      reducer: "preview",
+      inputs: { name: "string" },
+      outputs: [],
+      fields: { name: makeField("name", "Ada") },
+      texts: { greeting: text },
+    }),
+  )
+  controller.recompute({ target: controller.element.querySelectorAll('[name="name"]')[0] })
+
+  expect(text.textContent).toBe("keep me")
+})
+
 test("compute resolves scoped bare names as [name=\"scope[x]\"] (issue #183)", () => {
   // Under data-reactive-scope="order", the bare compute name `cash` resolves to the
   // scoped DOM field [name="order[cash]"] — the same convention reactive_show uses.

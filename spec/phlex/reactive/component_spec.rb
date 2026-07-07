@@ -543,7 +543,9 @@ RSpec.describe Phlex::Reactive::Component do
     it "emits NO compute binding for compute: nil (conditional collapse)" do
       attrs = instance.send(:reactive_root, compute: nil)
       expect(attrs[:data]).not_to have_key(:reactive_compute_reducer_param)
-      expect(attrs[:data][:action]).to be_nil unless attrs[:data][:action]&.include?("recompute")
+      # Unconditional: a recompute delegation leaking onto a compute-nil root is
+      # exactly the regression to catch, so never guard it away.
+      expect(attrs[:data][:action].to_s).not_to include("recompute")
       expect(attrs).not_to have_key(:compute)
     end
 
@@ -1444,6 +1446,19 @@ RSpec.describe Phlex::Reactive::Component do
         end
         attrs = klass.new.send(:compute_binding, :t)
         expect(attrs[:data][:reactive_compute_inputs_param]).to eq('["price","qty"]')
+      end
+
+      it "does NOT mutate or raise on a frozen/shared inputs array (dup before pop)" do
+        frozen_inputs = [:qty, { title: :string }].freeze
+        expect do
+          Class.new do
+            include Phlex::Reactive::Component
+
+            def self.name = "FrozenInputsCompute"
+          end.reactive_compute(:preview, inputs: frozen_inputs, outputs: %i[char_count])
+        end.not_to raise_error
+        # The caller's array is untouched (the trailing Hash is still there).
+        expect(frozen_inputs).to eq([:qty, { title: :string }])
       end
     end
 
