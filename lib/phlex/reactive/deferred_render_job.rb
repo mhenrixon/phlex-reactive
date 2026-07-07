@@ -57,7 +57,7 @@ module Phlex
         component = klass.from_identity(payload)
         return broadcast_cleanup(stream_key, target) if component.respond_to?(:render?) && !component.render?
 
-        stream = morph ? component.to_stream_morph : component.to_stream_replace
+        stream = component.to_stream_replace(morph:)
         broadcast_payload(stream_key, stream.to_s + teardown_stream(target))
       rescue ::StandardError => e
         log_deferred_failure(e) unless e.is_a?(::ActiveRecord::RecordNotFound)

@@ -30,17 +30,19 @@ module Views
                 plain 'With '
                 a(href: 'https://github.com/mhenrixon/pgbus') { 'pgbus' }
                 plain ' installed, '
-                code { 'broadcast_*_to' }
+                code { 'broadcast_to' }
                 plain ' AND '
                 code { 'turbo_stream_from' }
                 plain ' route over Postgres SSE '
                 strong { 'automatically' }
                 plain ' — with zero code changes. Both transports drive the SAME ' \
                       'broadcast API: the gem\'s '
-                code { 'broadcast_replace_to' }
+                code { 'broadcast_to' }
+                plain ' (with '
+                code { 'replace:' }
                 plain '/'
-                code { 'broadcast_append_to' }
-                plain ' call '
+                code { 'append:' }
+                plain '/etc.) calls '
                 code { '::Turbo::StreamsChannel.*' }
                 plain ' unchanged, so swapping the transport is a Gemfile decision, not a rewrite.'
               end
@@ -146,10 +148,10 @@ module Views
             end
             DocsUI::Code(<<~RUBY, lexer: :ruby)
               # Under pgbus these reach the dispatcher; under Action Cable they no-op.
-              Todos::Item.broadcast_append_to(
+              Todos::Item.broadcast_to(
                 @list, :todos,
+                append: todo,
                 target: dom_id(@list, :todos),
-                model: todo,
                 exclude: reactive_connection_id # actor already has the HTTP response
               )
             RUBY
@@ -161,8 +163,8 @@ module Views
             DocsUI::Prose() do
               p do
                 plain 'Each '
-                code { 'broadcast_*_to' }
-                plain ' wraps its body in a '
+                code { 'broadcast_to' }
+                plain ' call wraps its body in a '
                 code { 'broadcast.phlex_reactive' }
                 plain ' notification that fires on '
                 strong { 'both' }

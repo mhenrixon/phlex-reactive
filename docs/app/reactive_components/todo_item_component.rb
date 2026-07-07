@@ -50,7 +50,7 @@ class TodoItemComponent < Phlex::HTML
   # idempotent, so exclude: only spares the actor a redundant echo.
   def archive
     @todo.destroy!
-    TodoItemComponent.broadcast_remove_to(*Todo.stream_key, model: @todo, exclude: reactive_connection_id)
+    TodoItemComponent.broadcast_to(*Todo.stream_key, remove: @todo, exclude: reactive_connection_id)
     reply.remove
   end
 
@@ -82,6 +82,6 @@ class TodoItemComponent < Phlex::HTML
   # Re-render this row into every OTHER subscribed tab — exclude the actor, whose
   # own reply.morph / self-replace already updated them.
   def broadcast
-    TodoItemComponent.broadcast_replace_to(*Todo.stream_key, model: @todo, exclude: reactive_connection_id)
+    TodoItemComponent.broadcast_to(*Todo.stream_key, replace: @todo, exclude: reactive_connection_id)
   end
 end

@@ -36,19 +36,19 @@ RSpec.describe "render + broadcast instrumentation" do
 
     it "fires around a broadcast with the component name, stream action and streamables count" do
       events = capture("broadcast.phlex_reactive") do
-        CounterComponent.broadcast_replace_to("room", :counters, model: nil, count: 3)
+        CounterComponent.broadcast_to(each: [["room", :counters], ["lobby", :counters]], replace: { count: 3 })
       end
       expect(events.size).to eq(1)
       payload = events.first.payload
       expect(payload[:component]).to eq("CounterComponent")
       expect(payload[:stream_action]).to eq("replace")
-      expect(payload[:streamables]).to eq(2) # "room", :counters
+      expect(payload[:streamables]).to eq(2) # fan-out KEY count (each: has 2 keys), not key-part count
       expect(payload).not_to have_key(:model)
     end
 
     it "fires for remove too (no rendered body)" do
       events = capture("broadcast.phlex_reactive") do
-        CounterComponent.broadcast_remove_to("room", model: nil, count: 3)
+        CounterComponent.broadcast_to("room", remove: { count: 3 })
       end
       expect(events.first.payload[:stream_action]).to eq("remove")
     end

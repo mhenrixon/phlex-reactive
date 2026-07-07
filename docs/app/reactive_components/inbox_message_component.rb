@@ -69,7 +69,7 @@ class InboxMessageComponent < Phlex::HTML
   # optimistic: { hide: true, to: "##{id}" } hides THIS row the instant you click
   # (the row is tokenless, so to: must target the row's own id, not :root — that
   # would hide the whole inbox). busy: guards a double-click. reply.remove +
-  # broadcast_remove drop it everywhere; a DENIED archive reverts the hide.
+  # broadcast_to(remove:) drop it everywhere; a DENIED archive reverts the hide.
   def archive_button
     button(**mix(on(:archive, id: @message.id, busy: '…', optimistic: { hide: true, to: "##{id}" }),
                  class: 'btn btn-ghost btn-xs justify-start text-error', data: { testid: 'archive' })) { 'Archive' }

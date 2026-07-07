@@ -673,6 +673,32 @@ module Phlex
         Phlex::Reactive::Defer.with_real_render { component.render_in(off_request_view_context) }
       end
 
+      # Module-level broadcast (issue #185) — the same broadcast_to as the class
+      # form, for a BUILT component payload, so a NON-Streamable target (a count
+      # badge, any plain Phlex component) broadcasts WITHOUT hand-rolling the raw
+      # channel + render, and IS instrumented:
+      #
+      #   Phlex::Reactive.broadcast_to(@list, :todos, update: TodoCount.new(list: @list), target: "todos-count")
+      #   Phlex::Reactive.broadcast_to(user, :alerts, replace: NotificationsBadge.new(user:))
+      #
+      # Container verbs (update:/append:/prepend:) take any component; self-targeting
+      # verbs (replace:/remove:) require a Streamable payload (its #id is the target)
+      # — a plain component gets a guided error steering to update:. Shares the one
+      # broadcast implementation with the class-level form.
+      def broadcast_to(*streamables, morph: false, target: nil, exclude: nil, visible_to: nil, each: nil, **verb)
+        name, payload = Phlex::Reactive::Streamable.extract_module_broadcast_verb(verb)
+        component = name == :js ? nil : payload
+        keys = each ? each.map { Array(it) } : [streamables]
+        # The owner is the payload's class when Streamable (for js ops + instrument),
+        # else Streamable itself (a plain component still instruments via the shared
+        # path). A nil payload (a bare state-backed default) isn't supported here —
+        # the module form is for BUILT component payloads.
+        owner = payload.is_a?(Phlex::Reactive::Streamable) ? payload.class : Phlex::Reactive::Streamable
+        Phlex::Reactive::Streamable.broadcast_component(
+          owner, name, payload, component, keys, morph:, target:, exclude:, visible_to:
+        )
+      end
+
       # A Turbo::Streams::TagBuilder bound to an off-request view context, used
       # to build standalone streams not tied to a specific component's id — a
       # Response flash append, a reactive_collection row removal, a count

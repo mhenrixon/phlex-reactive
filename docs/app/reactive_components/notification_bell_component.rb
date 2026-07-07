@@ -4,12 +4,12 @@
 # stream and shows an unread count. "Simulate a background event" stands in for a
 # job finishing: it bumps the count and BROADCASTS the re-rendered bell to every
 # subscribed tab (so a second window updates with no action of its own), then
-# fires a `broadcast_js_to` nudge — a pure client-side pulse animation applied on
+# fires a `broadcast_to(js: ...)` nudge — a pure client-side pulse animation applied on
 # the OTHER tabs with no re-render at all.
 #
 # This is the "the server just pushes" shape: the count update rides a normal
-# broadcast_replace, and the attention-grab (the pulse) rides broadcast_js_to,
-# which ships a whitelisted DOM op — not HTML — to every subscriber.
+# broadcast_to(replace: ...), and the attention-grab (the pulse) rides
+# broadcast_to(js: ...), which ships a whitelisted DOM op — not HTML — to every subscriber.
 class NotificationBellComponent < Phlex::HTML
   include Phlex::Reactive::Streamable
   include Phlex::Reactive::Component
@@ -28,15 +28,15 @@ class NotificationBellComponent < Phlex::HTML
 
   # Bump the count, then push the update to EVERY subscribed tab (the actor
   # included — a replace is id-deduped, so the actor's own HTTP reply and the
-  # broadcast reconcile to the same DOM). broadcast_replace_to rebuilds the bell
-  # from the given state (unread:). The broadcast_js_to nudge pulses the bell on
-  # the OTHER tabs only (exclude: the actor, who already saw the bump).
+  # broadcast reconcile to the same DOM). broadcast_to(replace: ...) rebuilds the
+  # bell from the given state (unread:). The broadcast_to(js: ...) nudge pulses
+  # the bell on the OTHER tabs only (exclude: the actor, who already saw the bump).
   def simulate_event
     @unread += 1
-    NotificationBellComponent.broadcast_replace_to(*STREAM, unread: @unread)
-    NotificationBellComponent.broadcast_js_to(
+    NotificationBellComponent.broadcast_to(*STREAM, replace: { unread: @unread })
+    NotificationBellComponent.broadcast_to(
       *STREAM,
-      js.add_class('#bell-icon', 'animate-bounce'),
+      js: js.add_class('#bell-icon', 'animate-bounce'),
       exclude: reactive_connection_id
     )
   end

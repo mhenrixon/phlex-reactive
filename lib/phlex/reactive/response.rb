@@ -59,7 +59,7 @@ module Phlex
         # `morph: true` morphs the subtree (preserves the focused input + caret)
         # instead of an outerHTML swap — see .build_morph (issue #28).
         def build_replace(component, morph: false)
-          new(streams: [morph ? component.to_stream_morph : component.to_stream_replace],
+          new(streams: [component.to_stream_replace(morph:)],
             subject_component: component)
         end
 
@@ -69,7 +69,7 @@ module Phlex
         # per-field reactive editing (a "spreadsheet" grid where a debounced save
         # fires while the user is still typing/tabbing). The morphed root still
         # carries the fresh signed token, so the next action verifies.
-        def build_morph(component) = new(streams: [component.to_stream_morph], subject_component: component)
+        def build_morph(component) = new(streams: [component.to_stream_replace(morph: true)], subject_component: component)
 
         # Update only inner HTML (preserves the root element + its token attr).
         # `morph: true` morphs the inner HTML in place (issue #113) instead of
@@ -491,7 +491,7 @@ data-reactive-ops="#{ERB::Util.html_escape(json)}"></turbo-stream>).html_safe
         when :__none
           also_targets(targets)
         when ::Phlex::SGML
-          stream(morph ? companion.to_stream_morph : companion.to_stream_replace)
+          stream(companion.to_stream_replace(morph:))
         when Hash
           also_targets(companion)
         else

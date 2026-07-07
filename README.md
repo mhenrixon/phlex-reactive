@@ -233,7 +233,7 @@ rails g phlex:reactive:claude
    └──────── Turbo applies it in ◀──────────────────────────────┘
 
    ...and for OTHER tabs/users:
-   model change → Component.broadcast_replace_to(stream) → pgbus SSE → same morph
+   model change → Component.broadcast_to(stream, replace: model) → pgbus SSE → same morph
 ```
 
 Client actions and server broadcasts **converge on one re-render unit**: the
@@ -326,7 +326,7 @@ The [inline edit example](https://phlex-reactive.zoolutions.llc/docs/example-inl
 | [Cross-tab chat](https://phlex-reactive.zoolutions.llc/docs/example-chat) | Record-backed action **+ pgbus broadcast** → live sync across tabs/browsers |
 | [Live todo list](https://phlex-reactive.zoolutions.llc/docs/example-todo-list) | Per-row components, add/toggle/rename/archive, optimistic toggle + delete, Enter-to-add, broadcast on change |
 | [Inline edit + dirty tracking](https://phlex-reactive.zoolutions.llc/docs/example-inline-edit) | Show ↔ edit toggle plus an "Unsaved" badge + leave-guard, with zero shipped state |
-| [Notifications / badges](https://phlex-reactive.zoolutions.llc/docs/example-notifications) | Pure broadcast — a background event pushes a re-render, plus a `broadcast_js_to` cross-tab pulse |
+| [Notifications / badges](https://phlex-reactive.zoolutions.llc/docs/example-notifications) | Pure broadcast — a background event pushes a re-render, plus a `broadcast_to(js:)` cross-tab pulse |
 | [Reactive collections](https://phlex-reactive.zoolutions.llc/docs/example-collections) | Add/remove rows + a running count + an empty state, declared **once** with `reactive_collection`, optimistic dismiss |
 | [Loading states](https://phlex-reactive.zoolutions.llc/docs/example-loading-states) | `disable_with:` + `busy_on` + `aria-busy`, with a latency toggle to make the pending window visible |
 | [Client-only ops](https://phlex-reactive.zoolutions.llc/docs/example-client-ops) | `on_client` tabs / outside-close menu / accessible drawer — zero fetches, zero custom JS |
@@ -350,11 +350,11 @@ flagship — every feature composed into one believable UI.
 | `.replace(model = nil, morph: false, **opts)` | `<turbo-stream action=replace target=id>` of a freshly built component; `morph: true` adds `method="morph"` |
 | `.update(model = nil, morph: false, **opts)` | `<turbo-stream action=update target=id>` (inner-HTML update); `morph: true` adds `method="morph"` so Turbo morphs the inner HTML in place (issue #113) |
 | `.append(target:)` / `.prepend(target:)` / `.remove` | The other Turbo Stream actions |
-| `.broadcast_replace_to(*streamables, model:, morph: false)` | Broadcast a replace over the stream transport (pgbus SSE / Action Cable); `morph: true` morphs in place |
-| `.broadcast_update_to(*streamables, model:, morph: false)` | Broadcast an inner-HTML update; `morph: true` morphs in place, so a peer editing the component keeps its focus/caret (issue #113) |
-| `.broadcast_append_to(*streamables, target:, model:)` / `_prepend_` / `_remove_` | The other broadcast variants |
-| `.broadcast_replace_to_each(stream_keys, model:, morph: false, exclude:, visible_to:)` / `_update_` / `_append_` / `_prepend_` / `_remove_` | **Render once, fan out** the *same* payload to K different stream keys — a per-tenant loop. K renders + K HMACs collapse to 1 + K cheap channel calls (~9.5× at K=10). Each key is a `[record, :symbol]` pair (or a bare string). Transport opts + `morph:` forward per key. Per-viewer `visible_to:` content stays render-per-call. See [Broadcasting](https://phlex-reactive.zoolutions.llc/docs/broadcasting). |
-| `#to_stream_replace` / `#to_stream_morph` / `#to_stream_remove` | Stream the *already-built* instance (used internally after an action / by `reply`); `#to_stream_morph` morphs in place |
+| `.broadcast_to(*streamables, replace: model, morph: false)` | Broadcast a replace over the stream transport (pgbus SSE / Action Cable); `morph: true` morphs in place |
+| `.broadcast_to(*streamables, update: model, morph: false)` | Broadcast an inner-HTML update; `morph: true` morphs in place, so a peer editing the component keeps its focus/caret (issue #113) |
+| `.broadcast_to(*streamables, append: model, target:)` / `prepend:` / `remove:` | The other broadcast verbs — the verb is a kwarg (exactly one of `replace:`/`update:`/`append:`/`prepend:`/`remove:`/`js:`) |
+| `.broadcast_to(each: stream_keys, replace: model, morph: false, exclude:, visible_to:)` | **Render once, fan out** the *same* payload to K different stream keys — a per-tenant loop. Pass `each:` instead of `*streamables`. K renders + K HMACs collapse to 1 + K cheap channel calls (~9.5× at K=10). Each key is a `[record, :symbol]` pair (or a bare string). Transport opts + `morph:` forward per key. Per-viewer `visible_to:` content stays render-per-call. See [Broadcasting](https://phlex-reactive.zoolutions.llc/docs/broadcasting). |
+| `#to_stream_replace(morph: false)` / `#to_stream_remove` | Stream the *already-built* instance (used internally after an action / by `reply`); `morph: true` morphs in place |
 | `#to_stream_update(morph: false)` | Inner-HTML update of the *already-built* instance; `morph: true` morphs in place (issue #113) |
 
 Use in controllers: `render turbo_stream: Counter.replace(counter)`.
@@ -1296,7 +1296,7 @@ gains a seam.
 By default an action re-renders its component in place. To do more, **return**
 `reply.<verb>` — a subject-bound builder available in every component. It governs
 only the actor's HTTP reply (cross-tab updates still use
-`broadcast_*_to(..., exclude: reactive_connection_id)`). Returning anything else
+`broadcast_to(..., exclude: reactive_connection_id)`). Returning anything else
 keeps the default, so existing actions are unaffected.
 
 `reply` reads cleanly: the component is the implicit subject (no `self` to
@@ -1407,7 +1407,7 @@ Semantics you can rely on:
   the action's transaction committed; a rollback or a denied action leaks no
   deferred render (and enqueues no job).
 - **Actor-scoped** — the deferred render reaches only the actor; peers keep
-  getting updates via `broadcast_*_to` (use both when both need the value).
+  getting updates via `broadcast_to` (use both when both need the value).
 - **Superseding** — a newer action for the same target aborts the in-flight
   deferred render; a fast typist never gets stale totals painted over fresh ones.
 - **Interactive on arrival** — the streamed root carries a fresh action token.
@@ -1530,7 +1530,7 @@ reply.replace.flash(:error, Alert.new(level: :error, message: msg))
 Phlex::Reactive.flash_component = ->(level, content) { MyFlash.new(level:, content:) }   # default nil → the built-in wrapper
 ```
 
-#### Server-pushed client ops (`reply.js` + `broadcast_js_to`, issue #97)
+#### Server-pushed client ops (`reply.js` + `broadcast_to(js:)`, issue #97)
 
 Sometimes the server needs the client to do something other than swap HTML —
 focus the next field after a save, dispatch an app event to a toast host, add an
@@ -1560,11 +1560,11 @@ transport (Action Cable **or** pgbus) — a background nudge to all viewers:
 
 ```ruby
 # In a model/job: light up the bell in every viewer's tab, minus the actor's own.
-Notifications::Badge.broadcast_js_to(user, :alerts,
-  js.add_class("#bell", "has-unread"), exclude: reactive_connection_id)
+Notifications::Badge.broadcast_to(user, :alerts,
+  js: js.add_class("#bell", "has-unread"), exclude: reactive_connection_id)
 ```
 
-`broadcast_js_to` **refuses focus-class ops** (`focus`/`focus_first` raise
+`broadcast_to` with `js:` **refuses focus-class ops** (`focus`/`focus_first` raise
 `ArgumentError`): broadcasting focus would steal it in every subscriber's tab, so
 focus is an actor-reply concern only. Everything else is a fair broadcast (class
 and attribute toggles, `dispatch`). As with `on_client`, the ops are
@@ -1584,7 +1584,7 @@ record can be there purely for **identity + authorization** while the action's
 real job is to recompute **live, unsaved form values** the user is mid-edit. The
 record is re-located and instantiated on each action (`from_identity`), never
 auto-saved and never auto-broadcast; persistence and cross-tab broadcast are both
-opt-in (you call `record.update!` / `broadcast_*_to` yourself). Pair that with
+opt-in (you call `record.update!` / `broadcast_to` yourself). Pair that with
 `reply.streams` and you get a first-class "authorize via the row, compute over
 the params, stream a partial update, touch neither the DB nor peer tabs" action:
 
@@ -1906,7 +1906,7 @@ end
   works; pass the raw id only if your row `#id` matches `ActiveRecord::RecordIdentifier`.
 - **Reply governs the actor's HTTP response only.** For a *cross-tab* live list
   (other viewers see the row appear) keep broadcasting the row with
-  `NotificationRow.broadcast_append_to(..., exclude: reactive_connection_id)` —
+  `NotificationRow.broadcast_to(..., append: model, exclude: reactive_connection_id)` —
   `reactive_collection` is the per-actor add/remove + count + empty-state wrapper,
   not a replacement for the broadcast.
 
@@ -2174,7 +2174,7 @@ end
 
 [pgbus](https://github.com/mhenrixon/pgbus) replaces Action Cable's transport
 with Postgres SSE and fixes its reliability gaps. With it installed,
-`broadcast_*_to` and `turbo_stream_from` route over pgbus automatically:
+`broadcast_to` and `turbo_stream_from` route over pgbus automatically:
 
 ```ruby
 class Message < ApplicationRecord
@@ -2206,7 +2206,7 @@ events, all under the `phlex_reactive` namespace:
 |-------|-------|---------|
 | `action.phlex_reactive` | once per request | `component`, `action`, `outcome` (`ok`/`denied_undeclared`/`invalid_token`/`not_found`/`unauthorized`/`unverified`) |
 | `render.phlex_reactive` | per component render | `component`, `bytesize` |
-| `broadcast.phlex_reactive` | per `broadcast_*_to` (Action Cable **and** pgbus) | `component`, `stream_action`, `streamables` |
+| `broadcast.phlex_reactive` | per `broadcast_to` call (Action Cable **and** pgbus) | `component`, `stream_action`, `streamables` |
 
 Payloads carry **names, the outcome, and sizes only** — never the token, params,
 or state, so an event can't leak a secret. Subscribe from an initializer:

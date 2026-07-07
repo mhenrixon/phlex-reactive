@@ -35,19 +35,19 @@ class NotificationsListComponent < Phlex::HTML
     return reply.replace if title.blank?
 
     notification = Notification.create!(title:)
-    NotificationRowComponent.broadcast_append_to(*Notification.stream_key, target: 'notifications',
-                                                                           model: notification,
-                                                                           exclude: reactive_connection_id)
+    NotificationRowComponent.broadcast_to(*Notification.stream_key, append: notification,
+                                                                    target: 'notifications',
+                                                                    exclude: reactive_connection_id)
     reply.append(notification, to: :notifications)
   end
 
   # Remove the row + bump the count + restore the empty-state in ONE reply, plus a
-  # self-dismissing flash. The broadcast_remove keeps other tabs in sync.
+  # self-dismissing flash. The broadcast_to(remove:) keeps other tabs in sync.
   def dismiss(id:)
     notification = Notification.find(id)
     notification.destroy!
-    NotificationRowComponent.broadcast_remove_to(*Notification.stream_key, model: notification,
-                                                                           exclude: reactive_connection_id)
+    NotificationRowComponent.broadcast_to(*Notification.stream_key, remove: notification,
+                                                                    exclude: reactive_connection_id)
     reply.remove(notification, from: :notifications).flash(:notice, 'Notification dismissed', dismiss_after: 3000)
   end
 

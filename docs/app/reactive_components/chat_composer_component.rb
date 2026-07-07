@@ -24,10 +24,10 @@ class ChatComposerComponent < Phlex::HTML
     return if body.blank?
 
     message = ChatMessage.create!(room: @room, author: @author, body:)
-    ChatMessageComponent.broadcast_append_to(
+    ChatMessageComponent.broadcast_to(
       *ChatMessage.stream_key(@room),
+      append: message,
       target: "chat-messages-#{@room}",
-      model: message,
       exclude: reactive_connection_id # suppress the actor's own echo
     )
   end

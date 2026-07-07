@@ -123,7 +123,7 @@ RSpec.describe "Phlex::Reactive reactive_lazy" do
       captured = nil
       allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to) { |*, html:, **| captured = html }
 
-      lazy_class.broadcast_replace_to("somewhere", n: 9)
+      lazy_class.broadcast_to("somewhere", replace: { n: 9 })
       expect(captured).to include("real:9")
     end
   end

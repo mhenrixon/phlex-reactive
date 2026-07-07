@@ -17,7 +17,7 @@ RSpec.describe "broadcast_js_to (issue #97)", type: :request do
 
   it "broadcasts a reactive:js stream carrying the ops to the stream" do
     broadcasts = capture_turbo_stream_broadcasts("alerts") do
-      TodoItemComponent.broadcast_js_to("alerts", ops)
+      TodoItemComponent.broadcast_to("alerts", js: ops)
     end
 
     html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin
@@ -29,7 +29,7 @@ RSpec.describe "broadcast_js_to (issue #97)", type: :request do
 
   it "accepts a target for root scoping" do
     broadcasts = capture_turbo_stream_broadcasts("alerts") do
-      TodoItemComponent.broadcast_js_to("alerts", ops, target: "sidebar")
+      TodoItemComponent.broadcast_to("alerts", js: ops, target: "sidebar")
     end
 
     html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin
@@ -39,28 +39,28 @@ RSpec.describe "broadcast_js_to (issue #97)", type: :request do
   it "rejects a focus op (broadcasting focus steals focus in every tab)" do
     focus_ops = TodoItemComponent.new(todo: Todo.new).js.focus("#field")
 
-    expect { TodoItemComponent.broadcast_js_to("alerts", focus_ops) }
+    expect { TodoItemComponent.broadcast_to("alerts", js: focus_ops) }
       .to raise_error(ArgumentError, /focus/)
   end
 
   it "rejects a focus_first op the same way" do
     focus_ops = TodoItemComponent.new(todo: Todo.new).js.focus_first("#menu")
 
-    expect { TodoItemComponent.broadcast_js_to("alerts", focus_ops) }
+    expect { TodoItemComponent.broadcast_to("alerts", js: focus_ops) }
       .to raise_error(ArgumentError, /focus/)
   end
 
   it "rejects focus even when it is mixed among allowed ops (no partial broadcast)" do
     mixed = TodoItemComponent.new(todo: Todo.new).js.add_class("#bell", "unread").focus("#field")
 
-    expect { TodoItemComponent.broadcast_js_to("alerts", mixed) }
+    expect { TodoItemComponent.broadcast_to("alerts", js: mixed) }
       .to raise_error(ArgumentError, /focus/)
   end
 
   it "rejects an empty op chain (a dead reactive:js broadcast is a mistake)" do
     empty = TodoItemComponent.new(todo: Todo.new).js
 
-    expect { TodoItemComponent.broadcast_js_to("alerts", empty) }
+    expect { TodoItemComponent.broadcast_to("alerts", js: empty) }
       .to raise_error(ArgumentError, /no ops/)
   end
 
@@ -78,7 +78,7 @@ RSpec.describe "broadcast_js_to (issue #97)", type: :request do
         seen = Thread.current[:pgbus_broadcast_exclude]
       end
 
-      TodoItemComponent.broadcast_js_to("alerts", ops, exclude: "conn-actor-1")
+      TodoItemComponent.broadcast_to("alerts", js: ops, exclude: "conn-actor-1")
 
       expect(seen).to eq("conn-actor-1")
       expect(Thread.current[:pgbus_broadcast_exclude]).to be_nil # cleared after
@@ -90,7 +90,7 @@ RSpec.describe "broadcast_js_to (issue #97)", type: :request do
         seen = Thread.current[:pgbus_broadcast_visible_to]
       end
 
-      TodoItemComponent.broadcast_js_to("alerts", ops, visible_to: "user:7")
+      TodoItemComponent.broadcast_to("alerts", js: ops, visible_to: "user:7")
 
       expect(seen).to eq("user:7")
     end
@@ -101,7 +101,7 @@ RSpec.describe "broadcast_js_to (issue #97)", type: :request do
         seen_kwargs = kwargs
       end
 
-      TodoItemComponent.broadcast_js_to("alerts", ops, exclude: "conn-actor-1", visible_to: "user:7")
+      TodoItemComponent.broadcast_to("alerts", js: ops, exclude: "conn-actor-1", visible_to: "user:7")
 
       expect(seen_kwargs).not_to have_key(:exclude)
       expect(seen_kwargs).not_to have_key(:visible_to)
@@ -111,7 +111,7 @@ RSpec.describe "broadcast_js_to (issue #97)", type: :request do
   it "still broadcasts to the stream when no transport opts are passed (real transport)" do
     expect do
       capture_turbo_stream_broadcasts("alerts") do
-        TodoItemComponent.broadcast_js_to("alerts", ops)
+        TodoItemComponent.broadcast_to("alerts", js: ops)
       end
     end.not_to raise_error
   end

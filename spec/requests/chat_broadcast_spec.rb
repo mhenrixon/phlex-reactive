@@ -54,20 +54,20 @@ RSpec.describe "Chat broadcast", type: :request do
 
   describe "actor-echo suppression (exclude:)" do
     it "passes the X-Pgbus-Connection header through to the broadcast as exclude:" do
-      allow(ChatMessageComponent).to receive(:broadcast_append_to)
+      allow(ChatMessageComponent).to receive(:broadcast_to)
 
       send_message(room: "lobby", body: "hi", connection: "conn-actor-123")
 
-      expect(ChatMessageComponent).to have_received(:broadcast_append_to)
+      expect(ChatMessageComponent).to have_received(:broadcast_to)
         .with("chat", "lobby", hash_including(exclude: "conn-actor-123"))
     end
 
     it "broadcasts with exclude: nil when no connection header is present" do
-      allow(ChatMessageComponent).to receive(:broadcast_append_to)
+      allow(ChatMessageComponent).to receive(:broadcast_to)
 
       send_message(room: "lobby", body: "hi")
 
-      expect(ChatMessageComponent).to have_received(:broadcast_append_to)
+      expect(ChatMessageComponent).to have_received(:broadcast_to)
         .with("chat", "lobby", hash_including(exclude: nil))
     end
 

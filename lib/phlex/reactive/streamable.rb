@@ -33,9 +33,39 @@ module Phlex
       # up without ever sharing a mutable context across threads.
       ThreadViewContext = Struct.new(:view_context, :builder, :renderer, :generation)
 
-      # Focus ops are actor-only (they steal focus): broadcast_js_to rejects a
+      # Focus ops are actor-only (they steal focus): a js broadcast rejects a
       # broadcast that carries one. Names mirror Phlex::Reactive::JS's focus verbs.
       BROADCAST_REFUSED_OPS = %w[focus focus_first].freeze
+
+      # The broadcast_to verb kwargs (issue #185) → their Turbo stream action.
+      # SELF-TARGETING verbs derive the target from the component's #id (require a
+      # Streamable payload); CONTAINER verbs need an explicit target: and accept any
+      # Phlex component; :js rides the reactive:js custom action.
+      BROADCAST_VERBS = {
+        replace: "replace", update: "update", append: "append",
+        prepend: "prepend", remove: "remove", js: "reactive:js"
+      }.freeze
+      BROADCAST_SELF_TARGETING = %i[replace remove].freeze
+      BROADCAST_CONTAINER = %i[update append prepend].freeze
+      BROADCAST_MORPHABLE = %i[replace update].freeze
+
+      # Issue #185: the 11 broadcast_*_to / _to_each methods are removed — each
+      # raises a guided error printing the broadcast_to rewrite for that verb.
+      # (A module constant, not defined inside class_methods, so it's a clean
+      # top-level definition the removal loop below reads.)
+      REMOVED_BROADCASTS = {
+        broadcast_replace_to: "broadcast_to(*keys, replace: model, morph: …)",
+        broadcast_update_to: "broadcast_to(*keys, update: model, morph: …)",
+        broadcast_append_to: "broadcast_to(*keys, append: model, target: …)",
+        broadcast_prepend_to: "broadcast_to(*keys, prepend: model, target: …)",
+        broadcast_remove_to: "broadcast_to(*keys, remove: model)",
+        broadcast_js_to: "broadcast_to(*keys, js: ops)",
+        broadcast_replace_to_each: "broadcast_to(each: keys, replace: model)",
+        broadcast_update_to_each: "broadcast_to(each: keys, update: model)",
+        broadcast_append_to_each: "broadcast_to(each: keys, append: model, target: …)",
+        broadcast_prepend_to_each: "broadcast_to(each: keys, prepend: model, target: …)",
+        broadcast_remove_to_each: "broadcast_to(each: keys, remove: model)"
+      }.freeze
 
       # Every class that includes Streamable, so the engine can flush their
       # memoized view contexts on a Rails code reload (dev) in one pass. A
@@ -72,6 +102,127 @@ module Phlex
             @registry.each_key { classes << it }
             classes
           end
+        end
+
+        # The ONE broadcast implementation shared by the class-level
+        # Streamable.broadcast_to and the module-level Phlex::Reactive.broadcast_to
+        # (issue #185). `owner` is the Streamable class (for the instrument name +
+        # its build/render seam); `component` is the built payload (nil for :js);
+        # `keys` is a list of key-part arrays (one per fan-out key). Renders ONCE
+        # (instrumented → render.phlex_reactive) and loops the cheap channel call
+        # per key, all wrapped in the broadcast.phlex_reactive event + the pgbus
+        # thread-local path (so exclude:/visible_to: reach pgbus and Action Cable
+        # no-ops). Self-targeting verbs derive the target from the component's #id
+        # and REQUIRE a Streamable payload; container verbs need an explicit target.
+        def broadcast_component(owner, verb, payload, component, keys, morph:, target:, exclude:, visible_to:)
+          resolved_target = resolve_broadcast_target(verb, component, payload, target)
+          # broadcast_js_ops_json is a private class method on the owner Streamable
+          # class (reached via send); the instrumentation + pgbus thread-locals are
+          # owned HERE so the class-level and module-level (plain-component) forms
+          # share ONE path and neither is silently un-instrumented (issue #185).
+          component_name = component ? component.class.name : owner.name
+          Phlex::Reactive.instrument(
+            "broadcast", { component: component_name, stream_action: BROADCAST_VERBS[verb], streamables: keys.size }
+          ) do
+            with_pgbus_broadcast_opts(exclude:, visible_to:) do
+              html = verb == :js ? nil : render_broadcast_html(component)
+              ops_json = verb == :js ? owner.send(:broadcast_js_ops_json, payload) : nil
+              keys.each { dispatch_broadcast(verb, it, resolved_target, html, ops_json, morph) }
+            end
+          end
+        end
+
+        # Render a built component to HTML for a broadcast, ALWAYS instrumented
+        # (issue #185): a Streamable renders through its own render_component (which
+        # fires render.phlex_reactive); a plain component renders through the module
+        # render wrapped in the SAME render event, so neither path is silent.
+        def render_broadcast_html(component)
+          if component.is_a?(Phlex::Reactive::Streamable)
+            component.class.render_component(component)
+          else
+            Phlex::Reactive.instrument(
+              "render", { component: component.class.name }
+            ) { Phlex::Reactive.render(component) }
+          end
+        end
+
+        # Set the pgbus broadcast thread-locals for the block, gated on
+        # pgbus_streams? — the SAME capability-gated path the class-level
+        # instrument_broadcast uses (issue #185/#187). Duplicated at module level so
+        # the shared broadcast_component owns its transport threading. On Action
+        # Cable / old pgbus this is a pure `yield`.
+        def with_pgbus_broadcast_opts(exclude:, visible_to:)
+          return yield unless Phlex::Reactive.pgbus_streams?
+
+          prev_exclude = Thread.current[:pgbus_broadcast_exclude]
+          prev_visible = Thread.current[:pgbus_broadcast_visible_to]
+          Thread.current[:pgbus_broadcast_exclude] = exclude
+          Thread.current[:pgbus_broadcast_visible_to] = visible_to
+          yield
+        ensure
+          if Phlex::Reactive.pgbus_streams?
+            Thread.current[:pgbus_broadcast_exclude] = prev_exclude
+            Thread.current[:pgbus_broadcast_visible_to] = prev_visible
+          end
+        end
+
+        # Resolve the DOM target for a broadcast (issue #185): a self-targeting
+        # verb (replace/remove) uses the component's #id and REQUIRES a Streamable
+        # payload (the #id contract) — a plain component gets a guided error steering
+        # to update:; a container verb (update/append/prepend) uses the caller's
+        # explicit target: (update self-targets a Streamable when no target: given).
+        # :js scopes ops by the caller target (nil → document-scoped).
+        def resolve_broadcast_target(verb, component, payload, target)
+          return target if verb == :js
+
+          streamable = component.is_a?(Phlex::Reactive::Streamable)
+          if BROADCAST_SELF_TARGETING.include?(verb) || (verb == :update && target.nil?)
+            unless streamable
+              raise ArgumentError,
+                "broadcast_to #{verb}: needs a Streamable payload (its #id is the target). A plain " \
+                "component #{payload.class} has no #id — use update: with an explicit target:."
+            end
+            return component.id
+          end
+          raise ArgumentError, "broadcast_to #{verb}: needs a target: (the container element's id)." unless target
+
+          target
+        end
+
+        # Route ONE key to its Turbo::StreamsChannel call for the verb (issue #185).
+        # exclude:/visible_to: are NOT passed here — they ride the pgbus thread-locals
+        # set by with_pgbus_broadcast_opts (turbo-rails would swallow them as kwargs).
+        def dispatch_broadcast(verb, key, target, html, ops_json, morph)
+          parts = Array(key)
+          case verb
+          when :replace then ::Turbo::StreamsChannel.broadcast_replace_to(*parts, target:, html:, **morph_wire(morph))
+          when :update then ::Turbo::StreamsChannel.broadcast_update_to(*parts, target:, html:, **morph_wire(morph))
+          when :append then ::Turbo::StreamsChannel.broadcast_append_to(*parts, target:, html:)
+          when :prepend then ::Turbo::StreamsChannel.broadcast_prepend_to(*parts, target:, html:)
+          when :remove then ::Turbo::StreamsChannel.broadcast_remove_to(*parts, target:)
+          when :js
+            ::Turbo::StreamsChannel.broadcast_action_to(
+              *parts, action: "reactive:js", target:, attributes: { data: { reactive_ops: ops_json } }, render: false
+            )
+          end
+        end
+
+        # The ONE morph wire compiler (issue #185): the broadcast path emits the
+        # method="morph" attribute via `attributes:` (it has no `method:` kwarg).
+        # Replaces the morph_method/morph_attributes twins.
+        def morph_wire(morph)
+          morph ? { attributes: { method: "morph" } } : {}
+        end
+
+        # Split the single verb kwarg out of the module-level broadcast_to's **verb
+        # (issue #185) — public counterpart of the class-level extract_broadcast_verb.
+        def extract_module_broadcast_verb(verb)
+          unless verb.size == 1 && BROADCAST_VERBS.key?(verb.keys.first)
+            raise ArgumentError,
+              "broadcast_to needs exactly ONE verb kwarg (#{BROADCAST_VERBS.keys.join("/")}), got #{verb.keys.inspect}"
+          end
+
+          verb.first
         end
       end
 
@@ -245,168 +396,71 @@ module Phlex
         # COUNT + component name, never the model/state. The event fires on BOTH
         # transports (Action Cable AND pgbus): it wraps this class-method body,
         # which is the same on either, so pgbus optionality is preserved.
-        def broadcast_replace_to(*streamables, model: nil, exclude: nil, visible_to: nil, morph: false, **options)
-          instrument_broadcast("replace", streamables, exclude:, visible_to:) do
-            component = build(model, options)
-            ::Turbo::StreamsChannel.broadcast_replace_to(
-              *streamables, target: component.id, html: render_component(component),
-              **morph_attributes(morph)
-            )
-          end
-        end
-
-        # `morph: true` makes the live cross-tab update morph in place (issue
-        # #113), so a peer tab editing this component keeps its focus/caret
-        # instead of an inner-HTML clobber. Like broadcast_replace_to's morph
-        # flag, it rides through `attributes:` (the broadcast path has no
-        # `method:` kwarg) via morph_attributes.
-        def broadcast_update_to(*streamables, model: nil, exclude: nil, visible_to: nil, morph: false, **options)
-          instrument_broadcast("update", streamables, exclude:, visible_to:) do
-            component = build(model, options)
-            ::Turbo::StreamsChannel.broadcast_update_to(
-              *streamables, target: component.id, html: render_component(component),
-              **morph_attributes(morph)
-            )
-          end
-        end
-
-        def broadcast_append_to(*streamables, target:, model: nil, exclude: nil, visible_to: nil, **options)
-          instrument_broadcast("append", streamables, exclude:, visible_to:) do
-            component = build(model, options)
-            ::Turbo::StreamsChannel.broadcast_append_to(
-              *streamables, target:, html: render_component(component)
-            )
-          end
-        end
-
-        def broadcast_prepend_to(*streamables, target:, model: nil, exclude: nil, visible_to: nil, **options)
-          instrument_broadcast("prepend", streamables, exclude:, visible_to:) do
-            component = build(model, options)
-            ::Turbo::StreamsChannel.broadcast_prepend_to(
-              *streamables, target:, html: render_component(component)
-            )
-          end
-        end
-
-        def broadcast_remove_to(*streamables, model: nil, exclude: nil, visible_to: nil, **options)
-          instrument_broadcast("remove", streamables, exclude:, visible_to:) do
-            component = build(model, options)
-            ::Turbo::StreamsChannel.broadcast_remove_to(
-              *streamables, target: component.id
-            )
-          end
-        end
-
-        # Push server-side client DOM ops to EVERY subscriber of a stream (issue
-        # #97) — the broadcast sibling of Response#js. Rides a `reactive:js`
-        # custom stream action over Turbo::StreamsChannel, so it works on Action
-        # Cable AND pgbus (exclude:/visible_to: thread to pgbus via
-        # instrument_broadcast exactly like every other broadcast):
+        # ONE broadcast method (issue #185) — the verb is a KWARG whose value is
+        # the payload, replacing the 11 broadcast_*_to / _to_each methods:
         #
-        #   Notifications::Badge.broadcast_js_to(user, :alerts,
-        #     js.add_class("#bell", "has-unread"), exclude: reactive_connection_id)
+        #   Item.broadcast_to(@list, :todos, replace: @todo, morph: true)   # self-target
+        #   Item.broadcast_to(@list, :todos, append: todo, target: dom_id(@list, :todos),
+        #     exclude: reactive_connection_id)
+        #   Badge.broadcast_to(user, :alerts, js: js.add_class("#bell", "has-unread"))
+        #   Counter.broadcast_to(each: accounts.map { [it, :counters] }, replace: counter)
+        #   ChatComposer.broadcast_to("chat", room, update: { room:, author: })  # Hash = init kwargs
         #
-        # `ops` is a Phlex::Reactive::JS chain (or a raw [[op, args], ...] array);
-        # `target` (an element id) scopes op resolution on the client (nil →
-        # document-scoped). The ops JSON is HTML-escaped through the TagBuilder's
-        # attributes: path (data-reactive-ops), so a value can't break out of the
-        # attribute.
-        #
-        # The builder REJECTS focus-class ops (focus/focus_first) outright:
-        # broadcasting a focus steals focus in every subscriber's tab. Focus is an
-        # actor-reply concern only (Response#js), so it raises ArgumentError here
-        # rather than silently shipping a hostile-feeling broadcast.
-        def broadcast_js_to(*streamables, ops, exclude: nil, visible_to: nil, target: nil)
-          instrument_broadcast("reactive:js", streamables, exclude:, visible_to:) do
-            json = broadcast_js_ops_json(ops)
-            ::Turbo::StreamsChannel.broadcast_action_to(
-              *streamables,
-              action: "reactive:js",
-              target: target,
-              attributes: { data: { reactive_ops: json } },
-              render: false
-            )
-          end
+        # Exactly ONE verb kwarg — replace:/update:/append:/prepend:/remove:/js:.
+        # The payload is a record (built via model_param_name), an init-kwargs Hash
+        # (verbatim — no **options collision), or a built Phlex component. `each:`
+        # (an enumerable of stream keys) fans ONE render out to K keys (1 build + 1
+        # render + 1 signing + K cheap channel calls); otherwise *streamables is the
+        # single key. `morph:` applies to replace/update. `exclude:`/`visible_to:`
+        # thread to pgbus via the capability-gated instrument_broadcast path; on
+        # Action Cable they no-op. The class-level and module-level (Phlex::Reactive.
+        # broadcast_to) forms share broadcast_component (below).
+        def broadcast_to(*streamables, morph: false, target: nil, exclude: nil, visible_to: nil, each: nil, **verb)
+          name, payload = extract_broadcast_verb(verb)
+          component = name == :js ? nil : coerce_broadcast_payload(payload)
+          keys = each ? each.map { Array(it) } : [streamables]
+          Phlex::Reactive::Streamable.broadcast_component(
+            self, name, payload, component, keys, morph:, target:, exclude:, visible_to:
+          )
         end
 
-        # --- Multi-key fan-out (issue #119) ---------------------------------
-        # Broadcast ONE component to K DIFFERENT stream keys — a per-tenant loop
-        # ("the list page stream AND the dashboard stream"). The classic
-        # broadcast_*_to concatenates *streamables into ONE key, so fanning out
-        # to K keys the hand way is K× build + K× render + K× identity HMAC for
-        # BYTE-IDENTICAL HTML. These render the component ONCE and loop only the
-        # cheap channel call:
-        #
-        #   Counter.broadcast_replace_to_each(
-        #     accounts.map { [it, :counters] }, model: counter, exclude: reactive_connection_id)
-        #
-        # `stream_keys` is an enumerable of keys; each key is passed to the
-        # transport as its raw parts (a [record, :symbol] pair, or a bare string
-        # — `Array(key)` handles both). Transport opts (exclude:/visible_to:) and
-        # morph: forward PER key exactly as the single-key verbs do, so
-        # pgbus-present suppresses the actor's echo on every stream and
-        # pgbus-absent is unchanged (the no-opts call passes no unknown keyword).
-        #
-        # Irreducible exception: per-VIEWER content (visible_to: rendering
-        # DIFFERENT HTML per viewer) still renders per call — that's a
-        # render-per-viewer by definition and can't be shared. This fan-out is
-        # for the same payload to many keys.
-        def broadcast_replace_to_each(stream_keys, model: nil, exclude: nil, visible_to: nil, morph: false, **options)
-          instrument_broadcast("replace", stream_keys, exclude:, visible_to:) do
-            component = build(model, options)
-            html = render_component(component)
-            stream_keys.each do
-              ::Turbo::StreamsChannel.broadcast_replace_to(
-                *Array(it), target: component.id, html:, **morph_attributes(morph)
-              )
-            end
+        # Define the guided-error stub for each removed broadcast method (issue
+        # #185). `verb` is referenced in define_method AND the message, so the outer
+        # block param must be named — `it` is illegal here.
+        # rubocop:disable Style/ItBlockParameter
+        Phlex::Reactive::Streamable::REMOVED_BROADCASTS.each_key do |verb|
+          define_method(verb) do |*, **|
+            raise NoMethodError,
+              "#{name}.#{verb} was removed in issue #185 — " \
+              "use #{name}.#{Phlex::Reactive::Streamable::REMOVED_BROADCASTS[verb]}"
           end
         end
-
-        def broadcast_update_to_each(stream_keys, model: nil, exclude: nil, visible_to: nil, morph: false, **options)
-          instrument_broadcast("update", stream_keys, exclude:, visible_to:) do
-            component = build(model, options)
-            html = render_component(component)
-            stream_keys.each do
-              ::Turbo::StreamsChannel.broadcast_update_to(
-                *Array(it), target: component.id, html:, **morph_attributes(morph)
-              )
-            end
-          end
-        end
-
-        def broadcast_append_to_each(stream_keys, target:, model: nil, exclude: nil, visible_to: nil, **options)
-          instrument_broadcast("append", stream_keys, exclude:, visible_to:) do
-            component = build(model, options)
-            html = render_component(component)
-            stream_keys.each do
-              ::Turbo::StreamsChannel.broadcast_append_to(*Array(it), target:, html:)
-            end
-          end
-        end
-
-        def broadcast_prepend_to_each(stream_keys, target:, model: nil, exclude: nil, visible_to: nil, **options)
-          instrument_broadcast("prepend", stream_keys, exclude:, visible_to:) do
-            component = build(model, options)
-            html = render_component(component)
-            stream_keys.each do
-              ::Turbo::StreamsChannel.broadcast_prepend_to(*Array(it), target:, html:)
-            end
-          end
-        end
-
-        # remove has no body — nothing to render. It still builds ONCE to read
-        # the component's #id (the target), then loops the cheap channel call.
-        def broadcast_remove_to_each(stream_keys, model: nil, exclude: nil, visible_to: nil, **options)
-          instrument_broadcast("remove", stream_keys, exclude:, visible_to:) do
-            component = build(model, options)
-            stream_keys.each do
-              ::Turbo::StreamsChannel.broadcast_remove_to(*Array(it), target: component.id)
-            end
-          end
-        end
+        # rubocop:enable Style/ItBlockParameter
 
         private
+
+        # Split the single verb kwarg (replace:/update:/…) out of **verb, raising
+        # for zero or more than one — exactly one verb per broadcast_to call.
+        def extract_broadcast_verb(verb)
+          unless verb.size == 1 && BROADCAST_VERBS.key?(verb.keys.first)
+            raise ArgumentError,
+              "broadcast_to needs exactly ONE verb kwarg (#{BROADCAST_VERBS.keys.join("/")}), got #{verb.keys.inspect}"
+          end
+
+          verb.first
+        end
+
+        # Coerce a verb payload into a built component: a Phlex component passes
+        # through (issue #185 — built payloads); a Hash is init kwargs verbatim (no
+        # **options collision); anything else is the record built via
+        # model_param_name. nil builds argument-free (a state-backed default).
+        def coerce_broadcast_payload(payload)
+          case payload
+          when ::Phlex::SGML then payload
+          when Hash then new(**payload)
+          else build(payload, {})
+          end
+        end
 
         # Wrap a broadcast_*_to body in a broadcast.phlex_reactive event (issue
         # #107) AND thread the pgbus transport opts (issue #187). Payload: the
@@ -424,32 +478,10 @@ module Phlex
         # thread-locals around the broadcast (capability-gated on pgbus_streams?)
         # and clear them in ensure. On Action Cable there is no such thread-local
         # reader, so this is a no-op there — pgbus optionality preserved.
-        def instrument_broadcast(stream_action, streamables, exclude: nil, visible_to: nil, &)
-          Phlex::Reactive.instrument(
-            "broadcast",
-            { component: name, stream_action: stream_action, streamables: streamables.size }
-          ) { with_pgbus_broadcast_opts(exclude:, visible_to:, &) }
-        end
-
-        # Set the pgbus broadcast thread-locals for the duration of the block,
-        # ONLY when streams-capable pgbus is present (the capability gate — an old
-        # pgbus / Action Cable never reads these keys, so we skip the work and the
-        # ensure entirely). Cleared in ensure so a broadcast never leaks its
-        # exclude into a later one on the same thread.
-        def with_pgbus_broadcast_opts(exclude:, visible_to:)
-          return yield unless Phlex::Reactive.pgbus_streams?
-
-          prev_exclude = Thread.current[:pgbus_broadcast_exclude]
-          prev_visible = Thread.current[:pgbus_broadcast_visible_to]
-          Thread.current[:pgbus_broadcast_exclude] = exclude
-          Thread.current[:pgbus_broadcast_visible_to] = visible_to
-          yield
-        ensure
-          if Phlex::Reactive.pgbus_streams?
-            Thread.current[:pgbus_broadcast_exclude] = prev_exclude
-            Thread.current[:pgbus_broadcast_visible_to] = prev_visible
-          end
-        end
+        # (issue #185: instrument_broadcast + the class-level with_pgbus_broadcast_opts
+        # were folded into the shared Streamable.broadcast_component — ONE
+        # instrumentation + pgbus-threading path for the class-level and module-level
+        # broadcast_to, so the transport logic has exactly one spelling.)
 
         # Validate + serialize broadcast ops: reject focus-class ops (they steal
         # focus in every tab) and an empty chain (a dead broadcast), then return
@@ -477,12 +509,9 @@ module Phlex
           morph ? { method: :morph } : {}
         end
 
-        # The BROADCAST path renders extra <turbo-stream> attributes through
-        # `attributes:` (it has no `method:` kwarg — that would fall into the
-        # render args and be dropped). Same wire result: method="morph".
-        def morph_attributes(morph)
-          morph ? { attributes: { method: "morph" } } : {}
-        end
+        # (The broadcast path's morph wire moved to Streamable.morph_wire, issue
+        # #185 — the single compiler both the class-level and module-level
+        # broadcast_to share.)
 
         def renderer
           Phlex::Reactive.renderer
@@ -550,24 +579,25 @@ module Phlex
       # Phlex::Reactive::Stream (issue #114) so the endpoint reads the action /
       # target / token-ness structurally instead of regexing the markup; the wire
       # bytes are byte-identical.
-      def to_stream_replace
-        Phlex::Reactive::Stream.wrap(
-          self.class.turbo_stream_builder.replace(id, html: self.class.render_component(self)),
-          action: "replace", target: id, renders_root: true
-        )
+      # `morph: true` emits `<turbo-stream action="replace" method="morph">`
+      # (issue #28): Turbo 8's bundled Idiomorph morphs the subtree in place —
+      # preserving the focused <input> + caret across the re-render — while still
+      # carrying the root's fresh data-reactive-token-value (so the signed token
+      # refreshes). Default (morph: false) is the plain outerHTML replace,
+      # byte-identical to before. Used by reply.replace / reply.morph. The morph:
+      # kwarg replaces the deleted to_stream_morph (issue #185).
+      def to_stream_replace(morph: false)
+        builder = self.class.turbo_stream_builder
+        html = self.class.render_component(self)
+        rendered = morph ? builder.replace(id, html:, method: :morph) : builder.replace(id, html:)
+        Phlex::Reactive::Stream.wrap(rendered, action: "replace", target: id, renders_root: true)
       end
 
-      # Render THIS instance as a MORPHING replace (issue #28):
-      # `<turbo-stream action="replace" method="morph">`. Turbo 8's bundled
-      # Idiomorph morphs the subtree in place — preserving the focused <input> +
-      # caret across the re-render — while still carrying the root's fresh
-      # data-reactive-token-value (so the signed token refreshes). Used by
-      # reply.morph / reply.replace(morph: true).
+      # Issue #185: to_stream_morph is removed — the morph flag is a kwarg now.
+      # Guided error → to_stream_replace(morph: true).
       def to_stream_morph
-        Phlex::Reactive::Stream.wrap(
-          self.class.turbo_stream_builder.replace(id, html: self.class.render_component(self), method: :morph),
-          action: "replace", target: id, renders_root: true
-        )
+        raise NoMethodError,
+          "to_stream_morph was removed in issue #185 — use to_stream_replace(morph: true)"
       end
 
       # `morph: true` emits `<turbo-stream action="update" method="morph">`

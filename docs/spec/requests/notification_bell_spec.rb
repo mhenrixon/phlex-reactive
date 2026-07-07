@@ -4,8 +4,8 @@ require 'rails_helper'
 require 'turbo/broadcastable/test_helper'
 
 # The live notification bell: a simulate_event action bumps the unread count,
-# re-renders the bell, and broadcasts both the replaced bell and a broadcast_js_to
-# pulse to the other tabs.
+# re-renders the bell, and broadcasts both the replaced bell and a broadcast_to
+# js: pulse to the other tabs.
 RSpec.describe 'Notification bell actions', type: :request do
   include ActiveSupport::Testing::Assertions
   include Turbo::Broadcastable::TestHelper
@@ -32,7 +32,7 @@ RSpec.describe 'Notification bell actions', type: :request do
     # The replace carries the bumped count to every subscribed tab.
     expect(html).to include('action="replace"')
     expect(html).to include('target="notification-bell"')
-    # The broadcast_js_to nudge ships a whitelisted DOM op (no HTML re-render).
+    # The broadcast_to js: nudge ships a whitelisted DOM op (no HTML re-render).
     expect(html).to include('reactive:js')
     expect(html).to include('animate-bounce')
   end

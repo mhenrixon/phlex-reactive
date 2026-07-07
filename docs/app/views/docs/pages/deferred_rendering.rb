@@ -152,7 +152,7 @@ module Views
                 deferred render can never leak a change that didn't happen.
               - **Actor-scoped.** The deferred render reaches only the acting user;
                 it is never echoed to peers. Cross-tab updates keep going through
-                `broadcast_*_to`, exactly as before.
+                `broadcast_to`, exactly as before.
               - **Superseding.** A newer action for the same target aborts the
                 in-flight deferred render (the fetch is aborted, the one-shot stream
                 unsubscribed). A fast typist never gets stale totals painted over

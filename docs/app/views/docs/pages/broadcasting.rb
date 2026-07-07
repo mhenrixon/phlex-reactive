@@ -19,6 +19,7 @@ module Views
           stream_keys
           methods_table
           model_mapping
+          module_level_broadcast
           multi_key_fanout
           from_action
           actor_echo
@@ -46,12 +47,12 @@ module Views
               turbo_stream_from @list, :todos
 
               # Broadcast (from a model callback, job, service, or a reactive action):
-              Todos::Item.broadcast_replace_to(@list, :todos, model: @todo)
+              Todos::Item.broadcast_to(@list, :todos, replace: @todo)
               ```
 
               The subscriber and broadcaster must agree on the **same stream key**.
               Pass the same `*streamables` to both `turbo_stream_from` and
-              `broadcast_*_to`.
+              `broadcast_to`.
             MD
           end
         end
@@ -59,20 +60,20 @@ module Views
         def transports
           DocsUI::Section('Two transports: Action Cable or pgbus') do
             md <<~MD
-              Every `broadcast_*_to` routes over `Turbo::StreamsChannel`, so it works
+              Every `broadcast_to` routes over `Turbo::StreamsChannel`, so it works
               on **either** transport with no code change:
 
               - **Action Cable** — the Rails default. Broadcasts go over WebSockets.
                 Nothing extra to install.
               - **pgbus** — Postgres-backed SSE. Installing it makes the SAME
-                `broadcast_*_to` calls route over Postgres instead, and unlocks the
+                `broadcast_to` calls route over Postgres instead, and unlocks the
                 transactional guarantee, per-connection `exclude:` / `visible_to:`
                 scoping, and presence tracking below.
 
-              The plain broadcast API (replace / update / append / prepend / remove /
-              js) is identical on both. What pgbus adds are the *guarantees* — the
-              transactional deferral, actor-echo suppression, and presence — noted
-              inline where they apply.
+              The plain broadcast API (`replace:` / `update:` / `append:` / `prepend:` /
+              `remove:` / `js:` as the verb kwarg) is identical on both. What pgbus adds
+              are the *guarantees* — the transactional deferral, actor-echo suppression,
+              and presence — noted inline where they apply.
             MD
           end
         end
@@ -80,61 +81,68 @@ module Views
         def stream_keys
           DocsUI::Section('Stream keys: pass raw parts, not a built key') do
             md <<~MD
-              `broadcast_*_to(*streamables, ...)` builds the stream key itself.
+              `broadcast_to(*streamables, ...)` builds the stream key itself.
               **Pass raw parts** (a record and/or symbols), not an already-built key
               string:
 
               ```ruby
               # GOOD — raw parts
-              Chat::Message.broadcast_append_to("chat", room, target: "...", model: msg)
+              Chat::Message.broadcast_to("chat", room, append: msg, target: "...")
               turbo_stream_from "chat", room
 
               # BAD — double-keying ("chat:lobby" then re-keyed) trips the separator guard
               key = ChatMessage.stream_key(room)             # => "chat:lobby"
-              Chat::Message.broadcast_append_to(key, ...)    # ArgumentError under pgbus
+              Chat::Message.broadcast_to(key, append: msg, target: "...")   # ArgumentError under pgbus
               ```
 
               If you have a helper that returns a built key for the subscriber, pass
               the **same built string** to `turbo_stream_from` only — but give
-              `broadcast_*_to` the raw parts. The simplest rule: **use the same raw
+              `broadcast_to` the raw parts. The simplest rule: **use the same raw
               *streamables on both sides.**
             MD
           end
         end
 
         def methods_table
-          DocsUI::Section('The broadcast methods') do
+          DocsUI::Section('The broadcast method') do
             md <<~MD
-              - `.broadcast_replace_to(*streamables, model:, morph:)` — replace the
-                element with id `component.id`. Pass `morph: true` for a cross-tab
-                morph (see below).
-              - `.broadcast_update_to(*streamables, model:, morph:)` — replace its
-                *inner* HTML. Pass `morph: true` for a cross-tab morph, so a peer
-                editing the component keeps its focus/caret (see below).
-              - `.broadcast_append_to(*streamables, target:, model:)` — append into
-                container `target`.
-              - `.broadcast_prepend_to(*streamables, target:, model:)` — prepend into
-                `target`.
-              - `.broadcast_remove_to(*streamables, model:)` — remove the element with
-                id `component.id`.
-              - `.broadcast_js_to(*streamables, ops, exclude:, visible_to:, target:)` —
-                push **client DOM ops** (class/attr toggles, `dispatch`) to every
-                subscriber. Refuses focus ops (see below).
+              ONE method, `broadcast_to(*streamables, morph:, target:, exclude:,
+              visible_to:, each:, **verb)` — the verb is a **kwarg** whose value is
+              the payload, exactly one of:
 
-              Every one accepts the transport options `exclude:` and `visible_to:`
+              - `replace: model` — replace the element with id `component.id`. Pass
+                `morph: true` for a cross-tab morph (see below).
+              - `update: model` — replace its *inner* HTML. Pass `morph: true` for a
+                cross-tab morph, so a peer editing the component keeps its
+                focus/caret (see below).
+              - `append: model` — append into container `target:`.
+              - `prepend: model` — prepend into container `target:`.
+              - `remove: model` — remove the element with id `component.id`.
+              - `js: ops` — push **client DOM ops** (class/attr toggles, `dispatch`)
+                to every subscriber. Refuses focus ops (see below).
+
+              `replace:`/`remove:` self-target via the payload's `#id` (it must be a
+              `Streamable`); `update:`/`append:`/`prepend:` are container verbs and
+              take an explicit `target:` (or, for `update:`, default to
+              self-targeting when `target:` is omitted). The payload itself is a
+              record (built via `model_param_name`), an init-kwargs `Hash` (verbatim
+              — no `**options` collision), or an already-built Phlex component.
+
+              Every call accepts the transport options `exclude:` and `visible_to:`
               (honored on pgbus, ignored on Action Cable — see those sections).
             MD
           end
         end
 
         def model_mapping
-          DocsUI::Section('How model: maps to the init keyword') do
+          DocsUI::Section('How the verb payload maps to the init keyword') do
             md <<~MD
-              The `model:` argument is passed to the component's `initialize` under the
-              keyword `model_param_name`. For a **record-backed** component
-              (`reactive_record`), that keyword is the record name — the SAME keyword
-              the action endpoint uses to rebuild the component on a click. So a single
-              `initialize(<record>:)` satisfies both clicks and broadcasts:
+              A **record** payload (`replace: @todo`) is passed to the component's
+              `initialize` under the keyword `model_param_name`. For a
+              **record-backed** component (`reactive_record`), that keyword is the
+              record name — the SAME keyword the action endpoint uses to rebuild the
+              component on a click. So a single `initialize(<record>:)` satisfies
+              both clicks and broadcasts:
 
               ```ruby
               class Todos::Item < ApplicationComponent
@@ -143,7 +151,7 @@ module Views
                 def initialize(todo:) = @todo = todo   # the keyword must match `reactive_record :todo`
               end
 
-              Todos::Item.broadcast_replace_to(@list, :todos, model: @todo) # builds new(todo: @todo)
+              Todos::Item.broadcast_to(@list, :todos, replace: @todo) # builds new(todo: @todo)
               ```
 
               For a **Streamable-only** component (broadcast-only, no
@@ -158,46 +166,76 @@ module Views
                 def self.model_param_name = :user   # class name would be :notifications_badge
               end
               ```
+
+              A **Hash** payload (`replace: { room:, author: }`) is passed as init
+              kwargs **verbatim** — `new(**payload)` — with no `model_param_name`
+              involved and no collision with a `**options` merge. An already-**built**
+              Phlex component payload passes straight through unchanged.
+            MD
+          end
+        end
+
+        def module_level_broadcast
+          DocsUI::Section('Broadcasting a plain component (Phlex::Reactive.broadcast_to)') do
+            md <<~MD
+              The class-level `SomeComponent.broadcast_to(...)` needs a `Streamable`
+              class to call it on. When the thing you want to push is a **plain Phlex
+              component** — a count badge, a summary card — that never carries
+              `Streamable` itself, `Phlex::Reactive.broadcast_to` takes the same verb
+              kwargs but the payload is an **already-built component instance**, so you
+              never hand-roll the raw channel call + render:
+
+              ```ruby
+              Phlex::Reactive.broadcast_to(
+                @list, :todos,
+                update: TodoCount.new(list: @list), target: "todos-count"
+              )
+              Phlex::Reactive.broadcast_to(user, :alerts, replace: NotificationsBadge.new(user:))
+              ```
+
+              Self-targeting verbs (`replace:`/`remove:`) still need a `Streamable`
+              payload (its `#id` is the target); container verbs (`update:`/`append:`/
+              `prepend:`) accept **any** Phlex component. Both forms share the exact
+              same render + instrumentation path, so an APM sees identical
+              `broadcast.phlex_reactive` events either way.
             MD
           end
         end
 
         def multi_key_fanout
-          DocsUI::Section('Render once, fan out to many keys (broadcast_*_to_each)') do
+          DocsUI::Section('Render once, fan out to many keys (each:)') do
             md <<~MD
-              `broadcast_*_to` concatenates its `*streamables` into **one** key. To push
+              `broadcast_to` concatenates its `*streamables` into **one** key. To push
               the *same* component to K **different** stream keys — a per-tenant loop,
               "the list page stream AND the dashboard stream" — a hand-written loop over
-              `broadcast_replace_to` pays K builds + K renders + K identity HMACs for
-              **byte-identical HTML**. `broadcast_*_to_each` renders **once** and loops
-              only the cheap channel call:
+              `broadcast_to` pays K builds + K renders + K identity HMACs for
+              **byte-identical HTML**. Pass `each:` instead of `*streamables` and it
+              renders **once** and loops only the cheap channel call:
 
               ```ruby
               # K renders + K HMACs — the cliff
-              accounts.each { |a| Counter.broadcast_replace_to(a, :counters, model: counter) }
+              accounts.each { |a| Counter.broadcast_to(a, :counters, replace: counter) }
 
               # 1 render + 1 HMAC + K channel calls — ~9.5× faster at K=10, ~88% fewer allocations
-              Counter.broadcast_replace_to_each(
-                accounts.map { [it, :counters] }, model: counter,
+              Counter.broadcast_to(
+                each: accounts.map { [it, :counters] }, replace: counter,
                 exclude: reactive_connection_id
               )
               ```
 
-              - **`stream_keys`** is an enumerable of keys; each key is passed to the
+              - **`each:`** is an enumerable of keys; each key is passed to the
                 transport as its raw parts (a `[record, :symbol]` pair, or a bare
-                string — both work). Same raw-parts rule as `broadcast_*_to`.
-              - Every verb has an `_each`: `broadcast_replace_to_each`,
-                `broadcast_update_to_each`, `broadcast_append_to_each` /
-                `broadcast_prepend_to_each` (both take `target:`), and
-                `broadcast_remove_to_each`.
+                string — both work). Same raw-parts rule as the single-key form.
+              - **Every verb supports `each:`** — it's the same `broadcast_to` call,
+                just swapping `*streamables` for `each: keys`.
               - **Transport opts + `morph:` forward per key** — `exclude:` /
                 `visible_to:` are threaded to every stream exactly as the single-key
-                verbs do, so the pgbus path suppresses the actor's echo on every stream
+                form does, so the pgbus path suppresses the actor's echo on every stream
                 and the Action Cable path is unchanged (the no-opts call passes no
                 unknown keyword — the pgbus-optionality invariant holds).
               - **The irreducible exception is per-VIEWER content.** `visible_to:` that
                 renders **different** HTML per viewer can't share a payload — that stays
-                a render-per-call. `_to_each` is for the *same* payload to many keys.
+                a render-per-call. `each:` is for the *same* payload to many keys.
             MD
           end
         end
@@ -216,10 +254,10 @@ module Views
               def add(title:)
                 authorize! @list, :update?
                 todo = @list.todos.create!(title:)
-                Todos::Item.broadcast_append_to(
+                Todos::Item.broadcast_to(
                   @list, :todos,
+                  append: todo,
                   target: dom_id(@list, :todos),
-                  model: todo,
                   exclude: reactive_connection_id # don't echo to the actor — they got the HTTP response
                 )
               end
@@ -257,15 +295,15 @@ module Views
               Where `exclude:` names ONE connection to skip, `visible_to:` names the
               only connections that should receive the broadcast — an allow-list rather
               than a deny-one. It is a first-class transport option on **every**
-              `broadcast_*_to`, alongside `exclude:`:
+              `broadcast_to` call, alongside `exclude:`:
 
               ```ruby
               # Only these two connections see the update — everyone else on the stream
               # is skipped. Useful for a private DM row, a per-seat highlight, or a
               # moderator-only control.
-              Chat::Message.broadcast_replace_to(
+              Chat::Message.broadcast_to(
                 room, :messages,
-                model: msg,
+                replace: msg,
                 visible_to: [alice_connection_id, bob_connection_id]
               )
               ```
@@ -278,33 +316,33 @@ module Views
         end
 
         def cross_tab_morph
-          DocsUI::Section('Cross-tab morphing (broadcast_replace_to morph:)') do
+          DocsUI::Section('Cross-tab morphing (broadcast_to morph:)') do
             md <<~MD
-              A plain `broadcast_replace_to` swaps the whole element. If a peer viewer
-              is mid-interaction on that element — a text caret in an input, an open
-              `<details>`, scroll position — a swap throws that state away. Pass
-              `morph: true` to make the replace **morph in place** instead, so the peer
-              tab keeps its focus and caret on the morphed row:
+              A plain `broadcast_to(..., replace: model)` swaps the whole element. If a
+              peer viewer is mid-interaction on that element — a text caret in an
+              input, an open `<details>`, scroll position — a swap throws that state
+              away. Pass `morph: true` to make the replace **morph in place** instead,
+              so the peer tab keeps its focus and caret on the morphed row:
 
               ```ruby
               # A peer tab editing the same row keeps its caret; only the changed
               # attributes/text are patched in.
-              Todos::Item.broadcast_replace_to(@list, :todos, model: @todo, morph: true)
+              Todos::Item.broadcast_to(@list, :todos, replace: @todo, morph: true)
               ```
 
               This emits `method="morph"` on the broadcast `<turbo-stream>`, so
               idiomorph patches the existing DOM rather than replacing it.
 
-              `broadcast_update_to` takes `morph:` too — a plain `update` swaps the
+              `update:` takes `morph:` too — a plain `update` swaps the
               *inner* HTML (still tearing down a focused input mid-edit), so
               `morph: true` patches the inner HTML in place instead, keeping a peer's
               caret:
 
               ```ruby
-              Totals.broadcast_update_to(@order, :totals, model: @order, morph: true)
+              Totals.broadcast_to(@order, :totals, update: @order, morph: true)
               ```
 
-              `append` / `prepend` / `remove` don't replace an existing element, so
+              `append:` / `prepend:` / `remove:` don't replace an existing element, so
               they take no `morph:`.
             MD
           end
@@ -325,7 +363,7 @@ module Views
               ```ruby
               ActiveRecord::Base.transaction do
                 @order.update!(status: "shipped")
-                Orders::Card.broadcast_replace_to(@order.account, model: @order)  # deferred
+                Orders::Card.broadcast_to(@order.account, replace: @order)  # deferred
                 ChargeService.capture!(@order)   # if this raises → no broadcast, no status change
               end
               ```
@@ -341,7 +379,7 @@ module Views
               `reply.remove` from the action: the actor's element is removed via the
               built-in `Streamable#to_stream_remove` (no endpoint override, no helper to
               add), and other tabs get
-              `broadcast_remove_to(..., exclude: reactive_connection_id)`.
+              `broadcast_to(..., remove: model, exclude: reactive_connection_id)`.
 
               ```ruby
               def destroy
@@ -349,7 +387,7 @@ module Views
                 list = @todo.list
                 @todo.destroy!
                 # other tabs
-                Todos::Item.broadcast_remove_to(list, :todos, model: @todo, exclude: reactive_connection_id)
+                Todos::Item.broadcast_to(list, :todos, remove: @todo, exclude: reactive_connection_id)
                 reply.remove # this tab
               end
               ```
@@ -361,22 +399,24 @@ module Views
         end
 
         def js_ops
-          DocsUI::Section('Pushing client DOM ops to everyone (broadcast_js_to)') do
+          DocsUI::Section('Pushing client DOM ops to everyone (broadcast_to js:)') do
             md <<~MD
               Sometimes a broadcast should nudge the UI rather than swap HTML — light up
-              a bell, toggle a class, dispatch an app event. `broadcast_js_to` pushes
-              the same `js` ops as `reply.js` to every subscriber, over the same
-              transport (Action Cable or pgbus):
+              a bell, toggle a class, dispatch an app event. `broadcast_to(..., js:
+              ops)` pushes the same `js` ops as `reply.js` to every subscriber, over the
+              same transport (Action Cable or pgbus):
 
               ```ruby
               # Light up the bell in every viewer's tab, minus the actor's own connection.
-              Notifications::Badge.broadcast_js_to(user, :alerts,
-                js.add_class("#bell", "has-unread"), exclude: reactive_connection_id)
+              Notifications::Badge.broadcast_to(user, :alerts,
+                js: js.add_class("#bell", "has-unread"), exclude: reactive_connection_id)
               ```
             MD
             DocsUI::Callout(:warning) do
               plain 'Focus ops are refused. '
-              code { 'broadcast_js_to' }
+              code { 'broadcast_to' }
+              plain ' with '
+              code { 'js:' }
               plain ' raises '
               code { 'ArgumentError' }
               plain ' for '
@@ -394,11 +434,11 @@ module Views
         def reply_js
           DocsUI::Section('Nudging the actor only (reply.js)') do
             md <<~MD
-              `broadcast_js_to` is the *everyone* half. Its actor-side sibling is
-              `reply.<verb>.js(ops)` — chained onto the reply the action returns, it
-              runs client DOM ops on the **acting** user's tab only, and it does so
-              AFTER the render streams. Because it rides after the render, a focus op
-              sees the freshly rendered (or morphed) DOM:
+              `broadcast_to(..., js: ops)` is the *everyone* half. Its actor-side
+              sibling is `reply.<verb>.js(ops)` — chained onto the reply the action
+              returns, it runs client DOM ops on the **acting** user's tab only, and it
+              does so AFTER the render streams. Because it rides after the render, a
+              focus op sees the freshly rendered (or morphed) DOM:
 
               ```ruby
               def save(title:)
@@ -413,8 +453,8 @@ module Views
               component's id for `replace` / `morph` / `update` (so `@root` and
               component-relative selectors just work), and to document-scope for a
               subject-free `reply.with`. This is why the focus example above is an
-              actor-reply concern and `broadcast_js_to` refuses focus outright:
-              `reply.js` targets one tab, a broadcast targets all of them.
+              actor-reply concern and `broadcast_to(..., js: ops)` refuses focus
+              outright: `reply.js` targets one tab, a broadcast targets all of them.
             MD
           end
         end

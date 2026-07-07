@@ -34,7 +34,7 @@ module Views
               | [Cross-tab chat](/docs/example-chat) | Record-backed action **and broadcast** → live cross-tab sync, zero JS. |
               | [Live todo list](/docs/example-todo-list) | Per-row record-backed components: add / toggle / rename / archive, optimistic toggle + delete, Enter-to-add, morph-in-place, broadcast on change. |
               | [Inline edit + dirty tracking](/docs/example-inline-edit) | Show ↔ edit (Enter saves, Escape cancels) plus an “Unsaved” badge + leave-guard with zero shipped state. |
-              | [Notifications / badges](/docs/example-notifications) | Pure broadcast — a background event pushes a live re-render, plus a `broadcast_js_to` cross-tab pulse. |
+              | [Notifications / badges](/docs/example-notifications) | Pure broadcast — a background event pushes a live re-render, plus a `broadcast_to(js:)` cross-tab pulse. |
               | [Reactive collections](/docs/example-collections) | Add / remove rows + a running count + an empty state, declared **once** with `reactive_collection`, optimistic dismiss + a self-dismissing flash. |
               | [File uploads & custom types](/docs/example-uploads) | `:file` / `[:file]` params (multipart `FormData`), a nested-hash param alongside the file (#39), and a custom `Phlex::Reactive.param_type`. Code-first — no live demo. |
               | [Loading states](/docs/example-loading-states) | `busy:` + `busy_on` + the always-on `aria-busy`, with a latency toggle to make the pending window visible. |
@@ -53,7 +53,7 @@ module Views
               | **Optimistic visual hints** — `optimistic:` (flip a checkbox / hide a row instantly; revert on failure) | [Todo list](/docs/example-todo-list), [Collections](/docs/example-collections), [Team inbox](/docs/example-team-inbox) |
               | **Keyboard triggers** — `event: "keydown.enter"` / `"keydown.esc"` (Enter-to-add, Escape-to-cancel) | [Todo list](/docs/example-todo-list), [Inline edit](/docs/example-inline-edit) |
               | **Debounced / morph editing** — `debounce:` live-as-you-type + `reply.morph` to keep the caret | [Payment split](/docs/example-payment-split), [Inline edit](/docs/example-inline-edit) |
-              | **Live broadcasts** — `broadcast_replace_to` / `broadcast_append_to` / `broadcast_js_to` → cross-tab sync | [Chat](/docs/example-chat), [Notifications](/docs/example-notifications), [Todo list](/docs/example-todo-list), [Team inbox](/docs/example-team-inbox) |
+              | **Live broadcasts** — `broadcast_to(replace:)` / `broadcast_to(append:)` / `broadcast_to(js:)` → cross-tab sync | [Chat](/docs/example-chat), [Notifications](/docs/example-notifications), [Todo list](/docs/example-todo-list), [Team inbox](/docs/example-team-inbox) |
               | **Failure surface** — `error_flash` / `data-reactive-error` / `dismiss_after:` / timeout + offline | [Failure surface](/docs/example-failure), [Team inbox](/docs/example-team-inbox) |
               | **Combobox keyboard navigation** — `reactive_listnav` (Arrow keys move a client highlight, Enter picks), composed via `mix` | [Searchable combobox demo](/demos/searchable-combobox) |
               | **File uploads & custom param types** — `:file` / `[:file]` (multipart `FormData`), `Phlex::Reactive.param_type` | [File uploads & custom types](/docs/example-uploads) (code-first) |

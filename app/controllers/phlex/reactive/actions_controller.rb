@@ -85,7 +85,7 @@ module Phlex
         end
 
         event[:outcome] = :ok
-        stream = payload["m"] == "morph" ? component.to_stream_morph : component.to_stream_replace
+        stream = component.to_stream_replace(morph: payload["m"] == "morph")
         render turbo_stream: stream
       rescue Phlex::Reactive::InvalidToken => e
         event[:outcome] = :invalid_token

@@ -32,8 +32,8 @@ class TodoListComponent < Phlex::HTML
     return if title.blank?
 
     todo = Todo.create!(title:)
-    TodoItemComponent.broadcast_append_to(*Todo.stream_key, target: 'todos',
-                                                            model: todo, exclude: reactive_connection_id)
+    TodoItemComponent.broadcast_to(*Todo.stream_key, append: todo, target: 'todos',
+                                                     exclude: reactive_connection_id)
   end
 
   def view_template
