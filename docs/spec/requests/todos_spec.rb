@@ -32,12 +32,12 @@ RSpec.describe 'Todo actions', type: :request do
       expect(response.body).to include('data-testid="todos-empty"')
     end
 
-    it 'guards Add against a double-submit with disable_with:' do
-      # The signed root carries the loading hint so the client disables the button
+    it 'guards Add against a double-submit with busy:' do
+      # The signed root carries the busy hint so the client disables the button
       # in flight. Assert it renders on the composed page (a fresh add re-render).
       post_action(TodoListComponent, payload: { 's' => { 'build_token' => 'list' } },
                                      act: 'add', params: { title: 'first' })
-      expect(response.body).to include('reactive-loading-param')
+      expect(response.body).to include('reactive-busy-param')
       expect(response.body).to include('Adding…')
     end
   end

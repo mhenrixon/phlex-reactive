@@ -641,13 +641,30 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
-  describe "#on listnav (combobox keyboard navigation, issue #72)" do
+  # Issue #181: the `on(…, listnav:)` kwarg is removed — it duplicated
+  # reactive_listnav exactly (same LISTNAV_ACTIONS, same option param) while
+  # SKIPPING its blank-selector validation, a real drift. Combobox keyboard
+  # navigation now composes the standalone reactive_listnav via mix, so a single
+  # validated code path wires it. The kwarg raises a guided ArgumentError.
+  describe "#on listnav kwarg removed (issue #181 — use reactive_listnav)" do
     subject(:instance) { state_klass.new }
 
-    it "appends the arrow/enter/escape listnav actions to the trigger's data-action" do
-      attrs = instance.send(:on, :search, event: "input", debounce: 300, listnav: "[role=option]")
+    it "raises a guided error pointing at reactive_listnav" do
+      expect { instance.send(:on, :search, event: "input", listnav: "[role=option]") }
+        .to raise_error(ArgumentError, /reactive_listnav/)
+    end
+  end
+
+  # reactive_listnav is the ONE keyboard-navigation code path now (issue #181).
+  # It defaults its option selector to [role=option] (the near-universal combobox
+  # convention) so the common case needs no argument, and still validates a
+  # non-blank selector when one is given.
+  describe "#reactive_listnav (combobox keyboard navigation)" do
+    subject(:instance) { state_klass.new }
+
+    it "wires the arrow/enter/escape actions" do
+      attrs = instance.send(:reactive_listnav)
       expect(attrs[:data][:action]).to eq(
-        "input->reactive#dispatch " \
         "keydown.down->reactive#listnavNext " \
         "keydown.up->reactive#listnavPrev " \
         "keydown.enter->reactive#listnavPick " \
@@ -655,20 +672,19 @@ RSpec.describe Phlex::Reactive::Component do
       )
     end
 
-    it "emits the option selector as a Stimulus param" do
-      attrs = instance.send(:on, :search, event: "input", listnav: "[role=option]")
+    it "defaults the option selector to [role=option]" do
+      attrs = instance.send(:reactive_listnav)
       expect(attrs[:data][:reactive_listnav_option_param]).to eq("[role=option]")
     end
 
-    it "keeps listnav out of the explicit params payload" do
-      attrs = instance.send(:on, :search, event: "input", listnav: "[role=option]", query: "x")
-      expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({ "query" => "x" })
+    it "accepts an explicit option selector" do
+      attrs = instance.send(:reactive_listnav, "li.opt")
+      expect(attrs[:data][:reactive_listnav_option_param]).to eq("li.opt")
     end
 
-    it "omits the listnav wiring entirely when not requested" do
-      attrs = instance.send(:on, :search, event: "input")
-      expect(attrs[:data][:action]).to eq("input->reactive#dispatch")
-      expect(attrs[:data]).not_to have_key(:reactive_listnav_option_param)
+    it "rejects a blank selector (a dead binding fails at render)" do
+      expect { instance.send(:reactive_listnav, "  ") }
+        .to raise_error(ArgumentError, /selector/)
     end
   end
 
@@ -909,83 +925,116 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
-  describe "#on loading states (issue #99 — loading:/disable_with:)" do
+  # Issue #181: busy: is the ONE pending-state vocabulary, replacing loading: and
+  # disable_with:. It shares optimistic:'s key set (js.* op names + disable:/to:)
+  # and one Ruby normalizer, differing only in lifecycle: busy: reverts on SETTLE
+  # (any completion), optimistic: reverts on FAILURE. The String shorthand
+  # `busy: "Saving…"` expands to { disable: true, text: … } — the ubiquitous
+  # "disable + swap the label" case in one word.
+  describe "#on busy states (issue #181 — busy:)" do
     subject(:instance) { state_klass.new }
 
-    it "omits the loading param by default (bare on() hot path untouched)" do
+    it "omits the busy param by default (bare on() hot path untouched)" do
       attrs = instance.send(:on, :increment)
-      expect(attrs[:data]).not_to have_key(:reactive_loading_param)
+      expect(attrs[:data]).not_to have_key(:reactive_busy_param)
     end
 
-    it "expands disable_with: shorthand to { disable: true, text: … }" do
-      attrs = instance.send(:on, :save, disable_with: "Saving…")
-      expect(JSON.parse(attrs[:data][:reactive_loading_param]))
+    it "expands the String shorthand to { disable: true, text: … }" do
+      attrs = instance.send(:on, :save, busy: "Saving…")
+      expect(JSON.parse(attrs[:data][:reactive_busy_param]))
         .to eq({ "disable" => true, "text" => "Saving…" })
     end
 
-    it "emits a full loading: hash (disable + class + text)" do
-      attrs = instance.send(:on, :save, loading: { disable: true, class: "opacity-50", text: "Saving…" })
-      expect(JSON.parse(attrs[:data][:reactive_loading_param]))
-        .to eq({ "disable" => true, "class" => ["opacity-50"], "text" => "Saving…" })
+    it "emits a full busy: hash (disable + add_class + text)" do
+      attrs = instance.send(:on, :save, busy: { disable: true, add_class: "opacity-50", text: "Saving…" })
+      expect(JSON.parse(attrs[:data][:reactive_busy_param]))
+        .to eq({ "disable" => true, "add_class" => ["opacity-50"], "text" => "Saving…" })
     end
 
-    it "serializes a loading class array" do
-      attrs = instance.send(:on, :save, loading: { class: %w[opacity-50 pointer-events-none] })
-      expect(JSON.parse(attrs[:data][:reactive_loading_param]))
-        .to eq({ "class" => %w[opacity-50 pointer-events-none] })
+    it "serializes an add_class array" do
+      attrs = instance.send(:on, :save, busy: { add_class: %w[opacity-50 pointer-events-none] })
+      expect(JSON.parse(attrs[:data][:reactive_busy_param]))
+        .to eq({ "add_class" => %w[opacity-50 pointer-events-none] })
     end
 
-    it "normalizes loading disable: to a real boolean" do
-      attrs = instance.send(:on, :save, loading: { disable: true })
-      expect(JSON.parse(attrs[:data][:reactive_loading_param])).to eq({ "disable" => true })
+    it "supports remove_class and toggle_class (shared optimistic: vocabulary)" do
+      attrs = instance.send(:on, :save, busy: { remove_class: "idle", toggle_class: "spin" })
+      expect(JSON.parse(attrs[:data][:reactive_busy_param]))
+        .to eq({ "remove_class" => ["idle"], "toggle_class" => ["spin"] })
+    end
+
+    it "supports hide: and show:" do
+      attrs = instance.send(:on, :save, busy: { hide: true, show: true })
+      expect(JSON.parse(attrs[:data][:reactive_busy_param])).to eq({ "hide" => true, "show" => true })
+    end
+
+    it "normalizes busy disable: to a real boolean" do
+      attrs = instance.send(:on, :save, busy: { disable: true })
+      expect(JSON.parse(attrs[:data][:reactive_busy_param])).to eq({ "disable" => true })
     end
 
     it "normalizes to: :root to the @root sentinel" do
-      attrs = instance.send(:on, :save, loading: { class: "busy", to: :root })
-      expect(JSON.parse(attrs[:data][:reactive_loading_param]))
-        .to eq({ "class" => ["busy"], "to" => "@root" })
+      attrs = instance.send(:on, :save, busy: { add_class: "busy", to: :root })
+      expect(JSON.parse(attrs[:data][:reactive_busy_param]))
+        .to eq({ "add_class" => ["busy"], "to" => "@root" })
     end
 
     it "passes a to: CSS selector string through verbatim" do
-      attrs = instance.send(:on, :save, loading: { class: "busy", to: ".spinner" })
-      expect(JSON.parse(attrs[:data][:reactive_loading_param]))
-        .to eq({ "class" => ["busy"], "to" => ".spinner" })
+      attrs = instance.send(:on, :save, busy: { add_class: "busy", to: ".spinner" })
+      expect(JSON.parse(attrs[:data][:reactive_busy_param]))
+        .to eq({ "add_class" => ["busy"], "to" => ".spinner" })
     end
 
-    it "merges disable_with: over loading: (disable_with wins on text + implies disable)" do
-      attrs = instance.send(:on, :save, loading: { class: "busy" }, disable_with: "Saving…")
-      expect(JSON.parse(attrs[:data][:reactive_loading_param]))
-        .to eq({ "class" => ["busy"], "disable" => true, "text" => "Saving…" })
-    end
-
-    it "keeps the loading hint out of the explicit params payload" do
-      attrs = instance.send(:on, :save, disable_with: "Saving…", reason: "click")
+    it "keeps the busy hint out of the explicit params payload" do
+      attrs = instance.send(:on, :save, busy: "Saving…", reason: "click")
       expect(JSON.parse(attrs[:data][:reactive_params_param])).to eq({ "reason" => "click" })
     end
 
-    it "threads loading alongside confirm, debounce and optimistic without collision" do
+    it "threads busy alongside confirm, debounce and optimistic without collision" do
       attrs = instance.send(:on, :save, confirm: "Sure?", debounce: 200,
-        optimistic: { add_class: "pending" }, disable_with: "Saving…")
+        optimistic: { add_class: "pending" }, busy: "Saving…")
       expect(attrs[:data][:reactive_confirm_param]).to eq("Sure?")
       expect(attrs[:data][:reactive_debounce_param]).to eq(200)
       expect(JSON.parse(attrs[:data][:reactive_optimistic_param])).to eq({ "add_class" => ["pending"] })
-      expect(JSON.parse(attrs[:data][:reactive_loading_param]))
+      expect(JSON.parse(attrs[:data][:reactive_busy_param]))
         .to eq({ "disable" => true, "text" => "Saving…" })
     end
 
-    it "rejects an unknown loading key (default-deny — a dead hint fails at build)" do
-      expect { instance.send(:on, :save, loading: { spin: true }) }
+    it "rejects an unknown busy key (default-deny — a dead hint fails at build)" do
+      expect { instance.send(:on, :save, busy: { spin: true }) }
         .to raise_error(ArgumentError, /spin/)
     end
 
-    it "rejects a non-hash loading:" do
-      expect { instance.send(:on, :save, loading: "Saving…") }
-        .to raise_error(ArgumentError, /loading/)
+    it "rejects checked: (native-flip is optimistic-only, not a settle-revert hint)" do
+      expect { instance.send(:on, :save, busy: { checked: :keep }) }
+        .to raise_error(ArgumentError, /checked/)
     end
 
-    it "still forces type=button for a click trigger with a loading hint" do
-      attrs = instance.send(:on, :save, disable_with: "Saving…")
+    it "rejects a busy: that is neither a String nor a Hash" do
+      expect { instance.send(:on, :save, busy: [%w[disable true]]) }
+        .to raise_error(ArgumentError, /busy/)
+    end
+
+    it "still forces type=button for a click trigger with a busy hint" do
+      attrs = instance.send(:on, :save, busy: "Saving…")
       expect(attrs[:type]).to eq("button")
+    end
+  end
+
+  # Issue #181: loading: and disable_with: are removed in favor of busy:. Each
+  # raises a guided ArgumentError showing the busy: rewrite (clean break, pre-1.0
+  # — no silent shim that would let a stale call limp along wrong).
+  describe "#on removed loading kwargs (issue #181 — guided errors)" do
+    subject(:instance) { state_klass.new }
+
+    it "raises a guided error for disable_with: pointing at busy:" do
+      expect { instance.send(:on, :save, disable_with: "Saving…") }
+        .to raise_error(ArgumentError, /busy:/)
+    end
+
+    it "raises a guided error for loading: pointing at busy:" do
+      expect { instance.send(:on, :save, loading: { disable: true }) }
+        .to raise_error(ArgumentError, /busy:/)
     end
   end
 

@@ -54,6 +54,19 @@ module Phlex
       # gets the SAME server-side default-deny as the JS chain (defense in depth;
       # the client also enforces it). Non-attr ops and malformed entries pass
       # through untouched — the client interpreter default-denies unknown ops.
+      # :root -> the sentinel; a String passes through as a CSS selector. Shared
+      # by the js op builder AND the on() pending-state hint normalizer (issue
+      # #181) so BOTH resolve a `to:` target through one code path. Anything else
+      # (a stray symbol, nil) is a bug at the call site — raise at render time
+      # instead of silently matching nothing in the browser.
+      def self.normalize_target(to)
+        return ROOT_SENTINEL if to == :root
+        return to if to.is_a?(String)
+
+        raise ArgumentError,
+          "target must be :root or a CSS selector string, got #{to.inspect}"
+      end
+
       def self.assert_ops_allowed!(list)
         Array(list).each do |op, args|
           next unless ATTR_NAME_OPS.include?(op.to_s) && args.is_a?(::Hash)
@@ -248,16 +261,9 @@ module Phlex
         args.freeze
       end
 
-      # :root -> the sentinel; a String passes through as a CSS selector.
-      # Anything else (a stray symbol, nil) is a bug at the call site — raise at
-      # render time instead of silently matching nothing in the browser.
-      def normalize_target(to)
-        return ROOT_SENTINEL if to == :root
-        return to if to.is_a?(String)
-
-        raise ArgumentError,
-          "#{self.class}: target must be :root or a CSS selector string, got #{to.inspect}"
-      end
+      # Instance-side alias for the class method (used by the op builder). See
+      # JS.normalize_target — the shared :root/selector translation.
+      def normalize_target(to) = self.class.normalize_target(to)
     end
   end
 end

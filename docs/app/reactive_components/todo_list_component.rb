@@ -6,7 +6,7 @@
 # its own reactive component (TodoItemComponent), self-targeting by GlobalID.
 #
 # State-backed root (a stable placeholder token) — the rows carry the real record
-# identity. `disable_with:` on Add stops a rapid double-click from creating two
+# identity. `busy:` on Add stops a rapid double-click from creating two
 # todos, and `on_client` clears the composer with zero round trips.
 class TodoListComponent < Phlex::HTML
   include Phlex::Reactive::Streamable
@@ -55,8 +55,8 @@ class TodoListComponent < Phlex::HTML
         input(**mix(on(:add, event: 'keydown.enter'),
                     name: 'title', placeholder: 'New todo…', autocomplete: 'off',
                     class: 'input input-bordered flex-1', data: { testid: 'new-todo' }))
-        # disable_with: stops a rapid double-click from creating two todos.
-        button(**mix(on(:add, disable_with: 'Adding…'),
+        # busy: stops a rapid double-click from creating two todos.
+        button(**mix(on(:add, busy: 'Adding…'),
                      class: 'btn btn-primary', data: { testid: 'add' })) { 'Add' }
         # Client-only tips toggle: show/hide the hint with ZERO round trip — no
         # token, no POST, ever. Pure UX polish the one generic controller applies

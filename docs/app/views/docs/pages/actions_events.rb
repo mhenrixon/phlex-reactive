@@ -283,15 +283,18 @@ module Views
               | `outside:` | fire only outside the root (implies `window:`) |
               | `once:` | fire at most once |
               | `confirm:` | gate behind a confirmation dialog |
-              | `listnav:` | combobox keyboard navigation |
               | `optimistic:` | reversible cosmetic hint applied before the round trip |
-              | `loading:` / `disable_with:` | declarative pending state on the trigger |
+              | `busy:` | declarative pending state on the trigger |
 
               A misspelled action surfaces early: with `Phlex::Reactive.verbose_errors`
               on (the default in development and test), `on(:typo)` **raises at render
               time** listing the declared actions, instead of an opaque 403 on click.
               Production keeps the permissive emit so a stale page after a deploy that
               removed an action never 500s on render.
+
+              Combobox keyboard navigation is no longer an `on(...)` keyword — it's
+              the standalone `reactive_listnav` helper, composed via `mix`, e.g.
+              `mix(on(:search, event: "input"), reactive_listnav)`.
             MD
           end
         end

@@ -2,7 +2,7 @@
 
 # Declarative loading states (issue #99) — no Stimulus, no bespoke JS.
 #
-#   * on(:save, disable_with: "Saving…") — the button DISABLES and swaps its text
+#   * on(:save, busy: "Saving…") — the button DISABLES and swaps its text
 #     to "Saving…" the instant the request is enqueued, reverting when the round
 #     trip settles. Because a disabled button fires no further clicks, a rapid
 #     double-click enqueues exactly ONE POST — so @count bumps by one, not two.
@@ -37,7 +37,7 @@ class LoadingButtonComponent < Phlex::HTML
       raw(safe(css)) # rubocop:disable Rails/OutputSafety
     end
     div(**reactive_root(class: 'flex items-center gap-3')) do
-      button(**mix(on(:save, disable_with: 'Saving…'),
+      button(**mix(on(:save, busy: 'Saving…'),
                    class: 'btn btn-sm btn-primary', data: { testid: 'save' })) { 'Save' }
       # A scoped busy indicator: data-reactive-busy toggles ONLY while save is in
       # flight, so daisyUI's spinner shows with zero Ruby.

@@ -4,11 +4,12 @@
 #
 # State-backed: `query` and `selected` ride in the signed token. `search` filters
 # a frozen in-memory list server-side (debounced); `select` records the choice.
-# The search input declares `listnav: "[role=option]"`, so the generic controller
-# wires Arrow Up/Down (move a client-side highlight — NO round trip), Enter (pick
-# the highlighted option by clicking its own on(:select) trigger), and Escape
-# (clear) onto the input. Selection stays a signed reactive action; only the
-# highlight is ephemeral client state.
+# The search input composes `reactive_listnav` (issue #181 — the `on(…, listnav:)`
+# kwarg was removed), so the generic controller wires Arrow Up/Down (move a
+# client-side highlight — NO round trip), Enter (pick the highlighted option by
+# clicking its own on(:select) trigger), and Escape (clear) onto the input.
+# Selection stays a signed reactive action; only the highlight is ephemeral
+# client state.
 class ComboboxComponent < ApplicationComponent
   include Phlex::Reactive::Streamable
   include Phlex::Reactive::Component
@@ -42,7 +43,8 @@ class ComboboxComponent < ApplicationComponent
   def view_template
     div(**reactive_root(data: { testid: "combobox" })) do
       input(**mix(
-        on(:search, event: "input", debounce: 100, listnav: "[role=option]"),
+        on(:search, event: "input", debounce: 100),
+        reactive_listnav,
         type: "text", name: "query", value: @query, autocomplete: "off",
         data: { testid: "combobox-query" }
       ))

@@ -10,7 +10,7 @@ module Views
 
         def lead
           'One believable UI that composes the whole toolkit: reactive_collection ' \
-            'rows, an optimistic archive that reverts on failure, disable_with:, ' \
+            'rows, an optimistic archive that reverts on failure, busy:, ' \
             'cross-tab broadcasts, an on_client row menu, and error_flash — with no ' \
             'Stimulus controller and no hand-picked Turbo target.'
         end
@@ -35,7 +35,7 @@ module Views
               confirms with a self-dismissing toast. Try archiving the **locked**
               message — the server refuses, so the optimistic hide **reverts** and an
               error flash explains why. Turn on the latency toggle to watch the
-              optimistic hide and the `disable_with:` guard.
+              optimistic hide and the `busy:` guard.
             MD
             render Views::Examples::LatencyToggle.new(delay_ms: 700)
             render Views::Examples::LiveExample.new(
@@ -53,7 +53,7 @@ module Views
               | **`reactive_collection`** — rows + running count + empty-state declared once | the container |
               | **Optimistic archive** — `optimistic: { hide: true }` hides the row in the same gesture | the row's Archive |
               | **Revert on failure** — a denied archive snaps the row back + shows an error flash | the "locked" message |
-              | **`disable_with:`** — the Archive / Simulate buttons dedupe a double-click | container + row |
+              | **`busy:`** — the Archive / Simulate buttons dedupe a double-click | container + row |
               | **Cross-tab broadcast** — `broadcast_append_to` / `broadcast_remove_to` / `broadcast_replace_to` | every mutating action |
               | **`on_client` menu** — the ⋯ kebab toggles with zero round trips | the row |
               | **`error_flash` + `dismiss_after:`** — a self-dismissing confirmation / error toast | the reply |

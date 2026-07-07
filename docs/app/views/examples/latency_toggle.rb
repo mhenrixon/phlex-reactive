@@ -4,7 +4,7 @@ module Views
   module Examples
     # A labelled checkbox that turns the client latency simulator on/off for the
     # whole tab. On a localhost round trip (~5 ms) the loading/optimistic
-    # affordances — `disable_with:` label swaps, the `busy_on` spinner, an
+    # affordances — `busy:` label swaps, the `busy_on` spinner, an
     # `optimistic:` flip-then-reconcile — flash by too fast to see. Flip this on
     # and every reactive action is delayed client-side, so those affordances
     # become observable. It's a pure client concern: no reactive token, no POST.

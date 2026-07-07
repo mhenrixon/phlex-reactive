@@ -245,7 +245,7 @@ module Views
                 plain ') while a request is out — style them, or add a scoped '
                 code { 'busy_on(:rebalance)' }
                 plain ' spinner and a '
-                code { 'disable_with:' }
+                code { 'busy:' }
                 plain ' hint:'
               end
             end
@@ -254,7 +254,7 @@ module Views
               span(**busy_on(:rebalance), class: "loading loading-spinner loading-xs hidden")
 
               # Or a declarative per-trigger loading hint on the field itself.
-              input(**mix(on(:rebalance, event: "input", debounce: 300, loading: { class: "opacity-50" }),
+              input(**mix(on(:rebalance, event: "input", debounce: 300, busy: { add_class: "opacity-50" }),
                           type: "number", name: "split[#{field}]", value: send(field)))
             RUBY
           end

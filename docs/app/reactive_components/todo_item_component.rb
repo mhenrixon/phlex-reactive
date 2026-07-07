@@ -71,8 +71,8 @@ class TodoItemComponent < Phlex::HTML
                   data: { testid: 'todo-title' },
                   class: ['input input-sm flex-1', ('line-through opacity-60' if @todo.done?)]))
       # Instant delete: hide the row NOW (optimistic), remove it on the reply.
-      # disable_with: guards against a rapid double-click firing archive twice.
-      button(**mix(on(:archive, disable_with: '…', optimistic: { hide: true, to: :root }),
+      # busy: guards against a rapid double-click firing archive twice.
+      button(**mix(on(:archive, busy: '…', optimistic: { hide: true, to: :root }),
                    class: 'btn btn-xs btn-ghost', data: { testid: 'archive' })) { 'archive' }
     end
   end

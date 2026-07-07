@@ -168,14 +168,10 @@ module Phlex
         #   input(**on(:add, event: "keydown.enter"))      # Enter submits
         #   button(**on(:cancel, event: "keydown.esc"))     # Escape cancels
         #
-        # `listnav:` (a CSS selector for the option elements) adds keyboard list
-        # navigation to a search/combobox trigger (issue #72). It appends Stimulus
-        # keyboard filters to the SAME element's data-action so Arrow Up/Down move a
-        # client-side highlight among the options, Enter picks the highlighted one
-        # (clicking its own reactive trigger — so selection stays a signed action),
-        # and Escape clears — all with NO server round trip for the highlight (the
-        # controller's listnav* handlers, like #recompute). Omit it for no nav.
-        #   input(**on(:search, event: "input", debounce: 300, listnav: "[role=option]"))
+        # Combobox keyboard navigation is the standalone reactive_listnav (issue
+        # #181 removed the `on(…, listnav:)` kwarg — it duplicated reactive_listnav
+        # while skipping its blank-selector validation). Compose it via mix:
+        #   input(**mix(on(:search, event: "input", debounce: 300), reactive_listnav))
         # The verbatim JSON for an empty explicit-params payload. The common
         # trigger (on(:increment), no params) hits this on EVERY render — skipping
         # params.to_json (which re-serializes {} to the same "{}" each time) avoids
@@ -238,30 +234,31 @@ module Phlex
         #   input(type: "checkbox", checked: @todo.done,
         #     **mix(on(:toggle, event: "change", optimistic: { checked: :keep }), name: "done"))
         #   button(**on(:destroy, confirm: "Delete?", optimistic: { hide: true, to: :root })) { "Delete" }
-        # `loading:` / `disable_with:` (issue #99) — declarative per-trigger loading
-        # states, Livewire's wire:loading + phx-disable-with without a Stimulus
-        # controller. The moment the request is ENQUEUED (covering the queue wait,
-        # not just the fetch), the trigger gets `data-reactive-busy="<action>"`, an
-        # optional loading class, an optional disabled + text swap; all revert in a
-        # guarded finally. `loading:` is a hash:
+        # `busy:` (issue #181) — declarative per-trigger pending states, Livewire's
+        # wire:loading + phx-disable-with without a Stimulus controller. It shares
+        # optimistic:'s key vocabulary and normalizer; the ONLY difference is the
+        # lifecycle: a busy: hint applies the moment the request is ENQUEUED
+        # (covering the queue wait, not just the fetch) and reverts on SETTLE (any
+        # completion), where optimistic: reverts only on FAILURE. `busy:` is a
+        # String or a Hash:
+        #   * "Saving…"             — String shorthand for { disable: true, text: … }
         #   * disable: true         — disable the trigger while pending
-        #   * class: "…" / [ … ]    — a loading class string/array on the trigger
-        #                             (or a `to:` selector scoped to the root)
-        #   * text: "Saving…"       — swap the trigger's textContent while pending
-        #   * to: :root / "sel"     — target the class/text at the root or a selector
-        # `disable_with: "Saving…"` is the shorthand for
-        # `{ disable: true, text: "Saving…" }` and merges over an explicit `loading:`
-        # (its text/disable win). Both become RESERVED on() kwargs (CHANGELOG note,
-        # like #80's four and #98's optimistic:) — no longer free action-param names.
-        # The trigger/root also always carry `data-reactive-busy` for the whole
-        # pending window regardless of these hints, so an app styles a spinner with
-        # `[data-reactive-busy] .spinner { display: block }` and zero Ruby; see
+        #   * add_class:/remove_class:/toggle_class: "…" / [ … ] — class op on the
+        #                             trigger (or a `to:` selector scoped to the root)
+        #   * hide:/show: true      — hide/show the target while pending
+        #   * text: "Saving…"       — swap the trigger's innerHTML while pending
+        #   * to: :root / "sel"     — target the ops at the root or a selector
+        # checked: :keep is optimistic-ONLY (a native flip has no settle-revert
+        # meaning). The trigger/root also always carry `data-reactive-busy` for the
+        # whole pending window regardless of these hints, so an app styles a spinner
+        # with `[data-reactive-busy] .spinner { display: block }` and zero Ruby; see
         # busy_on for scoped indicators.
-        #   button(**on(:save, disable_with: "Saving…")) { "Save" }
-        #   button(**on(:destroy, confirm: "Sure?", loading: { class: "opacity-50" })) { "Delete" }
-        def on(action_name, event: "click", debounce: nil, throttle: nil, confirm: nil, listnav: nil,
-               window: false, once: false, outside: false, optimistic: nil, loading: nil, disable_with: nil,
+        #   button(**on(:save, busy: "Saving…")) { "Save" }
+        #   button(**on(:destroy, confirm: "Sure?", busy: { add_class: "opacity-50" })) { "Delete" }
+        def on(action_name, event: "click", debounce: nil, throttle: nil, confirm: nil,
+               window: false, once: false, outside: false, optimistic: nil, busy: nil,
                **params)
+          reject_removed_on_kwargs!(action_name, params)
           # A typo'd or forgotten action renders fine and only surfaces as an
           # opaque 403 at CLICK time (the endpoint's default-deny). Under
           # verbose_errors (dev + test), fail loudly at RENDER time instead —
@@ -298,7 +295,6 @@ module Phlex
 
           window_bound = window || outside
           action = "#{event}#{"@window" if window_bound}->reactive#dispatch#{":once" if once}"
-          action = "#{action} #{LISTNAV_ACTIONS.join(" ")}" if listnav
           attrs = {
             data: {
               action:,
@@ -309,11 +305,8 @@ module Phlex
           attrs[:data][:reactive_debounce_param] = debounce if debounce
           attrs[:data][:reactive_throttle_param] = throttle if throttle
           attrs[:data][:reactive_confirm_param] = confirm if confirm
-          attrs[:data][:reactive_listnav_option_param] = listnav if listnav
-          attrs[:data][:reactive_optimistic_param] = optimistic_hint_json(optimistic, action_name) if optimistic
-          if (loading_hint = loading_hint_json(loading, disable_with, action_name))
-            attrs[:data][:reactive_loading_param] = loading_hint
-          end
+          attrs[:data][:reactive_optimistic_param] = pending_hint_json(optimistic, action_name, :optimistic) if optimistic
+          attrs[:data][:reactive_busy_param] = pending_hint_json(busy, action_name, :busy) if busy
           # STRING "true", not boolean: Phlex renders a `true` attribute VALUELESS
           # (data-reactive-outside-param), which Stimulus's param reader sees as ""
           # — falsy in JS, so the guard silently never fires. The explicit ="true"
@@ -538,7 +531,7 @@ module Phlex
         # Enter picks the highlighted one by clicking its own reactive trigger
         # (selection stays a signed action), Escape clears. Combine with other
         # attrs via mix so a caller's data-action token-joins, not clobbers.
-        def reactive_listnav(option_selector)
+        def reactive_listnav(option_selector = "[role=option]")
           {
             data: {
               action: LISTNAV_ACTIONS.join(" "),
@@ -702,13 +695,6 @@ module Phlex
         LEGACY_SHOW_PREDICATE_KEYS = %i[equals not in gte gt lte lt].freeze
         LEGACY_SHOW_CONNECTIVE_KEYS = %i[all any].freeze
 
-        # The declared optimistic-hint class ops (issue #98): the cosmetic class
-        # vocabulary the client applies instantly and reverts on failure. Enforced
-        # at build time in optimistic_hint_json (default-deny — a dead hint fails
-        # at render, not silently in the browser). Each carries a class string or
-        # array; hide/checked are flags with a fixed shape.
-        OPTIMISTIC_CLASS_OPS = %w[toggle_class add_class remove_class].freeze
-
         private
 
         # A reactive_filter/reactive_listnav selector, validated non-blank and
@@ -842,89 +828,90 @@ module Phlex
           value.to_s == "keep"
         end
 
-        # Normalize + validate the optimistic hint hash, returning its JSON wire
-        # form (data-reactive-optimistic-param). `to: :root` becomes the same
-        # "@root" sentinel the js op builder uses so the client resolves it
-        # uniformly. Unknown keys, a bad `checked:` value, or a non-hash raise —
-        # a hint that can't apply must fail loudly at render.
-        def optimistic_hint_json(optimistic, action_name)
-          unless optimistic.is_a?(Hash)
+        # The removed on() pending-state kwargs (issue #181). loading:/disable_with:
+        # collapsed into busy:; listnav: into the standalone reactive_listnav.
+        # They now land in **params, so catch them there and raise a guided error
+        # showing the rewrite — a clean break (pre-1.0), not a silent shim that
+        # would ship a stale call to the browser wrong.
+        REMOVED_ON_KWARGS = {
+          disable_with: 'busy: "…" (String shorthand for { disable: true, text: "…" })',
+          loading: "busy: { disable:, add_class:, text:, to: } (same keys as optimistic:)",
+          listnav: "reactive_listnav — mix(on(:search, event: \"input\"), reactive_listnav)"
+        }.freeze
+
+        # The unified pending-state hint vocabulary (issue #181): the js.* op names
+        # shared by optimistic: and busy:, plus disable:/to:. checked: :keep is
+        # optimistic-ONLY (a native control flip has no settle-revert meaning).
+        PENDING_CLASS_OPS = %w[toggle_class add_class remove_class].freeze
+
+        private_constant :REMOVED_ON_KWARGS, :PENDING_CLASS_OPS
+
+        def reject_removed_on_kwargs!(action_name, params)
+          removed = params.keys & REMOVED_ON_KWARGS.keys
+          return if removed.empty?
+
+          key = removed.first
+          raise ArgumentError,
+            "on(#{action_name.inspect}) #{key}: was removed in issue #181 — use #{REMOVED_ON_KWARGS[key]}"
+        end
+
+        # Normalize + validate a pending-state hint (issue #181), returning its
+        # JSON wire form. ONE vocabulary + ONE normalizer for both optimistic: (kind
+        # :optimistic, reverts on FAILURE) and busy: (kind :busy, reverts on
+        # SETTLE); they differ only in client lifecycle, not in shape. The String
+        # shorthand `busy: "Saving…"` expands to { disable: true, text: … }. `to:`
+        # resolves through the SAME JS.normalize_target the js op builder uses (a
+        # :root sentinel or a verbatim CSS selector). checked: :keep is accepted
+        # only for :optimistic. An unknown key, a bad value, or the wrong type
+        # raises — a dead hint fails loudly at render, never silently on the client.
+        def pending_hint_json(source, action_name, kind)
+          source = { disable: true, text: source } if kind == :busy && source.is_a?(String)
+          unless source.is_a?(Hash)
             raise ArgumentError,
-              "on(#{action_name.inspect}) optimistic: must be a Hash of visual hints " \
-              "(e.g. { checked: :keep } or { hide: true, to: :root }), got #{optimistic.class}"
+              "on(#{action_name.inspect}) #{kind}: must be a #{"String or " if kind == :busy}Hash of visual " \
+              "hints (e.g. { disable: true, text: \"Saving…\" }), got #{source.class}"
           end
 
           hint = {}
-          optimistic.each do |key, value|
+          source.each do |key, value|
             case key.to_s
-            when *OPTIMISTIC_CLASS_OPS
+            when *PENDING_CLASS_OPS
               hint[key.to_s] = Array(value).map(&:to_s)
-            when "hide"
-              hint["hide"] = value ? true : false
-            when "checked"
-              unless value.to_s == "keep"
-                raise ArgumentError,
-                  "on(#{action_name.inspect}) optimistic checked: only supports :keep " \
-                  "(flip the native control, revert on failure), got #{value.inspect}"
-              end
-              hint["checked"] = "keep"
+            when "hide", "show", "disable"
+              hint[key.to_s] = value ? true : false
+            when "text"
+              hint["text"] = value.to_s
             when "to"
-              hint["to"] = value == :root ? Phlex::Reactive::JS::ROOT_SENTINEL : value.to_s
+              hint["to"] = Phlex::Reactive::JS.normalize_target(value)
+            when "checked"
+              hint["checked"] = pending_checked!(value, action_name, kind)
             else
               raise ArgumentError,
-                "on(#{action_name.inspect}) got an unknown optimistic hint #{key.inspect} — " \
-                "supported: toggle_class/add_class/remove_class, checked: :keep, hide: true, to:"
+                "on(#{action_name.inspect}) got an unknown #{kind} hint #{key.inspect} — supported: " \
+                "add_class/remove_class/toggle_class, hide:, show:, disable:, text:, to:" \
+                "#{", checked: :keep" if kind == :optimistic}"
             end
           end
 
           hint.to_json
         end
 
-        # Normalize + validate the loading hint (issue #99), returning its JSON wire
-        # form (data-reactive-loading-param) or nil when neither loading: nor
-        # disable_with: is given (the bare on() hot path stays untouched).
-        # disable_with: "Saving…" expands to { disable: true, text: … } and MERGES
-        # over an explicit loading: hash — its text/disable win. `to: :root` becomes
-        # the "@root" sentinel the js op builder uses so the client resolves targets
-        # uniformly. An unknown key or a non-hash loading: raises — a dead hint must
-        # fail loudly at render, not silently in the browser (default-deny).
-        def loading_hint_json(loading, disable_with, action_name)
-          return nil if loading.nil? && disable_with.nil?
-
-          source = loading || {}
-          unless source.is_a?(Hash)
+        # checked: :keep flips a native checkbox/radio and reverts on failure — it
+        # only makes sense for optimistic: (a settle-revert busy: hint has no native
+        # control to keep). Reject it for :busy, and reject any value but :keep.
+        def pending_checked!(value, action_name, kind)
+          if kind != :optimistic
             raise ArgumentError,
-              "on(#{action_name.inspect}) loading: must be a Hash of loading hints " \
-              "(e.g. { disable: true, class: \"opacity-50\", text: \"Saving…\" }), got #{loading.class}"
+              "on(#{action_name.inspect}) #{kind}: does not support checked: — the native-control " \
+              "flip is an optimistic-only hint (it reverts on failure, not on settle)"
+          end
+          unless value.to_s == "keep"
+            raise ArgumentError,
+              "on(#{action_name.inspect}) optimistic checked: only supports :keep " \
+              "(flip the native control, revert on failure), got #{value.inspect}"
           end
 
-          hint = {}
-          source.each do |key, value|
-            case key.to_s
-            when "class"
-              hint["class"] = Array(value).map(&:to_s)
-            when "disable"
-              hint["disable"] = value ? true : false
-            when "text"
-              hint["text"] = value.to_s
-            when "to"
-              hint["to"] = value == :root ? Phlex::Reactive::JS::ROOT_SENTINEL : value.to_s
-            else
-              raise ArgumentError,
-                "on(#{action_name.inspect}) got an unknown loading hint #{key.inspect} — " \
-                "supported: disable:, class:, text:, to:"
-            end
-          end
-
-          # disable_with: "Saving…" ≡ { disable: true, text: … }, applied AFTER the
-          # explicit loading: hash so it wins on both keys (the shorthand is the
-          # more specific intent when a caller passes both).
-          if disable_with
-            hint["disable"] = true
-            hint["text"] = disable_with.to_s
-          end
-
-          hint.to_json
+          "keep"
         end
 
         # The component's record, for the nested-attributes helpers. Requires a
