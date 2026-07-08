@@ -35,6 +35,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     `unauthorized`/`unverified`) are untouched. Payloads and error tags stay name-only —
     never the token, params, or state.
 
+- **Draft nested-attribute rows — the "new parent + child rows" form (#208).**
+  A collection whose PARENT isn't persisted yet (a new order accumulating line
+  items) can't be a reactive collection — an unsaved parent has no gid to sign.
+  The pre-save window is now a client-side primitive, the `reactive_tags`
+  posture: `reactive_nested_list(:assoc)` / `reactive_nested_template(:assoc)`
+  mark the container + the server-owned `<template>` holding ONE row's markup;
+  `reactive_nested_add(:assoc)` clones it, swapping every `NEW_ROW` placeholder
+  in the clone's `name`/`id`/`for` for a fresh unique index (clock-seeded
+  monotonic — server-rendered `0..n` and same-millisecond double clicks can't
+  collide) and focusing the new row's first field; `reactive_nested_remove`
+  deletes a draft row from the DOM, or `_destroy`-marks + hides a row carrying
+  a hidden `[_destroy]` input (an edit form's persisted row) so Rails destroys
+  it on save. `nested_field_name(:assoc, :field, index:)` builds the
+  scope-aware Rails wire name (`order[line_items_attributes][i][quantity]`).
+  Zero round trips, no token (works in a `ClientBindings` component); the REAL
+  form submit reconciles parent + rows in ONE request via
+  `accepts_nested_attributes_for`. Several collections can share a root
+  (association-keyed); the row markup is authored ONCE and serves the template,
+  server-rendered edit rows, and the persisted `reactive_collection` flow.
+
 - **`reactive_tags` — the tag-chip input primitive (#203).** The composed
   combobox/tags widget (preload suggestions, type to narrow, Enter/click to add,
   remove chips) with zero bespoke JavaScript and zero round trips. The value is
@@ -93,6 +113,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     to settle.
 
 ### Fixed
+
+- **A draft (unsaved-parent) token can now round-trip real server actions (#208).**
+  `Component::Identity` already signed a gid-less `{c, state}` token for an
+  unpersisted (or nil) record, but `from_identity` still `fetch`ed the absent
+  `gid` — the FIRST action against a draft crashed with an uncaught `KeyError`
+  (500). It now rebuilds through the record kwarg's **initialize default**
+  (e.g. `def initialize(order: Order.new, …)`), with the declared
+  `reactive_state` riding the token as before; a component whose initialize
+  REQUIRES the record kwarg raises a guided `Phlex::Reactive::Error` naming the
+  fix instead of a bare missing-keyword `ArgumentError`.
 
 - **`have_reactive_value` now reads the field's `.value` property, so it can verify a
   reducer-set disabled/computed field (#204).** The matcher (added in #201) delegated to

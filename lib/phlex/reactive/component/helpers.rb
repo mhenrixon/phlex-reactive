@@ -724,6 +724,113 @@ module Phlex
           attrs
         end
 
+        # Draft nested-attribute rows (issue #208) — the "new parent + child
+        # rows" primitive. A form that builds child rows BEFORE the parent
+        # exists (a new order accumulating line items) can't be a reactive
+        # collection: an unsaved parent has no gid to sign, so there is nothing
+        # to round-trip. These helpers run that pre-save window entirely
+        # CLIENT-SIDE, the reactive_tags posture: the rows are FORM state (like
+        # text in an input), never component state — add/remove round-trips
+        # nothing, and the surrounding REAL form submit carries Rails'
+        # accepts_nested_attributes_for names so the server reconciles parent +
+        # rows in ONE create.
+        #
+        # The wiring (all inside one reactive root, itself inside the real
+        # <form> that will POST the parent):
+        #
+        #   div(**reactive_root) do
+        #     div(**reactive_nested_list(:line_items)) { }            # rows land here
+        #     template(**reactive_nested_template(:line_items)) do    # ONE row's markup (server-owned)
+        #       div(**reactive_nested_row) do
+        #         input(name: nested_field_name(:line_items, :quantity))  # …[NEW_ROW][quantity]
+        #         button(**reactive_nested_remove) { "×" }
+        #       end
+        #     end
+        #     button(**reactive_nested_add(:line_items)) { "Add row" }
+        #   end
+        #
+        # Clicking add clones the template and swaps every NEW_ROW in the
+        # clone's name/id/for attributes for a fresh unique index, so each row
+        # posts as its own `…_attributes[<index>][field]` group. Remove on a
+        # draft row deletes it from the DOM; remove on a row carrying a hidden
+        # `[_destroy]` input (a persisted row in an edit form, rendered with
+        # nested_field_name(index: item_index)) marks it "1" and hides the row
+        # — Rails destroys it on save. The DOM is the single source of truth;
+        # a server re-render of the root REPLACES the rows, so keep replace-
+        # shaped actions out of a root holding unsent draft rows.
+        #
+        # Several collections can share one root — every marker/trigger is
+        # keyed by the association name. Nesting a collection INSIDE another's
+        # template is not supported (the placeholder swap would hit both).
+        # Once the parent is saved, the persisted flow takes over: the same row
+        # markup renders with real indexes, or graduates to a reactive
+        # collection (reactive_collection + reply.append/remove).
+
+        # The index placeholder a template row carries in its field names; the
+        # client swaps it for a fresh unique index on every add. Referenced by
+        # both sides of the wire — change it nowhere.
+        NESTED_NEW_ROW = "NEW_ROW"
+
+        # The Rails nested-attributes wire name for one row field — the name
+        # accepts_nested_attributes_for expects. Defaults to the template
+        # placeholder; pass index: for a server-rendered row. Scope-aware: the
+        # `<association>_attributes` base goes through reactive_scope FIRST, so
+        # a `reactive_scope :order` component emits
+        # order[line_items_attributes][3][quantity] (never a nested-bracket
+        # corruption of the scope wrap).
+        def nested_field_name(association, field, index: NESTED_NEW_ROW)
+          nested_identifier!(:nested_field_name, :association, association)
+          nested_identifier!(:nested_field_name, :field, field)
+          unless index.to_s == NESTED_NEW_ROW || index.to_s.match?(/\A\d+\z/)
+            raise ArgumentError,
+              "nested_field_name index: must be an integer or the NEW_ROW placeholder, " \
+              "got #{index.inspect} — anything else corrupts the bracketed wire name"
+          end
+
+          "#{scoped_field_name(:"#{association}_attributes")}[#{index}][#{field}]"
+        end
+
+        # The container cloned rows land in — one per association, inside the
+        # root. Server-rendered rows (an edit form's persisted children) render
+        # inside it too.
+        def reactive_nested_list(association)
+          { data: { reactive_nested_list: nested_identifier!(:reactive_nested_list, :association, association) } }
+        end
+
+        # The <template> holding ONE row's markup (server-owned, inert until
+        # cloned). Field names inside use nested_field_name's placeholder form.
+        def reactive_nested_template(association)
+          { data: { reactive_nested_template: nested_identifier!(:reactive_nested_template, :association,
+            association) } }
+        end
+
+        # The row wrapper marker — what nestedRemove resolves from its trigger
+        # (closest). Spread on the template row's outermost element AND on
+        # server-rendered rows, so both remove the same way.
+        def reactive_nested_row
+          { data: { reactive_nested_row: true } }
+        end
+
+        # The add-a-row trigger — CLIENT-ONLY (no dispatch descriptor, no
+        # POST). Forced type="button": a bare button inside the surrounding
+        # real <form> would submit it.
+        def reactive_nested_add(association)
+          {
+            type: "button",
+            data: {
+              action: "click->reactive#nestedAdd",
+              reactive_association_param: nested_identifier!(:reactive_nested_add, :association, association)
+            }
+          }
+        end
+
+        # A row's remove trigger — client-only. Draft rows leave the DOM;
+        # persisted rows (a hidden [_destroy] input present) are marked and
+        # hidden instead, so Rails destroys them on save.
+        def reactive_nested_remove
+          { type: "button", data: { action: "click->reactive#nestedRemove" } }
+        end
+
         # CROSS-ROOT value-conditional visibility (issue #164) — the visibility
         # parallel to reactive_compute's `mirror:` (#159). A plain reactive_show
         # is root-scoped by design (#15), so it can't express "this control
@@ -922,6 +1029,18 @@ module Phlex
           end
 
           value
+        end
+
+        # An association/field name for the nested-rows wire (issue #208),
+        # validated to a plain Ruby identifier at render — it becomes an
+        # attribute value, a CSS selector fragment, AND a bracketed param name,
+        # so anything else is a dead (or corrupting) binding.
+        def nested_identifier!(helper, kind, name)
+          value = name.to_s
+          return value if value.match?(/\A[a-z_][a-z0-9_]*\z/)
+
+          raise ArgumentError,
+            "#{helper} needs a plain #{kind} name (e.g. :line_items), got #{name.inspect}"
         end
 
         # Issue #179: apply a confirm: gate to a trigger's data hash. A String is

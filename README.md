@@ -396,6 +396,9 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_compute :name, ..., mirror: { sum: "#summary-sum" }` | **Cross-root text mirrors**: paint a compute value into declared, id-allowlisted nodes **outside** the reactive root (a recap in another tab pane) via `textContent` — no bespoke listener. See [Cross-root mirrors](#cross-root-mirrors-mirror--painting-a-recap-outside-the-root). |
 | `reactive_dirty` / `reactive_dirty warn_unsaved: true` / `reactive_dirty only: %i[...]` | **Dirty tracking**, declared once at the class level, against the DOM's own `defaultValue`/`defaultChecked`/`defaultSelected` — no client state. Marks changed fields + the root `data-reactive-dirty`; `warn_unsaved:` arms a `beforeunload`/`turbo:before-visit` guard; `only:` scopes tracking to named fields. Style with `[data-reactive-dirty]`. See [Dirty-field tracking](#dirty-field-tracking-reactive_dirty). |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
+| `reactive_nested_list(:assoc)` / `reactive_nested_template(:assoc)` / `reactive_nested_row` | **Draft nested-attribute rows** (the "new parent + child rows" form): the container rows land in, the `<template>` holding ONE row's markup, and the row wrapper marker — all **client-only** form state, keyed by association (several collections per root). See [Draft rows for a new parent](#draft-rows-for-a-new-parent-reactive_nested_). |
+| `reactive_nested_add(:assoc)` / `reactive_nested_remove` | The row triggers, client-only (zero round trips): add clones the template and renumbers its placeholder index; remove deletes a draft row from the DOM, or `_destroy`-marks + hides a persisted row (a hidden `[_destroy]` input present). |
+| `nested_field_name(:assoc, :field, index: nil)` | The Rails `accepts_nested_attributes_for` wire name for one row field — `order[line_items_attributes][NEW_ROW][quantity]` (the template placeholder) by default, a real index when given. Scope-aware under `reactive_scope`. |
 | `reactive_collection :name, item:, container:, count:, empty:, size:` | Declare an add/remove-row list once; actions call `reply.append`/`prepend`/`remove`. See [Reactive collections](#reactive-collections-addremove-rows--count--empty-state). |
 | `reply.replace` / `.morph` / `.update` / `.remove` / `.redirect(url)` / `.with(*)` / `.js(ops)` | Return from an action to control the reply (flash, remove, redirect, multi-stream, server-pushed client ops). See [Controlling the action's reply](#reply--controlling-the-actions-reply). |
 | `reply.append(name, model)` / `.prepend(...)` / `.remove(name, model)` | Add/remove a row in a declared `reactive_collection` (row + count + empty-state in one reply). |
@@ -1251,6 +1254,92 @@ dispatches a real `input` event on the hidden field, so `reactive_dirty`,
 The styled, form-builder-integrated version of this widget (label/errors/
 theming) belongs in your form layer — these helpers are deliberately the
 unstyled primitives, like `reactive_filter` before them.
+
+### Draft rows for a new parent (`reactive_nested_*`)
+
+The "new order + line items" form: the user builds up child rows **before the
+parent exists**. An unsaved parent has no GlobalID to sign, so this pre-save
+window can't be a reactive collection — and every app ends up hand-writing the
+same imperative JS (clone a row, renumber indexes, serialize on submit).
+`reactive_nested_*` is that pattern as a primitive, the `reactive_tags`
+posture: the rows are **form state**, add/remove run **entirely client-side**
+(zero round trips, no token — works in a `ClientBindings` component), and the
+surrounding **real form submit** posts standard Rails
+`parent[assoc_attributes][<index>][field]` names, so
+`accepts_nested_attributes_for` creates the parent + rows in **one request**.
+
+```ruby
+class DraftOrderForm < ApplicationComponent
+  include Phlex::Reactive::ClientBindings
+
+  reactive_scope :order   # names post as order[line_items_attributes][…]
+
+  def view_template
+    div(**reactive_root(id: "draft_order_form")) do
+      form(action: orders_path, method: "post", data: { turbo: "false" }) do
+        input(**reactive_field(:total, type: "number", value: "0"))
+
+        div(**reactive_nested_list(:line_items)) { }             # rows land here
+        template(**reactive_nested_template(:line_items)) { row_fields }
+        button(**reactive_nested_add(:line_items)) { "Add item" }
+
+        button(type: "submit") { "Create order" }
+      end
+    end
+  end
+
+  private
+
+  # ONE row's markup, authored once. The default renders the template
+  # prototype (NEW_ROW placeholder names — the client swaps in a fresh index
+  # per add); pass index: to server-render an edit form's persisted rows.
+  def row_fields(index: nil)
+    kwargs = index.nil? ? {} : { index: }
+    div(**reactive_nested_row) do
+      input(name: nested_field_name(:line_items, :quantity, **kwargs), type: "number")
+      input(name: nested_field_name(:line_items, :price, **kwargs), type: "number")
+      button(**reactive_nested_remove) { "×" }
+    end
+  end
+end
+```
+
+```ruby
+# The model + controller side is plain Rails — the reconcile is one create:
+class Order < ApplicationRecord
+  has_many :line_items, dependent: :destroy
+  accepts_nested_attributes_for :line_items, allow_destroy: true
+end
+
+Order.create!(params.require(:order).permit(:total,
+  line_items_attributes: %i[id quantity price _destroy]))
+```
+
+Clicking add clones your `<template>` row and swaps every `NEW_ROW` in the
+clone's `name`/`id`/`for` attributes for a fresh unique index (clock-seeded and
+strictly monotonic — server-rendered `0..n` indexes and same-millisecond double
+clicks can't collide), then focuses the new row's first field. Remove on a
+draft row deletes it from the DOM — it was never persisted, so removing its
+fields *is* the removal. Remove on a row carrying a hidden `[_destroy]` input
+(an **edit** form's persisted row, rendered with `nested_field_name(:line_items,
+:_destroy, index: i)`) marks it `"1"` and hides the row instead — Rails destroys
+it on save. Several collections can share one root (everything is keyed by the
+association name); nesting a collection inside another's template is not
+supported.
+
+Two boundaries to respect: the DOM is the single source of truth for unsent
+draft rows, so a **server re-render of the root replaces them** — keep
+replace-shaped actions out of a root holding unsent rows. And once the parent
+is saved, the persisted flow takes over: the same row markup renders with real
+indexes, or the list graduates to a [reactive collection](#reactive-collections-addremove-rows--count--empty-state)
+(`reactive_collection` + `reply.append`/`reply.remove`).
+
+Relatedly, a **draft parent can now run real server actions too** (issue #208):
+an unsaved record signs a gid-less `{c, state}` token, and the endpoint rebuilds
+the component through the record kwarg's **initialize default** —
+`def initialize(order: Order.new, …)` — with the declared `reactive_state`
+riding the token. A component whose initialize *requires* the record kwarg
+raises a guided error on the first draft action, telling you to add the default.
 
 **Combining `on(...)` / `reactive_attrs` with your own attributes.** Both return
 a hash that includes a `data:` key. Spreading them *and* passing another `data:`

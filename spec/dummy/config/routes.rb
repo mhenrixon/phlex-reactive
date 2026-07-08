@@ -20,6 +20,9 @@ Rails.application.routes.draw do
   get "tags_field" => "demos#tags_field"
   get "new_order" => "demos#new_order"
   get "order/:id" => "demos#order"
+  # Issue #208: the draft nested-attribute rows form + its reconcile endpoint.
+  get "draft_order" => "demos#draft_order"
+  post "orders" => "demos#create_order"
   get "post_preview/:id" => "demos#post_preview"
   get "compute_seed" => "demos#compute_seed"
   get "notifications" => "demos#notifications"

@@ -25,6 +25,8 @@ class Doc
     { slug: 'example-todo-list',     title: 'Todo list',               group: 'Examples', view: 'ExampleTodoList' },
     { slug: 'example-inline-edit',   title: 'Inline edit',             group: 'Examples', view: 'ExampleInlineEdit' },
     { slug: 'example-collections',   title: 'Collections',             group: 'Examples', view: 'ExampleCollections' },
+    { slug: 'example-draft-rows',    title: 'Draft rows (new parent)', group: 'Examples',
+      view: 'DraftRowsNewParent' },
     { slug: 'example-uploads',       title: 'File uploads & custom types', group: 'Examples',
       view: 'ExampleUploads' },
     { slug: 'example-notifications', title: 'Notifications',           group: 'Examples',
