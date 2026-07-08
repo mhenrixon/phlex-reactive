@@ -23,6 +23,10 @@ Rails.application.routes.draw do
   # Issue #208: the draft nested-attribute rows form + its reconcile endpoint.
   get "draft_order" => "demos#draft_order"
   post "orders" => "demos#create_order"
+  # Issue #208 (JSON mode): the same form, list `as: :json`, reconciled through
+  # a hand-rolled JSON.parse controller path (no accepts_nested_attributes_for).
+  get "draft_order_json" => "demos#draft_order_json"
+  post "orders_json" => "demos#create_order_json"
   get "post_preview/:id" => "demos#post_preview"
   get "compute_seed" => "demos#compute_seed"
   get "notifications" => "demos#notifications"

@@ -2471,6 +2471,44 @@ RSpec.describe Phlex::Reactive::Component do
       expect(attrs[:data][:reactive_nested_list]).to eq("line_items")
     end
 
+    describe "as: :json (serialize the rows into ONE hidden JSON field, issue #208)" do
+      it "keeps the plain list marker AND adds the json-mode marker" do
+        attrs = instance.send(:reactive_nested_list, :todos, as: :json)
+        # The container is still the add/remove target — nestedAdd/Remove key on it.
+        expect(attrs[:data][:reactive_nested_list]).to eq("todos")
+        # Plus the json-mode marker the client branches on.
+        expect(attrs[:data][:reactive_nested_json]).to eq("todos")
+      end
+
+      it "names the hidden JSON field as an UNSCOPED [name=…] selector by default" do
+        attrs = instance.send(:reactive_nested_list, :todos, as: :json)
+        expect(attrs[:data][:reactive_nested_json_field]).to eq(%([name="todos"]))
+      end
+
+      it "scope-prefixes the hidden JSON field selector under reactive_scope" do
+        scoped = Class.new(Phlex::HTML) do
+          include Phlex::Reactive::Component
+
+          def self.name = "ScopedJsonNested"
+          reactive_scope :order
+        end
+
+        attrs = scoped.new.send(:reactive_nested_list, :todos, as: :json)
+        expect(attrs[:data][:reactive_nested_json_field]).to eq(%([name="order[todos]"]))
+      end
+
+      it "leaves the plain (accepts_nested_attributes_for) mode markerless by default" do
+        attrs = instance.send(:reactive_nested_list, :line_items)
+        expect(attrs[:data]).not_to have_key(:reactive_nested_json)
+        expect(attrs[:data]).not_to have_key(:reactive_nested_json_field)
+      end
+
+      it "raises on an unknown as: mode (a typo is a dead binding, fail at render)" do
+        expect { instance.send(:reactive_nested_list, :todos, as: :xml) }
+          .to raise_error(ArgumentError, /as:/)
+      end
+    end
+
     it "emits the association-keyed template marker" do
       attrs = instance.send(:reactive_nested_template, :line_items)
       expect(attrs[:data][:reactive_nested_template]).to eq("line_items")

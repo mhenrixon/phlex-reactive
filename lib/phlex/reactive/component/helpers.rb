@@ -793,8 +793,34 @@ module Phlex
         # The container cloned rows land in — one per association, inside the
         # root. Server-rendered rows (an edit form's persisted children) render
         # inside it too.
-        def reactive_nested_list(association)
-          { data: { reactive_nested_list: nested_identifier!(:reactive_nested_list, :association, association) } }
+        #
+        # `as: :json` (issue #208) switches the SUBMIT wire from Rails'
+        # accepts_nested_attributes_for names to ONE hidden JSON field — for an
+        # app whose controller already parses a serialized JSON param
+        # (`JSON.parse(params[:order][:todos])`) instead of nested attributes.
+        # The container keeps its plain marker (nestedAdd/Remove still key on
+        # it), and gains data-reactive-nested-json plus a scope-aware selector
+        # naming the hidden field the client mirrors the rows into on every
+        # add/remove/input. The default (:attributes) is unchanged — the plain
+        # accepts_nested_attributes_for wire.
+        def reactive_nested_list(association, as: :attributes)
+          name = nested_identifier!(:reactive_nested_list, :association, association)
+          data = { reactive_nested_list: name }
+          return { data: } if as == :attributes
+
+          unless as == :json
+            raise ArgumentError,
+              "reactive_nested_list(as:) takes :attributes (the default, Rails nested-attribute names) " \
+              "or :json (serialize the rows into one hidden JSON field), got #{as.inspect}"
+          end
+
+          # JSON mode: mark the container and name the hidden field the client
+          # keeps in sync — a scope-aware [name="…"] selector, the same
+          # convention reactive_tags/reactive_filter use so the field resolves
+          # under reactive_scope too.
+          data[:reactive_nested_json] = name
+          data[:reactive_nested_json_field] = %([name="#{scoped_field_name(association)}"])
+          { data: }
         end
 
         # The <template> holding ONE row's markup (server-owned, inert until
