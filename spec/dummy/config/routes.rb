@@ -27,6 +27,10 @@ Rails.application.routes.draw do
   # a hand-rolled JSON.parse controller path (no accepts_nested_attributes_for).
   get "draft_order_json" => "demos#draft_order_json"
   post "orders_json" => "demos#create_order_json"
+  # Issue #208 Scenario A: fill-then-add (add controls OUTSIDE the row) — both
+  # wire modes, reconciled through the SAME /orders and /orders_json endpoints.
+  get "draft_order_fill" => "demos#draft_order_fill"
+  get "draft_order_fill_json" => "demos#draft_order_fill_json"
   get "post_preview/:id" => "demos#post_preview"
   get "compute_seed" => "demos#compute_seed"
   get "notifications" => "demos#notifications"

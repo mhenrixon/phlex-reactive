@@ -1869,13 +1869,87 @@ export default class extends Controller {
     const row = proto.cloneNode(true)
     this.#renumberNestedRow(row, this.#nextNestedIndex())
     list.appendChild(row)
-    const first = [...(row.querySelectorAll?.("input, select, textarea") ?? [])][0]
-    first?.focus?.()
 
-    // JSON mode (issue #208): a freshly-added empty row must land in the hidden
-    // field immediately, so the serialized array reflects the DOM even before
-    // the first keystroke. A no-op when this list isn't `as: :json`.
+    // Fill-then-add (issue #208 Scenario A): seed the cloned row from named
+    // source controls OUTSIDE the row, then (optionally) clear the sources.
+    // Runs AFTER renumber+append so a seeded field's name already carries its
+    // final `[<index>][field]` form — the key match agrees with what JSON mode
+    // reads. `seeded` is the FIRST source we cleared/read, so fill-then-add can
+    // return focus to the sources instead of stealing it into the new row.
+    const fromJson = trigger?.getAttribute?.("data-reactive-nested-from-param")
+    const clear = trigger?.getAttribute?.("data-reactive-nested-clear-param") === "true"
+    const firstSource = this.#seedNestedRow(row, fromJson, clear)
+
+    // Focus: inline-edit (no from:) focuses the new row's first field so you
+    // type INTO it; fill-then-add keeps focus on the sources (the first one) so
+    // you keep entering the next item — stealing focus would break that loop.
+    if (fromJson) firstSource?.focus?.()
+    else [...(row.querySelectorAll?.("input, select, textarea") ?? [])][0]?.focus?.()
+
+    // JSON mode (issue #208): a freshly-added row must land in the hidden field
+    // immediately (seeded values included), so the serialized array reflects the
+    // DOM even before the first keystroke. A no-op when not `as: :json`.
     if (list.getAttribute?.("data-reactive-nested-json") === assoc) this.#syncNestedJson(assoc)
+  }
+
+  // Fill-then-add (issue #208): copy each source control's value into the
+  // matching cloned-row field, keyed by the trailing bracket segment of the
+  // field's name (#nestedJsonKey — the SAME inference JSON mode uses, so the
+  // two features can't drift). Sources resolve root-scoped and owned (#15); an
+  // unresolved source or an unmatched key is silently skipped (the row still
+  // adds — a half-mapped binding must never throw on click). Returns the FIRST
+  // source control read (for focus), or null. With `clear`, resets every source
+  // it read via the set-value + dispatch contract (#183) so dirty/show/compute
+  // observe the reset.
+  #seedNestedRow(row, fromJson, clear) {
+    if (!fromJson) return null
+    let map
+    try {
+      map = JSON.parse(fromJson)
+    } catch {
+      return null
+    }
+    if (!map || typeof map !== "object") return null
+
+    const owns = this.#ownershipFilter()
+    const rowFields = [...(row.querySelectorAll?.("input, select, textarea") ?? [])]
+    const sources = []
+    for (const [key, selector] of Object.entries(map)) {
+      const source = [...(this.element.querySelectorAll?.(selector) ?? [])].find(owns)
+      if (!source) continue
+      const target = rowFields.find((field) => this.#nestedJsonKey(field.getAttribute?.("name")) === key)
+      if (!target) continue
+      this.#seedNestedField(target, source)
+      sources.push(source)
+    }
+    if (clear) for (const source of sources) this.#clearNestedSource(source)
+    return sources[0] ?? null
+  }
+
+  // Copy a source control's value into a cloned-row field, then dispatch a
+  // bubbling `input` (the set-value + dispatch contract, #183). Checkbox ↔
+  // checkbox copies the checked state; every other target takes the source's
+  // submit-shaped value (#nestedFieldValue), so a checkbox source feeding a
+  // text field lands "on"/"" exactly as a submit would.
+  #seedNestedField(target, source) {
+    if (target.type === "checkbox") {
+      target.checked = source.type === "checkbox" ? !!source.checked : this.#nestedFieldValue(source) !== ""
+    } else {
+      target.value = this.#nestedFieldValue(source)
+    }
+    if (typeof target.dispatchEvent === "function") {
+      target.dispatchEvent(new Event("input", { bubbles: true }))
+    }
+  }
+
+  // Reset a source control after a fill-then-add (issue #208), dispatching a
+  // bubbling `input` so dirty tracking / reactive_show / compute see the reset.
+  #clearNestedSource(source) {
+    if (source.type === "checkbox") source.checked = false
+    else source.value = ""
+    if (typeof source.dispatchEvent === "function") {
+      source.dispatchEvent(new Event("input", { bubbles: true }))
+    }
   }
 
   // Remove the trigger's closest row wrapper. A DRAFT row (no [_destroy]

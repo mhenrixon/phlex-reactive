@@ -294,3 +294,57 @@ test("syncNestedJson ignores an input in a NESTED reactive root (issue #15 owner
 
   expect(field.value).toBe(before)
 })
+
+// Fill-then-add composes with JSON mode (issue #208 Scenarios A+B together):
+// seeding writes real .value on the cloned row's fields BEFORE the end-of-add
+// #syncNestedJson, so the serialized array carries the seeded values with zero
+// extra wiring — the whole point of both features sharing #nestedJsonKey.
+function jsonFillWidget({ from, clear = false } = {}) {
+  const { root, list, field, add } = jsonWidget()
+  const titleSrc = new FakeNode({ tag: "input", value: "Buy milk", attrs: { "data-src": "title" } })
+  const prioSrc = new FakeNode({ tag: "input", value: "high", attrs: { "data-src": "prio" } })
+  root.append(titleSrc, prioSrc)
+  add.attrs["data-reactive-nested-from-param"] =
+    JSON.stringify(from ?? { title: '[data-src="title"]', priority: '[data-src="prio"]' })
+  if (clear) add.attrs["data-reactive-nested-clear-param"] = "true"
+  return { root, list, field, add, titleSrc, prioSrc }
+}
+
+test("fill-then-add + JSON mode: the hidden field carries the SEEDED values after one add", () => {
+  const { root, field, add } = jsonFillWidget()
+  const controller = buildController(root)
+
+  clickAdd(controller, add)
+
+  // No follow-up sync call — the end-of-add #syncNestedJson already serialized
+  // the seeded .value's.
+  expect(JSON.parse(field.value)).toEqual([{ title: "Buy milk", priority: "high" }])
+})
+
+test("fill-then-add + JSON mode + clear: sources reset, and a SECOND add appends a second object", () => {
+  const { root, field, add, titleSrc, prioSrc } = jsonFillWidget({ clear: true })
+  const controller = buildController(root)
+
+  clickAdd(controller, add)
+  expect(titleSrc.value).toBe("")
+  // Re-fill the (cleared) sources and add again.
+  titleSrc.value = "Walk dog"
+  prioSrc.value = "low"
+  clickAdd(controller, add)
+
+  expect(JSON.parse(field.value)).toEqual([
+    { title: "Buy milk", priority: "high" },
+    { title: "Walk dog", priority: "low" },
+  ])
+})
+
+test("fill-then-add + JSON mode: focus stays on the sources, not the new row", () => {
+  const { root, list, add, titleSrc } = jsonFillWidget()
+  const controller = buildController(root)
+
+  clickAdd(controller, add)
+
+  const rowTitle = list.children[0].querySelectorAll("input").find((i) => (i.name ?? "").endsWith("[title]"))
+  expect(rowTitle.focused).toBe(0)
+  expect(titleSrc.focused).toBe(1)
+})
