@@ -9,6 +9,8 @@ import { setComputeReducer } from "phlex/reactive/compute"
 export function registerComputeSeed() {
   setComputeReducer("sums", ({ a, b }) => {
     const total = Number(a) + Number(b)
-    return { total, half: total / 2, total_label: `${total}` }
+    // total_ro (issue #204) mirrors total onto a DISABLED field — proves the
+    // property write reaches a disabled output the value attribute never shows.
+    return { total, half: total / 2, total_ro: total, total_label: `${total}` }
   })
 }

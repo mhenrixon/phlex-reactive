@@ -47,6 +47,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`have_reactive_value` now reads the field's `.value` property, so it can verify a
+  reducer-set disabled/computed field (#204).** The matcher (added in #201) delegated to
+  Capybara's `have_field(with:)`, which matches the value **attribute** — but a
+  `reactive_compute` reducer paints a computed output by setting its JS `.value`
+  **property** (`el.value = …`), and for a **disabled / read-only** output the attribute
+  never reflects that. So the matcher read `""` and failed on exactly the fields it was
+  built for. It now re-resolves the field by id **or name** each poll and asserts the live
+  `.value` property (via `evaluate_script`), covering enabled AND disabled/computed fields
+  while keeping the morph-immunity. `have_reactive_text` (textContent) was unaffected.
+
 - **A freshly-rendered `reactive_compute` root now self-seeds its derived fields on connect (#199).**
   Before, a compute root computed nothing until the first user `input` — a fresh render
   (or a server validation-error re-render that replaced the body) left every derived

@@ -17,11 +17,14 @@ class ComputeSeedComponent < ApplicationComponent
   include Phlex::Reactive::Streamable
   include Phlex::Reactive::Component
 
-  # Two numeric outputs (total, half) + a cross-root text mirror (total_label) —
-  # the issue's minimal repro. The reducer returns ALL keys every pass.
+  # Two numeric outputs (total, half) + a DISABLED computed twin (total_ro, issue
+  # #204) + a cross-root text mirror (total_label) — the issue's minimal repro. The
+  # reducer returns ALL keys every pass. total_ro is rendered `disabled`: the
+  # reducer sets its `.value` PROPERTY (never the attribute), so have_reactive_value
+  # must read the property to see it — the bug #204 fixes.
   reactive_compute :sums,
     inputs: %i[a b],
-    outputs: %i[total half],
+    outputs: %i[total half total_ro],
     mirror: { total_label: "#seed-total-label" }
 
   # Fixed seed values (2 + 4): the fixture always renders the same repro. The
@@ -42,6 +45,10 @@ class ComputeSeedComponent < ApplicationComponent
       input(**reactive_field(:b, value: @second, type: "number", data: { testid: "b" }))
       input(**reactive_field(:total, value: "", type: "number", data: { testid: "total" }))
       input(**reactive_field(:half, value: "", type: "number", data: { testid: "half" }))
+      # A DISABLED computed twin (issue #204): the reducer sets its `.value`
+      # property, but the value ATTRIBUTE stays "" — the exact field
+      # have_field(with:) can't see and have_reactive_value must (via the property).
+      input(**reactive_field(:total_ro, value: "", type: "number", disabled: true, data: { testid: "total-ro" }))
     end
   end
 end
