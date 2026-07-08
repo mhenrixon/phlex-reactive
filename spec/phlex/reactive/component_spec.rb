@@ -2668,6 +2668,11 @@ RSpec.describe Phlex::Reactive::Component do
           .to raise_error(ArgumentError, /bogus/)
       end
 
+      it "names the unknown key even when NO condition key is present (specific beats generic)" do
+        expect { instance.send(:reactive_show_targets, "#warn" => { bogus: 1 }) }
+          .to raise_error(ArgumentError, /unknown conditions key\(s\) :bogus/)
+      end
+
       it "raises for an empty conditions Hash" do
         expect { instance.send(:reactive_show_targets, "#warn" => {}) }
           .to raise_error(ArgumentError, /conditions Hash/)

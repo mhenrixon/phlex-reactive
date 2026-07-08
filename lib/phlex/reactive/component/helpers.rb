@@ -1147,13 +1147,17 @@ module Phlex
               "reactive_show_targets target #{selector.inspect} must be a single " \
               "ID selector (\"#id\") — cross-root visibility is id-allowlisted, like mirror: (#159)"
           end
-          unless conditions.is_a?(Hash) && conditions.keys.intersect?(SHOW_CONDITION_KEYS)
+          unless conditions.is_a?(Hash) && conditions.any?
             raise ArgumentError,
               "reactive_show_targets: a target key takes a conditions Hash — " \
               "reactive_show_targets(#{selector.inspect} => { if: { field: value, ... } }); " \
               "to key by field instead: reactive_show_targets(:field, #{selector.inspect} => value). " \
               "Got #{selector.inspect} => #{conditions.inspect}"
           end
+          # Unknown keys are reported BEFORE the presence check so { bogus: 1 }
+          # names its offender instead of the generic shape message (specific
+          # beats generic). A non-empty hash surviving this subtraction holds
+          # only condition keys, so no separate presence check remains.
           if (unknown = conditions.keys - SHOW_CONDITION_KEYS).any?
             raise ArgumentError,
               "reactive_show_targets #{selector.inspect}: unknown conditions key(s) " \
