@@ -17,6 +17,7 @@ Rails.application.routes.draw do
   get "todos" => "demos#todos"
   get "combobox" => "demos#combobox"
   get "filter_combobox" => "demos#filter_combobox"
+  get "tags_field" => "demos#tags_field"
   get "new_order" => "demos#new_order"
   get "order/:id" => "demos#order"
   get "post_preview/:id" => "demos#post_preview"

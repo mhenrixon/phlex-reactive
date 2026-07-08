@@ -85,6 +85,14 @@ class DemosController < ActionController::Base
     render_component FilterComboboxComponent.new
   end
 
+  # The tag-chip input (issue #203): reactive_tags ∘ reactive_filter ∘
+  # reactive_listnav, all client-side. The widget's own GET form submits back
+  # HERE — params[:tags] carries the hidden field's comma-joined value, and the
+  # re-render echoes it (the system spec's proof the server received it).
+  def tags_field
+    render_component TagsFieldComponent.new(tags: params[:tags].to_s, submitted: params.key?(:tags))
+  end
+
   # A NEW (unsaved) order: the split recomputes in-browser via reactive_compute,
   # no round trip. total=500 seeds the three-way split. The page also carries a
   # read-only recap OUTSIDE the reactive root (issue #159) — the component's
