@@ -2226,6 +2226,133 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  # Issue #203: reactive_tags — the tag-chip input primitive. The ROOT names the
+  # hidden field that stores the comma-joined value (scope-aware, like
+  # reactive_filter's field compile); the query input carries the Enter-to-add
+  # trigger; each option/remove button is a CLIENT-ONLY trigger (tagsPick/
+  # tagsRemove — form state, no POST). Validation is loud at render: a blank
+  # field is a dead binding, and a declared tag containing a comma would corrupt
+  # the comma-joined value.
+  describe "#reactive_tags (tag-chip input, issue #203)" do
+    subject(:instance) { tags_klass.new }
+
+    let(:tags_klass) do
+      Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "TagsThing"
+      end
+    end
+
+    it "compiles the field name to a [name=…] selector for the hidden value store" do
+      attrs = instance.send(:reactive_tags, :tags)
+      expect(attrs[:data][:reactive_tags_field]).to eq('[name="tags"]')
+    end
+
+    it "scope-prefixes the field name under reactive_scope" do
+      scoped = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Streamable
+        include Phlex::Reactive::Component
+
+        def self.name = "ScopedTags"
+        reactive_scope :post
+      end
+      attrs = scoped.new.send(:reactive_tags, :tags)
+      expect(attrs[:data][:reactive_tags_field]).to eq('[name="post[tags]"]')
+    end
+
+    it "raises on a missing field name (a dead binding must fail at render)" do
+      expect { instance.send(:reactive_tags) }
+        .to raise_error(ArgumentError, /field name/)
+    end
+
+    it "is available to a ClientBindings (token-less) component" do
+      client_only = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::ClientBindings
+
+        def self.name = "ClientOnlyTags"
+      end
+      attrs = client_only.new.send(:reactive_tags, :tags)
+      expect(attrs[:data][:reactive_tags_field]).to eq('[name="tags"]')
+    end
+
+    describe "#reactive_tags_add (the Enter-to-add trigger)" do
+      it "emits ONLY the tagsAdd keyboard action (no dispatch — no POST)" do
+        attrs = instance.send(:reactive_tags_add)
+        expect(attrs[:data][:action]).to eq("keydown.enter->reactive#tagsAdd")
+      end
+
+      it "composes AFTER reactive_listnav via mix so Enter prefers the highlighted option" do
+        attrs = instance.instance_eval do
+          mix(reactive_listnav, reactive_tags_add)
+        end
+        expect(attrs[:data][:action]).to eq(
+          "keydown.down->reactive#listnavNext " \
+          "keydown.up->reactive#listnavPrev " \
+          "keydown.enter->reactive#listnavPick " \
+          "keydown.esc->reactive#listnavClose " \
+          "keydown.enter->reactive#tagsAdd"
+        )
+      end
+    end
+
+    describe "#reactive_tags_option (a click-to-add option row)" do
+      it "emits the option convention + the client-only pick trigger + the tag value" do
+        attrs = instance.send(:reactive_tags_option, "Ruby")
+        expect(attrs[:role]).to eq("option")
+        expect(attrs[:type]).to eq("button")
+        expect(attrs[:data][:action]).to eq("click->reactive#tagsPick")
+        expect(attrs[:data][:reactive_tag_param]).to eq("Ruby")
+      end
+
+      it "raises on a blank tag" do
+        expect { instance.send(:reactive_tags_option, " ") }
+          .to raise_error(ArgumentError, /non-blank/)
+      end
+
+      it "raises on a tag containing a comma (would corrupt the comma-joined value)" do
+        expect { instance.send(:reactive_tags_option, "a,b") }
+          .to raise_error(ArgumentError, /comma/)
+      end
+    end
+
+    describe "#reactive_tags_remove (a chip's remove button)" do
+      it "emits the client-only remove trigger with the tag for a server-rendered chip" do
+        attrs = instance.send(:reactive_tags_remove, "Ruby")
+        expect(attrs[:type]).to eq("button")
+        expect(attrs[:data][:action]).to eq("click->reactive#tagsRemove")
+        expect(attrs[:data][:reactive_tag_param]).to eq("Ruby")
+      end
+
+      it "omits the tag param for the template form (the client fills it per chip)" do
+        attrs = instance.send(:reactive_tags_remove)
+        expect(attrs[:data][:action]).to eq("click->reactive#tagsRemove")
+        expect(attrs[:data]).not_to have_key(:reactive_tag_param)
+      end
+
+      it "raises on a tag containing a comma" do
+        expect { instance.send(:reactive_tags_remove, "a,b") }
+          .to raise_error(ArgumentError, /comma/)
+      end
+    end
+
+    it "renders the compiled wire attributes onto the root element" do
+      klass = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Component
+
+        def self.name = "TagsRender"
+
+        def view_template
+          div(**reactive_tags(:tags), id: "tags-root") { "t" }
+        end
+      end
+
+      html = klass.new.call
+      expect(html).to include('data-reactive-tags-field="[name=&quot;tags&quot;]"')
+    end
+  end
+
   # Issue #180 Phase A: reactive_show_targets — CROSS-ROOT visibility, now using
   # the SAME conditions value language. Each target id maps to a where-style
   # value (scalar/Array/Range) instead of a { equals: } predicate hash; the value

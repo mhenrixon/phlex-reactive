@@ -1131,6 +1131,12 @@ export default class extends Controller {
   // Option filtering (issue #163): the ONE delegated sync handler shared by the
   // root's input/turbo:morph-element listeners, held for teardown.
   #boundSyncFilter
+  // Tag-chip input (issue #203): the bound re-projection attached to
+  // turbo:morph-element (a morph rewrites the hidden field to server truth, so
+  // the chip projection must follow), held for teardown — plus the once-only
+  // missing-template warning latch.
+  #boundSyncTags
+  #tagsWarnedTemplate = false
   // Connect-time compute seed (issue #199): the bound re-seed attached to
   // turbo:morph-element so an in-place morph re-runs the compute, held for teardown.
   #boundSeedCompute
@@ -1240,6 +1246,21 @@ export default class extends Controller {
       this.#syncFilter()
     }
 
+    // Tag-chip input (issue #203) — ONLY when the root names the hidden value
+    // field (reactive_tags), so a component without one pays one attribute
+    // read. The chip list is a CLIENT PROJECTION of the hidden field's
+    // comma-joined value: connect seeds it (a plain replace re-connects with
+    // the server-rendered value), and turbo:morph-element re-projects after an
+    // in-place morph (the morph wrote server truth into the hidden field while
+    // the chips DOM kept the pre-morph projection). Registered AFTER the
+    // filter's listeners so a morph re-filters first and the tags pass then
+    // re-marks selected options on the fresh visibility state.
+    if (this.#tagsEnabled()) {
+      this.#boundSyncTags = () => this.#syncTags()
+      this.element.addEventListener?.("turbo:morph-element", this.#boundSyncTags)
+      this.#syncTags()
+    }
+
     // Connect-time compute seed (issue #199) — ONLY when the root carries a
     // reactive_compute binding that opts in (data-reactive-compute-seed). A
     // freshly-rendered compute root (a first paint, or a server validation-error
@@ -1291,6 +1312,7 @@ export default class extends Controller {
     this.#teardownDirtyTracking()
     this.#teardownShowSync()
     this.#teardownFilterSync()
+    this.#teardownTagsSync()
     this.#teardownComputeSeed()
     if (this.#boundProbeLazyDefer) {
       this.element.removeEventListener?.("turbo:morph-element", this.#boundProbeLazyDefer)
@@ -1695,6 +1717,80 @@ export default class extends Controller {
     if (!selector) return []
     const owns = this.#ownershipFilter()
     return Array.from(this.element.querySelectorAll(selector)).filter((el) => !el.hidden && owns(el))
+  }
+
+  // Tag-chip input (issue #203) — the composed combobox/tags primitive. The
+  // root's data-reactive-tags-field names the hidden input that stores the
+  // COMMA-JOINED value; these three actions are its only writers. All of it is
+  // FORM state (like text in an input) — no token, no POST: the surrounding
+  // form submit carries the joined value. The chip list is re-projected from
+  // the field on every write (#syncTags), so the field stays the single source
+  // of truth.
+  //
+  // Enter on the query input: add the TYPED text — unless this Enter belongs
+  // to listnav (reactive_tags_add composes after reactive_listnav on the same
+  // keydown.enter). Two guards make the composition order-independent:
+  // defaultPrevented means listnavPick ALREADY picked the highlighted option
+  // (adding the typed text too would double-add); a still-visible highlighted
+  // option means listnavPick is ABOUT to pick it (when tagsAdd is bound
+  // first). Past the guards, Enter is OURS — preventDefault unconditionally so
+  // it can never submit the enclosing form (blank input included). A
+  // comma-separated paste splits into individual tags (the value is
+  // comma-joined, so a comma can never be part of one tag). The input clears
+  // only when something was actually added — a duplicate keeps the typed text
+  // for correction.
+  tagsAdd(event) {
+    if (!this.#tagsEnabled()) return
+    if (event?.defaultPrevented) return
+    if (this.#listnavOptions(event).some((el) => el.hasAttribute?.("data-reactive-highlighted"))) return
+    event?.preventDefault?.()
+
+    const input = event?.currentTarget ?? event?.target
+    if (!input) return
+    const added = this.#tagsAddValues(String(input.value ?? "").split(","))
+    if (!added) return
+    input.value = ""
+    if (this.#filterEnabled()) this.#syncFilter()
+  }
+
+  // Click (or listnav Enter, which CLICKS the highlighted option) on a
+  // preloaded option: add its DECLARED tag (data-reactive-tag-param — set by
+  // reactive_tags_option, never free text). After a successful add, reset the
+  // query so the next tag starts from the full list: clear the filter input,
+  // re-narrow, and hand focus back for continued typing.
+  tagsPick(event) {
+    if (!this.#tagsEnabled()) return
+    event?.preventDefault?.()
+
+    const trigger = event?.currentTarget ?? event?.target
+    const tag = trigger?.getAttribute?.("data-reactive-tag-param")
+    if (!tag) return
+    if (!this.#tagsAddValues([tag])) return
+
+    const input = this.#tagsQueryInput()
+    if (!input) return
+    input.value = ""
+    this.#syncFilter()
+    input.focus?.()
+  }
+
+  // Click on a chip's remove button: drop its tag (case-insensitive match, the
+  // dedupe convention) from the hidden value. The re-projection removes the
+  // chip and resurfaces the option. Removing an absent tag is a no-op.
+  tagsRemove(event) {
+    if (!this.#tagsEnabled()) return
+    event?.preventDefault?.()
+
+    const trigger = event?.currentTarget ?? event?.target
+    const tag = trigger?.getAttribute?.("data-reactive-tag-param")
+    if (!tag) return
+    const field = this.#tagsField()
+    if (!field) return
+
+    const tags = this.#tagsRead(field)
+    const next = tags.filter((t) => t.toLowerCase() !== tag.toLowerCase())
+    if (next.length === tags.length) return
+    this.#tagsWrite(field, next)
   }
 
   // Parse a JSON string list from a root data attr; [] on absence/parse error so
@@ -2891,7 +2987,11 @@ export default class extends Controller {
     for (const el of this.element.querySelectorAll(optionSelector)) {
       if (!owns(el)) continue // a nested root's option is its own controller's job
       const haystack = (el.getAttribute("data-reactive-filter-text") ?? el.textContent ?? "").toLowerCase()
-      const hidden = query !== "" && !haystack.includes(query)
+      // An option whose tag is already selected (reactive_tags, issue #203)
+      // stays hidden through every re-filter — clearing the query must not
+      // resurface an already-added tag.
+      const hidden =
+        el.hasAttribute?.("data-reactive-tags-selected") || (query !== "" && !haystack.includes(query))
       el.hidden = hidden
       if (hidden) el.removeAttribute("data-reactive-highlighted")
       else visible++
@@ -2924,6 +3024,168 @@ export default class extends Controller {
     this.element.removeEventListener?.("input", this.#boundSyncFilter)
     this.element.removeEventListener?.("turbo:morph-element", this.#boundSyncFilter)
     this.#boundSyncFilter = undefined
+  }
+
+  // Whether this root declares a tag-chip binding (issue #203) — the connect()
+  // gate and every tags action's first check (an action bound without the root
+  // binding is default-denied, the filter posture).
+  #tagsEnabled() {
+    return !!this.element.getAttribute?.("data-reactive-tags-field")
+  }
+
+  // The hidden input storing the comma-joined value, resolved fresh per use
+  // (a morph replaces nodes — never cache it) and OWNED by this root (issue
+  // #15). null when the selector resolves nothing — every caller then no-ops:
+  // a binding that can't resolve must never break the page.
+  #tagsField() {
+    if (typeof this.element?.querySelectorAll !== "function") return null
+    const selector = this.element.getAttribute("data-reactive-tags-field")
+    if (!selector) return null
+    const owns = this.#ownershipFilter()
+    return [...this.element.querySelectorAll(selector)].find(owns) ?? null
+  }
+
+  // Parse the field's comma-joined value into the canonical tag list: split,
+  // trim, drop blanks, dedupe case-insensitively KEEPING the first casing (the
+  // server may have stored a ragged value — the projection normalizes without
+  // rewriting the field, so we never fight server truth).
+  #tagsRead(field) {
+    const seen = new Set()
+    const tags = []
+    for (const part of String(field.value ?? "").split(",")) {
+      const tag = part.trim()
+      if (tag === "" || seen.has(tag.toLowerCase())) continue
+      seen.add(tag.toLowerCase())
+      tags.push(tag)
+    }
+    return tags
+  }
+
+  // Append any NEW tags (trimmed, non-blank, not already present under the
+  // case-insensitive dedupe) and write the field once. Returns whether
+  // anything was actually added — callers only clear the query input then.
+  #tagsAddValues(values) {
+    const field = this.#tagsField()
+    if (!field) return false
+
+    const tags = this.#tagsRead(field)
+    const seen = new Set(tags.map((tag) => tag.toLowerCase()))
+    let added = false
+    for (const value of values) {
+      const tag = String(value ?? "").trim()
+      if (tag === "" || seen.has(tag.toLowerCase())) continue
+      seen.add(tag.toLowerCase())
+      tags.push(tag)
+      added = true
+    }
+    if (added) this.#tagsWrite(field, tags)
+    return added
+  }
+
+  // The ONE writer: join, store, dispatch a real bubbling `input` on the field
+  // (the set-value + dispatch contract, issue #183 — dirty tracking,
+  // reactive_show, and compute all see the change), then re-project.
+  #tagsWrite(field, tags) {
+    field.value = tags.join(",")
+    if (typeof field.dispatchEvent === "function") {
+      field.dispatchEvent(new Event("input", { bubbles: true }))
+    }
+    this.#syncTags()
+  }
+
+  // The query input the tags widget resets after a pick — the SAME input that
+  // drives reactive_filter (a tags widget without filtering has none; the
+  // caller then skips the reset).
+  #tagsQueryInput() {
+    if (typeof this.element?.querySelectorAll !== "function") return null
+    const selector = this.element.getAttribute("data-reactive-filter-input")
+    if (!selector) return null
+    const owns = this.#ownershipFilter()
+    return [...this.element.querySelectorAll(selector)].find(owns) ?? null
+  }
+
+  // Re-project the hidden field into the DOM (issue #203): rebuild the chip
+  // list from the <template> and mark/hide the options whose tag is already
+  // selected. The field is the single source of truth — this never writes it.
+  #syncTags() {
+    const field = this.#tagsField()
+    if (!field) return
+    const tags = this.#tagsRead(field)
+    const owns = this.#ownershipFilter()
+    this.#tagsRenderChips(tags, owns)
+    this.#tagsMarkOptions(tags, owns)
+  }
+
+  // Rebuild the chip list: clear the container and clone one chip per tag from
+  // the server-owned template. The tag lands in the clone's
+  // [data-reactive-tag-text] node via textContent (XSS-safe by construction —
+  // never innerHTML, the reactive_text posture), and every tagsRemove trigger
+  // in the clone gets the tag as its param. A missing list is a chip-less
+  // widget (fine — the value still maintains); a missing/empty template warns
+  // ONCE (a half-built binding should be loud, but never per-keystroke).
+  #tagsRenderChips(tags, owns) {
+    const list = [...this.element.querySelectorAll("[data-reactive-tags-list]")].find(owns)
+    if (!list) return
+
+    const template = [...this.element.querySelectorAll("[data-reactive-tags-template]")].find(owns)
+    const chipProto = template?.content?.firstElementChild
+    if (!chipProto) {
+      if (!this.#tagsWarnedTemplate) {
+        console.warn(
+          "[phlex-reactive] reactive_tags: no chip <template data-reactive-tags-template> found in this root — " +
+            "chips will not render (the hidden field still updates). Add a template with a " +
+            "[data-reactive-tag-text] node and a reactive_tags_remove button."
+        )
+        this.#tagsWarnedTemplate = true
+      }
+      return
+    }
+
+    while (list.firstChild) list.removeChild(list.firstChild)
+    for (const tag of tags) {
+      const chip = chipProto.cloneNode(true)
+      chip.setAttribute?.("data-reactive-tag", tag)
+      const sink = chip.matches?.("[data-reactive-tag-text]")
+        ? chip
+        : (chip.querySelectorAll?.("[data-reactive-tag-text]") ?? [])[0]
+      if (sink) sink.textContent = tag
+      const removers = [...(chip.querySelectorAll?.('[data-action*="reactive#tagsRemove"]') ?? [])]
+      if (chip.matches?.('[data-action*="reactive#tagsRemove"]')) removers.push(chip)
+      for (const remover of removers) remover.setAttribute?.("data-reactive-tag-param", tag)
+      list.appendChild(chip)
+    }
+  }
+
+  // Hide + mark every owned option whose DECLARED tag is already selected
+  // (data-reactive-tags-selected — #syncFilter keeps it hidden through
+  // re-filters), and resurface an option WE hid when its tag is removed. Only
+  // marker-carrying options are un-hidden — an option hidden by the filter or
+  // the server stays as-is. With a filter bound, one final #syncFilter re-folds
+  // groups/empty against the new selected set.
+  #tagsMarkOptions(tags, owns) {
+    const selected = new Set(tags.map((tag) => tag.toLowerCase()))
+    for (const el of this.element.querySelectorAll("[role=option]")) {
+      if (!owns(el)) continue
+      const tag = el.getAttribute?.("data-reactive-tag-param")
+      if (!tag) continue
+      if (selected.has(tag.toLowerCase())) {
+        el.setAttribute("data-reactive-tags-selected", "true")
+        el.hidden = true
+        el.removeAttribute?.("data-reactive-highlighted")
+      } else if (el.hasAttribute?.("data-reactive-tags-selected")) {
+        el.removeAttribute("data-reactive-tags-selected")
+        if (!this.#filterEnabled()) el.hidden = false
+      }
+    }
+    if (this.#filterEnabled()) this.#syncFilter()
+  }
+
+  // Remove the tags morph listener on disconnect, so a stray morph event after
+  // the element leaves the DOM never re-projects against a detached root.
+  #teardownTagsSync() {
+    if (!this.#boundSyncTags) return
+    this.element.removeEventListener?.("turbo:morph-element", this.#boundSyncTags)
+    this.#boundSyncTags = undefined
   }
 
   // Remove the compute seed morph listener on disconnect (issue #199), so a

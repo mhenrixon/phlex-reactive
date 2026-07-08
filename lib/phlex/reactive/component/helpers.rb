@@ -640,6 +640,90 @@ module Phlex
           }
         end
 
+        # Tag-chip input (issue #203) — the composed combobox/tags primitive.
+        # Spread onto the ROOT (mix with reactive_root); it names the hidden
+        # field that stores the COMMA-JOINED value, and the generic controller
+        # maintains that field + the chip list entirely client-side. The value
+        # is FORM state (like text in an input), never component state — so
+        # add/remove round-trips nothing; the surrounding form submit carries
+        # the joined value and the server splits it (`tags.split(",")`).
+        #
+        #   div(**mix(reactive_root, reactive_tags(:tags), reactive_filter(:tag_query))) do
+        #     input(type: :hidden, **reactive_field(:tags), value: @tags.join(","))
+        #     div(data: { reactive_tags_list: true }) { }             # chips render here
+        #     template(data: { reactive_tags_template: true }) do     # the chip markup (server-owned)
+        #       span(class: "chip") do
+        #         span(data: { reactive_tag_text: true })             # the client writes the tag here (textContent)
+        #         button(**reactive_tags_remove) { "×" }              # the client fills the tag param per chip
+        #       end
+        #     end
+        #     input(name: "tag_query", **mix(reactive_listnav, reactive_tags_add))
+        #     button(**reactive_tags_option("Ruby")) { "Ruby" }       # preloaded options, filter narrows them
+        #   end
+        #
+        # The chip list is a CLIENT PROJECTION of the hidden field: every sync
+        # rebuilds the chips by cloning the <template> (textContent writes only
+        # — never innerHTML), so the hidden value is the single source of truth
+        # and a server re-render/morph re-seeds cleanly. An option whose tag is
+        # already selected is hidden and marked data-reactive-tags-selected
+        # (reactive_filter keeps it hidden through re-filters). Tags dedupe
+        # case-insensitively, keeping the first casing.
+        #
+        # Composes with reactive_filter (type to narrow — same driving input)
+        # and reactive_listnav (Arrow/Enter/Escape; Enter picks the highlighted
+        # option via its own tagsPick trigger, and reactive_tags_add only adds
+        # the TYPED text when nothing is highlighted — no double add).
+        def reactive_tags(field = nil)
+          if field.nil? || field.to_s.strip.empty?
+            raise ArgumentError, "reactive_tags needs a field name — reactive_tags(:tags)"
+          end
+
+          # Compile the field to a scoped [name="…"] selector, the reactive_filter
+          # convention — so the hidden field written via reactive_field(:tags)
+          # resolves under reactive_scope too.
+          { data: { reactive_tags_field: %([name="#{scoped_field_name(field)}"]) } }
+        end
+
+        # The Enter-to-add trigger for the tags query input (issue #203) — a
+        # CLIENT-ONLY keyboard action (no dispatch descriptor, no POST). Mix it
+        # AFTER reactive_listnav so Enter prefers the highlighted option
+        # (listnavPick preventDefaults; tagsAdd then skips), and free text adds
+        # only when nothing is highlighted:
+        #   input(name: "tag_query", **mix(reactive_listnav, reactive_tags_add))
+        # Enter never submits the enclosing form — the client preventDefaults.
+        def reactive_tags_add
+          { data: { action: "keydown.enter->reactive#tagsAdd" } }
+        end
+
+        # A preloaded option row that ADDS its tag on click (issue #203) — the
+        # tags sibling of the combobox's on(:select) option, but CLIENT-ONLY
+        # (form state, no POST). Emits the [role=option] convention (so
+        # reactive_filter/reactive_listnav see it), the forced type="button" (a
+        # bare button inside a <form> would submit it), and the tag value the
+        # client reads. Compose extra attrs (the filter haystack, a testid) via
+        # mix. The tag can't contain a comma — it would corrupt the joined value.
+        def reactive_tags_option(tag)
+          {
+            type: "button",
+            role: "option",
+            data: {
+              action: "click->reactive#tagsPick",
+              reactive_tag_param: tags_tag!(:reactive_tags_option, tag)
+            }
+          }
+        end
+
+        # A chip's remove button (issue #203) — client-only, no POST. Two forms:
+        # inside the <template data-reactive-tags-template> chip, call it with NO
+        # tag (the client fills data-reactive-tag-param per cloned chip); on a
+        # server-rendered initial chip, pass the tag explicitly:
+        #   button(**reactive_tags_remove(tag)) { "×" }
+        def reactive_tags_remove(tag = nil)
+          attrs = { type: "button", data: { action: "click->reactive#tagsRemove" } }
+          attrs[:data][:reactive_tag_param] = tags_tag!(:reactive_tags_remove, tag) unless tag.nil?
+          attrs
+        end
+
         # CROSS-ROOT value-conditional visibility (issue #164) — the visibility
         # parallel to reactive_compute's `mirror:` (#159). A plain reactive_show
         # is root-scoped by design (#15), so it can't express "this control
@@ -823,6 +907,21 @@ module Phlex
           end
 
           selector
+        end
+
+        # A declared tag value for reactive_tags_option/reactive_tags_remove
+        # (issue #203), validated non-blank and comma-free at render — the hidden
+        # field is comma-joined, so a declared tag containing a comma would
+        # corrupt the stored value (and a blank tag is a dead trigger).
+        def tags_tag!(helper, tag)
+          value = tag.to_s.strip
+          raise ArgumentError, "#{helper} needs a non-blank tag, got #{tag.inspect}" if value.empty?
+          if value.include?(",")
+            raise ArgumentError,
+              "#{helper}(#{tag.inspect}): a tag can't contain a comma — the hidden field is comma-joined"
+          end
+
+          value
         end
 
         # Issue #179: apply a confirm: gate to a trigger's data hash. A String is

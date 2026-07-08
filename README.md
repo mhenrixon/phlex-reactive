@@ -390,6 +390,8 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_show_targets(:field, "#id" => value)` | **Cross-root visibility**: the component that owns the field declares which **outside**, id-allowlisted elements it governs (a nav tab, a panel in another pane) — the visibility parallel of `mirror:`. Spread on the **root** via `mix(reactive_root, …)`, **once per root** — several fields go in one call via the hash form. The value uses the same `where`-style vocabulary (`"advanced"`, `%w[a b]`, `10..`). Id selectors only (raise at render + client warn-skip); toggles `hidden` only. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
 | `reactive_filter(:field, option: nil, group: nil, empty: nil)` | **Client-side option filtering** for a preloaded combobox: spread onto the root and name the **field** that drives it — `reactive_filter(:q)` compiles `:q` to `[name="q"]` (scope-aware) and typing shows/hides the options by their `data-reactive-filter-text` haystack, **zero round trips**. `option:` defaults to `[role=option]`; optional `group:` collapses an all-hidden group header; `empty:` reveals a no-matches node. See [Client-side option filtering](#client-side-option-filtering-reactive_filter). |
 | `reactive_listnav("[role=option]")` | The **standalone** combobox keyboard wiring (Arrow/Enter/Escape) for an input that fires **no action** — the preload-and-filter case. Same behavior as `on(…, listnav:)`, minus the POST. |
+| `reactive_tags(:tags)` | **Tag-chip input** (the combobox/tags widget): spread onto the root and name the hidden field that stores the **comma-joined** value — the client maintains that field + the chip list entirely client-side (form state, zero round trips), rebuilding chips from your server-owned `<template>`. Composes with `reactive_filter` (type to narrow) and `reactive_listnav` (Enter picks the highlighted option). See [Tag-chip input](#tag-chip-input-reactive_tags). |
+| `reactive_tags_add` / `reactive_tags_option(tag)` / `reactive_tags_remove(tag)` | The tags triggers, all **client-only**: `reactive_tags_add` on the query input adds the typed text on Enter (mix it **after** `reactive_listnav`; Enter never submits the enclosing form); `reactive_tags_option` makes a preloaded suggestion add its declared tag on click; `reactive_tags_remove` is a chip's remove button (no arg inside the template — the client fills the tag per chip). |
 | `reactive_compute :name, inputs: { title: :string, qty: :number }, outputs:` | **Typed** inputs: a `:string` reaches the JS reducer raw, a `:number` is coerced through `Number`. The array form (`inputs: %i[a b]`) stays all-numeric; the **permit-style** form (`inputs: [:qty, title: :string]`) mixes both — bare symbols default `:number`, a trailing hash types the exceptions. `outputs:` is the field allowlist; a reducer-result key also paints any owned `reactive_text` node by presence and any `mirror:` id, so an `outputs:` entry that exists only to reach a text node is redundant (harmless — a widening). |
 | `reactive_compute :name, ..., mirror: { sum: "#summary-sum" }` | **Cross-root text mirrors**: paint a compute value into declared, id-allowlisted nodes **outside** the reactive root (a recap in another tab pane) via `textContent` — no bespoke listener. See [Cross-root mirrors](#cross-root-mirrors-mirror--painting-a-recap-outside-the-root). |
 | `reactive_dirty` / `reactive_dirty warn_unsaved: true` / `reactive_dirty only: %i[...]` | **Dirty tracking**, declared once at the class level, against the DOM's own `defaultValue`/`defaultChecked`/`defaultSelected` — no client state. Marks changed fields + the root `data-reactive-dirty`; `warn_unsaved:` arms a `beforeunload`/`turbo:before-visit` guard; `only:` scopes tracking to named fields. Style with `[data-reactive-dirty]`. See [Dirty-field tracking](#dirty-field-tracking-reactive_dirty). |
@@ -1193,6 +1195,62 @@ dispatching trigger — wrong for an input that must never POST), and each optio
 stays its own signed `on(:select)` trigger. Only *filtering* is client-side —
 selection still round-trips as a real signed action. Blank selectors raise at
 render: a dead binding must fail loudly, not no-op in the browser.
+
+### Tag-chip input (`reactive_tags`)
+
+The composed combobox/tags widget: preload suggestions, type to narrow, Enter or
+click to add, remove chips — the classic bespoke `tags` Stimulus controller,
+gone. The value is **form state** (like text in an input), never component
+state: it lives in a hidden **comma-joined** field inside your form, the client
+maintains it with **zero round trips**, and the surrounding form submit carries
+it to the server (`tags.split(",")` on your side). Because nothing here needs a
+signed action, the widget works in a token-less `ClientBindings` component too.
+
+```ruby
+div(**mix(reactive_root, reactive_tags(:tags), reactive_filter(:tag_query))) do
+  input(type: :hidden, **reactive_field(:tags), value: @post.tags.join(","))
+
+  div(data: { reactive_tags_list: true }) do        # chips render here
+    @post.tags.each { chip(it) }                    # server-rendered first paint
+  end
+  template(data: { reactive_tags_template: true }) { chip }  # the chip markup, server-owned
+
+  # listnav FIRST, tags_add second: Enter picks the highlighted option;
+  # free text adds only when nothing is highlighted. Never submits the form.
+  input(name: "tag_query", **mix(reactive_listnav, reactive_tags_add))
+
+  SUGGESTIONS.each do |tag, haystack|
+    button(**mix(reactive_tags_option(tag),          # click → add (client-only)
+      data: { reactive_filter_text: haystack })) { tag }
+  end
+end
+
+# One chip method serves both forms: with a tag it's the server-rendered chip,
+# without it's the template prototype (the client fills text + remove param).
+def chip(tag = nil)
+  span(class: "chip", data: { reactive_tag: tag }) do
+    span(data: { reactive_tag_text: true }) { tag }
+    button(**(tag ? reactive_tags_remove(tag) : reactive_tags_remove)) { "×" }
+  end
+end
+```
+
+The chip list is a **client projection of the hidden field** — the field is the
+single source of truth. Every change re-clones your `<template>` per tag,
+writing the tag through `textContent` only (never `innerHTML` — the XSS-safe
+`reactive_text` posture) and stamping the remove button's tag param. Tags dedupe
+case-insensitively (first casing wins); a comma-separated paste splits into
+individual tags; a declared tag containing a comma **raises at render** (it
+would corrupt the joined value). An already-selected suggestion is hidden and
+marked `data-reactive-tags-selected` — `reactive_filter` keeps it hidden through
+re-filters — and resurfaces when its chip is removed. A server re-render/morph
+re-projects the chips from the field's fresh server value, and each write
+dispatches a real `input` event on the hidden field, so `reactive_dirty`,
+`reactive_show`, and `reactive_compute` all see it.
+
+The styled, form-builder-integrated version of this widget (label/errors/
+theming) belongs in your form layer — these helpers are deliberately the
+unstyled primitives, like `reactive_filter` before them.
 
 **Combining `on(...)` / `reactive_attrs` with your own attributes.** Both return
 a hash that includes a `data:` key. Spreading them *and* passing another `data:`

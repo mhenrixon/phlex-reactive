@@ -8,6 +8,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`reactive_tags` — the tag-chip input primitive (#203).** The composed
+  combobox/tags widget (preload suggestions, type to narrow, Enter/click to add,
+  remove chips) with zero bespoke JavaScript and zero round trips. The value is
+  FORM state in a hidden **comma-joined** field the root names
+  (`reactive_tags(:tags)`, scope-aware like `reactive_filter`); the chip list is
+  a client projection of that field, rebuilt per change by cloning a
+  server-owned `<template>` chip (`textContent` writes only — never
+  `innerHTML`). Three client-only triggers: `reactive_tags_add` (Enter adds the
+  typed text — composed after `reactive_listnav`, a highlighted option wins and
+  Enter never submits the enclosing form), `reactive_tags_option(tag)` (click a
+  suggestion to add its declared tag), `reactive_tags_remove(tag)` (a chip's
+  remove button; no arg inside the template — the client fills it per chip).
+  Tags dedupe case-insensitively; a comma-separated paste splits; a declared tag
+  containing a comma raises at render. Selected suggestions hide + mark
+  `data-reactive-tags-selected` (`reactive_filter` keeps them hidden through
+  re-filters) and resurface on removal; a morph re-projects the chips from the
+  field's server value; every write dispatches a real `input` event on the
+  hidden field so `reactive_dirty`/`reactive_show`/`reactive_compute` see it.
+  Works in a token-less `ClientBindings` component — nothing here POSTs.
+
 - **A global reactive-activity signal — the analogue of Turbo's progress bar (#201).**
   The client now maintains a document-level count of in-flight reactive operations
   across ALL roots — incremented when a dispatch round trip or a deferred render
