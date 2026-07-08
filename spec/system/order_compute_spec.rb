@@ -15,7 +15,10 @@ RSpec.describe "Order payment split (reactive_compute new vs persisted)", type: 
     it "recomputes cash in-browser with NO server round trip" do
       visit "/new_order"
       expect(page).to have_field("total", with: "500")
-      expect(page).to have_field("cash", with: "0")
+      # Issue #199: the compute root SELF-SEEDS on connect, so the split paints on
+      # first render (total 500 − allowance 0 = cash 500) — no wait for the first
+      # edit. (Before #199 this read "0", the unseeded field value.)
+      expect(page).to have_field("cash", with: "500")
 
       # Count reactive action POSTs: a client-side compute must fire ZERO.
       page.execute_script(<<~JS)

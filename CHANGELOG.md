@@ -8,6 +8,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A freshly-rendered `reactive_compute` root now self-seeds its derived fields on connect (#199).**
+  Before, a compute root computed nothing until the first user `input` — a fresh render
+  (or a server validation-error re-render that replaced the body) left every derived
+  output and cross-root `mirror:` node blank until you typed. Apps worked around it by
+  dispatching a synthetic seed `input` on connect, but the compute root is a distinct
+  Stimulus controller that may connect a frame later, so the seed raced its own wiring —
+  the reported symptom being a PARTIAL apply (an early output painted; a later output
+  and the mirror stayed blank). Now `connect()` runs ONE full `recompute()` after the
+  controller is fully connected, so the whole single-pass write set (batch outputs →
+  paint text sinks + cross-root mirrors → dispatch) runs synchronously and every
+  declared output, text sink, and mirror paints from a single reducer result — no user
+  interaction, no round trip. It re-seeds on `turbo:morph-element` (the show/filter/dirty
+  precedent) and is idempotent (change-guarded writes make a re-seed a no-op, so an app
+  still dispatching a synthetic input is harmless). The seed is gated on a new
+  `data-reactive-compute-seed` marker emitted by `reactive_root(compute:)`; a non-compute
+  root pays one attribute read and never seeds. The seed passes no event, so
+  `meta.changed` is `null` — the correct "no field edited yet" semantics, so a convergent
+  reducer's default branch computes the full settled set.
+
 - **Scoped form fields no longer silently drop their params — the #67 footgun is fixed (#184).**
   Under `reactive_scope`, `reactive_field(:date)` now emits the scoped wire name
   (`name="invoice[date]"`), so the POST arrives bracketed — and the endpoint unwraps

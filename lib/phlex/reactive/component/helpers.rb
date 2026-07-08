@@ -730,7 +730,13 @@ module Phlex
             action: "input->reactive#recompute",
             reactive_compute_reducer_param: definition.reducer,
             reactive_compute_inputs_param: compute_inputs_param(definition),
-            reactive_compute_outputs_param: definition.outputs.map(&:to_s).to_json
+            reactive_compute_outputs_param: definition.outputs.map(&:to_s).to_json,
+            # Issue #199: the client self-seeds the derived fields on connect from
+            # this marker, so a freshly-rendered compute root computes its outputs
+            # + mirrors on first paint — no wait for the first user input, and no
+            # synthetic seed `input` for an app to race. STRING "true" (a valueless
+            # boolean attr renders "" → falsy client-side; the client reads == "true").
+            reactive_compute_seed: "true"
           }
           # Declared cross-root text mirrors (issue #159) ride as a JSON object of
           # name → [id selectors]; omitted entirely when undeclared so the shipped

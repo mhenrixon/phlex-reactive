@@ -1031,6 +1031,9 @@ export default class extends Controller {
   // Option filtering (issue #163): the ONE delegated sync handler shared by the
   // root's input/turbo:morph-element listeners, held for teardown.
   #boundSyncFilter
+  // Connect-time compute seed (issue #199): the bound re-seed attached to
+  // turbo:morph-element so an in-place morph re-runs the compute, held for teardown.
+  #boundSeedCompute
   // Lazy initial mount (issue #165): the bound re-probe attached to
   // turbo:morph-element so a Turbo page-refresh morph re-fires the defer fetch.
   #boundProbeLazyDefer
@@ -1136,6 +1139,32 @@ export default class extends Controller {
       this.element.addEventListener?.("turbo:morph-element", this.#boundSyncFilter)
       this.#syncFilter()
     }
+
+    // Connect-time compute seed (issue #199) — ONLY when the root carries a
+    // reactive_compute binding that opts in (data-reactive-compute-seed). A
+    // freshly-rendered compute root (a first paint, or a server validation-error
+    // re-render that replaced the body) computed NOTHING until the first user
+    // `input`; apps worked around it by dispatching a synthetic seed `input` on
+    // connect, but the compute root is a distinct Stimulus controller that may
+    // connect a frame later, so the seed raced its own wiring — the reported
+    // symptom being a PARTIAL apply (an early output paints; a later output + the
+    // mirror stay blank). Running ONE recompute() HERE — after Stimulus has fully
+    // connected the controller and wired the input->recompute delegation — runs
+    // the whole single-pass write set (issue #183) synchronously, so every
+    // declared output, text sink, and cross-root mirror paints from one reducer
+    // result. It is client-only (recompute never enqueues a round trip) and
+    // idempotent (change-guarded writes make a re-seed a no-op — an app still
+    // dispatching a synthetic input is harmless). A plain replace re-connects and
+    // re-seeds; an in-place morph keeps the element CONNECTED and fires no
+    // Stimulus lifecycle, so ALSO re-seed on turbo:morph-element (the show/filter/
+    // dirty precedent). No event is passed, so meta.changed is null — the correct
+    // "no field edited yet" seed semantics; a convergent reducer's default branch
+    // computes the full settled set (see compute.js CONVERGENCE REQUIREMENT).
+    if (this.#computeSeedEnabled()) {
+      this.#boundSeedCompute = () => this.recompute()
+      this.element.addEventListener?.("turbo:morph-element", this.#boundSeedCompute)
+      this.recompute()
+    }
   }
 
   // Whether this root opts into dirty tracking (issue #103): track_dirty: puts the
@@ -1162,6 +1191,7 @@ export default class extends Controller {
     this.#teardownDirtyTracking()
     this.#teardownShowSync()
     this.#teardownFilterSync()
+    this.#teardownComputeSeed()
     if (this.#boundProbeLazyDefer) {
       this.element.removeEventListener?.("turbo:morph-element", this.#boundProbeLazyDefer)
     }
@@ -2720,6 +2750,14 @@ export default class extends Controller {
     )
   }
 
+  // Whether this root opts into the connect-time compute seed (issue #199).
+  // reactive_compute's root binding emits data-reactive-compute-seed="true"; a
+  // root without a compute binding (or with the seed opted out) pays one
+  // attribute read and never seeds. A quick read, evaluated once per connect.
+  #computeSeedEnabled() {
+    return this.element.getAttribute?.("data-reactive-compute-seed") === "true"
+  }
+
   // Whether a delegated input event came from the NAMED filter input (issue
   // #163). Anything else — another field's keystroke, a target without
   // matches() — skips the filter pass (the morph re-sync path bypasses this).
@@ -2786,6 +2824,15 @@ export default class extends Controller {
     this.element.removeEventListener?.("input", this.#boundSyncFilter)
     this.element.removeEventListener?.("turbo:morph-element", this.#boundSyncFilter)
     this.#boundSyncFilter = undefined
+  }
+
+  // Remove the compute seed morph listener on disconnect (issue #199), so a
+  // stray turbo:morph-element after the element leaves the DOM never re-seeds
+  // against a detached root.
+  #teardownComputeSeed() {
+    if (!this.#boundSeedCompute) return
+    this.element.removeEventListener?.("turbo:morph-element", this.#boundSeedCompute)
+    this.#boundSeedCompute = undefined
   }
 
   // Build the multipart body (issue #34). `token`/`act` are flat fields the
