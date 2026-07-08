@@ -8,6 +8,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Turnkey APM adapters — `Phlex::Reactive.apm = :appsignal` (#207).** The gem
+  already emits `*.phlex_reactive` `ActiveSupport::Notifications` events (#107), but
+  every reactive action still POSTs to the same endpoint, so an APM rolled all
+  reactive traffic into one blurry `ActionsController#create` transaction and an
+  action-body crash surfaced as an anonymous 500. One config line closes both gaps:
+  - **`Phlex::Reactive.apm = :appsignal` (or `:sentry`, `:datadog`, or a custom
+    object)** names each action as its own `Component#action` transaction/span in the
+    APM, tagged with the component, action, and outcome. The vendor SDK is
+    **runtime-detected** (`defined?(::Appsignal)` …) — never a gemspec dependency, the
+    same optionality invariant as pgbus — so a set-but-absent SDK logs one warning and
+    no-ops. A custom object need only respond to `record_action(payload, duration_ms)`
+    and `record_error(error, payload)`.
+  - **Action-body errors are reported with context.** A previously-uncaught error from
+    an action body (a genuine 500, not a registered 4xx) is now OBSERVED at the
+    endpoint: the `action.phlex_reactive` event is tagged `outcome: :error` (filling the
+    #107 nil-outcome gap), the exception is reported to the APM adapter AND every
+    registered `Phlex::Reactive.on_action_error { |error, ctx| … }` hook WITH the
+    name-only `{ component:, action: }` context, the `error_flash` renders so the actor
+    sees a flash on a crash (500s now flow through the same path the 4xx errors used) —
+    and THEN the error is **re-raised unchanged**, so Rails' own error reporting and the
+    app's middleware fire exactly as before. Each reporter is isolated: a broken reporter
+    (or a raising `error_flash` lambda) can never turn one 500 into a different 500 or
+    swallow the original. The status never changes; the existing 4xx rescues, their
+    statuses, and their outcomes (`invalid_token`/`denied_undeclared`/`not_found`/
+    `unauthorized`/`unverified`) are untouched. Payloads and error tags stay name-only —
+    never the token, params, or state.
+
 - **`reactive_tags` — the tag-chip input primitive (#203).** The composed
   combobox/tags widget (preload suggestions, type to narrow, Enter/click to add,
   remove chips) with zero bespoke JavaScript and zero round trips. The value is

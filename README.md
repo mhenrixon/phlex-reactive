@@ -2002,16 +2002,28 @@ Phlex::Reactive.action_path = "/_r/actions"
 Phlex::Reactive.verbose_errors = true
 
 # User-visible flash on endpoint failures (default nil = off). When set, every
-# rescue path (400/403/404) ALSO renders a turbo-stream flash the user sees — at
-# the SAME status it returns today (statuses never change). The lambda receives
-# the failure kind (:tampered/:unknown_class/:not_reactive_class/:forbidden/
-# :not_found), so you can map it to a friendly message:
+# rescue path (400/403/404 AND a 500 crash) ALSO renders a turbo-stream flash the
+# user sees — at the SAME status it returns today (statuses never change). The
+# lambda receives the failure kind (:tampered/:unknown_class/:not_reactive_class/
+# :forbidden/:not_found, or :error for an action-body crash), so you can map it to
+# a friendly message:
 Phlex::Reactive.error_flash = ->(kind) do
   case kind
   when :not_found  then "That item is no longer available."
   when :forbidden  then "You don't have permission to do that."
   else                  "Something went wrong — please try again."
   end
+end
+
+# Turnkey APM integration. Names each action Component#action in AppSignal/Sentry/
+# Datadog and reports action-body crashes with component/action tags. SDK is
+# runtime-detected (no gem dependency); a custom object responding to
+# record_action/record_error works too. See "Observability" above.
+Phlex::Reactive.apm = :appsignal
+
+# Report action-body crashes to any tracker yourself (the DIY escape hatch):
+Phlex::Reactive.on_action_error do |error, ctx|
+  Honeybadger.notify(error, context: { component: ctx[:component], action: ctx[:action] })
 end
 
 # Component-aware wrapper around every action (audit / rate-limit / assert).
@@ -2292,6 +2304,50 @@ Phlex::Reactive.log_events = true
 The events fire whether or not you enable the LogSubscriber; the flag only
 controls the gem's own log lines. See
 [docs/performance.md](https://phlex-reactive.zoolutions.llc/docs/performance).
+
+### Turnkey APM adapters (AppSignal, Sentry, Datadog)
+
+Subscribing by hand is the DIY path. For the common trackers there's a one-liner
+that both names the transaction and reports errors — so reactive traffic stops
+rolling into one blurry `ActionsController#create` and a crash arrives at your
+tracker with context:
+
+```ruby
+# config/initializers/phlex_reactive.rb
+Phlex::Reactive.apm = :appsignal   # or :sentry, :datadog, or a custom object
+```
+
+With it set:
+
+- Each reactive action shows in the APM as its OWN transaction/span —
+  `Counter#increment`, not `Phlex::Reactive::ActionsController#create` — tagged
+  with the component, action, and outcome.
+- An action body that raises a genuine error (a 500, not a registered 4xx) is
+  **reported to the tracker with `component`/`action` tags**, then re-raised
+  unchanged so Rails' own error reporting still fires.
+
+The SDK is **runtime-detected** — no gem dependency is added. If the named SDK
+isn't loaded, `apm =` logs one warning at boot and no-ops (the same optionality
+invariant as pgbus). A custom object works too — anything responding to
+`record_action(payload, duration_ms)` and `record_error(error, payload)`.
+
+For a tracker with no built-in adapter, report errors yourself — this hook fires
+on any previously-uncaught action-body error, with the name-only context:
+
+```ruby
+Phlex::Reactive.on_action_error do |error, ctx|
+  Honeybadger.notify(error, context: { component: ctx[:component], action: ctx[:action] })
+end
+```
+
+And to show the user a flash when an action crashes (the SAME hook the 4xx errors
+already use — `kind` is `:error` for a crash):
+
+```ruby
+Phlex::Reactive.error_flash = ->(kind) { "Something went wrong — please retry." }
+```
+
+See [docs/observability.md](https://phlex-reactive.zoolutions.llc/docs/observability).
 
 ### Client debug mode (devtools-lite)
 

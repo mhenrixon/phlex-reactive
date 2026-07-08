@@ -96,6 +96,13 @@ module Phlex
       rescue *authorization_errors => e
         event[:outcome] = :unauthorized
         reactive_error(:forbidden, deferred_authorization_message(e, component_class), kind: :forbidden)
+      rescue => e # rubocop:disable Style/RescueStandardError
+        # Issue #207, the defer (read) leg: a render that raises uncaught is
+        # OBSERVED (tag + report + flash) then re-raised unchanged, mirroring the
+        # action leg. The defer payload has no `action:` — report_error/the
+        # adapters treat a nil action gracefully (transaction is the component).
+        report_action_error(e, event)
+        raise
       end
 
       def verified_defer_payload
@@ -156,6 +163,42 @@ module Phlex
       rescue *authorization_errors => e
         event[:outcome] = :unauthorized
         reactive_error(:forbidden, authorization_error_message(e, component_class, action_def), kind: :forbidden)
+      rescue => e # rubocop:disable Style/RescueStandardError
+        # Turnkey APM error reporting (issue #207). A previously-UNCAUGHT
+        # action-body error — NOT one of the specific 4xx cases above (those still
+        # win by ordering) — is OBSERVED here and then re-raised UNCHANGED, so
+        # Rails' own error reporting and the app's middleware fire exactly as
+        # today. The status never changes: this catch adds no new 4xx.
+        #   1. tag the event outcome (fills the #107 nil-outcome gap),
+        #   2. report to the APM adapter + on_action_error hooks WITH the name-only
+        #      component/action context (each reporter isolated — see report_error),
+        #   3. render the error_flash for the crash so the actor SEES a flash (500s
+        #      now flow through the same error_flash path 4xx already used), THEN
+        #   4. re-raise. The flash is built but MUST NOT swallow the raise.
+        report_action_error(e, event)
+        raise
+      end
+
+      # OBSERVE a previously-uncaught action-body error (issue #207) without
+      # altering what propagates. Tag the outcome, fan the error out to the APM
+      # adapter + on_action_error hooks (report_error isolates each reporter), and
+      # render the error_flash for the crash. Every step is best-effort and MUST
+      # NOT raise (the caller re-raises the ORIGINAL error immediately after): a
+      # broken reporter is swallowed inside report_error; the flash render is
+      # guarded here. The flash reuses the SAME 4xx machinery — error_flash_stream
+      # degrades to nil on its own failure, and we render at :internal_server_error
+      # so the body (if any) matches the 500 the re-raise ultimately yields.
+      def report_action_error(error, event)
+        event[:outcome] = :error
+        Phlex::Reactive.report_error(error, event)
+
+        flash = error_flash_stream(:error)
+        render turbo_stream: flash, status: :internal_server_error if flash
+      rescue => e # rubocop:disable Style/RescueStandardError
+        # The observation path itself failed — log it, but NEVER let it replace the
+        # action-body error the caller is about to re-raise.
+        ::Rails.logger&.warn("[phlex-reactive] error observation failed: #{e.class}: #{e.message}") if
+          defined?(::Rails) && ::Rails.respond_to?(:logger)
       end
 
       # Reply to an endpoint failure. The status NEVER changes with any flag —
