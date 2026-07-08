@@ -106,6 +106,10 @@ ThreadSafety/ClassInstanceVariable:
     # installed once at boot from the engine's after_initialize (like
     # LogSubscriber.attach_to) — never mutated per request/thread.
     - lib/phlex/reactive/apm/subscriber.rb
+    # APM.detect's per-symbol adapter memo (issue #207) — populated once at boot
+    # when a built-in APM is resolved (identity-stable so attach! is idempotent),
+    # cleared only by reset! in tests; not a per-request/thread mutation.
+    - lib/phlex/reactive/apm.rb
 
 ThreadSafety/ClassAndModuleAttributes:
   Exclude:

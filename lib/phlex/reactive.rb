@@ -445,21 +445,31 @@ module Phlex
         @on_action_error_hooks = []
       end
 
+      # The name-only keys forwarded to error reporters (issue #207). Deliberately
+      # NOT the whole event hash: ActiveSupport::Notifications mutates the SAME hash
+      # during error unwinding, adding :exception / :exception_object — a reporter
+      # that RETAINS the hash would later observe those, breaking the name-only
+      # contract. report_error forwards a fresh slice of just these keys.
+      ERROR_CONTEXT_KEYS = %i[component action outcome].freeze
+
       # Report a previously-uncaught action-body error to the resolved APM adapter
       # AND every registered on_action_error hook (issue #207). Called by the
       # endpoint's error seam just before it re-raises. Each reporter is wrapped in
       # its own rescue so a broken reporter can NEVER turn one 500 into a different
       # 500 (or swallow the original — the endpoint re-raises regardless). `context`
-      # is the name-only event payload. Best-effort and side-effect only: the return
-      # value is ignored.
+      # is the mutable event payload; we forward a NAME-ONLY SNAPSHOT (a fresh Hash
+      # of ERROR_CONTEXT_KEYS) so a reporter that retains it never picks up the
+      # :exception keys ASN adds to the live hash afterward. Best-effort and
+      # side-effect only: the return value is ignored.
       def report_error(error, context)
+        snapshot = context.slice(*ERROR_CONTEXT_KEYS)
         adapter = @resolved_apm_adapter
         # Each reporter runs through safely_report on its OWN — one broken reporter
         # (a raising adapter or hook) never prevents the others, and never turns one
         # 500 into a different 500. safely_report takes the reporter as a block arg,
         # so there's no nested-block ambiguity.
-        safely_report { adapter.record_error(error, context) } if adapter
-        on_action_error_hooks.each { report_hook(it, error, context) }
+        safely_report { adapter.record_error(error, snapshot) } if adapter
+        on_action_error_hooks.each { report_hook(it, error, snapshot) }
         nil
       end
 

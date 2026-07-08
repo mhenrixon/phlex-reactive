@@ -59,6 +59,25 @@ RSpec.describe Phlex::Reactive::APM, ".attach!" do
     expect(adapter).to have_received(:record_action).once
   end
 
+  it "resolves a built-in Symbol to a STABLE instance so attach! stays idempotent" do
+    # A Symbol-backed APM used to get a fresh klass.new per detect/attach! call,
+    # which broke Subscriber's identity-based idempotency (double subscription).
+    allow(Phlex::Reactive::APM::Appsignal).to receive(:available?).and_return(true)
+    Phlex::Reactive.apm = :appsignal
+
+    first = described_class.detect(:appsignal)
+    second = described_class.detect(:appsignal)
+    expect(second).to be(first) # same object across calls
+
+    described_class.attach!
+    described_class.attach!
+    expect(Phlex::Reactive::APM::Subscriber).to be_installed
+    # One record_action per event despite two attach! calls (single subscription).
+    allow(first).to receive(:record_action)
+    fire_action_event
+    expect(first).to have_received(:record_action).once
+  end
+
   it "reset! removes the subscriber and clears the held adapter" do
     Phlex::Reactive.apm = adapter
     described_class.attach!

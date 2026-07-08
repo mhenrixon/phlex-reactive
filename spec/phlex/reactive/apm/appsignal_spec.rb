@@ -57,9 +57,29 @@ RSpec.describe Phlex::Reactive::APM::Appsignal do
     end
   end
 
+  # A spy whose set_error takes the tags POSITIONALLY (AppSignal 3.x).
+  def stub_appsignal_v3
+    stub_appsignal # the default spy's set_error has arity 2
+  end
+
+  # A spy whose set_error takes ONLY the error + a block (AppSignal 4.x): the
+  # positional tags arg was removed; tags attach via add_tags inside the block.
+  def stub_appsignal_v4
+    calls = []
+    spy = Module.new
+    spy.define_singleton_method(:calls) { calls }
+    spy.define_singleton_method(:add_tags) { calls << [:add_tags, it] }
+    spy.define_singleton_method(:set_error) do |error, &blk|
+      calls << [:set_error, error]
+      blk&.call
+    end
+    stub_const("Appsignal", spy)
+    spy
+  end
+
   describe "#record_error" do
-    it "reports the exception with component/action tags" do
-      appsignal = stub_appsignal
+    it "on AppSignal 3.x passes the tags positionally to set_error" do
+      appsignal = stub_appsignal_v3
       error = RuntimeError.new("boom")
 
       adapter.record_error(error, { component: "Counter", action: "increment", outcome: :error })
@@ -67,6 +87,18 @@ RSpec.describe Phlex::Reactive::APM::Appsignal do
       call = appsignal.calls.assoc(:set_error)
       expect(call[1]).to be(error)
       expect(call[2]).to include("reactive_component" => "Counter", "reactive_action" => "increment")
+    end
+
+    it "on AppSignal 4.x uses the block form (set_error(error) { add_tags(...) })" do
+      appsignal = stub_appsignal_v4
+      error = RuntimeError.new("boom")
+
+      adapter.record_error(error, { component: "Counter", action: "increment", outcome: :error })
+
+      # set_error was called with ONLY the error; the tags rode add_tags in the block.
+      expect(appsignal.calls.assoc(:set_error)).to eq([:set_error, error])
+      tags = appsignal.calls.assoc(:add_tags).last
+      expect(tags).to include("reactive_component" => "Counter", "reactive_action" => "increment")
     end
   end
 end

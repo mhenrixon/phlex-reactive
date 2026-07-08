@@ -97,6 +97,25 @@ RSpec.describe "action-body error seam (issue #207)", type: :request do
     expect(reported.values.join).not_to include("leak")
   end
 
+  it "forwards a name-only SNAPSHOT — mutating the live event hash after does not leak in" do
+    # ActiveSupport::Notifications adds :exception / :exception_object to the SAME
+    # payload hash during unwinding. A reporter that RETAINS the context must not
+    # pick those up — report_error forwards a fresh slice, not the live hash.
+    captured = nil
+    Phlex::Reactive.on_action_error { |_error, ctx| captured = ctx }
+
+    event = { component: "CounterComponent", action: "explode", outcome: nil }
+    Phlex::Reactive.report_error(RuntimeError.new("boom"), event)
+
+    # Simulate ASN mutating the live hash after the reporter ran.
+    event[:exception_object] = RuntimeError.new("leaked")
+    event[:exception] = %w[RuntimeError leaked]
+
+    expect(captured).to eq(component: "CounterComponent", action: "explode", outcome: nil)
+    expect(captured).not_to have_key(:exception)
+    expect(captured).not_to have_key(:exception_object)
+  end
+
   describe "a broken reporter never changes what propagates" do
     it "still re-raises the ORIGINAL error when an on_action_error hook itself raises" do
       Phlex::Reactive.on_action_error { |_e, _ctx| raise "reporter is broken" }

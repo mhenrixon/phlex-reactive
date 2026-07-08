@@ -38,7 +38,10 @@ module Phlex
           end
 
           klass = klass_name.constantize
-          return klass.new if klass.available?
+          # Memoize the instance PER SYMBOL so repeated detect/attach! calls return
+          # the SAME object — Subscriber.install keys idempotency on adapter
+          # identity (equal?), so a fresh klass.new each time would double-subscribe.
+          return (built_in_instances[apm] ||= klass.new) if klass.available?
 
           warn_and_nil("apm = #{apm.inspect} set but #{apm} is not loaded — no-op. " \
                        "Require the SDK (or remove the setting).")
@@ -59,13 +62,23 @@ module Phlex
           adapter
         end
 
-        # Drop the installed subscriber + adapter. Tests only.
+        # Drop the installed subscriber + adapter AND the memoized built-in
+        # instances. Tests only (so a stubbed SDK doesn't leak a stale adapter into
+        # the next example).
         def reset!
           Subscriber.uninstall
           Phlex::Reactive.resolved_apm_adapter = nil
+          @built_in_instances = nil
         end
 
         private
+
+        # Symbol => memoized built-in adapter instance. One instance per flavour for
+        # the life of the process (cleared only by reset! in tests), so detect is
+        # identity-stable and attach! stays idempotent.
+        def built_in_instances
+          @built_in_instances ||= {}
+        end
 
         def warn_and_nil(message)
           logger = Phlex::Reactive.send(:default_logger)
