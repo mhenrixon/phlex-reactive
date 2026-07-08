@@ -989,6 +989,23 @@ function anyOfAllsMatches(groups, fieldValue) {
     group.every((term) => dnfTermMatches(term, fieldValue)))
 }
 
+// Every field a DNF payload's groups reference (issue #209) — drives the
+// "leave the target alone when NO referenced field is owned" skip, the
+// single-field-target skip generalized. Returns null for a malformed payload
+// (no groups, or no term names a field) so the caller warn-skips instead of
+// toggling on garbage (default-deny, like every other malformed-wire arm).
+function dnfGroupFields(groups) {
+  if (!Array.isArray(groups) || groups.length === 0) return null
+  const fields = new Set()
+  for (const group of groups) {
+    if (!Array.isArray(group)) continue
+    for (const term of group) {
+      if (term && typeof term === "object" && typeof term.field === "string") fields.add(term.field)
+    }
+  }
+  return fields.size > 0 ? [...fields] : null
+}
+
 // Route a parsed data-reactive-show payload to the right evaluator. The 0.10
 // wire is { any: [ [term,…], … ] } (DNF — groups are ARRAYS). For a stale tab
 // still serving pre-0.10 HTML (deploy overlap), fall back to the 0.9.5 compound
@@ -2876,7 +2893,7 @@ export default class extends Controller {
 
     // The cross-root pass (issue #164) shares the same owned-field memo, so a
     // field driving both an owned binding and an outside target reads once.
-    this.#syncShowTargets(owns, values, scope)
+    this.#syncShowTargets(fieldValue)
   }
 
   // Toggle `hidden` (and, when the binding declares data-reactive-show-disable,
@@ -2905,12 +2922,20 @@ export default class extends Controller {
   // unrendered tab pane is normal); a malformed predicate warn-skips its one
   // target while siblings still apply. With no map declared this is one
   // getAttribute and out.
-  #syncShowTargets(owns, values, scope) {
+  //
+  // A "#id" KEY (issue #209) is a TARGET-KEYED entry instead: its value is the
+  // same DNF payload data-reactive-show holds, folded with per-term owned-field
+  // reads — the multi-field cross-root case. The "#" prefix routes unambiguously
+  // (a field name may never start with "#"; the Ruby helper raises).
+  #syncShowTargets(fieldValue) {
     const map = this.#parseShowTargets()
     for (const [name, targets] of Object.entries(map)) {
+      if (name.startsWith("#")) {
+        this.#applyConditionsTarget(name, targets, fieldValue)
+        continue
+      }
       if (!targets || typeof targets !== "object" || Array.isArray(targets)) continue
-      if (!values.has(name)) values.set(name, this.#showFieldValue(name, owns, scope))
-      const value = values.get(name)
+      const value = fieldValue(name)
       if (value === null) continue // no owned field with that name — leave them be
       // Every target's terms share this one field, so a constant resolver folds
       // the group (issue #180): a target's value is a DNF GROUP (terms ANDed).
@@ -2938,6 +2963,28 @@ export default class extends Controller {
         for (const node of document.querySelectorAll(selector)) node.hidden = !match
       }
     }
+  }
+
+  // Apply ONE target-keyed conditions entry (issue #209): "#id" → the DNF
+  // payload { any: [[term,…],…] }, folded by the SAME anyOfAllsMatches as an
+  // in-root reactive_show — each term reads its OWN owned field, a missing
+  // owned field reads as blank (fail-closed, the shared-fixture contract). A
+  // target whose referenced fields are ALL unowned is left alone — the
+  // single-field skip generalized (this root has nothing to evaluate with). A
+  // malformed payload warn-skips its one target while siblings still apply;
+  // the selector guard is the same id-only allowlist as every cross-root arm.
+  #applyConditionsTarget(selector, payload, fieldValue) {
+    if (!guardShowTargetSelector(selector)) return
+    const groups = payload && typeof payload === "object" && !Array.isArray(payload) ? payload.any : null
+    const fields = dnfGroupFields(groups)
+    if (fields === null) {
+      console.warn(`[phlex-reactive] malformed reactive_show_targets conditions for ${selector} — skipped`)
+      return
+    }
+    if (fields.every((name) => fieldValue(name) === null)) return // no owned field — leave it be
+    const match = anyOfAllsMatches(groups, fieldValue)
+    if (match === null) return // unreachable after dnfGroupFields, kept fail-closed
+    for (const node of document.querySelectorAll(selector)) node.hidden = !match
   }
 
   // The declared cross-root show-target map (issue #164): a JSON object of

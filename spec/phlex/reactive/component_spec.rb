@@ -2592,9 +2592,9 @@ RSpec.describe Phlex::Reactive::Component do
       )
     end
 
-    it "raises helpfully when a targets map is passed where a field belongs" do
+    it "raises helpfully when a target key carries a bare value (neither call form)" do
       expect { instance.send(:reactive_show_targets, "#advanced-tab" => "x") }
-        .to raise_error(ArgumentError, /looks like a target selector, not a field name/)
+        .to raise_error(ArgumentError, /"#advanced-tab".*conditions Hash|conditions Hash.*"#advanced-tab"/m)
     end
 
     it "raises on an empty Array value (same rule as reactive_show)" do
@@ -2613,6 +2613,70 @@ RSpec.describe Phlex::Reactive::Component do
     it "guides the removed { equals: } predicate-hash form to a bare value" do
       expect { instance.send(:reactive_show_targets, :mode, "#a" => { equals: "x" }) }
         .to raise_error(ArgumentError, /bare value|"#a" => "x"|use a value/m)
+    end
+
+    # Issue #209: TARGET-KEYED conditions — a "#id" key whose value is a full
+    # if:/if_any:/unless: conditions Hash. The multi-field cross-root case: the
+    # target's DNF payload is the SAME { any: [[term,…],…] } shape reactive_show
+    # emits, folded by the client with the same per-term field reads.
+    describe "target-keyed conditions (issue #209 — multi-field cross-root)" do
+      it "compiles a multi-field if: into the target's DNF payload" do
+        attrs = instance.send(:reactive_show_targets,
+          "#trade-warning" => { if: { type: "trade", price: ..0 } })
+
+        expect(targets_json(attrs)).to eq(
+          "#trade-warning" => { "any" => [[
+            { "field" => "type", "equals" => "trade" },
+            { "field" => "price", "lte" => 0 }
+          ]] }
+        )
+      end
+
+      it "speaks the FULL conditions language (if_any: + unless:)" do
+        attrs = instance.send(:reactive_show_targets,
+          "#warn" => { if_any: [{ director: true }, { shareholder: true }], unless: { role: "company" } })
+
+        expect(targets_json(attrs)["#warn"]).to eq(
+          "any" => [
+            [{ "field" => "director", "equals" => "true" }, { "field" => "role", "not" => "company" }],
+            [{ "field" => "shareholder", "equals" => "true" }, { "field" => "role", "not" => "company" }]
+          ]
+        )
+      end
+
+      it "mixes field-keyed and target-keyed entries in ONE call (byte-stable legacy wire)" do
+        attrs = instance.send(:reactive_show_targets,
+          mode: { "#advanced-tab" => "advanced" },
+          "#trade-warning" => { if: { type: "trade", price: ..0 } })
+
+        expect(targets_json(attrs)).to eq(
+          "mode" => { "#advanced-tab" => [{ "field" => "mode", "equals" => "advanced" }] },
+          "#trade-warning" => { "any" => [[
+            { "field" => "type", "equals" => "trade" },
+            { "field" => "price", "lte" => 0 }
+          ]] }
+        )
+      end
+
+      it "raises for a non-id selector key (declare-time default-deny, same as field-keyed)" do
+        expect { instance.send(:reactive_show_targets, "#a b" => { if: { mode: "x" } }) }
+          .to raise_error(ArgumentError, /must be a single ID selector/)
+      end
+
+      it "raises for unknown keys in the conditions Hash" do
+        expect { instance.send(:reactive_show_targets, "#warn" => { if: { mode: "x" }, bogus: 1 }) }
+          .to raise_error(ArgumentError, /bogus/)
+      end
+
+      it "raises for an empty conditions Hash" do
+        expect { instance.send(:reactive_show_targets, "#warn" => {}) }
+          .to raise_error(ArgumentError, /conditions Hash/)
+      end
+
+      it "raises through ShowConditions for an empty if: (a dead binding fails at render)" do
+        expect { instance.send(:reactive_show_targets, "#warn" => { if: {} }) }
+          .to raise_error(ArgumentError, /at least one field/)
+      end
     end
   end
 
