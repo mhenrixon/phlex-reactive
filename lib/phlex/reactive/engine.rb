@@ -122,6 +122,12 @@ module Phlex
         # once per boot; the events fire for APMs regardless of this flag.
         Phlex::Reactive::LogSubscriber.attach_to(:phlex_reactive) if Phlex::Reactive.log_events
 
+        # Attach the turnkey APM adapter (issue #207) when an app set
+        # Phlex::Reactive.apm. Resolution is deferred to HERE — after initializers
+        # ran, so the vendor SDK (if any) is loaded — and no-ops with one warning
+        # when the named SDK is absent (the pgbus optionality invariant). Idempotent.
+        Phlex::Reactive::APM.attach! if Phlex::Reactive.apm
+
         # Freeze the param-type registry (issue #109): custom types register in
         # an initializer, which has run by now, so no further registration is
         # accepted. A schema referencing a type is validated at declaration; the
