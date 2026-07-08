@@ -173,6 +173,18 @@ module Phlex
         false
       end
 
+      # Turnkey APM integration (issue #207). Set to a Symbol (:appsignal,
+      # :sentry, :datadog), a custom adapter object (responding to
+      # record_action/record_error), or nil (the default — off). A Symbol
+      # resolves to a built-in adapter LAZILY, at engine attach time, so load
+      # order doesn't matter; a set-but-undetectable SDK logs ONE warning at boot
+      # and no-ops (the pgbus optionality invariant applied to APMs — no vendor
+      # SDK is ever a hard dependency). When set and available, each reactive
+      # action is named `Component#action` in the APM (not one blurry
+      # ActionsController#create), and an action-body error is reported to the
+      # tracker with component/action tags. Default nil.
+      attr_accessor :apm
+
       # Client debug mode (issue #108): the "devtools-lite" lens on the reactive
       # round trip. When true, reactive_attrs (and so reactive_root) stamps
       # data-reactive-debug="true" on the root, and the generic controller
@@ -405,6 +417,72 @@ module Phlex
       def reset_around_actions!
         @around_actions = []
       end
+
+      # Register a block called when a reactive action body raises a
+      # previously-uncaught error (issue #207) — the DIY escape hatch for a tracker
+      # the gem ships no adapter for, usable WITHOUT choosing an `apm` Symbol. The
+      # block receives (error, context) where context is the name-only event payload
+      # ({ component:, action:, outcome: :error }). It runs INSIDE the endpoint's
+      # error handling, just before the exception is re-raised — so Rails' own error
+      # reporting still fires afterward. Register in an initializer.
+      #
+      #   Phlex::Reactive.on_action_error do |error, ctx|
+      #     Honeybadger.notify(error, context: { component: ctx[:component], action: ctx[:action] })
+      #   end
+      def on_action_error(&block)
+        raise ::ArgumentError, "Phlex::Reactive.on_action_error requires a block" unless block
+
+        on_action_error_hooks << block
+      end
+
+      # The registered on_action_error hooks, oldest first.
+      def on_action_error_hooks
+        @on_action_error_hooks ||= []
+      end
+
+      # Drop all registered on_action_error hooks. Test isolation; never in production.
+      def reset_on_action_error!
+        @on_action_error_hooks = []
+      end
+
+      # The name-only keys forwarded to error reporters (issue #207). Deliberately
+      # NOT the whole event hash: ActiveSupport::Notifications mutates the SAME hash
+      # during error unwinding, adding :exception / :exception_object — a reporter
+      # that RETAINS the hash would later observe those, breaking the name-only
+      # contract. report_error forwards a fresh slice of just these keys.
+      ERROR_CONTEXT_KEYS = %i[component action outcome].freeze
+
+      # Report a previously-uncaught action-body error to the resolved APM adapter
+      # AND every registered on_action_error hook (issue #207). Called by the
+      # endpoint's error seam just before it re-raises. Each reporter is wrapped in
+      # its own rescue so a broken reporter can NEVER turn one 500 into a different
+      # 500 (or swallow the original — the endpoint re-raises regardless). `context`
+      # is the mutable event payload; we forward a NAME-ONLY SNAPSHOT (a fresh Hash
+      # of ERROR_CONTEXT_KEYS) so a reporter that retains it never picks up the
+      # :exception keys ASN adds to the live hash afterward. Best-effort and
+      # side-effect only: the return value is ignored.
+      def report_error(error, context)
+        snapshot = context.slice(*ERROR_CONTEXT_KEYS)
+        adapter = @resolved_apm_adapter
+        # Each reporter runs through safely_report on its OWN — one broken reporter
+        # (a raising adapter or hook) never prevents the others, and never turns one
+        # 500 into a different 500. safely_report takes the reporter as a block arg,
+        # so there's no nested-block ambiguity.
+        safely_report { adapter.record_error(error, snapshot) } if adapter
+        on_action_error_hooks.each { report_hook(it, error, snapshot) }
+        nil
+      end
+
+      # Run one on_action_error hook through safely_report. Extracted so the
+      # per-hook isolation reads as one call (no nested reporter block in the loop).
+      def report_hook(hook, error, context)
+        safely_report { hook.call(error, context) }
+      end
+
+      # The APM adapter resolved at engine attach time (issue #207), or nil. Held so
+      # report_error can reach record_error without re-running detection per request.
+      # Set by APM.attach!; nil when no APM is configured or the SDK was absent.
+      attr_accessor :resolved_apm_adapter
 
       def verifier
         @verifier ||= default_verifier
@@ -918,6 +996,16 @@ module Phlex
         ::Rails.logger if defined?(::Rails) && ::Rails.respond_to?(:logger)
       end
 
+      # Run a reporter (APM adapter or on_action_error hook) so a raise inside it
+      # NEVER escapes report_error (issue #207) — the endpoint must re-raise the
+      # ORIGINAL action-body error, not a reporter's failure. A broken reporter is
+      # warn-logged so it's diagnosable, then swallowed.
+      def safely_report
+        yield
+      rescue => e # rubocop:disable Style/RescueStandardError
+        default_logger&.warn("[phlex-reactive] apm/on_action_error reporter raised: #{e.class}: #{e.message}")
+      end
+
       # Walk the upgrader chain from `version` up to TOKEN_VERSION, applying each
       # registered upgrader in turn (issue #111). A gap in the chain (a version
       # bumped with no shape change, so no upgrader registered) is a no-op step —
@@ -961,7 +1049,7 @@ lib = File.expand_path("..", __dir__)
 loader.push_dir(lib)
 # js.rb defines JS and component/dsl.rb defines Component::DSL (acronyms), not
 # the default-inflected `Js`/`Dsl`. mcp.rb defines MCP (issue #168).
-loader.inflector.inflect("js" => "JS", "dsl" => "DSL", "mcp" => "MCP")
+loader.inflector.inflect("js" => "JS", "dsl" => "DSL", "mcp" => "MCP", "apm" => "APM")
 # The gem-name shim (`require "phlex-reactive"`) is a plain require, not a
 # managed file.
 loader.ignore("#{lib}/phlex-reactive.rb")

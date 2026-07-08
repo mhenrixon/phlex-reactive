@@ -102,6 +102,14 @@ ThreadSafety/ClassInstanceVariable:
     # The once-per-process degraded-transport warn flag (issue #165) — a benign
     # boolean race (worst case: the warning logs twice).
     - lib/phlex/reactive/defer.rb
+    # The APM subscriber's single process-global ASN subscription (issue #207),
+    # installed once at boot from the engine's after_initialize (like
+    # LogSubscriber.attach_to) — never mutated per request/thread.
+    - lib/phlex/reactive/apm/subscriber.rb
+    # APM.detect's per-symbol adapter memo (issue #207) — populated once at boot
+    # when a built-in APM is resolved (identity-stable so attach! is idempotent),
+    # cleared only by reset! in tests; not a per-request/thread mutation.
+    - lib/phlex/reactive/apm.rb
 
 ThreadSafety/ClassAndModuleAttributes:
   Exclude:

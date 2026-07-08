@@ -28,6 +28,7 @@ class CounterComponent < ApplicationComponent
   action :bump_with_self_stream
   action :bump_with_js
   action :boom
+  action :explode
 
   def initialize(count: 0)
     @count = count
@@ -131,6 +132,13 @@ class CounterComponent < ApplicationComponent
   # the page renders under the issue #105 render-time guard; the 403 the browser
   # observes is unchanged.
   def boom = raise(Denied, "boom")
+
+  # A genuinely UNCAUGHT action-body error (issue #207): NOT a registered
+  # authorization error, so it isn't mapped to a 4xx — it bubbles as a 500. The
+  # endpoint's error seam tags the event outcome=:error, reports it to the APM
+  # adapter / on_action_error hooks WITH component+action, optionally renders the
+  # error_flash, then re-raises so Rails' own error reporting still fires.
+  def explode = raise("kaboom in the action body")
 
   def view_template
     div(id:, **reactive_attrs) do

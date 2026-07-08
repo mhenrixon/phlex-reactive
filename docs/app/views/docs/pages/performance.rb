@@ -144,6 +144,15 @@ module Views
 
         def observability
           DocsUI::Section('Observability (ActiveSupport::Notifications)') do
+            DocsUI::Callout(:tip) do
+              plain 'Turnkey APM adapters ('
+              code { 'Phlex::Reactive.apm = :appsignal' }
+              plain '), error reporting, and the full event reference now live on the '
+              a(href: '/docs/observability') { 'Observability & APM' }
+              plain ' page. This section keeps the performance-relevant note: an unsubscribed '
+              code { 'instrument' }
+              plain ' is cheap, so the hot paths carry it unconditionally.'
+            end
             DocsUI::Prose() do
               p do
                 plain 'The hot paths emit '

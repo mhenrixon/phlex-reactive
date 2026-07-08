@@ -35,6 +35,26 @@
 # flag only controls the gem's own log lines. See the README Observability section.
 # Phlex::Reactive.log_events = true
 
+# Turnkey APM integration. Set to :appsignal / :sentry / :datadog and each
+# reactive action shows in your APM as its OWN transaction ("Counter#increment"),
+# not one blurry ActionsController#create — and an action-body crash is reported
+# to the tracker WITH component/action tags (plus a flash to the user if you set
+# error_flash below). The SDK is runtime-detected: if it isn't loaded, this logs
+# one warning and no-ops (no gem dependency is added). Pass a custom object
+# responding to record_action(payload, duration_ms) / record_error(error, payload)
+# to integrate any other tool.
+# Phlex::Reactive.apm = :appsignal
+#
+# For a tracker with no built-in adapter, report errors yourself — this fires on
+# any previously-uncaught action-body error, with the name-only context:
+# Phlex::Reactive.on_action_error do |error, ctx|
+#   Honeybadger.notify(error, context: { component: ctx[:component], action: ctx[:action] })
+# end
+#
+# Show the user a flash when an action crashes (500) — the SAME hook the 4xx
+# errors already use; `kind` is :error for a crash:
+# Phlex::Reactive.error_flash = ->(kind) { "Something went wrong — please retry." }
+
 # Client debug mode (devtools-lite). When on, every reactive root carries
 # data-reactive-debug="true" and the browser console.groups EVERY dispatch —
 # action, param/collected field NAMES (never values), request encoding, HTTP
