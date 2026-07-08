@@ -6,6 +6,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A global reactive-activity signal — the analogue of Turbo's progress bar (#201).**
+  The client now maintains a document-level count of in-flight reactive operations
+  across ALL roots — incremented when a dispatch round trip or a deferred render
+  starts, decremented when it settles — and exposes it two ways:
+  - a marker on `<html>`: `data-reactive-active` is present while the count is `> 0`,
+    so CSS can drive a global spinner and code (or a test) can read "is the reactive
+    layer settling?" without knowing about any individual root;
+  - events on `document`: `reactive:busy` fires on the `0 → >0` edge and
+    `reactive:idle` on the `>0 → 0` edge (edges only, each carrying `{ count }`), so
+    an app can flip a spinner or gate an "unsaved changes" guard globally.
+
+  Purely additive — every per-root marker/event (`data-reactive-busy`, `aria-busy`,
+  `data-reactive-defer-pending`) is unchanged. A distinct attribute name
+  (`data-reactive-active`, not the per-root `data-reactive-busy`) keeps the
+  document-level signal unambiguous. `compute_seed` is not counted: `recompute()` is
+  synchronous, so a seed settles inline with no async window to await.
+
+- **`Phlex::Reactive::TestHelpers::System` — system/browser test helpers built on the
+  activity signal (#201).** Opt-in and loaded only when Capybara is present (the same
+  optional-require gate as the RSpec matchers), so it stays entirely out of the
+  runtime path. Mix it into system examples:
+
+  ```ruby
+  RSpec.configure do |c|
+    c.include Phlex::Reactive::TestHelpers::System, type: :system
+  end
+  ```
+
+  - `wait_for_reactive` — block until the layer is idle (every round trip AND deferred
+    render settled, the `<html>` marker cleared). The system-test twin of
+    `wait_for_turbo`, which watches the Turbo progress bar, not a reactive morph/seed.
+  - `have_reactive_value(id, value)` / `have_reactive_text(id, value)` — assert a field
+    or a mirror/recap node by RE-RESOLVING it by id every poll, so a `reactive_compute`
+    re-seed or a morph that replaces the node after the action returns can never raise
+    `StaleReferenceError` or read a transient blank — the matcher waits for the value
+    to settle.
+
 ### Fixed
 
 - **A freshly-rendered `reactive_compute` root now self-seeds its derived fields on connect (#199).**

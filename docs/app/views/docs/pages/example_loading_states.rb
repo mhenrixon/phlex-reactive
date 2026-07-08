@@ -19,6 +19,7 @@ module Views
           try_it
           disable_with
           busy
+          global_signal
           double_submit
           notes
         end
@@ -62,6 +63,42 @@ module Views
               also always carries `aria-busy="true"` during any in-flight action,
               so you can style the whole component's wait state with an
               attribute selector.
+            MD
+          end
+        end
+
+        def global_signal
+          DocsUI::Section('A global activity signal — like Turbo\'s progress bar') do
+            md <<~MD
+              The `busy:` / `busy_on` / `aria-busy` hooks above are **per root**.
+              For a document-level "is *anything* reactive settling?" signal — a
+              global spinner, an "unsaved changes" guard, a test barrier — the
+              client also maintains a count of in-flight reactive operations
+              (every dispatch round trip **and** every deferred render) across all
+              roots, and exposes it two ways:
+
+              - **A marker on `<html>`:** `data-reactive-active` is present while
+                the count is `> 0`. Drive a global spinner in pure CSS, the direct
+                analogue of `.turbo-progress-bar`:
+
+                ```css
+                html[data-reactive-active] .app-spinner { opacity: 1 }
+                ```
+
+              - **Events on `document`:** `reactive:busy` fires on the `0 → >0`
+                edge, `reactive:idle` on the `>0 → 0` edge (edges only, each
+                carrying `{ count }`):
+
+                ```js
+                document.addEventListener("reactive:busy", () => showGlobalSpinner())
+                document.addEventListener("reactive:idle", () => hideGlobalSpinner())
+                ```
+
+              It's purely additive — the per-root markers are unchanged. The
+              document marker uses a **distinct** name (`data-reactive-active`, not
+              the per-root `data-reactive-busy`) so a `[data-reactive-busy]`
+              selector never also matches `<html>`. This is also the primitive the
+              [`wait_for_reactive` system-test helper](/docs/testing) waits on.
             MD
           end
         end

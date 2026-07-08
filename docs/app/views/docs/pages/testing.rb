@@ -20,6 +20,7 @@ module Views
           unit_identity
           integration_endpoint
           system_browser
+          system_helpers
           client_unit
           troubleshooting
         end
@@ -327,8 +328,77 @@ module Views
           end
         end
 
+        def system_helpers
+          DocsUI::Section('6. System helpers: wait on the reactive layer, re-resolve by id') do
+            DocsUI::Prose() do
+              p do
+                plain 'A reactive morph, a '
+                code { 'reactive_compute' }
+                plain ' re-seed, or an in-flight round trip can replace DOM nodes '
+                strong { 'after' }
+                plain ' the triggering action returns — so a Capybara node held by '
+                code { 'find' }
+                plain ' detaches ('
+                code { 'StaleReferenceError' }
+                plain ') and '
+                code { 'have_field(with:)' }
+                plain ' can read a transient blank before the value settles. '
+                code { 'wait_for_turbo' }
+                plain ' does not help — it watches the Turbo progress bar, not a reactive morph.'
+              end
+              p do
+                plain 'The client exposes a '
+                strong { 'global activity signal' }
+                plain ' for exactly this: a '
+                code { 'data-reactive-active' }
+                plain ' marker on '
+                code { '<html>' }
+                plain ' (present while any dispatch or deferred render is in flight) plus '
+                code { 'reactive:busy' }
+                plain ' / '
+                code { 'reactive:idle' }
+                plain ' events on '
+                code { 'document' }
+                plain '. '
+                code { 'Phlex::Reactive::TestHelpers::System' }
+                plain ' — loaded only when Capybara is present — waits on it:'
+              end
+              ul do
+                li do
+                  code { 'wait_for_reactive' }
+                  plain ' — block until the whole layer is idle (every round trip AND deferred render settled). The system twin of '
+                  code { 'wait_for_turbo' }
+                  plain '.'
+                end
+                li do
+                  code { 'have_reactive_value(id, value)' }
+                  plain ' / '
+                  code { 'have_reactive_text(id, value)' }
+                  plain ' — assert a field / mirror node by RE-RESOLVING it by id every poll, immune to a morph detaching the node.'
+                end
+              end
+            end
+            DocsUI::Code(<<~RUBY, lexer: :ruby)
+              # rails_helper.rb — mix into system examples (Capybara-gated)
+              RSpec.configure do |c|
+                c.include Phlex::Reactive::TestHelpers::System, type: :system
+              end
+
+              # spec/system/…_spec.rb
+              it "settles the deferred total, no stale read" do
+                visit "/order"
+                find("[data-testid='bump']").click
+
+                wait_for_reactive                          # round trip + defer settled
+                expect(page).to have_reactive_value("total", "6")   # re-resolves by id
+                expect(page).to have_reactive_text("recap", "6 items")
+              end
+            RUBY
+          end
+        end
+
         def client_unit
-          DocsUI::Section('6. Client unit tests (bun)') do
+          DocsUI::Section('7. Client unit tests (bun)') do
             DocsUI::Prose() do
               p do
                 plain 'Some client-runtime contracts are timing-sensitive and a full browser can mask them — ' \
