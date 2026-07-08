@@ -241,7 +241,6 @@ test("no documentElement (non-browser stub) is a safe no-op, counter still track
 // --- wired into the dispatch round trip -------------------------------------
 
 test("a dispatch enters activity at enqueue and exits on settle", async () => {
-  stubDocument()
   const { rootAttrs } = stubDocument()
   stubTurbo()
   let release

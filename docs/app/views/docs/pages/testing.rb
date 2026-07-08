@@ -329,7 +329,7 @@ module Views
         end
 
         def system_helpers
-          DocsUI::Section('System helpers: wait on the reactive layer, re-resolve by id') do
+          DocsUI::Section('6. System helpers: wait on the reactive layer, re-resolve by id') do
             DocsUI::Prose() do
               p do
                 plain 'A reactive morph, a '
@@ -398,7 +398,7 @@ module Views
         end
 
         def client_unit
-          DocsUI::Section('6. Client unit tests (bun)') do
+          DocsUI::Section('7. Client unit tests (bun)') do
             DocsUI::Prose() do
               p do
                 plain 'Some client-runtime contracts are timing-sensitive and a full browser can mask them — ' \
