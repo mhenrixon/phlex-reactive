@@ -254,21 +254,47 @@ task :release, %i[version force] do |_t, args|
     success "Updated #{version_file}"
   end
 
+  # Step 1b: Re-lock the docs site's Gemfile.lock. The docs app pins the gem via
+  # a local `path: ".."`, so its lockfile carries the version string — bumping
+  # version.rb without re-locking leaves the committed docs lockfile stale (it
+  # kept the OLD version while every fresh `bundle install` in docs/ regenerated
+  # it, dirtying the tree on every checkout). `bundle lock --local` re-derives
+  # only from the path dep — no network, no rubygems fetch, no checksum to
+  # compute for a path gem — so it works in the release environment and picks up
+  # the new version. Committed alongside the bump in Step 3. Any OTHER tracked
+  # lockfile pinning the gem would belong in this list; today only docs does.
+  docs_lock = "docs/Gemfile.lock"
+  header "Docs lockfile"
+  if File.exist?(docs_lock)
+    # BUNDLE_GEMFILE instead of Dir.chdir — no process-wide cwd change; bundle
+    # writes docs/Gemfile.lock in place next to the pointed-at Gemfile.
+    sh({ "BUNDLE_GEMFILE" => "docs/Gemfile" }, "bundle lock --local")
+    success "Re-locked #{docs_lock} to #{new_version}"
+  else
+    skip "No #{docs_lock}"
+  end
+
   # Step 2: Verify gem builds cleanly
   header "Build verification"
   sh("gem build phlex-reactive.gemspec --strict")
   sh("rm -f phlex-reactive-*.gem")
   success "Gem builds cleanly"
 
-  # Step 3: Commit version bump
+  # Step 3: Commit the version bump + the re-locked docs lockfile together, so a
+  # release never leaves a stale/dirty committed lockfile behind. The guard fires
+  # when EITHER the version file OR the docs lockfile changed (a re-run where only
+  # the lockfile drifted still commits).
   header "Git commit"
-  version_changed = !`git diff #{version_file}`.strip.empty? || !`git diff --cached #{version_file}`.strip.empty?
-  if version_changed
-    sh("git add #{version_file}")
+  release_files = [version_file, (docs_lock if File.exist?(docs_lock))].compact
+  changed = release_files.any? do |f|
+    !`git diff #{f}`.strip.empty? || !`git diff --cached #{f}`.strip.empty?
+  end
+  if changed
+    sh("git add #{release_files.join(" ")}")
     sh("git commit -m 'chore: bump version to #{new_version}'")
-    success "Committed version bump"
+    success "Committed version bump + docs lockfile"
   else
-    skip "No version change to commit"
+    skip "Nothing to commit (version + docs lockfile already current)"
   end
 
   # Step 4: Push to origin
