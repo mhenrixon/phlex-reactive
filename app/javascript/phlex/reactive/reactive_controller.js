@@ -1142,6 +1142,11 @@ export default class extends Controller {
   // indexes) plus the once-only missing-list/template warning latch.
   #nestedIndex = 0
   #nestedWarned = false
+  // JSON-mode nested rows (issue #208): the bound delegated input/change
+  // handler and the bound morph re-seed, held so disconnect() removes exactly
+  // them.
+  #boundSyncNestedJson
+  #boundSeedNestedJson
   // Connect-time compute seed (issue #199): the bound re-seed attached to
   // turbo:morph-element so an in-place morph re-runs the compute, held for teardown.
   #boundSeedCompute
@@ -1266,6 +1271,24 @@ export default class extends Controller {
       this.#syncTags()
     }
 
+    // JSON-mode nested rows (issue #208) — ONLY when the root owns a list with
+    // `as: :json`, so a form without one pays a single probe (the show/filter/
+    // tags gate precedent). ONE delegated input + change listener re-serializes
+    // the rows into the hidden field on every owned edit (nestedAdd/Remove call
+    // the sync directly; this covers typing into a row's fields). The connect
+    // seed writes the initial array (a plain replace re-connects), and
+    // turbo:morph-element re-seeds after an in-place morph (which keeps the
+    // element connected, fires no Stimulus lifecycle, and may have rewritten
+    // the rows to server truth while the hidden field kept its pre-morph value).
+    if (this.#nestedJsonEnabled()) {
+      this.#boundSyncNestedJson = (event) => this.syncNestedJson(event)
+      this.#boundSeedNestedJson = () => this.#syncAllNestedJson()
+      this.element.addEventListener?.("input", this.#boundSyncNestedJson)
+      this.element.addEventListener?.("change", this.#boundSyncNestedJson)
+      this.element.addEventListener?.("turbo:morph-element", this.#boundSeedNestedJson)
+      this.#syncAllNestedJson()
+    }
+
     // Connect-time compute seed (issue #199) — ONLY when the root carries a
     // reactive_compute binding that opts in (data-reactive-compute-seed). A
     // freshly-rendered compute root (a first paint, or a server validation-error
@@ -1318,6 +1341,7 @@ export default class extends Controller {
     this.#teardownShowSync()
     this.#teardownFilterSync()
     this.#teardownTagsSync()
+    this.#teardownNestedJsonSync()
     this.#teardownComputeSeed()
     if (this.#boundProbeLazyDefer) {
       this.element.removeEventListener?.("turbo:morph-element", this.#boundProbeLazyDefer)
@@ -1830,6 +1854,11 @@ export default class extends Controller {
     list.appendChild(row)
     const first = [...(row.querySelectorAll?.("input, select, textarea") ?? [])][0]
     first?.focus?.()
+
+    // JSON mode (issue #208): a freshly-added empty row must land in the hidden
+    // field immediately, so the serialized array reflects the DOM even before
+    // the first keystroke. A no-op when this list isn't `as: :json`.
+    if (list.getAttribute?.("data-reactive-nested-json") === assoc) this.#syncNestedJson(assoc)
   }
 
   // Remove the trigger's closest row wrapper. A DRAFT row (no [_destroy]
@@ -1857,6 +1886,108 @@ export default class extends Controller {
     } else {
       row.parentNode?.removeChild?.(row)
     }
+
+    // JSON mode (issue #208): the removed (or _destroy-hidden) row must leave
+    // the serialized array too — an absent row IS the removal. Re-sync every
+    // owned JSON-mode list; a form without one iterates an empty set and exits.
+    this.#syncAllNestedJson()
+  }
+
+  // JSON-mode nested rows (issue #208) — the delegated input/change handler.
+  // An app whose controller parses a serialized JSON param instead of Rails'
+  // accepts_nested_attributes_for opts a list into `as: :json`; the client
+  // then mirrors that list's rows into ONE hidden field as a JSON array on
+  // every owned edit. Public so Stimulus can bind it; a no-op unless the
+  // edited field belongs to a JSON-mode list this root owns.
+  syncNestedJson(event) {
+    const target = event?.target
+    if (!target || !this.#ownsField(target)) return
+    // Re-serialize every JSON-mode list (an edit could touch any of them; the
+    // per-list owned-row scan is cheap and keeps this handler association-free).
+    this.#syncAllNestedJson()
+  }
+
+  // Serialize every owned JSON-mode list into its hidden field. The connect
+  // seed and the input/remove re-syncs funnel through here so one place owns
+  // the "DOM rows → JSON field" projection.
+  #syncAllNestedJson() {
+    if (typeof this.element?.querySelectorAll !== "function") return
+    const owns = this.#ownershipFilter()
+    for (const list of [...this.element.querySelectorAll("[data-reactive-nested-json]")].filter(owns)) {
+      this.#syncNestedJson(list.getAttribute("data-reactive-nested-json"))
+    }
+  }
+
+  // Project ONE JSON-mode list's surviving rows into its hidden field. Each
+  // row becomes an object keyed by the trailing bracket segment of its inputs'
+  // names (…[title] → "title"); a hidden/_destroy-marked row is skipped (an
+  // absent row IS the removal — JSON carries no destroy marker). The write
+  // uses the set-value + dispatch contract (issue #183) so dirty tracking,
+  // reactive_show, and compute see the change — but only when the value
+  // actually changed, so a connect seed on an already-correct field is silent.
+  #syncNestedJson(assoc) {
+    const owns = this.#ownershipFilter()
+    const list = [...this.element.querySelectorAll(`[data-reactive-nested-list="${assoc}"]`)].find(owns)
+    if (!list) return
+    const field = this.#nestedJsonField(list)
+    if (!field) return
+
+    const rows = []
+    for (const row of [...(list.querySelectorAll?.("[data-reactive-nested-row]") ?? [])]) {
+      if (!owns(row) || row.hidden) continue
+      rows.push(this.#nestedRowObject(row))
+    }
+
+    const next = JSON.stringify(rows)
+    if (field.value === next) return
+    field.value = next
+    if (typeof field.dispatchEvent === "function") {
+      field.dispatchEvent(new Event("input", { bubbles: true }))
+    }
+  }
+
+  // The hidden field a JSON-mode list mirrors into — resolved fresh (a morph
+  // replaces nodes, never cache it) and OWNED by this root (#15). null when
+  // the selector resolves nothing, so the caller no-ops (a half-built binding
+  // must never break the page).
+  #nestedJsonField(list) {
+    const selector = list.getAttribute?.("data-reactive-nested-json-field")
+    if (!selector) return null
+    const owns = this.#ownershipFilter()
+    return [...this.element.querySelectorAll(selector)].find(owns) ?? null
+  }
+
+  // One row → { key: value } over its named form controls. The JSON key is the
+  // trailing bracket segment of each control's name (order[todos_attributes]
+  // [3][title] → "title"; a bare `title` → "title"), the "infer from input
+  // names" contract. The [_destroy] control is dropped (JSON has no destroy
+  // marker). Later inputs with the same key win (last-wins, the DOM order).
+  #nestedRowObject(row) {
+    const obj = {}
+    for (const el of [...(row.querySelectorAll?.("input, select, textarea") ?? [])]) {
+      const key = this.#nestedJsonKey(el.getAttribute?.("name"))
+      if (key === null || key === "_destroy") continue
+      obj[key] = this.#nestedFieldValue(el)
+    }
+    return obj
+  }
+
+  // The trailing bracket segment of a field name (the inferred JSON key), or
+  // the bare name when it carries no brackets. null for a nameless control
+  // (a bare button, an unnamed helper input) — skipped by the caller.
+  #nestedJsonKey(name) {
+    if (!name) return null
+    const match = name.match(/\[([^\][]+)\]$/)
+    return match ? match[1] : name
+  }
+
+  // A form control's submitted value: an unchecked checkbox contributes "" (it
+  // wouldn't post at all), a checked one its value (default "on"); everything
+  // else its .value. Keeps the JSON shape close to what a real form submit
+  // would carry for the same control.
+  #nestedFieldValue(el) {
+    if (el.type === "checkbox") return el.checked ? (el.value || "on") : ""
+    return el.value ?? ""
   }
 
   // Parse a JSON string list from a root data attr; [] on absence/parse error so
@@ -3099,6 +3230,15 @@ export default class extends Controller {
     return !!this.element.getAttribute?.("data-reactive-tags-field")
   }
 
+  // Whether this root owns at least one JSON-mode nested list (issue #208) —
+  // the connect() gate. A cheap descendant probe: a form without one wires no
+  // input/change listeners. Ownership is re-checked per sync, so a stray match
+  // in a nested reactive root here is harmless (it just arms the listeners).
+  #nestedJsonEnabled() {
+    if (typeof this.element?.querySelector !== "function") return false
+    return !!this.element.querySelector("[data-reactive-nested-json]")
+  }
+
   // The hidden input storing the comma-joined value, resolved fresh per use
   // (a morph replaces nodes — never cache it) and OWNED by this root (issue
   // #15). null when the selector resolves nothing — every caller then no-ops:
@@ -3285,6 +3425,21 @@ export default class extends Controller {
     if (!this.#boundSyncTags) return
     this.element.removeEventListener?.("turbo:morph-element", this.#boundSyncTags)
     this.#boundSyncTags = undefined
+  }
+
+  // Remove the JSON-mode nested-rows listeners on disconnect (issue #208), so a
+  // stray input/change/morph after the element leaves the DOM never re-syncs
+  // against a detached root.
+  #teardownNestedJsonSync() {
+    if (this.#boundSyncNestedJson) {
+      this.element.removeEventListener?.("input", this.#boundSyncNestedJson)
+      this.element.removeEventListener?.("change", this.#boundSyncNestedJson)
+      this.#boundSyncNestedJson = undefined
+    }
+    if (this.#boundSeedNestedJson) {
+      this.element.removeEventListener?.("turbo:morph-element", this.#boundSeedNestedJson)
+      this.#boundSeedNestedJson = undefined
+    }
   }
 
   // Remove the compute seed morph listener on disconnect (issue #199), so a

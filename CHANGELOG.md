@@ -8,6 +8,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **JSON mode for draft nested rows — `reactive_nested_list(:assoc, as: :json)` (#208).**
+  The draft-rows primitive (#208) posts standard Rails
+  `accepts_nested_attributes_for` names. But many apps persist a "new parent +
+  child rows" form by serializing the rows into ONE hidden field and
+  `JSON.parse`-ing it in the controller — adopting the primitive meant rewiring
+  that persistence path. `as: :json` removes the choice: the list keeps the same
+  `<template>` row, `nested_field_name`, and add/remove triggers, but the generic
+  controller now mirrors the surviving rows into a single hidden field as a JSON
+  array on every add / remove / keystroke (the set-value + dispatch contract, so
+  dirty tracking and compute still see it), inferring each JSON key from the
+  trailing bracket segment of a row input's name
+  (`order[line_items_attributes][3][quantity]` → `"quantity"`). A removed row
+  leaves the array (an absent row IS the removal — JSON has no `_destroy`
+  marker). The default (`:attributes`) is unchanged, so existing draft forms are
+  byte-identical. See the "Draft rows for a new parent" README section and the
+  `/docs/example-draft-rows` page.
+
 - **Turnkey APM adapters — `Phlex::Reactive.apm = :appsignal` (#207).** The gem
   already emits `*.phlex_reactive` `ActiveSupport::Notifications` events (#107), but
   every reactive action still POSTs to the same endpoint, so an APM rolled all

@@ -138,6 +138,32 @@ class DemosController < ActionController::Base
     HTML
   end
 
+  # Issue #208 (JSON mode): the draft form whose list opts into `as: :json` —
+  # the rows serialize into ONE hidden field the client keeps in sync.
+  def draft_order_json
+    render_component DraftOrderJsonFormComponent.new
+  end
+
+  # The JSON-mode reconcile: the app parses a SERIALIZED JSON param by hand
+  # (NO accepts_nested_attributes_for), the exact controller path an app that
+  # already ships a JSON param keeps unchanged when adopting the primitive.
+  def create_order_json
+    permitted = params.require(:order).permit(:total, :line_items)
+    rows = JSON.parse(permitted[:line_items].presence || "[]")
+    order = Order.create!(total: permitted[:total])
+    rows.each { order.line_items.create!(quantity: it["quantity"], price: it["price"]) }
+
+    items = order.line_items.map do
+      %(<li data-testid="created-item">#{it.quantity} × #{it.price}</li>)
+    end.join
+    render html: <<~HTML.html_safe, layout: true
+      <div data-testid="order-created">
+        <p>Order created with <span data-testid="item-count">#{order.line_items.count}</span> items</p>
+        <ul>#{items}</ul>
+      </div>
+    HTML
+  end
+
   # reactive_text + typed compute (issue #104): a live title preview + character
   # counter that update in-browser as you type (no round trip), then a save
   # reconciles through the server (the morph re-seeds the derived heading/counter).

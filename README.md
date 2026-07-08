@@ -396,7 +396,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_compute :name, ..., mirror: { sum: "#summary-sum" }` | **Cross-root text mirrors**: paint a compute value into declared, id-allowlisted nodes **outside** the reactive root (a recap in another tab pane) via `textContent` — no bespoke listener. See [Cross-root mirrors](#cross-root-mirrors-mirror--painting-a-recap-outside-the-root). |
 | `reactive_dirty` / `reactive_dirty warn_unsaved: true` / `reactive_dirty only: %i[...]` | **Dirty tracking**, declared once at the class level, against the DOM's own `defaultValue`/`defaultChecked`/`defaultSelected` — no client state. Marks changed fields + the root `data-reactive-dirty`; `warn_unsaved:` arms a `beforeunload`/`turbo:before-visit` guard; `only:` scopes tracking to named fields. Style with `[data-reactive-dirty]`. See [Dirty-field tracking](#dirty-field-tracking-reactive_dirty). |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
-| `reactive_nested_list(:assoc)` / `reactive_nested_template(:assoc)` / `reactive_nested_row` | **Draft nested-attribute rows** (the "new parent + child rows" form): the container rows land in, the `<template>` holding ONE row's markup, and the row wrapper marker — all **client-only** form state, keyed by association (several collections per root). See [Draft rows for a new parent](#draft-rows-for-a-new-parent-reactive_nested_). |
+| `reactive_nested_list(:assoc, as: :attributes \| :json)` / `reactive_nested_template(:assoc)` / `reactive_nested_row` | **Draft nested-attribute rows** (the "new parent + child rows" form): the container rows land in, the `<template>` holding ONE row's markup, and the row wrapper marker — all **client-only** form state, keyed by association (several collections per root). `as: :json` (default `:attributes`) serializes the rows into ONE hidden JSON field instead of posting `accepts_nested_attributes_for` names — for an app whose controller `JSON.parse`s a serialized param. See [Draft rows for a new parent](#draft-rows-for-a-new-parent-reactive_nested_). |
 | `reactive_nested_add(:assoc)` / `reactive_nested_remove` | The row triggers, client-only (zero round trips): add clones the template and renumbers its placeholder index; remove deletes a draft row from the DOM, or `_destroy`-marks + hides a persisted row (a hidden `[_destroy]` input present). |
 | `nested_field_name(:assoc, :field, index: nil)` | The Rails `accepts_nested_attributes_for` wire name for one row field — `order[line_items_attributes][NEW_ROW][quantity]` (the template placeholder) by default, a real index when given. Scope-aware under `reactive_scope`. |
 | `reactive_collection :name, item:, container:, count:, empty:, size:` | Declare an add/remove-row list once; actions call `reply.append`/`prepend`/`remove`. See [Reactive collections](#reactive-collections-addremove-rows--count--empty-state). |
@@ -1333,6 +1333,36 @@ replace-shaped actions out of a root holding unsent rows. And once the parent
 is saved, the persisted flow takes over: the same row markup renders with real
 indexes, or the list graduates to a [reactive collection](#reactive-collections-addremove-rows--count--empty-state)
 (`reactive_collection` + `reply.append`/`reply.remove`).
+
+**JSON mode — one hidden field instead of `accepts_nested_attributes_for`.**
+If your controller already parses a **serialized JSON param** (the app-rolled
+"stuff the rows into a hidden field, `JSON.parse` on submit" pattern) rather
+than nested attributes, opt the list into `as: :json` and keep your persistence
+path exactly as it is:
+
+```ruby
+div(**reactive_nested_list(:line_items, as: :json)) { }   # + a hidden field to sync
+# the hidden field the client keeps in sync (seed "[]" so an empty submit posts one):
+input(type: "hidden", **reactive_field(:line_items), value: "[]")
+```
+
+```ruby
+# The controller stays hand-rolled — NO accepts_nested_attributes_for:
+rows = JSON.parse(params.require(:order).permit(:line_items)[:line_items].presence || "[]")
+order = Order.create!(total: params[:order][:total])
+rows.each { order.line_items.create!(quantity: it["quantity"], price: it["price"]) }
+```
+
+Everything else is identical — the same `<template>` row, the same
+`nested_field_name`, the same add/remove triggers. In JSON mode the client
+mirrors the surviving rows into that one hidden field as a JSON array on every
+add / remove / keystroke (the set-value + dispatch contract, so dirty tracking
+and compute still see it), inferring each JSON key from the **trailing bracket
+segment** of a row input's name (`order[line_items_attributes][3][quantity]` →
+`"quantity"`). A removed row simply leaves the array (JSON carries no `_destroy`
+marker — an absent row *is* the removal). The per-row `_attributes` names still
+render but are ignored by a controller that doesn't permit them; the JSON field
+is the single source of truth.
 
 Relatedly, a **draft parent can now run real server actions too** (issue #208):
 an unsaved record signs a gid-less `{c, state}` token, and the endpoint rebuilds
