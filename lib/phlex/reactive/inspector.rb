@@ -106,7 +106,11 @@ module Phlex
           return false unless result.success?
 
           names = authorization_method_names
-          call_names(result.value).any? { names.include?(it) }
+          # Set#intersect? on the Set receiver (names) — Array#intersect? would raise
+          # TypeError on a Set arg (caught by the rescue below → a silent false, the
+          # bug the naive Style/ArrayIntersect autocorrect introduces). Set#intersect?
+          # accepts any Enumerable, so the call_names Array is a valid argument.
+          names.intersect?(call_names(result.value))
         rescue StandardError
           false
         end
