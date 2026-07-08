@@ -63,21 +63,24 @@ module Phlex
         end
 
         # Assert (waiting) that the field with DOM id `id` has value `value`,
-        # RE-RESOLVING the field by its id on every poll. Use it as the barrier for
-        # a value that settles a beat after the triggering action — a reactive_compute
-        # re-seed or a morph replaces the input node AFTER the action returns, so a
-        # node captured by `find` would go stale; keying on the id and letting
-        # Capybara re-query each cycle is immune to that.
+        # RE-RESOLVING the field by its id on every poll and reading its live
+        # `.value` PROPERTY (issue #204) — NOT the value attribute. A
+        # reactive_compute reducer paints a computed output with `el.value = …`
+        # (the property); for a DISABLED / read-only output the value attribute
+        # never reflects that, so an attribute-based matcher reads "" and fails.
+        # Reading the property covers enabled AND disabled/computed fields — the
+        # exact case this matcher was built for — and keeps the morph-immunity
+        # (each poll re-finds the node by id, so a re-seed/morph that replaces the
+        # input can't surface a stale node or a transient blank).
         #
         #   expect(page).to have_reactive_value("total", "6")
         #
-        # A thin, intention-revealing wrapper over Capybara's field matcher scoped
-        # by id — the value the app is waiting on, named for what it is. The
-        # `have_` prefix is Capybara-matcher convention (have_field/have_css), NOT a
-        # predicate — hence the PredicatePrefix disable, mirroring matchers.rb.
+        # `timeout:` (or `wait:`) overrides Capybara's default max wait. The
+        # `have_` prefix is Capybara-matcher convention (have_field/have_css), NOT
+        # a predicate — hence the PredicatePrefix disable, mirroring matchers.rb.
         # rubocop:disable Naming/PredicatePrefix
-        def have_reactive_value(id, value, **)
-          have_field(id, with: value, **)
+        def have_reactive_value(id, value, timeout: nil, wait: nil)
+          ReactiveValueMatcher.new(id, value, wait: timeout || wait)
         end
 
         # Assert (waiting) that the node with DOM id `id` has TEXT `value`,
@@ -90,6 +93,91 @@ module Phlex
           have_css("##{id}", text: value, **)
         end
         # rubocop:enable Naming/PredicatePrefix
+
+        # A waiting matcher that asserts a field's live `.value` PROPERTY (issue
+        # #204), read by id via evaluate_script so it sees a value a reducer set
+        # on a DISABLED output (where the value attribute stays blank). Polls until
+        # the property equals the expected value or the wait budget elapses,
+        # re-resolving the node by id every cycle (morph-immune). Supports negation
+        # (`not_to`) the Capybara way: the negative holds as soon as the property
+        # differs from the expected value (an absent field reads nil, which never
+        # equals a String expectation — so a missing field satisfies `not_to`).
+        #
+        # A plain class (not RSpec::Matchers.define) so it needs no RSpec at load
+        # time beyond the duck-typed matcher protocol RSpec calls (matches?,
+        # does_not_match?, failure_message*), keeping System loadable under Capybara
+        # alone. The expected value is stringified because a DOM `.value` is always
+        # a JS string on the wire (a numeric literal like 6 compares as "6").
+        class ReactiveValueMatcher
+          def initialize(id, value, wait: nil)
+            @id = id
+            @expected = value.to_s
+            @wait = wait
+          end
+
+          def matches?(page)
+            @page = page
+            poll_until { current_value == @expected }
+          end
+
+          # does_not_match? is RSpec's REQUIRED negated-matcher protocol method — its
+          # name is fixed by RSpec, not a predicate we get to rename.
+          # rubocop:disable Naming/PredicatePrefix
+          def does_not_match?(page)
+            @page = page
+            # The negative is satisfied the moment the property is NOT the expected
+            # value (or the field is absent → nil). poll_until returns true as soon
+            # as that holds, false if it stayed equal for the whole budget.
+            poll_until { current_value != @expected }
+          end
+          # rubocop:enable Naming/PredicatePrefix
+
+          def failure_message
+            "expected ##{@id} to have value #{@expected.inspect} (its .value property), " \
+              "but after waiting it was #{current_value.inspect}"
+          end
+
+          def failure_message_when_negated
+            "expected ##{@id} NOT to have value #{@expected.inspect} (its .value property), but it did"
+          end
+
+          private
+
+          # The field's live `.value` property, re-resolved each call. The
+          # identifier is matched by DOM id OR name (mirroring Capybara's
+          # have_field, which matches id/name/label) — reactive_field emits a
+          # `name`, not an `id`, so an id-only lookup would find nothing. Returns
+          # the String value, or nil when the field is absent (Playwright serializes
+          # a JS null as an empty Hash, so a non-String result is normalized to nil
+          # — the matcher then treats it as "not settled yet" and keeps polling
+          # rather than comparing a Hash to the expected String).
+          def current_value
+            raw = @page.evaluate_script(<<~JS)
+              (() => {
+                const k = #{@id.to_json}
+                const el = document.getElementById(k) || document.getElementsByName(k)[0]
+                return el ? el.value : null
+              })()
+            JS
+            raw.is_a?(::String) ? raw : nil
+          end
+
+          # Bounded poll on a JS-property condition Capybara can't express as a
+          # built-in waiting matcher. Uses the monotonic clock and the configured
+          # (or overridden) Capybara max wait — the same shape the system specs'
+          # hand-rolled wait_for used, now lifted into the helper.
+          def poll_until
+            deadline = now + (@wait || ::Capybara.default_max_wait_time)
+            loop do
+              return true if yield
+              return false if now >= deadline
+
+              sleep 0.05
+            end
+          end
+
+          def now = ::Process.clock_gettime(::Process::CLOCK_MONOTONIC)
+        end
 
         private
 

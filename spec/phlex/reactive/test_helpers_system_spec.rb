@@ -56,4 +56,51 @@ RSpec.describe Phlex::Reactive::TestHelpers::System do
       expect(helper.wait_option(5)).to eq(wait: 5)
     end
   end
+
+  # The property matcher (issue #204) in isolation — a fake page returns scripted
+  # evaluate_script results, so the polling / normalization / message logic is
+  # covered with no browser. The matcher reads the field's live `.value` PROPERTY,
+  # which is what a reducer sets on a disabled/computed output.
+  describe described_class::ReactiveValueMatcher do
+    # A page whose evaluate_script yields the NEXT scripted value each call, the
+    # last repeating — so a test can model "blank, blank, then settles to 6".
+    def fake_page(*values)
+      queue = values.dup
+      Object.new.tap do |o|
+        # rubocop:disable Style/ItBlockParameter -- a stub method body, not an it-example
+        o.define_singleton_method(:evaluate_script) { |*| queue.length > 1 ? queue.shift : queue.first }
+        # rubocop:enable Style/ItBlockParameter
+      end
+    end
+
+    it "matches once the .value property settles to the expected string" do
+      matcher = described_class.new("total_ro", "6", wait: 1)
+      expect(matcher.matches?(fake_page(nil, nil, "6"))).to be(true)
+    end
+
+    it "stringifies a numeric expectation (a DOM .value is always a JS string)" do
+      matcher = described_class.new("total", 6, wait: 1)
+      expect(matcher.matches?(fake_page("6"))).to be(true)
+    end
+
+    it "normalizes a non-String result (Playwright's {} for a JS null) to 'not settled'" do
+      # A missing field yields {} under Playwright; it must never equal the
+      # expected String, so matches? fails within the (tiny) budget rather than
+      # comparing a Hash to '6'.
+      matcher = described_class.new("nope", "6", wait: 0)
+      expect(matcher.matches?(fake_page({}))).to be(false)
+    end
+
+    it "does_not_match? holds as soon as the property differs (or the field is absent)" do
+      matcher = described_class.new("total_ro", "999", wait: 0)
+      expect(matcher.does_not_match?(fake_page("6"))).to be(true)
+      expect(matcher.does_not_match?(fake_page({}))).to be(true) # absent → nil ≠ "999"
+    end
+
+    it "reports the settled value in its failure message" do
+      matcher = described_class.new("total_ro", "6", wait: 0)
+      matcher.matches?(fake_page("5"))
+      expect(matcher.failure_message).to include("total_ro", '"6"', '"5"')
+    end
+  end
 end

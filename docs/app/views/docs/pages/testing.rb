@@ -372,9 +372,20 @@ module Views
                 end
                 li do
                   code { 'have_reactive_value(id, value)' }
-                  plain ' / '
+                  plain ' — assert a field by RE-RESOLVING it every poll (by id or name) and reading its live '
+                  code { '.value' }
+                  strong { ' property' }
+                  plain ', not the value attribute. A '
+                  code { 'reactive_compute' }
+                  plain ' reducer paints a computed output with '
+                  code { 'el.value = …' }
+                  plain '; for a '
+                  strong { 'disabled' }
+                  plain ' output the attribute never reflects that, so an attribute matcher reads blank — the property read sees it. Immune to a morph detaching the node.'
+                end
+                li do
                   code { 'have_reactive_text(id, value)' }
-                  plain ' — assert a field / mirror node by RE-RESOLVING it by id every poll, immune to a morph detaching the node.'
+                  plain ' — the mirror/recap twin for a text sink (textContent), re-resolving by id each poll.'
                 end
               end
             end
