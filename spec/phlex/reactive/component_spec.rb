@@ -2526,6 +2526,41 @@ RSpec.describe Phlex::Reactive::Component do
       expect(attrs[:data][:reactive_association_param]).to eq("line_items")
     end
 
+    describe "fill-then-add (from:/clear:, issue #208 Scenario A)" do
+      it "emits the from: map (row field => source selector) as a JSON param" do
+        attrs = instance.send(:reactive_nested_add, :line_items,
+          from: { quantity: "#item-qty", price: "#item-price" })
+        expect(JSON.parse(attrs[:data][:reactive_nested_from_param]))
+          .to eq("quantity" => "#item-qty", "price" => "#item-price")
+      end
+
+      it "emits the clear: flag as the STRING \"true\" (never a valueless boolean attr)" do
+        attrs = instance.send(:reactive_nested_add, :line_items, from: { quantity: "#q" }, clear: true)
+        expect(attrs[:data][:reactive_nested_clear_param]).to eq("true")
+      end
+
+      it "omits both params by default (byte-identical to the inline-edit add)" do
+        attrs = instance.send(:reactive_nested_add, :line_items)
+        expect(attrs[:data]).not_to have_key(:reactive_nested_from_param)
+        expect(attrs[:data]).not_to have_key(:reactive_nested_clear_param)
+      end
+
+      it "raises on an empty from: map (a dead binding — fail at render)" do
+        expect { instance.send(:reactive_nested_add, :line_items, from: {}, clear: true) }
+          .to raise_error(ArgumentError, /from:/)
+      end
+
+      it "raises on a blank source selector" do
+        expect { instance.send(:reactive_nested_add, :line_items, from: { quantity: "  " }) }
+          .to raise_error(ArgumentError)
+      end
+
+      it "raises on a row field key that isn't a plain identifier" do
+        expect { instance.send(:reactive_nested_add, :line_items, from: { "bad key" => "#x" }) }
+          .to raise_error(ArgumentError, /field/)
+      end
+    end
+
     it "emits the client-only remove trigger" do
       attrs = instance.send(:reactive_nested_remove)
       expect(attrs[:type]).to eq("button")

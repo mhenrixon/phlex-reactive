@@ -375,3 +375,153 @@ test("nestedRemove never escapes this root walking up (a root inside ANOTHER col
 
   expect(outerList.children.length).toBe(1)
 })
+
+// Fill-then-add (issue #208 Scenario A): the add controls live OUTSIDE the row.
+// nestedAdd clones the template, then SEEDS each cloned-row field from a named
+// source control (from: { rowField => "#selector" }), keeps focus on the
+// sources (not the new row), and optionally CLEARS the sources for the next
+// entry. The row field is matched by the trailing bracket segment of its name
+// — the SAME key inference JSON mode uses. Sources resolve root-scoped (#15).
+//
+// FakeNode's matches() supports [attr="val"], so sources carry data-src="…".
+// A two-field template row (quantity + price) — the fill-then-add tests seed
+// both, unlike the single-field default rowTemplate().
+function twoFieldTemplate(assoc = "line_items") {
+  const proto = new FakeNode({ tag: "div", attrs: { "data-reactive-nested-row": "" } })
+  proto.append(
+    new FakeNode({ tag: "input", name: `order[${assoc}_attributes][NEW_ROW][quantity]` }),
+    new FakeNode({ tag: "input", name: `order[${assoc}_attributes][NEW_ROW][price]` }),
+    new FakeNode({ tag: "button", attrs: { "data-action": "click->reactive#nestedRemove" } }),
+  )
+  const template = new FakeNode({ tag: "template", attrs: { "data-reactive-nested-template": assoc } })
+  template.content = { firstElementChild: proto }
+  return template
+}
+
+function fillWidget({ from, clear = false } = {}) {
+  const { root, list, add } = nestedWidget({ template: twoFieldTemplate() })
+  const qtySrc = new FakeNode({ tag: "input", value: "7", attrs: { "data-src": "qty" } })
+  const priceSrc = new FakeNode({ tag: "input", value: "3", attrs: { "data-src": "price" } })
+  root.append(qtySrc, priceSrc)
+  add.attrs["data-reactive-nested-from-param"] =
+    JSON.stringify(from ?? { quantity: '[data-src="qty"]', price: '[data-src="price"]' })
+  if (clear) add.attrs["data-reactive-nested-clear-param"] = "true"
+  return { root, list, add, qtySrc, priceSrc }
+}
+
+function fieldByKey(row, key) {
+  return row.querySelectorAll("input").find((i) => (i.name ?? "").endsWith(`[${key}]`))
+}
+
+test("fill-then-add seeds the cloned row's fields from the named source controls", () => {
+  const { root, list, add } = fillWidget()
+  const controller = buildController(root)
+
+  clickAdd(controller, add)
+
+  const row = list.children[0]
+  expect(fieldByKey(row, "quantity").value).toBe("7")
+  expect(fieldByKey(row, "price").value).toBe("3")
+  // Renumber still ran — the seeded field carries a real index, no placeholder.
+  expect(fieldByKey(row, "quantity").name).toMatch(/\[\d+\]\[quantity\]$/)
+  expect(fieldByKey(row, "quantity").name).not.toContain("NEW_ROW")
+})
+
+test("a seeded field dispatches a bubbling input (compute/show/dirty see it)", () => {
+  const { root, list, add } = fillWidget()
+  const controller = buildController(root)
+
+  clickAdd(controller, add)
+
+  expect(fieldByKey(list.children[0], "quantity").dispatched.some((e) => e.type === "input")).toBe(true)
+})
+
+test("clear: resets the sources with a dispatched input; without it they keep their value", () => {
+  const cleared = fillWidget({ clear: true })
+  const controllerA = buildController(cleared.root)
+  clickAdd(controllerA, cleared.add)
+  expect(cleared.qtySrc.value).toBe("")
+  expect(cleared.qtySrc.dispatched.some((e) => e.type === "input")).toBe(true)
+
+  const kept = fillWidget({ clear: false })
+  const controllerB = buildController(kept.root)
+  clickAdd(controllerB, kept.add)
+  expect(kept.qtySrc.value).toBe("7")
+})
+
+test("fill-then-add keeps focus on the sources — it does NOT steal focus into the new row", () => {
+  const { root, list, add, qtySrc } = fillWidget()
+  const controller = buildController(root)
+
+  clickAdd(controller, add)
+
+  expect(fieldByKey(list.children[0], "quantity").focused).toBe(0)
+  expect(qtySrc.focused).toBe(1)
+})
+
+test("a source selector that resolves nothing is skipped (row still adds, no throw)", () => {
+  const { root, list, add } = fillWidget({ from: { quantity: '[data-src="qty"]', price: '[data-src="ghost"]' } })
+  const controller = buildController(root)
+
+  clickAdd(controller, add)
+
+  const row = list.children[0]
+  expect(fieldByKey(row, "quantity").value).toBe("7")
+  expect(fieldByKey(row, "price").value).toBe("") // unresolved source → left blank
+})
+
+test("a row-field key with no matching cloned field is skipped (no throw)", () => {
+  const { root, list, add } = fillWidget({ from: { quantity: '[data-src="qty"]', nosuch: '[data-src="price"]' } })
+  const controller = buildController(root)
+
+  clickAdd(controller, add)
+
+  expect(fieldByKey(list.children[0], "quantity").value).toBe("7")
+})
+
+test("a source inside a NESTED reactive root is not this root's (issue #15 ownership)", () => {
+  const { root, list, add } = nestedWidget()
+  const inner = new FakeNode({ tag: "div", id: "inner-root", controller: "reactive" })
+  const foreign = new FakeNode({ tag: "input", value: "99", attrs: { "data-src": "qty" } })
+  inner.append(foreign)
+  root.append(inner)
+  add.attrs["data-reactive-nested-from-param"] = JSON.stringify({ quantity: '[data-src="qty"]' })
+  const controller = buildController(root)
+
+  clickAdd(controller, add)
+
+  expect(fieldByKey(list.children[0], "quantity").value).toBe("") // foreign source not owned → skipped
+})
+
+test("no from: attr — the inline-edit default is unchanged (blank clone, focus the row)", () => {
+  const { root, list, add } = nestedWidget()
+  const controller = buildController(root)
+
+  clickAdd(controller, add)
+
+  const row = list.children[0]
+  expect(fieldByKey(row, "quantity").value).toBe("")
+  expect(row.querySelectorAll("input")[0].focused).toBe(1)
+})
+
+test("a checkbox source copies its checked state to a checkbox row field", () => {
+  const { root, list, add } = nestedWidget()
+  const src = new FakeNode({ tag: "input", type: "checkbox", attrs: { "data-src": "gift" } })
+  src.checked = true
+  root.append(src)
+  // Give the template a checkbox field named …[gift].
+  const proto = new FakeNode({ tag: "div", attrs: { "data-reactive-nested-row": "" } })
+  proto.append(
+    new FakeNode({ tag: "input", name: "order[line_items_attributes][NEW_ROW][quantity]" }),
+    new FakeNode({ tag: "input", type: "checkbox", name: "order[line_items_attributes][NEW_ROW][gift]" }),
+    new FakeNode({ tag: "button", attrs: { "data-action": "click->reactive#nestedRemove" } }),
+  )
+  const template = root.children.find((c) => c.tag === "template")
+  template.content = { firstElementChild: proto }
+  add.attrs["data-reactive-nested-from-param"] = JSON.stringify({ gift: '[data-src="gift"]' })
+  const controller = buildController(root)
+
+  clickAdd(controller, add)
+
+  expect(fieldByKey(list.children[0], "gift").checked).toBe(true)
+})

@@ -150,7 +150,9 @@ class DemosController < ActionController::Base
   def create_order_json
     permitted = params.require(:order).permit(:total, :line_items)
     rows = JSON.parse(permitted[:line_items].presence || "[]")
-    order = Order.create!(total: permitted[:total])
+    # Only pass total when present (the fill-then-add form omits it) — else an
+    # explicit nil overrides the column's NOT NULL default.
+    order = Order.create!(**(permitted[:total].present? ? { total: permitted[:total] } : {}))
     rows.each { order.line_items.create!(quantity: it["quantity"], price: it["price"]) }
 
     items = order.line_items.map do
@@ -162,6 +164,17 @@ class DemosController < ActionController::Base
         <ul>#{items}</ul>
       </div>
     HTML
+  end
+
+  # Issue #208 Scenario A: fill-then-add — the add controls live OUTSIDE the
+  # row and "Add" snapshots them into a new row. Two variants: accepts-nested
+  # (reuses /orders) and JSON mode (reuses /orders_json).
+  def draft_order_fill
+    render_component DraftOrderFillFormComponent.new
+  end
+
+  def draft_order_fill_json
+    render_component DraftOrderFillJsonFormComponent.new
   end
 
   # reactive_text + typed compute (issue #104): a live title preview + character

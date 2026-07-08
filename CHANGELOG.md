@@ -8,6 +8,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Fill-then-add for draft nested rows — `reactive_nested_add(:assoc, from:, clear:)` (#208).**
+  The draft-rows primitive's add is *inline-edit* — it clones the template and
+  focuses the new row's first field, so you type INTO the row. A common
+  alternative puts the add controls OUTSIDE the row (a preset `<select>`, a
+  typeahead, plain inputs) and "Add" **snapshots** those values into a new row,
+  then clears them for the next entry. `from: { row_field => "#source-selector" }`
+  seeds each cloned-row field from its source control's current value (matching
+  the field by the same trailing-bracket-segment key inference JSON mode uses),
+  keeps focus on the sources rather than stealing it into the row, and `clear:
+  true` resets the sources (each via the set-value + dispatch contract, so dirty
+  tracking and compute observe the reset). `from:` values are raw CSS selectors
+  resolved within the reactive root (#15 ownership); an unresolved source or an
+  unmatched row-field key is silently skipped (the row still adds). It composes
+  with BOTH wire modes: the seeded values ride the renumbered `_attributes` names
+  on submit (`:attributes`) and the end-of-add JSON sync serializes them
+  (`as: :json`), with no extra wiring. The no-`from:` inline-edit default is
+  unchanged. See the "Draft rows for a new parent" README section and the
+  `/docs/example-draft-rows` page.
+
 - **Multi-field cross-root targets — `reactive_show_targets` speaks the full
   conditions language (#209).** A `"#id"` KEY now takes an `if:`/`if_any:`/
   `unless:` conditions Hash, so an OUTSIDE element can show/hide from a

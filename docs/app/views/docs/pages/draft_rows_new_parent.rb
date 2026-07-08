@@ -25,6 +25,7 @@ module Views
           one_row
           the_reconcile
           json_mode
+          fill_then_add
           draft_actions
           notes
         end
@@ -194,6 +195,56 @@ module Views
                 truth. Want a byte-clean POST? Drop the row-input names; then the
                 keys must be declared, which `as: :json` (infer-from-names)
                 deliberately doesn't require.
+              MD
+            end
+          end
+        end
+
+        def fill_then_add
+          DocsUI::Section('Fill-then-add — add controls outside the row') do
+            md <<~MD
+              The default `reactive_nested_add` is **inline-edit**: it clones the
+              template and focuses the new row's first field, so you type INTO
+              the row. But a very common form shape puts the add controls
+              OUTSIDE the row — a preset `<select>`, a typeahead, plain inputs —
+              and clicking **Add** *snapshots* those values into a new row, then
+              clears the controls for the next entry.
+
+              Pass `from:` (a map of row field → source-control selector) and
+              optionally `clear:`:
+
+              ```ruby
+              input(id: 'item-name', type: 'text')      # the add controls, OUTSIDE the row
+              input(id: 'item-qty',  type: 'number')
+
+              button(**reactive_nested_add(:line_items,
+                from: { name: '#item-name', quantity: '#item-qty' },
+                clear: true)) { 'Add item' }
+              ```
+
+              On click the client clones the template, fills each cloned-row
+              field from its source control's current value — matching the field
+              by the **same** trailing bracket-segment key inference JSON mode
+              uses — keeps focus on the sources (so you keep entering the next
+              item; it does *not* steal focus into the row), and with `clear:
+              true` resets the sources (each via the set-value + dispatch
+              contract, so dirty tracking and compute observe the reset).
+
+              It composes with **both** wire modes: the seeded values ride the
+              renumbered `_attributes` names on submit (`:attributes`), and the
+              end-of-add JSON sync serializes them (`as: :json`) — no extra
+              wiring either way.
+            MD
+
+            DocsUI::Callout(:note) do
+              md <<~MD
+                `from:` values are raw CSS selectors resolved WITHIN this
+                reactive root (issue #15 ownership) — the escape-hatch posture of
+                `reactive_filter`/`reactive_tags`, since the sources are your own
+                markup, not `reactive_field` bindings. A selector that resolves
+                nothing, or a row-field key with no matching cloned field, is
+                silently skipped (the row still adds) — a half-mapped binding
+                never throws on click.
               MD
             end
           end

@@ -397,7 +397,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_dirty` / `reactive_dirty warn_unsaved: true` / `reactive_dirty only: %i[...]` | **Dirty tracking**, declared once at the class level, against the DOM's own `defaultValue`/`defaultChecked`/`defaultSelected` — no client state. Marks changed fields + the root `data-reactive-dirty`; `warn_unsaved:` arms a `beforeunload`/`turbo:before-visit` guard; `only:` scopes tracking to named fields. Style with `[data-reactive-dirty]`. See [Dirty-field tracking](#dirty-field-tracking-reactive_dirty). |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
 | `reactive_nested_list(:assoc, as: :attributes \| :json)` / `reactive_nested_template(:assoc)` / `reactive_nested_row` | **Draft nested-attribute rows** (the "new parent + child rows" form): the container rows land in, the `<template>` holding ONE row's markup, and the row wrapper marker — all **client-only** form state, keyed by association (several collections per root). `as: :json` (default `:attributes`) serializes the rows into ONE hidden JSON field instead of posting `accepts_nested_attributes_for` names — for an app whose controller `JSON.parse`s a serialized param. See [Draft rows for a new parent](#draft-rows-for-a-new-parent-reactive_nested_). |
-| `reactive_nested_add(:assoc)` / `reactive_nested_remove` | The row triggers, client-only (zero round trips): add clones the template and renumbers its placeholder index; remove deletes a draft row from the DOM, or `_destroy`-marks + hides a persisted row (a hidden `[_destroy]` input present). |
+| `reactive_nested_add(:assoc, from:, clear:)` / `reactive_nested_remove` | The row triggers, client-only (zero round trips): add clones the template and renumbers its placeholder index; remove deletes a draft row from the DOM, or `_destroy`-marks + hides a persisted row (a hidden `[_destroy]` input present). **Fill-then-add**: `from: { row_field => "#source-selector" }` seeds the new row from add controls that live OUTSIDE it (a preset select, a typeahead), and `clear: true` resets them — composes with `as: :attributes` AND `as: :json`. See [Draft rows for a new parent](#draft-rows-for-a-new-parent-reactive_nested_). |
 | `nested_field_name(:assoc, :field, index: nil)` | The Rails `accepts_nested_attributes_for` wire name for one row field — `order[line_items_attributes][NEW_ROW][quantity]` (the template placeholder) by default, a real index when given. Scope-aware under `reactive_scope`. |
 | `reactive_collection :name, item:, container:, count:, empty:, size:` | Declare an add/remove-row list once; actions call `reply.append`/`prepend`/`remove`. See [Reactive collections](#reactive-collections-addremove-rows--count--empty-state). |
 | `reply.replace` / `.morph` / `.update` / `.remove` / `.redirect(url)` / `.with(*)` / `.js(ops)` | Return from an action to control the reply (flash, remove, redirect, multi-stream, server-pushed client ops). See [Controlling the action's reply](#reply--controlling-the-actions-reply). |
@@ -1380,6 +1380,35 @@ segment** of a row input's name (`order[line_items_attributes][3][quantity]` →
 marker — an absent row *is* the removal). The per-row `_attributes` names still
 render but are ignored by a controller that doesn't permit them; the JSON field
 is the single source of truth.
+
+**Fill-then-add — snapshot add controls that live OUTSIDE the row.** The default
+`reactive_nested_add` is *inline-edit*: it clones the template and focuses the
+new row's first field, so you type INTO the row. A common alternative puts the
+add controls outside the row — a preset `<select>`, a typeahead, plain inputs —
+and "Add" **snapshots** those values into a new row, then clears them for the
+next entry. Pass `from:` (a map of row-field → source-control selector) and
+optionally `clear:`:
+
+```ruby
+input(id: "item-name",  type: "text")     # the add controls, OUTSIDE the row
+input(id: "item-qty",   type: "number")
+
+button(**reactive_nested_add(:line_items,
+  from: { name: "#item-name", quantity: "#item-qty" },  # row field => source selector
+  clear: true)) { "Add item" }
+```
+
+On click the client clones the template, fills each cloned-row field from its
+source control's current value (matching the field by the **same** trailing
+bracket-segment key inference JSON mode uses), keeps focus on the sources (so
+you keep entering the next item — it does *not* steal focus into the row), and,
+with `clear: true`, resets the sources (each via the set-value + dispatch
+contract, so dirty tracking and compute see it). The `from:` values are raw CSS
+selectors resolved within this root (`#15` ownership); a selector that resolves
+nothing, or a row-field key with no matching cloned field, is skipped (the row
+still adds — never a throw). It composes with **both** wire modes: the seeded
+values ride the renumbered `_attributes` names on submit (`:attributes`) and the
+end-of-add JSON sync serializes them (`as: :json`), with no extra wiring.
 
 Relatedly, a **draft parent can now run real server actions too** (issue #208):
 an unsaved record signs a gid-less `{c, state}` token, and the endpoint rebuilds

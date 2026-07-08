@@ -840,14 +840,58 @@ module Phlex
         # The add-a-row trigger — CLIENT-ONLY (no dispatch descriptor, no
         # POST). Forced type="button": a bare button inside the surrounding
         # real <form> would submit it.
-        def reactive_nested_add(association)
-          {
-            type: "button",
-            data: {
-              action: "click->reactive#nestedAdd",
-              reactive_association_param: nested_identifier!(:reactive_nested_add, :association, association)
-            }
+        #
+        # FILL-THEN-ADD (issue #208 Scenario A). By default add clones the
+        # template and focuses the new row's first field — INLINE-EDIT (you
+        # type INTO the row). But a common form shape puts the add controls
+        # OUTSIDE the row (a preset <select>, a typeahead, plain inputs) and
+        # "Add" SNAPSHOTS those values into a new row, then clears them for the
+        # next entry. `from:` expresses that: a map of ROW FIELD name => SOURCE
+        # CONTROL selector. On click the client fills each cloned-row field
+        # from its source's current value (matching the field by the trailing
+        # bracket segment of its name — the SAME key inference JSON mode uses,
+        # so the two agree), keeps focus on the sources, and (with `clear:
+        # true`) resets the sources. It composes with BOTH wire modes: the
+        # seeded values ride the renumbered `…_attributes[i][field]` names on
+        # submit (:attributes), and the end-of-add JSON sync serializes them
+        # (as: :json) with no extra wiring.
+        #
+        #   a(**reactive_nested_add(:items,
+        #     from: { name: "#item-name", quantity: "#item-qty" }, clear: true))
+        #
+        # `from:` values are RAW CSS selectors (the escape-hatch posture of
+        # reactive_filter/reactive_tags) — the sources are author-owned markup,
+        # not reactive_field bindings — resolved root-scoped (#15 ownership).
+        def reactive_nested_add(association, from: nil, clear: false)
+          data = {
+            action: "click->reactive#nestedAdd",
+            reactive_association_param: nested_identifier!(:reactive_nested_add, :association, association)
           }
+          unless from.nil?
+            data[:reactive_nested_from_param] = nested_from_param!(from)
+            # STRING "true", not boolean: a valueless boolean attr reads "" (falsy)
+            # client-side — the on()/tags precedent.
+            data[:reactive_nested_clear_param] = "true" if clear
+          end
+          { type: "button", data: }
+        end
+
+        # Validate + compile a fill-then-add `from:` map into its JSON wire
+        # (issue #208). Each key is a ROW FIELD name (plain identifier, like the
+        # association); each value is a SOURCE CONTROL selector (non-blank). An
+        # empty map is a dead binding — fail at render (the reactive_show_targets
+        # posture), never a silent no-op.
+        def nested_from_param!(from)
+          unless from.is_a?(Hash) && from.any?
+            raise ArgumentError,
+              "reactive_nested_add from: needs at least one row-field => source-selector pair " \
+              "(e.g. from: { quantity: \"#item-qty\" }), got #{from.inspect}"
+          end
+
+          from.to_h do |field, selector|
+            [nested_identifier!(:reactive_nested_add, :field, field),
+             filter_selector!(:reactive_nested_add_from, selector)]
+          end.to_json
         end
 
         # A row's remove trigger — client-only. Draft rows leave the DOM;
