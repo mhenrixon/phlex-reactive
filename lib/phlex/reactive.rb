@@ -454,9 +454,19 @@ module Phlex
       # value is ignored.
       def report_error(error, context)
         adapter = @resolved_apm_adapter
+        # Each reporter runs through safely_report on its OWN — one broken reporter
+        # (a raising adapter or hook) never prevents the others, and never turns one
+        # 500 into a different 500. safely_report takes the reporter as a block arg,
+        # so there's no nested-block ambiguity.
         safely_report { adapter.record_error(error, context) } if adapter
-        on_action_error_hooks.each { |hook| safely_report { hook.call(error, context) } }
+        on_action_error_hooks.each { report_hook(it, error, context) }
         nil
+      end
+
+      # Run one on_action_error hook through safely_report. Extracted so the
+      # per-hook isolation reads as one call (no nested reporter block in the loop).
+      def report_hook(hook, error, context)
+        safely_report { hook.call(error, context) }
       end
 
       # The APM adapter resolved at engine attach time (issue #207), or nil. Held so

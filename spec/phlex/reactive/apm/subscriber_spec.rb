@@ -28,6 +28,12 @@ RSpec.describe Phlex::Reactive::APM::Subscriber do
     described_class.new(adapter).public_send(event_name.split(".").first, event)
   end
 
+  # Fire one action.phlex_reactive event through the live bus (the block is the
+  # instrumented work — a no-op here; we assert what the subscriber forwarded).
+  def fire_action_event
+    Phlex::Reactive.instrument("action", { component: "C", action: "a", outcome: :ok }) { :done }
+  end
+
   it "forwards a successful action to record_action with the payload + duration" do
     emit("action.phlex_reactive", { component: "Counter", action: "increment", outcome: :ok })
     expect(adapter.actions.size).to eq(1)
@@ -51,21 +57,21 @@ RSpec.describe Phlex::Reactive::APM::Subscriber do
   describe ".install / .uninstall (idempotency)" do
     it "installs exactly one subscription and record_action fires once per event" do
       described_class.install(adapter)
-      Phlex::Reactive.instrument("action", { component: "C", action: "a", outcome: :ok }) {}
+      fire_action_event
       expect(adapter.actions.size).to eq(1)
     end
 
     it "re-installing with the SAME adapter does not double-subscribe" do
       described_class.install(adapter)
       described_class.install(adapter)
-      Phlex::Reactive.instrument("action", { component: "C", action: "a", outcome: :ok }) {}
+      fire_action_event
       expect(adapter.actions.size).to eq(1)
     end
 
     it "uninstall removes the subscription" do
       described_class.install(adapter)
       described_class.uninstall
-      Phlex::Reactive.instrument("action", { component: "C", action: "a", outcome: :ok }) {}
+      fire_action_event
       expect(adapter.actions).to be_empty
     end
   end

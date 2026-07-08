@@ -9,18 +9,17 @@ require "rails_helper"
 RSpec.describe Phlex::Reactive::APM::Appsignal do
   subject(:adapter) { described_class.new }
 
-  # A spy standing in for the ::Appsignal module. record_calls captures what the
-  # adapter forwarded so we can assert transaction naming + tags.
+  # A spy standing in for the ::Appsignal module. Its `calls` array is captured in
+  # the closure (no class ivars) and each singleton method mirrors the real
+  # AppSignal API (set_action/add_tags/set_error — the `set_` names are the SDK's,
+  # not ours). Returns the spy; read `spy.calls` to assert what the adapter forwarded.
   def stub_appsignal
-    spy = Module.new do
-      class << self
-        attr_reader :calls
-
-        def set_action(name) = (@calls ||= []) << [:set_action, name]
-        def add_tags(tags) = (@calls ||= []) << [:add_tags, tags]
-        def set_error(error, tags) = (@calls ||= []) << [:set_error, error, tags]
-      end
-    end
+    calls = []
+    spy = Module.new
+    spy.define_singleton_method(:calls) { calls }
+    spy.define_singleton_method(:set_action) { calls << [:set_action, it] }
+    spy.define_singleton_method(:add_tags) { calls << [:add_tags, it] }
+    spy.define_singleton_method(:set_error) { |error, tags| calls << [:set_error, error, tags] }
     stub_const("Appsignal", spy)
     spy
   end
@@ -54,7 +53,7 @@ RSpec.describe Phlex::Reactive::APM::Appsignal do
 
       adapter.record_action({ component: nil, action: "increment", outcome: :invalid_token }, 1.0)
 
-      expect(appsignal.calls).to be_nil
+      expect(appsignal.calls).to be_empty
     end
   end
 

@@ -32,8 +32,10 @@ module Phlex
           return apm unless apm.is_a?(Symbol)
 
           klass_name = BUILT_INS[apm]
-          return warn_and_nil("apm = #{apm.inspect} — unknown APM flavour (known: " \
-                              "#{BUILT_INS.keys.map(&:inspect).join(", ")})") unless klass_name
+          unless klass_name
+            known = BUILT_INS.keys.map(&:inspect).join(", ")
+            return warn_and_nil("apm = #{apm.inspect} — unknown APM flavour (known: #{known})")
+          end
 
           klass = klass_name.constantize
           return klass.new if klass.available?
