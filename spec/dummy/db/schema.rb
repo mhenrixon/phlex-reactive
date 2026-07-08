@@ -51,9 +51,13 @@ ActiveRecord::Schema.define(version: 1) do
   # Issue #30: a spreadsheet-like line-item row (quantity × price = total). A
   # debounced reactive save updates ONLY the total cell via reply.streams, so the
   # sibling input the user is typing in is never torn down.
+  # Issue #208: an OPTIONAL order parent — the draft-order form creates order +
+  # rows in ONE request via accepts_nested_attributes_for; the issue #30
+  # spreadsheet rows stay parentless.
   create_table :line_items, force: true do |t|
     t.integer :quantity, null: false, default: 0
     t.integer :price, null: false, default: 0
+    t.references :order, null: true
     t.timestamps
   end
 

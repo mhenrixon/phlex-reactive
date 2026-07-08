@@ -1137,6 +1137,11 @@ export default class extends Controller {
   // missing-template warning latch.
   #boundSyncTags
   #tagsWarnedTemplate = false
+  // Draft nested-attribute rows (issue #208): the strictly-monotonic index
+  // counter (clock-seeded so it never collides with server-rendered 0..n
+  // indexes) plus the once-only missing-list/template warning latch.
+  #nestedIndex = 0
+  #nestedWarned = false
   // Connect-time compute seed (issue #199): the bound re-seed attached to
   // turbo:morph-element so an in-place morph re-runs the compute, held for teardown.
   #boundSeedCompute
@@ -1791,6 +1796,67 @@ export default class extends Controller {
     const next = tags.filter((t) => t.toLowerCase() !== tag.toLowerCase())
     if (next.length === tags.length) return
     this.#tagsWrite(field, next)
+  }
+
+  // Draft nested-attribute rows (issue #208) — the "new parent + child rows"
+  // window. The rows are FORM state (the reactive_tags posture): no token, no
+  // POST, ever — the surrounding REAL form submit carries Rails'
+  // accepts_nested_attributes_for names and the server reconciles parent +
+  // rows in ONE create. Add clones the association's server-owned
+  // <template data-reactive-nested-template="assoc"> row, swaps every NEW_ROW
+  // in the clone's name/id/for for a fresh unique index (each row posts as its
+  // own `…_attributes[<index>][field]` group), appends it to the owned
+  // [data-reactive-nested-list="assoc"] container, and focuses the new row's
+  // first field. Several collections can share one root — everything is keyed
+  // by the association name the trigger carries.
+  nestedAdd(event) {
+    event?.preventDefault?.()
+    const trigger = event?.currentTarget ?? event?.target
+    const assoc = trigger?.getAttribute?.("data-reactive-association-param")
+    if (!assoc) return
+    if (typeof this.element?.querySelectorAll !== "function") return
+
+    const owns = this.#ownershipFilter()
+    const list = [...this.element.querySelectorAll(`[data-reactive-nested-list="${assoc}"]`)].find(owns)
+    const template = [...this.element.querySelectorAll(`[data-reactive-nested-template="${assoc}"]`)].find(owns)
+    const proto = template?.content?.firstElementChild
+    if (!list || !proto) {
+      this.#warnNestedOnce(assoc)
+      return
+    }
+
+    const row = proto.cloneNode(true)
+    this.#renumberNestedRow(row, this.#nextNestedIndex())
+    list.appendChild(row)
+    const first = [...(row.querySelectorAll?.("input, select, textarea") ?? [])][0]
+    first?.focus?.()
+  }
+
+  // Remove the trigger's closest row wrapper. A DRAFT row (no [_destroy]
+  // input) leaves the DOM — it was never persisted, so removing its fields IS
+  // the removal. A PERSISTED row (an edit form rendered a hidden [_destroy]
+  // input via nested_field_name) is marked "1" and hidden instead — Rails
+  // destroys it on save. The mark dispatches a real bubbling `input` (the
+  // set-value + dispatch contract, issue #183) so dirty tracking/compute see it.
+  nestedRemove(event) {
+    event?.preventDefault?.()
+    const trigger = event?.currentTarget ?? event?.target
+    const row = trigger?.closest?.("[data-reactive-nested-row]")
+    if (!row) return
+    // The closest() walk must not escape this root — a root can itself sit
+    // inside ANOTHER collection's row (the issue #15 closest-form posture).
+    if (row.closest?.('[data-controller~="reactive"]') !== this.element) return
+
+    const destroy = [...(row.querySelectorAll?.('input[name$="[_destroy]"]') ?? [])][0]
+    if (destroy) {
+      destroy.value = "1"
+      if (typeof destroy.dispatchEvent === "function") {
+        destroy.dispatchEvent(new Event("input", { bubbles: true }))
+      }
+      row.hidden = true
+    } else {
+      row.parentNode?.removeChild?.(row)
+    }
   }
 
   // Parse a JSON string list from a root data attr; [] on absence/parse error so
@@ -3178,6 +3244,39 @@ export default class extends Controller {
       }
     }
     if (this.#filterEnabled()) this.#syncFilter()
+  }
+
+  // A fresh index per nested-row add (issue #208) — strictly monotonic and
+  // clock-seeded, so it can never collide with server-rendered integer indexes
+  // (0..n) NOR with a rapid same-millisecond double add.
+  #nextNestedIndex() {
+    this.#nestedIndex = Math.max(this.#nestedIndex + 1, Date.now())
+    return this.#nestedIndex
+  }
+
+  // Swap every NEW_ROW in the clone's name/id/for for the fresh index, so the
+  // row posts as its own `…_attributes[<index>][field]` group and labels keep
+  // pointing at their (renumbered) inputs.
+  #renumberNestedRow(row, index) {
+    const nodes = [row, ...(row.querySelectorAll?.("*") ?? [])]
+    for (const el of nodes) {
+      for (const attr of ["name", "id", "for"]) {
+        const value = el.getAttribute?.(attr)
+        if (value && value.includes("NEW_ROW")) el.setAttribute?.(attr, value.replaceAll("NEW_ROW", String(index)))
+      }
+    }
+  }
+
+  // A half-built nested-rows binding should be loud, but never per-click.
+  #warnNestedOnce(assoc) {
+    if (this.#nestedWarned) return
+    console.warn(
+      `[phlex-reactive] nested rows: no owned [data-reactive-nested-list="${assoc}"] container + ` +
+        `<template data-reactive-nested-template="${assoc}"> pair found in this root — the add ` +
+        "trigger did nothing. Render both inside the same reactive root (reactive_nested_list / " +
+        "reactive_nested_template)."
+    )
+    this.#nestedWarned = true
   }
 
   // Remove the tags morph listener on disconnect, so a stray morph event after
