@@ -161,6 +161,21 @@ module Views
                 "#advanced-tab" => "advanced",         # equals
                 "#premium-note" => %w[gold platinum])))  # membership
               ```
+
+              A `"#id"` **key** takes a full `if:`/`if_any:`/`unless:` conditions
+              Hash (#209), so a cross-root target can read a **combination** of
+              owned fields — the case that used to force a bespoke two-field JS
+              listener. The fold matches an in-root `reactive_show` exactly (each
+              term reads its own field; a missing owned field reads as blank —
+              fail-closed), and target-keyed entries mix with field-keyed ones in
+              the **one** call per root:
+
+              ```ruby
+              reactive_show_targets(
+                "#bulk-alert" => { if: { type: "company", quantity: 10.. } },
+                mode: { "#advanced-tab" => "advanced" }
+              )
+              ```
             MD
             render Views::Examples::LiveExample.new(
               component: ConditionalFieldsetComponent.new,

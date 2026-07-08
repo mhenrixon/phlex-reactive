@@ -24,9 +24,16 @@ class ConditionalFieldsetComponent < ApplicationComponent
     # Cross-root show targets (issue #164/#180): the mode select ALSO drives a
     # badge OUTSIDE this root (rendered after the component), via a where-style
     # value — visible while mode is standard OR express (a membership Array,
-    # positive form of "not off").
+    # positive form of "not off"). The MULTI-FIELD target (issue #209) shares
+    # the ONE call (mix would space-join a second call's JSON): the outside
+    # bulk alert reads TWO owned fields — company AND quantity >= 10 — via a
+    # target-keyed conditions Hash, the exact shape a bespoke JS listener used
+    # to be the only way to express.
     div(**mix(reactive_root,
-      reactive_show_targets(:mode, "#cf-mode-badge" => %w[standard express]))) do
+      reactive_show_targets(
+        mode: { "#cf-mode-badge" => %w[standard express] },
+        "#cf-bulk-alert" => { if: { type: "company", quantity: 10.. } }
+      ))) do
       shipping_mode
       gift_option
       delivery_choice

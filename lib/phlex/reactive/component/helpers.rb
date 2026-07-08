@@ -890,6 +890,22 @@ module Phlex
         #
         #   reactive_show_targets(mode: { "#advanced-tab" => "advanced" },
         #                         kind: { "#premium-note" => %w[gold platinum] })
+        #
+        # MULTI-FIELD targets (issue #209): a "#id" KEY takes a full
+        # if:/if_any:/unless: conditions Hash — the SAME language reactive_show
+        # speaks, so a cross-root target can finally read a COMBINATION of
+        # owned fields (the last case forcing a bespoke JS listener):
+        #
+        #   reactive_show_targets("#trade-warning" => {
+        #     if: { type: "trade", price: ..0 }   # type == "trade" AND price <= 0
+        #   })
+        #
+        # Target-keyed and field-keyed entries mix in the ONE call (a "#" key is
+        # unambiguous — a field name may never start with "#"). The client folds
+        # the target's DNF payload with the same per-term field reads as an
+        # in-root reactive_show: every referenced field must be OWNED by this
+        # root (a missing owned field reads as blank, fail-closed); a target
+        # whose fields are ALL unowned is left alone, like the single-field skip.
         def reactive_show_targets(field, targets = nil)
           field_maps = targets.nil? ? field : { field => targets }
           unless field_maps.is_a?(Hash) && field_maps.any?
@@ -899,16 +915,12 @@ module Phlex
           end
 
           normalized = field_maps.to_h do |name, map|
-            # Catch the forgotten-field-name misuse — reactive_show_targets(
-            # "#id" => {…}) — before the per-target validation turns it into a
-            # baffling "predicate" error.
             if name.to_s.start_with?("#")
-              raise ArgumentError,
-                "reactive_show_targets: #{name.inspect} looks like a target selector, not a field " \
-                "name — call reactive_show_targets(:field, #{name.inspect} => { ... })"
+              # Target-keyed conditions (issue #209): "#id" => { if:/if_any:/unless: }.
+              [name.to_s, normalize_show_target_conditions(name.to_s, map)]
+            else
+              [name.to_s, normalize_show_target_map(name, map)]
             end
-
-            [name.to_s, normalize_show_target_map(name, map)]
           end
 
           { data: { reactive_show_targets: normalized.to_json } }
@@ -1146,6 +1158,40 @@ module Phlex
             groups = Phlex::Reactive::ShowConditions.normalize(if: { field => value })
             [selector, groups.first]
           end
+        end
+
+        # Normalize + validate ONE target-keyed entry (issue #209): the "#id"
+        # key is a single id selector (the same declare-time guard as
+        # field-keyed targets), the value a full if:/if_any:/unless: conditions
+        # Hash compiled by ShowConditions into the SAME { "any" => groups } DNF
+        # payload reactive_show emits. Anything else — a bare value, unknown
+        # keys, empty conditions — raises a guided error at render (a dead
+        # binding must never reach the browser).
+        def normalize_show_target_conditions(selector, conditions)
+          unless selector.match?(DSL::MIRROR_ID_SELECTOR)
+            raise ArgumentError,
+              "reactive_show_targets target #{selector.inspect} must be a single " \
+              "ID selector (\"#id\") — cross-root visibility is id-allowlisted, like mirror: (#159)"
+          end
+          unless conditions.is_a?(Hash) && conditions.any?
+            raise ArgumentError,
+              "reactive_show_targets: a target key takes a conditions Hash — " \
+              "reactive_show_targets(#{selector.inspect} => { if: { field: value, ... } }); " \
+              "to key by field instead: reactive_show_targets(:field, #{selector.inspect} => value). " \
+              "Got #{selector.inspect} => #{conditions.inspect}"
+          end
+          # Unknown keys are reported BEFORE the presence check so { bogus: 1 }
+          # names its offender instead of the generic shape message (specific
+          # beats generic). A non-empty hash surviving this subtraction holds
+          # only condition keys, so no separate presence check remains.
+          if (unknown = conditions.keys - SHOW_CONDITION_KEYS).any?
+            raise ArgumentError,
+              "reactive_show_targets #{selector.inspect}: unknown conditions key(s) " \
+              "#{unknown.map(&:inspect).join(", ")} — a target's conditions Hash takes only " \
+              "if:/if_any:/unless: (the reactive_show language)"
+          end
+
+          { "any" => Phlex::Reactive::ShowConditions.normalize(**conditions) }
         end
 
         # Reject the removed 0.9.5 reactive_show surface (issue #180 clean break)

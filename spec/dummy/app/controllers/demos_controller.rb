@@ -267,6 +267,7 @@ class DemosController < ActionController::Base
     component = render_to_string(ConditionalFieldsetComponent.new, layout: false)
     outside = <<~HTML
       <span id="cf-mode-badge" hidden data-testid="mode-badge">Shipping enabled</span>
+      <aside id="cf-bulk-alert" hidden data-testid="bulk-alert">Company bulk order — approval needed</aside>
     HTML
     render html: component + outside.html_safe, layout: true
   end

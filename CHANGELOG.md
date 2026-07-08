@@ -8,6 +8,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Multi-field cross-root targets — `reactive_show_targets` speaks the full
+  conditions language (#209).** A `"#id"` KEY now takes an `if:`/`if_any:`/
+  `unless:` conditions Hash, so an OUTSIDE element can show/hide from a
+  COMBINATION of owned fields — `reactive_show_targets("#trade-warning" =>
+  { if: { type: "trade", price: ..0 } })` — the last case that forced a
+  bespoke two-field JS listener on otherwise-declarative forms. The client
+  folds the target's DNF payload with the SAME per-term owned-field reads as
+  an in-root `reactive_show` (missing owned field reads blank, fail-closed);
+  a target whose referenced fields are ALL unowned is left alone (the
+  single-field skip, generalized). Target-keyed and field-keyed entries mix
+  in the ONE call per root (a field name may never start with `#`, so the
+  key routes unambiguously); existing field-keyed calls emit a byte-identical
+  wire. Declare-time validation stays loud: a bare value, unknown keys, or an
+  empty conditions Hash under a `"#id"` key raises a guided `ArgumentError`.
+
 - **JSON mode for draft nested rows — `reactive_nested_list(:assoc, as: :json)` (#208).**
   The draft-rows primitive (#208) posts standard Rails
   `accepts_nested_attributes_for` names. But many apps persist a "new parent +

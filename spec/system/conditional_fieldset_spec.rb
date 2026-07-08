@@ -107,4 +107,38 @@ RSpec.describe "Value-conditional visibility (issue #180 — conditions language
 
     expect(page.evaluate_script("window.__fetchCount")).to eq(0)
   end
+
+  # Issue #209: the cross-root MULTI-FIELD target — an outside alert reading
+  # TWO owned fields (type == "company" AND quantity >= 10) via a target-keyed
+  # conditions Hash, declared in the SAME reactive_show_targets call as the
+  # single-field badge (the mixed one-call form — mix would space-join a second
+  # call). The exact case that used to force a bespoke two-field JS listener.
+  it "toggles a cross-root target from a COMBINATION of fields — zero fetches" do
+    visit "/conditional_fieldset"
+    install_fetch_spy
+
+    expect(page).to have_css("[data-testid='bulk-alert']", visible: :hidden)
+
+    # One field matching is not enough — the AND holds it closed.
+    select "Company", from: "type"
+    expect(page).to have_css("[data-testid='bulk-alert']", visible: :hidden)
+
+    # Both match → the outside alert reveals.
+    fill_in "quantity", with: "12"
+    expect(page).to have_css("[data-testid='bulk-alert']", text: "approval needed")
+
+    # EITHER field leaving its range re-hides it.
+    select "Individual", from: "type"
+    expect(page).to have_css("[data-testid='bulk-alert']", visible: :hidden)
+    select "Company", from: "type"
+    expect(page).to have_css("[data-testid='bulk-alert']", text: "approval needed")
+    fill_in "quantity", with: "5"
+    expect(page).to have_css("[data-testid='bulk-alert']", visible: :hidden)
+
+    # The single-field badge in the SAME call still works (the mixed map).
+    select "Express", from: "mode"
+    expect(page).to have_css("[data-testid='mode-badge']", text: "Shipping enabled")
+
+    expect(page.evaluate_script("window.__fetchCount")).to eq(0)
+  end
 end

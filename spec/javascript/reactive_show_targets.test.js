@@ -347,3 +347,171 @@ test("a non-numeric field value hides the numeric target (NaN → false), never 
   expect(() => buildController(root, { "#surcharge": surcharge }).connect()).not.toThrow()
   expect(surcharge.hidden).toBe(true) // "" → NaN → false
 })
+
+// --- Issue #209: TARGET-KEYED multi-field conditions ---
+// A "#id" key in the map carries a full DNF payload ({ any: [[term,…],…] }) —
+// the SAME shape data-reactive-show holds — and folds with the same per-term
+// field reads (each term resolves its OWN owned field). This is the cross-root
+// multi-field case: "show the outside alert while type == trade AND price <= 0".
+
+test("a target-keyed DNF payload ANDs TWO fields' values (both ways, both fields)", () => {
+  const root = reactiveRoot({
+    "#trade-warning": {
+      any: [[{ field: "type", equals: "trade" }, { field: "price", lte: 0 }]],
+    },
+  })
+  const type = new FakeNode({ tag: "select", name: "type", value: "sale" })
+  const price = new FakeNode({ tag: "input", type: "number", name: "price", value: "5" })
+  root.append(type, price)
+  const warning = new FakeNode({ tag: "aside" })
+  warning.hidden = true
+
+  buildController(root, { "#trade-warning": warning }).connect()
+  expect(warning.hidden).toBe(true) // neither matches
+
+  type.value = "trade"
+  root.emit("change", { target: type })
+  expect(warning.hidden).toBe(true) // price still > 0 — AND holds it closed
+
+  price.value = "0"
+  root.emit("input", { target: price })
+  expect(warning.hidden).toBe(false) // both match
+
+  type.value = "sale"
+  root.emit("change", { target: type })
+  expect(warning.hidden).toBe(true) // either field leaving re-hides
+})
+
+test("target-keyed OR groups reveal when EITHER group matches", () => {
+  const root = reactiveRoot({
+    "#warn": {
+      any: [
+        [{ field: "director", equals: "true" }],
+        [{ field: "role", equals: "individual" }],
+      ],
+    },
+  })
+  const director = new FakeNode({ tag: "input", type: "checkbox", name: "director", value: "on", checked: false })
+  const role = new FakeNode({ tag: "select", name: "role", value: "company" })
+  root.append(director, role)
+  const warn = new FakeNode({ tag: "div" })
+
+  buildController(root, { "#warn": warn }).connect()
+  expect(warn.hidden).toBe(true)
+
+  role.value = "individual"
+  root.emit("change", { target: role })
+  expect(warn.hidden).toBe(false) // second group
+
+  role.value = "company"
+  director.checked = true
+  root.emit("change", { target: director })
+  expect(warn.hidden).toBe(false) // first group
+})
+
+test("field-keyed and target-keyed entries apply in ONE pass (the mixed map)", () => {
+  const root = reactiveRoot({
+    mode: { "#badge": { not: "off" } }, // legacy field-keyed
+    "#combo": { any: [[{ field: "mode", equals: "express" }, { field: "gift", equals: "true" }]] },
+  })
+  const mode = new FakeNode({ tag: "select", name: "mode", value: "express" })
+  const gift = new FakeNode({ tag: "input", type: "checkbox", name: "gift", value: "on", checked: true })
+  root.append(mode, gift)
+  const badge = new FakeNode({ tag: "span" })
+  badge.hidden = true
+  const combo = new FakeNode({ tag: "div" })
+  combo.hidden = true
+
+  buildController(root, { "#badge": badge, "#combo": combo }).connect()
+
+  expect(badge.hidden).toBe(false) // legacy arm
+  expect(combo.hidden).toBe(false) // #209 arm, same sync pass
+})
+
+test("a target whose fields are ALL unowned is left alone (the single-field skip, generalized)", () => {
+  const root = reactiveRoot({
+    "#warn": { any: [[{ field: "inner_a", equals: "x" }, { field: "inner_b", equals: "y" }]] },
+  })
+  const inner = new FakeNode({ tag: "div", controller: "reactive" })
+  inner.append(
+    new FakeNode({ tag: "input", name: "inner_a", value: "x" }),
+    new FakeNode({ tag: "input", name: "inner_b", value: "y" })
+  )
+  root.append(inner)
+  const warn = new FakeNode({ tag: "div" })
+  warn.hidden = true
+
+  buildController(root, { "#warn": warn }).connect()
+  expect(warn.hidden).toBe(true) // nested root's fields — this root never toggles
+})
+
+test("a PARTIALLY owned target folds the missing field as blank (fail-closed)", () => {
+  const root = reactiveRoot({
+    "#warn": { any: [[{ field: "type", equals: "trade" }, { field: "ghost", equals: "x" }]] },
+  })
+  const type = new FakeNode({ tag: "select", name: "type", value: "trade" })
+  root.append(type)
+  const warn = new FakeNode({ tag: "div" })
+  warn.hidden = true
+
+  buildController(root, { "#warn": warn }).connect()
+  expect(warn.hidden).toBe(true) // ghost reads "" — the AND can never pass
+})
+
+test("a malformed target-keyed payload warn-skips while siblings still apply", () => {
+  const root = reactiveRoot({
+    "#bad-any": { any: "not-an-array" },
+    "#bad-empty": { any: [] },
+    "#ok": { any: [[{ field: "mode", equals: "on" }]] },
+  })
+  const mode = new FakeNode({ tag: "select", name: "mode", value: "on" })
+  root.append(mode)
+  const badAny = new FakeNode({ tag: "div" })
+  const badEmpty = new FakeNode({ tag: "div" })
+  badAny.hidden = badEmpty.hidden = true
+  const ok = new FakeNode({ tag: "div" })
+  ok.hidden = true
+
+  const warns = []
+  const originalWarn = console.warn
+  console.warn = (msg) => warns.push(String(msg))
+  try {
+    expect(() =>
+      buildController(root, { "#bad-any": badAny, "#bad-empty": badEmpty, "#ok": ok }).connect()
+    ).not.toThrow()
+  } finally {
+    console.warn = originalWarn
+  }
+
+  expect(badAny.hidden).toBe(true) // malformed — untouched
+  expect(badEmpty.hidden).toBe(true)
+  expect(ok.hidden).toBe(false) // the sibling still applied
+  expect(warns.some((w) => w.includes("reactive_show_targets"))).toBe(true)
+})
+
+test("a target-keyed NON-id key is refused (warn + skip) like the field-keyed guard", () => {
+  const root = reactiveRoot({
+    "#a b": { any: [[{ field: "mode", equals: "on" }]] }, // starts with # but not a single id
+  })
+  const mode = new FakeNode({ tag: "select", name: "mode", value: "on" })
+  root.append(mode)
+  const sneaky = new FakeNode({ tag: "div" })
+  sneaky.hidden = true
+
+  expect(() => buildController(root, { "#a b": sneaky }).connect()).not.toThrow()
+  expect(sneaky.hidden).toBe(true)
+})
+
+test("the targets-attr gate alone enables the sync for a target-keyed-only map", () => {
+  const root = reactiveRoot({
+    "#warn": { any: [[{ field: "mode", equals: "on" }]] },
+  })
+  const mode = new FakeNode({ tag: "select", name: "mode", value: "on" })
+  root.append(mode) // no owned element bindings — the attr alone must gate
+  const warn = new FakeNode({ tag: "div" })
+  warn.hidden = true
+
+  buildController(root, { "#warn": warn }).connect()
+  expect(warn.hidden).toBe(false)
+  expect((root.listeners.input ?? []).length).toBe(1)
+})
