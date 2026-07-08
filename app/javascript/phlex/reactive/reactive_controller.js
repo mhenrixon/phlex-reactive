@@ -125,9 +125,28 @@ export function registerReactiveJs() {
 // keystrokes can never paint stale totals over fresh ones.
 const pendingDefers = new Map()
 
+// Register/drop a target's pending defer entry, keeping the GLOBAL activity
+// counter (issue #201) balanced against the Map's ACTUAL key presence — a defer
+// is one in-flight reactive operation for as long as its registry entry lives.
+// Keying enter/exit on the presence TRANSITION (not the raw call) means a
+// re-set of an already-present key, or a delete of an absent one, can never
+// unbalance the count. Both the fetch (pull) and stream (push) lane route their
+// registry mutations through here, so the push lane is counted correctly even
+// though its DOM pending markers clear by a node swap, not clearDeferPending.
+function setPendingDefer(targetId, entry) {
+  const isNew = !pendingDefers.has(targetId)
+  pendingDefers.set(targetId, entry)
+  if (isNew) enterReactiveActivity()
+}
+
+function deletePendingDefer(targetId) {
+  if (pendingDefers.delete(targetId)) exitReactiveActivity()
+}
+
 // Test seam: clear the module-level registry between unit tests. Also resets
 // the one-shot settle-listener guard so a test's fresh document re-registers
-// the turbo:before-stream-render settler.
+// the turbo:before-stream-render settler. Does NOT touch the activity counter —
+// resetReactiveActivity is its own seam (the two are reset together in tests).
 export function resetReactiveDefers() {
   pendingDefers.clear()
   deferStreamSettleRegistered = false
@@ -184,7 +203,7 @@ function settleStreamDeferOnRender(event) {
     ? target.slice("reactive-defer-src-".length)
     : target
   const entry = pendingDefers.get(targetId)
-  if (entry?.via === "stream") pendingDefers.delete(targetId)
+  if (entry?.via === "stream") deletePendingDefer(targetId)
 }
 
 // The pull lane: mark the target pending and POST the signed defer token to
@@ -198,7 +217,7 @@ function startFetchDefer(targetId, token) {
   supersedeDefer(targetId)
   markDeferPending(el)
   const entry = { via: "fetch", abort: new AbortController(), timedOut: false }
-  pendingDefers.set(targetId, entry)
+  setPendingDefer(targetId, entry)
   performDeferFetch(targetId, entry, token)
 }
 
@@ -248,7 +267,7 @@ function startStreamDefer(targetId, directive) {
   // re-finds the element by id instead. The entry is dropped on
   // supersession or when the arriving broadcast replaces the target (a
   // turbo:before-stream-render hook, below).
-  pendingDefers.set(targetId, { via: "stream" })
+  setPendingDefer(targetId, { via: "stream" })
 }
 
 // The deterministic id of a target's one-shot <pgbus-stream-source>.
@@ -332,7 +351,7 @@ async function performDeferFetch(targetId, entry, token) {
 function supersedeDefer(targetId) {
   const existing = pendingDefers.get(targetId)
   if (!existing) return
-  pendingDefers.delete(targetId)
+  deletePendingDefer(targetId)
   if (existing.via === "fetch") existing.abort.abort()
   // Stream lane: re-find the old source by its deterministic id and remove it
   // (unsubscribe) — we deliberately don't hold a strong ref to the detached
@@ -353,7 +372,7 @@ function clearDeferPending(el) {
 // Success/204: drop the registry entry, clear pending, and clear any prior
 // defer failure marker (recovery resets error-driven CSS, issue #100 style).
 function settleDefer(targetId) {
-  pendingDefers.delete(targetId)
+  deletePendingDefer(targetId)
   const el = document.getElementById(targetId)
   if (!el) return
   clearDeferPending(el)
@@ -365,7 +384,7 @@ function settleDefer(targetId) {
 // reactive:error whose retry() re-enters the defer fetch with the SAME token
 // (still valid inside the TTL; an expired token 400s into this same path).
 function failDefer(targetId, token, status) {
-  pendingDefers.delete(targetId)
+  deletePendingDefer(targetId)
   const el = document.getElementById(targetId)
   if (!el) return
   clearDeferPending(el)
@@ -558,6 +577,87 @@ function attachLatencyHandle() {
 // Test seam: forget the one-time active-sim banner so the next test re-warns.
 export function __resetReactiveLatencyForTest() {
   latencyBannerShown = false
+}
+
+// --- Global reactive-activity signal (issue #201) --------------------------
+// A DOCUMENT-LEVEL count of in-flight reactive operations — the direct analogue
+// of Turbo's progress bar, but for reactive round trips and deferred renders
+// instead of navigations. Anything that starts an async reactive operation calls
+// enterReactiveActivity(); when it settles (success OR failure, on every path) it
+// calls exitReactiveActivity(). The count is exposed two ways so an app — or a
+// system test — can key off "is the reactive layer settling?" without knowing
+// about any individual root:
+//
+//   * a marker on <html>: data-reactive-active present while count > 0 (CSS can
+//     drive a global spinner; code/tests can read it). A DISTINCT name from the
+//     per-root data-reactive-busy so a [data-reactive-busy] selector never also
+//     matches the document element.
+//   * events on document: reactive:busy on the 0 -> >0 edge, reactive:idle on the
+//     >0 -> 0 edge — EDGES ONLY (not once per op), each carrying { count }.
+//
+// It sums ACROSS all reactive roots (module-level, not per-controller) and across
+// the two async lifecycles wired below:
+//   * dispatch — entered in #applyBusy (at ENQUEUE, so the queue wait counts too),
+//     exited in the settle closure #perform runs in its finally.
+//   * defer    — entered/exited with the pendingDefers registry (set/delete), the
+//     ONE registry both the fetch (pull) and the stream (push) lane maintain — so
+//     the push lane stays balanced even though it clears its pending markers by a
+//     node swap, not clearDeferPending. A supersede is delete-then-set (net zero),
+//     which is correct: a fast typist's replaced defer is still "layer busy".
+//
+// compute-seed is deliberately NOT counted: recompute() is synchronous, so a seed
+// is fully applied by the time the call returns — there is no async window to await
+// (the "value settles a beat after a morph/seed" case the issue describes is
+// covered by the System test helpers' re-resolve-by-id polling, not this counter).
+export const ACTIVE_ATTR = "data-reactive-active"
+
+let activityCount = 0
+
+// Increment the global in-flight count; on the 0 -> 1 edge, mark <html> and fire
+// reactive:busy. Fully defensive — a non-browser/test document with no
+// documentElement/dispatchEvent still tracks the count and simply skips the DOM
+// side effects (a global signal must never throw during bootstrap or a round trip).
+export function enterReactiveActivity() {
+  activityCount++
+  if (activityCount === 1) syncReactiveActivity("reactive:busy")
+}
+
+// Decrement the global in-flight count, clamped at 0 so an unbalanced exit can
+// never drive it negative (which would wedge the marker on forever). On the
+// 1 -> 0 edge, clear the <html> marker and fire reactive:idle.
+export function exitReactiveActivity() {
+  if (activityCount === 0) return
+  activityCount--
+  if (activityCount === 0) syncReactiveActivity("reactive:idle")
+}
+
+// The current in-flight count — a test seam and a runtime read (an app can gate an
+// "unsaved changes" prompt on `reactiveActivityCount() > 0`).
+export function reactiveActivityCount() {
+  return activityCount
+}
+
+// Test seam: reset the module-level counter (and clear the marker) between tests,
+// since the module is imported once per bun run.
+export function resetReactiveActivity() {
+  activityCount = 0
+  const root = typeof document !== "undefined" ? document.documentElement : null
+  root?.removeAttribute?.(ACTIVE_ATTR)
+}
+
+// Write the <html> marker from the current count and fire the edge event on
+// document. Both sides are independently guarded so a partial document stub (a
+// documentElement without toggleAttribute, or a document without dispatchEvent)
+// degrades to a no-op rather than throwing.
+function syncReactiveActivity(eventName) {
+  if (typeof document === "undefined") return
+  const root = document.documentElement
+  if (typeof root?.toggleAttribute === "function") {
+    root.toggleAttribute(ACTIVE_ATTR, activityCount > 0)
+  }
+  if (typeof document.dispatchEvent === "function" && typeof CustomEvent === "function") {
+    document.dispatchEvent(new CustomEvent(eventName, { detail: { count: activityCount } }))
+  }
 }
 
 export function registerReactiveActions() {
@@ -2993,12 +3093,19 @@ export default class extends Controller {
   #applyBusy(action, trigger, busy) {
     this.#markBusy(action, trigger)
     const undo = busy ? this.#applyHint(busy, trigger, false) : []
+    // Global activity signal (issue #201): this enqueue is one in-flight reactive
+    // operation. Entered HERE (at enqueue, via #applyBusy) so the document marker
+    // covers the whole pending window — queue wait included — exactly like the
+    // per-root busy vocabulary. Exited once in the settle closure below, which
+    // #perform runs in its finally on EVERY exit path (success or any failure).
+    enterReactiveActivity()
 
     let settled = false
     return () => {
       if (settled) return // one settle per enqueue, even if called twice
       settled = true
       this.#unmarkBusy(action, trigger)
+      exitReactiveActivity()
       // Busy reverts on SETTLE regardless of outcome, guarded per element.
       for (const op of undo) op()
     }

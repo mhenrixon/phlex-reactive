@@ -314,3 +314,9 @@ end
 # them only when RSpec is present, so a Minitest app can mix in TestHelpers and
 # assert on Result predicates directly with no RSpec dependency.
 require "phlex/reactive/test_helpers/matchers" if defined?(RSpec::Matchers)
+
+# The system/browser helpers (wait_for_reactive + the re-resolving value/text
+# matchers, issue #201) are optional too: load them only when Capybara is present
+# (a dev/test dependency), keeping them entirely out of the runtime path — the
+# same optional-require gate as the matchers above and the engine below.
+require "phlex/reactive/test_helpers/system" if defined?(Capybara)

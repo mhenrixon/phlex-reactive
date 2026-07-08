@@ -47,6 +47,11 @@ RSpec.configure do
   it.include Phlex::Reactive::TestHelpers
   it.include Phlex::Reactive::TestHelpers, type: :request
 
+  # The system/browser helpers (issue #201): wait_for_reactive + the re-resolving
+  # value/text matchers, loaded only when Capybara is present and mixed into
+  # system examples exactly as a downstream app would.
+  it.include Phlex::Reactive::TestHelpers::System, type: :system if defined?(Phlex::Reactive::TestHelpers::System)
+
   # The gem's legacy request helpers (token_for / post_action, issue #40) now
   # delegate to the public module — dogfooding the shipped API.
   it.include ActionRequestHelpers, type: :request

@@ -978,6 +978,11 @@ loader.ignore("#{lib}/generators")
 # Zeitwerk's naming — test_helpers.rb requires it explicitly (only when RSpec is
 # present), and the loader must ignore it.
 loader.ignore("#{lib}/phlex/reactive/test_helpers/matchers.rb")
+# The system/browser test helpers (issue #201) are Capybara-only — a dev/test
+# dependency, never a runtime one. test_helpers.rb requires this file explicitly
+# only when Capybara is present, so the loader must ignore it (otherwise an
+# eager-load in production would define browser helpers with no Capybara).
+loader.ignore("#{lib}/phlex/reactive/test_helpers/system.rb")
 # The MCP diagnostic tool tree (issue #168) subclasses the OPTIONAL `mcp` gem's
 # constants (MCP::Tool) at class-definition time, so the whole mcp/ subdirectory
 # must stay out of the autoloader — Phlex::Reactive::MCP.load! requires it in
