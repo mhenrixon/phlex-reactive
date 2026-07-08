@@ -24,6 +24,7 @@ module Views
           the_wiring
           one_row
           the_reconcile
+          json_mode
           draft_actions
           notes
         end
@@ -142,6 +143,59 @@ module Views
               A removed draft row simply isn't in the POST; a `_destroy`-marked
               persisted row rides along as `_destroy=1` and Rails deletes it.
             MD
+          end
+        end
+
+        def json_mode
+          DocsUI::Section('JSON mode — one hidden field instead of nested attributes') do
+            md <<~MD
+              Not every app persists a "new parent + child rows" form through
+              `accepts_nested_attributes_for`. A common alternative serializes
+              the rows into a single hidden field and `JSON.parse`s it in the
+              controller. If that is your existing persistence path, opt the
+              list into `as: :json` and **keep the controller exactly as it is**
+              — the primitive adapts to your wire, not the other way around:
+
+              ```ruby
+              # rows land here AND sync into the hidden field below:
+              div(**reactive_nested_list(:line_items, as: :json)) { }
+              # the client keeps this in sync (seed "[]" so an empty submit posts one):
+              input(type: 'hidden', **reactive_field(:line_items), value: '[]')
+
+              template(**reactive_nested_template(:line_items)) { row_fields }
+              button(**reactive_nested_add(:line_items)) { 'Add item' }
+              ```
+
+              The row markup is unchanged — the same `<template>`, the same
+              `nested_field_name`, the same add/remove triggers. In JSON mode the
+              generic controller mirrors the surviving rows into that one hidden
+              field as a JSON array on every add / remove / keystroke (the
+              set-value + dispatch contract, so dirty tracking and compute still
+              see it), **inferring each JSON key from the trailing bracket
+              segment** of a row input's name — `order[line_items_attributes][3][quantity]`
+              → `"quantity"`. A removed row simply leaves the array (JSON has no
+              `_destroy` marker — an absent row *is* the removal).
+
+              The reconcile is your own hand-rolled parse, no nested attributes:
+
+              ```ruby
+              rows = JSON.parse(params.require(:order).permit(:line_items)[:line_items].presence || '[]')
+              order = Order.create!(total: params[:order][:total])
+              rows.each { order.line_items.create!(quantity: it['quantity'], price: it['price']) }
+              ```
+            MD
+
+            DocsUI::Callout(:note) do
+              md <<~MD
+                The per-row `…_attributes[i][field]` names still render (that is
+                what the key is inferred from), so a submit posts them alongside
+                the JSON field. A controller that permits only the JSON param
+                ignores the extras — the hidden field is the single source of
+                truth. Want a byte-clean POST? Drop the row-input names; then the
+                keys must be declared, which `as: :json` (infer-from-names)
+                deliberately doesn't require.
+              MD
+            end
           end
         end
 
