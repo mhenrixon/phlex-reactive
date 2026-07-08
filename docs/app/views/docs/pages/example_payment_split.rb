@@ -312,6 +312,19 @@ module Views
               plain 'otherwise a later morph repaints stale text. That lockstep is the reconcile '
               plain 'contract the whole new-vs-persisted split relies on.'
             end
+            DocsUI::Callout(:note, title: 'The first paint is computed for you (#199)') do
+              plain 'On connect, the compute root runs one full pass, so the outputs and '
+              plain 'mirrors paint from the reducer on first render — even if you rendered '
+              plain 'the derived fields blank. You do NOT need to dispatch a synthetic '
+              code { 'input' }
+              plain ' to seed a fresh render (that used to race the root\'s wiring and '
+              plain 'under-apply). Server-seeding the same value is still worth it for a '
+              plain 'no-flash first paint and the no-JS / SSR case; the connect seed is the '
+              plain 'safety net when a value is only computable client-side. The seed also '
+              plain 're-runs on '
+              code { 'turbo:morph-element' }
+              plain ', so an in-place morph reconciles too.'
+            end
           end
         end
 

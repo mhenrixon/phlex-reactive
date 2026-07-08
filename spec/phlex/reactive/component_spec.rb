@@ -624,6 +624,19 @@ RSpec.describe Phlex::Reactive::Component do
       expect(attrs[:data][:action]).to include("input->reactive#recompute")
     end
 
+    # Issue #199: the root carries a seed marker so the client self-seeds the
+    # derived fields on connect (a fresh render computes them WITHOUT waiting for
+    # the first user input, and with no synthetic seed `input` to race).
+    it "emits the connect-time seed marker for a compute binding" do
+      attrs = instance.send(:reactive_root, compute: :split)
+      expect(attrs[:data][:reactive_compute_seed]).to eq("true")
+    end
+
+    it "emits NO seed marker when there is no compute binding" do
+      attrs = instance.send(:reactive_root, compute: nil)
+      expect(attrs[:data]).not_to have_key(:reactive_compute_seed)
+    end
+
     it "keeps the full reactive root (id + controller + token)" do
       attrs = instance.send(:reactive_root, compute: :split)
       expect(attrs[:data][:controller]).to eq("reactive")

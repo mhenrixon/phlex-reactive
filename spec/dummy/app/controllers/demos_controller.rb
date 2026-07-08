@@ -114,6 +114,20 @@ class DemosController < ActionController::Base
     render_component PostPreviewComponent.new(todo: Todo.find(params[:id]))
   end
 
+  # Connect-time compute seed (issue #199): a freshly-rendered compute root whose
+  # derived outputs + mirror are rendered BLANK, so the client MUST self-seed them
+  # on connect (no user input, no round trip). The recap node OUTSIDE the root
+  # seeds "—" so the spec PROVES the mirror painted (the text must change).
+  def compute_seed
+    component = render_to_string(ComputeSeedComponent.new(first: 2, second: 4), layout: false)
+    recap = <<~HTML
+      <div data-testid="seed-summary" style="padding: 2rem">
+        Total: <span id="seed-total-label">—</span>
+      </div>
+    HTML
+    render html: component + recap.html_safe, layout: true
+  end
+
   def notifications
     render_component NotificationsListComponent.new
   end
