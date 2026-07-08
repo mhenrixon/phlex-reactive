@@ -115,6 +115,29 @@ class DemosController < ActionController::Base
     render_component OrderComponent.new(order: Order.find(params[:id]))
   end
 
+  # Issue #208: the draft nested-attribute rows form — a "new order + line
+  # items" page building child rows client-side BEFORE the parent exists.
+  def draft_order
+    render_component DraftOrderFormComponent.new
+  end
+
+  # The reconcile half (issue #208): the REAL form submit posts
+  # order[line_items_attributes][<index>][…] and accepts_nested_attributes_for
+  # creates the order + rows in ONE request. The confirmation page carries
+  # testids so the system spec can assert exactly what persisted.
+  def create_order
+    order = Order.create!(create_order_params)
+    items = order.line_items.map do
+      %(<li data-testid="created-item">#{it.quantity} × #{it.price}</li>)
+    end.join
+    render html: <<~HTML.html_safe, layout: true
+      <div data-testid="order-created">
+        <p>Order created with <span data-testid="item-count">#{order.line_items.count}</span> items</p>
+        <ul>#{items}</ul>
+      </div>
+    HTML
+  end
+
   # reactive_text + typed compute (issue #104): a live title preview + character
   # counter that update in-browser as you type (no round trip), then a save
   # reconciles through the server (the morph re-seeds the derived heading/counter).
@@ -308,5 +331,11 @@ class DemosController < ActionController::Base
   def render_component(component)
     html = render_to_string(component, layout: false)
     render html: html.html_safe, layout: true
+  end
+
+  # Issue #208: the nested-attributes permit — the standard Rails shape for a
+  # parent + indexed child rows (id/_destroy cover the edit-form flow too).
+  def create_order_params
+    params.require(:order).permit(:total, line_items_attributes: %i[id quantity price _destroy])
   end
 end

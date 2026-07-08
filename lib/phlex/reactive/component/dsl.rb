@@ -475,10 +475,19 @@ module Phlex
             kwargs = {}
 
             if reactive_record_key
-              record = GlobalID::Locator.locate(payload.fetch("gid"))
-              raise(ActiveRecord::RecordNotFound, "reactive record missing") unless record
+              if (gid = payload["gid"])
+                record = GlobalID::Locator.locate(gid)
+                raise(ActiveRecord::RecordNotFound, "reactive record missing") unless record
 
-              kwargs[reactive_record_key] = record
+                kwargs[reactive_record_key] = record
+              else
+                # A DRAFT token (issue #208): Component::Identity signs no gid
+                # for an unsaved (or nil) record. Omit the kwarg — the
+                # component's initialize default seeds a fresh draft, mirroring
+                # first render — so a draft parent can run real server actions
+                # (its transient identity rides in the signed state instead).
+                ensure_draft_default!
+              end
             end
 
             if reactive_state_keys.any?
@@ -495,6 +504,20 @@ module Phlex
             end
 
             new(**kwargs)
+          end
+
+          # A draft token can only rebuild through the record kwarg's initialize
+          # default (issue #208). A component whose initialize REQUIRES the
+          # record can't render drafts — teach the fix instead of exploding
+          # with a bare missing-keyword ArgumentError deep in new(**kwargs).
+          def ensure_draft_default!
+            return unless instance_method(:initialize).parameters.include?([:keyreq, reactive_record_key])
+
+            raise Phlex::Reactive::Error,
+              "#{self}: the action token carries no record gid (the #{reactive_record_key} was unsaved " \
+              "when rendered — a draft), but initialize requires `#{reactive_record_key}:`. Give the " \
+              "kwarg a default (e.g. `#{reactive_record_key}: nil` or a fresh record) so the draft " \
+              "can rebuild through it."
           end
         end
       end

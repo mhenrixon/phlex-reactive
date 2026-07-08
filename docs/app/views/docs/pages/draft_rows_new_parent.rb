@@ -1,0 +1,210 @@
+# frozen_string_literal: true
+
+# Zeitwerk resolves this compact reference through the directory-implied
+# namespaces (app/views/docs/pages/ → Views::Docs::Pages), so there's no need
+# for the 4-level nested-module ceremony.
+module Views
+  module Docs
+    module Pages
+      class DraftRowsNewParent < DocsUI::Page
+        title 'Example: draft rows for a new parent'
+        eyebrow 'Examples'
+        description 'Build a "new parent + child rows" Rails form with reactive Phlex: add/remove line items ' \
+                    'client-side before the parent exists, reconcile via accepts_nested_attributes_for'
+
+        def lead
+          'The "new order + line items" form: the user builds up child rows BEFORE ' \
+            'the parent exists. An unsaved parent has no GlobalID to sign, so this ' \
+            'pre-save window runs entirely client-side — zero round trips — and the ' \
+            'real form submit creates parent + rows in ONE request.'
+        end
+
+        def content
+          the_problem
+          the_wiring
+          one_row
+          the_reconcile
+          draft_actions
+          notes
+        end
+
+        private
+
+        def the_problem
+          DocsUI::Section('Why this can’t be a reactive collection (yet)') do
+            md <<~MD
+              A [reactive collection](/docs/example-collections) assumes the parent
+              the rows attach to already exists: the row actions re-derive it from a
+              signed record identity, which needs a GlobalID — an `id`. A parent that
+              is still a **draft** (`new_record?`) can't be signed, so the classic
+              "new X" form (build line items, tasks, attachments; save everything at
+              once) traditionally falls back to bespoke JavaScript: clone a `<tr>`,
+              renumber indexes, serialize into the form on submit.
+
+              `reactive_nested_*` is that pattern as a primitive, the `reactive_tags`
+              posture: the rows are **form state**, add/remove run entirely
+              client-side (no token, no POST — it works in a token-less
+              `ClientBindings` component), and the surrounding **real form submit**
+              posts standard Rails `parent[assoc_attributes][<index>][field]` names
+              so `accepts_nested_attributes_for` reconciles in one create.
+            MD
+          end
+        end
+
+        def the_wiring
+          DocsUI::Section('The wiring') do
+            md <<~MD
+              Three markers and two triggers, all keyed by the association name (so
+              several collections can share one root):
+
+              ```ruby
+              class DraftOrderForm < ApplicationComponent
+                include Phlex::Reactive::ClientBindings
+
+                reactive_scope :order   # names post as order[line_items_attributes][…]
+
+                def view_template
+                  div(**reactive_root(id: 'draft_order_form')) do
+                    form(action: orders_path, method: 'post', data: { turbo: 'false' }) do
+                      input(**reactive_field(:total, type: 'number', value: '0'))
+
+                      div(**reactive_nested_list(:line_items)) { }             # rows land here
+                      template(**reactive_nested_template(:line_items)) { row_fields }
+                      button(**reactive_nested_add(:line_items)) { 'Add item' }
+
+                      button(type: 'submit') { 'Create order' }
+                    end
+                  end
+                end
+              end
+              ```
+
+              Clicking **add** clones the `<template>` row and swaps every `NEW_ROW`
+              placeholder in the clone's `name`/`id`/`for` attributes for a fresh
+              unique index — clock-seeded and strictly monotonic, so server-rendered
+              `0..n` indexes and a same-millisecond double click can never collide —
+              then focuses the new row's first field. **Remove** deletes a draft row
+              from the DOM; on a row carrying a hidden `[_destroy]` input (an edit
+              form's persisted row) it marks it `"1"` and hides the row instead, so
+              Rails destroys it on save.
+            MD
+          end
+        end
+
+        def one_row
+          DocsUI::Section('One row, authored once') do
+            md <<~MD
+              `nested_field_name` builds the Rails nested-attributes wire name. With
+              no index it renders the template placeholder; with `index:` it renders
+              a real row — so the SAME method serves the template prototype, an edit
+              form's persisted rows, and (after the parent is saved) the
+              server-rendered collection:
+
+              ```ruby
+              # The default is the template form (NEW_ROW placeholder names);
+              # pass index: to server-render an edit form's persisted rows.
+              def row_fields(index: nil)
+                kwargs = index.nil? ? {} : { index: }
+                div(**reactive_nested_row) do
+                  input(name: nested_field_name(:line_items, :quantity, **kwargs), type: 'number')
+                  input(name: nested_field_name(:line_items, :price, **kwargs), type: 'number')
+                  button(**reactive_nested_remove) { '×' }
+                end
+              end
+              ```
+
+              Under `reactive_scope :order` the emitted names are
+              `order[line_items_attributes][NEW_ROW][quantity]` (template) and
+              `order[line_items_attributes][3][quantity]` (a server-rendered row) —
+              the scope wraps the `line_items_attributes` base, never the whole
+              bracketed path.
+            MD
+          end
+        end
+
+        def the_reconcile
+          DocsUI::Section('The reconcile — plain Rails') do
+            md <<~MD
+              Nothing bespoke on the server. The submit is one POST carrying the
+              parent's fields and every surviving row's indexed group:
+
+              ```ruby
+              class Order < ApplicationRecord
+                has_many :line_items, dependent: :destroy
+                accepts_nested_attributes_for :line_items, allow_destroy: true
+              end
+
+              # The controller create:
+              Order.create!(params.require(:order).permit(:total,
+                line_items_attributes: %i[id quantity price _destroy]))
+              ```
+
+              A removed draft row simply isn't in the POST; a `_destroy`-marked
+              persisted row rides along as `_destroy=1` and Rails deletes it.
+            MD
+          end
+        end
+
+        def draft_actions
+          DocsUI::Section('Bonus: real server actions on a draft parent') do
+            md <<~MD
+              Independent of the rows, a draft parent can now round-trip **real
+              server actions** too. An unsaved record signs a gid-less `{c, state}`
+              token (the identity layer already omitted the GlobalID), and the action
+              endpoint rebuilds the component through the record kwarg's
+              **initialize default**, with the declared `reactive_state` riding the
+              token:
+
+              ```ruby
+              class OrderComponent < ApplicationComponent
+                include Phlex::Reactive::Component
+
+                reactive_record :order
+                reactive_state :total, :allowance, :cash, :leasing
+                action :rebalance, params: { allowance: :integer, cash: :integer,
+                                             leasing: :integer, total: :integer }
+
+                # The default is what a DRAFT token rebuilds through — a component
+                # whose initialize REQUIRES the kwarg raises a guided error instead.
+                def initialize(order: Order.new, total: nil, allowance: nil, cash: nil, leasing: nil)
+                  # …
+                end
+              end
+              ```
+
+              The action runs against the rebuilt draft (guard your writes with
+              `@order.persisted?`), re-renders, and the fresh token — still gid-less —
+              rides the reply.
+            MD
+          end
+        end
+
+        def notes
+          DocsUI::Section('Boundaries') do
+            md <<~MD
+              - **The DOM is the single source of truth for unsent draft rows.** A
+                server re-render of the root REPLACES them — keep replace-shaped
+                actions out of a root holding unsent rows.
+              - **Nesting a collection inside another's template is unsupported** —
+                the placeholder swap would hit both (the same limitation as every
+                template-clone implementation).
+              - Once the parent is saved, the persisted flow takes over: the same row
+                markup renders with real indexes, or the list graduates to a
+                [reactive collection](/docs/example-collections)
+                (`reactive_collection` + `reply.append` / `reply.remove`).
+            MD
+
+            DocsUI::Callout(:tip) do
+              md <<~MD
+                Emit `data-turbo` as the STRING `"false"` on the form if you want the
+                native (non-Turbo) submit — Phlex omits a Ruby `false` attribute
+                entirely, and Turbo then intercepts the POST and requires a redirect
+                response.
+              MD
+            end
+          end
+        end
+      end
+    end
+  end
+end

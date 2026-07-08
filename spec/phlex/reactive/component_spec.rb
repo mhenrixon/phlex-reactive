@@ -1452,6 +1452,73 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  # Issue #208: the draft token's REBUILD side. Component::Identity signs a
+  # gid-less {c, s} token for an unpersisted (or nil) record — from_identity
+  # must accept that token BACK: omit the record kwarg (the initialize default
+  # seeds a fresh draft, mirroring first render) instead of crashing on the
+  # absent gid. This is what lets a draft parent run real server actions.
+  describe ".from_identity with a DRAFT token (no gid, issue #208)" do
+    let(:draft_capable_klass) do
+      Class.new do
+        include Phlex::Reactive::Component
+
+        def self.name = "DraftCapableThing"
+
+        reactive_record :order
+        reactive_state :rows
+
+        def initialize(order: nil, rows: [])
+          @order = order
+          @rows = rows
+        end
+
+        attr_reader :order, :rows
+
+        def id = "draft-capable"
+      end
+    end
+
+    it "rebuilds through the initialize default when the payload carries no gid" do
+      component = draft_capable_klass.from_identity({ "c" => "DraftCapableThing" })
+
+      expect(component.order).to be_nil
+    end
+
+    it "round-trips structured draft state (array-of-hashes rows) sign → verify → rebuild" do
+      rows = [{ "quantity" => 2, "price" => 100 }, { "quantity" => 1, "price" => 50 }]
+      token = draft_capable_klass.new(rows: rows).send(:reactive_token)
+      component = draft_capable_klass.from_identity(Phlex::Reactive.verify(token))
+
+      expect(component.order).to be_nil
+      expect(component.rows).to eq(rows)
+    end
+
+    it "raises a guided error when initialize REQUIRES the record kwarg (not draft-capable)" do
+      requiring = Class.new do
+        include Phlex::Reactive::Component
+
+        def self.name = "RequiresRecordThing"
+
+        reactive_record :order
+
+        def initialize(order:) = @order = order
+        def id = "requires-record"
+      end
+
+      expect { requiring.from_identity({ "c" => "RequiresRecordThing" }) }
+        .to raise_error(Phlex::Reactive::Error, /default/)
+    end
+
+    it "still locates the record when the payload HAS a gid (persisted path unchanged)" do
+      record = Object.new
+      allow(GlobalID::Locator).to receive(:locate).with("gid://app/Order/7").and_return(record)
+
+      component = draft_capable_klass.from_identity({ "c" => "DraftCapableThing", "gid" => "gid://app/Order/7" })
+
+      expect(component.order).to be(record)
+    end
+  end
+
   # reactive_compute declares a CLIENT-SIDE reducer: on `input`, the generic
   # controller runs a registered JS function over the named input fields and
   # writes the named output fields WITHOUT a round trip (the "instant" half of
@@ -2350,6 +2417,97 @@ RSpec.describe Phlex::Reactive::Component do
 
       html = klass.new.call
       expect(html).to include('data-reactive-tags-field="[name=&quot;tags&quot;]"')
+    end
+  end
+
+  # Issue #208: reactive_nested_* — the draft nested-attributes row primitive.
+  # A "new parent + child rows" form builds its rows CLIENT-SIDE (template
+  # clone, no POST, no persisted parent needed); the surrounding REAL form
+  # submit carries Rails' accepts_nested_attributes_for names and the server
+  # reconciles in one create. The row markup is authored ONCE (the template)
+  # and reused for server-rendered rows via nested_field_name(index:).
+  describe "#reactive_nested_* (draft nested-attribute rows, issue #208)" do
+    subject(:instance) { nested_klass.new }
+
+    let(:nested_klass) do
+      Class.new(Phlex::HTML) do
+        include Phlex::Reactive::Component
+
+        def self.name = "NestedThing"
+      end
+    end
+
+    describe "#nested_field_name (the Rails nested-attributes wire name)" do
+      it "builds the placeholder name for the template row by default" do
+        expect(instance.send(:nested_field_name, :line_items, :quantity))
+          .to eq("line_items_attributes[NEW_ROW][quantity]")
+      end
+
+      it "builds the indexed name for a server-rendered row" do
+        expect(instance.send(:nested_field_name, :line_items, :quantity, index: 0))
+          .to eq("line_items_attributes[0][quantity]")
+      end
+
+      it "scope-prefixes under reactive_scope (the parent form's param root)" do
+        scoped = Class.new(Phlex::HTML) do
+          include Phlex::Reactive::Component
+
+          def self.name = "ScopedNested"
+          reactive_scope :order
+        end
+
+        expect(scoped.new.send(:nested_field_name, :line_items, :quantity, index: 3))
+          .to eq("order[line_items_attributes][3][quantity]")
+      end
+
+      it "raises on an index that is neither an integer nor the placeholder (would corrupt the wire name)" do
+        expect { instance.send(:nested_field_name, :line_items, :quantity, index: "x[y]") }
+          .to raise_error(ArgumentError, /index/)
+      end
+    end
+
+    it "emits the association-keyed list marker" do
+      attrs = instance.send(:reactive_nested_list, :line_items)
+      expect(attrs[:data][:reactive_nested_list]).to eq("line_items")
+    end
+
+    it "emits the association-keyed template marker" do
+      attrs = instance.send(:reactive_nested_template, :line_items)
+      expect(attrs[:data][:reactive_nested_template]).to eq("line_items")
+    end
+
+    it "emits the row wrapper marker" do
+      attrs = instance.send(:reactive_nested_row)
+      expect(attrs[:data][:reactive_nested_row]).to be(true)
+    end
+
+    it "emits the client-only add trigger (no dispatch — no POST)" do
+      attrs = instance.send(:reactive_nested_add, :line_items)
+      expect(attrs[:type]).to eq("button")
+      expect(attrs[:data][:action]).to eq("click->reactive#nestedAdd")
+      expect(attrs[:data][:reactive_association_param]).to eq("line_items")
+    end
+
+    it "emits the client-only remove trigger" do
+      attrs = instance.send(:reactive_nested_remove)
+      expect(attrs[:type]).to eq("button")
+      expect(attrs[:data][:action]).to eq("click->reactive#nestedRemove")
+    end
+
+    it "raises on an association name that isn't a plain identifier" do
+      expect { instance.send(:reactive_nested_add, "line items") }
+        .to raise_error(ArgumentError, /association/)
+    end
+
+    it "is available to a ClientBindings (token-less) component" do
+      client_only = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::ClientBindings
+
+        def self.name = "ClientOnlyNested"
+      end
+
+      attrs = client_only.new.send(:reactive_nested_add, :line_items)
+      expect(attrs[:data][:reactive_association_param]).to eq("line_items")
     end
   end
 

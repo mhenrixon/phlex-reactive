@@ -39,7 +39,12 @@ class OrderComponent < ApplicationComponent
 
   action :rebalance, params: { allowance: :integer, cash: :integer, leasing: :integer, total: :integer }
 
-  def initialize(order:, total: nil, allowance: nil, cash: nil, leasing: nil)
+  # The order kwarg has a DEFAULT (issue #208): a draft token carries no gid,
+  # so from_identity rebuilds through this default — a fresh unsaved Order —
+  # and the signed state seeds the split. That's what lets the rebalance
+  # action round-trip against a NEW (unsaved) order too, not just recompute
+  # in-browser.
+  def initialize(order: Order.new, total: nil, allowance: nil, cash: nil, leasing: nil)
     @order = order
     # State values fall back to the record's columns on first render; on a
     # round trip they come from the signed token (new draft) or the DB (persisted).
