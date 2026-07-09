@@ -91,6 +91,13 @@ module Phlex
           if self.class.respond_to?(:reactive_scope) && (scope = self.class.reactive_scope)
             data[:reactive_scope] = scope.to_s
           end
+          # Effects (issue #215): the resolved global ⊕ component hooks ride the
+          # root as data-reactive-effect-<hook> so the client's stream interceptor
+          # knows how to animate this component. nil when off — no keys, byte-
+          # stable wire. The fragment is a per-class memo (two integer compares).
+          if self.class.respond_to?(:reactive_effect_attrs) && (effects = self.class.reactive_effect_attrs)
+            data.merge!(effects)
+          end
           { data: }
         end
 

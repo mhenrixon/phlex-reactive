@@ -10,6 +10,21 @@ class DemosController < ActionController::Base
     render_component CounterComponent.new(count: 0)
   end
 
+  # Effects (issue #215). The dummy has no asset pipeline, so the page inlines
+  # the gem's REAL shipped stylesheet — the browser animations under test are
+  # driven by the exact CSS apps get. The duration override AFTER it widens the
+  # window the spec's mid-animation assertions (still-present-while-exiting,
+  # arrives-wearing-enter-class) have to observe the transient classes.
+  def effects
+    css = Phlex::Reactive::Engine.root.join("app/assets/stylesheets/phlex/reactive/effects.css").read
+    component = render_to_string(EffectsListComponent.new(next_n: 2), layout: false)
+    extras = <<~HTML
+      <style>#{css}</style>
+      <style>:root { --reactive-fx-duration: 600ms; }</style>
+    HTML
+    render html: extras.html_safe + component, layout: true
+  end
+
   # Client debug mode (issue #108). Force Phlex::Reactive.debug ON around THIS
   # render so the root carries data-reactive-debug="true"; the generic controller
   # then console.groups every dispatch. The spec overrides console.group to write

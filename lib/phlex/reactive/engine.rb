@@ -30,6 +30,10 @@ module Phlex
       initializer "phlex_reactive.assets" do
         if it.config.respond_to?(:assets)
           it.config.assets.paths << root.join("app/javascript").to_s
+          # The opt-in effects stylesheet (issue #215): built-in enter/exit/
+          # update animations, linked by the app with
+          # stylesheet_link_tag "phlex/reactive/effects".
+          it.config.assets.paths << root.join("app/assets/stylesheets").to_s
           it.config.assets.precompile += %w[
             phlex/reactive/reactive_controller.min.js
             phlex/reactive/reactive_controller.min.js.map
@@ -41,6 +45,7 @@ module Phlex
             phlex/reactive/compute.min.js.map
             phlex/reactive/inspect.min.js
             phlex/reactive/inspect.min.js.map
+            phlex/reactive/effects.css
           ]
         end
       end

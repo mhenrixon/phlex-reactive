@@ -122,6 +122,72 @@ module Phlex
             Registry.resolve_scalar(self, :dirty, :reactive_dirty_config)
           end
 
+          # Effects (issue #215): declare how THIS component animates when a
+          # stream renders it — enter (append/prepend), exit (remove), update
+          # (replace/update, plain or morph). Refines the global
+          # Phlex::Reactive.effects set per hook (most specific wins); works
+          # standalone too — declaring on a component IS that component's
+          # opt-in, no global switch required.
+          #
+          #   reactive_effects enter: :slide, exit: :fade   # built-ins (shipped CSS)
+          #   reactive_effects update: false                # disable one hook
+          #   reactive_effects false                        # opt out entirely
+          #   reactive_effects enter: :random               # random built-in per application
+          #   reactive_effects enter: { during: %w[transition-all], from: %w[opacity-0],
+          #                             to: %w[opacity-100] }  # custom #186 legs
+          #
+          # Validated HERE (class load), not at render time — a typo'd effect
+          # name raises immediately. Stored as pre-compiled wire strings.
+          def reactive_effects(opt_out = nil, **hooks)
+            if opt_out == false
+              unless hooks.empty?
+                raise ArgumentError,
+                  "reactive_effects false opts the component out entirely — it takes no hooks " \
+                  "(got #{hooks.keys.inspect}); use per-hook false to disable one: update: false"
+              end
+              return Registry.write_scalar(self, :effects, false)
+            end
+            unless opt_out.nil?
+              raise ArgumentError,
+                "reactive_effects takes hook keywords (enter:/exit:/update:) or false — got #{opt_out.inspect}"
+            end
+            if hooks.empty?
+              raise ArgumentError,
+                "reactive_effects needs at least one hook (enter:/exit:/update:) or false to opt out"
+            end
+
+            Registry.write_scalar(self, :effects, Phlex::Reactive::Effects.normalize!(hooks))
+          end
+
+          # The raw declaration ({ hook => wire | false }, false for a full
+          # opt-out, or nil when undeclared), inherited through the Registry
+          # like every other scalar.
+          def reactive_effects_config
+            Registry.resolve_scalar(self, :effects, :reactive_effects_config)
+          end
+
+          # The RESOLVED root effect attrs (global ⊕ component, false hooks
+          # dropped): a frozen { reactive_effect_enter: "fade", … } fragment
+          # reactive_attrs merges into the root's data:, or nil when off.
+          # Memoized per class against BOTH inputs that can change the answer
+          # — the effects config generation (a Phlex::Reactive.effects= write)
+          # and the registry generation (any declaration) — as two integer
+          # compares, because reactive_attrs is the token-signing hot path.
+          # The race on a concurrent first call is benign (idempotent rebuild).
+          def reactive_effect_attrs
+            effects_gen = Phlex::Reactive.effects_generation
+            registry_gen = Registry.generation
+            if @reactive_effect_attrs_effects_gen == effects_gen &&
+               @reactive_effect_attrs_registry_gen == registry_gen
+              return @reactive_effect_attrs
+            end
+
+            @reactive_effect_attrs = Phlex::Reactive::Effects.root_attrs_for(self)
+            @reactive_effect_attrs_effects_gen = effects_gen
+            @reactive_effect_attrs_registry_gen = registry_gen
+            @reactive_effect_attrs
+          end
+
           # Opt into signed STATE for record-less components only.
           #   reactive_state :count, :open
           def reactive_state(*names)

@@ -29,20 +29,23 @@ module Phlex
 
       # Re-render in place. `morph: true` morphs the subtree (preserves the
       # focused input + caret) instead of an outerHTML swap — see #morph.
-      def replace(morph: false)
-        Response.build_replace(@component, morph:)
+      # `effect:` (issue #215) — the per-call effect override for this one
+      # stream (a built-in name, :random, false to suppress, or #186 legs);
+      # same kwarg on every verb below.
+      def replace(morph: false, effect: nil)
+        Response.build_replace(@component, morph:, effect:)
       end
 
       # Re-render in place via Idiomorph (method="morph") — keeps focus + caret.
-      def morph
-        Response.build_morph(@component)
+      def morph(effect: nil)
+        Response.build_morph(@component, effect:)
       end
 
       # Update only inner HTML (preserves the root element + its token attr).
       # `morph: true` morphs the inner HTML in place (issue #113) so a
       # cross-tab/per-field update keeps a focused input's caret.
-      def update(morph: false)
-        Response.build_update(@component, morph:)
+      def update(morph: false, effect: nil)
+        Response.build_update(@component, morph:, effect:)
       end
 
       # Reactive collections (issue #35) — add/remove a row in a declared
@@ -59,12 +62,14 @@ module Phlex
       # Extra kwargs (issue #186) thread to the row component's new(model:, **row_kwargs)
       # — e.g. reply.append(item, to: :items, autofocus: true) → ItemRow.new(item:,
       # autofocus: true). Additive: a no-kwarg call is byte-identical to before.
-      def append(model = UNSET_ARG, legacy_model = UNSET_ARG, to: UNSET_ARG, **row_kwargs)
-        collection_build!(:build_collection_append, :append, model, legacy_model, to, row_kwargs)
+      # `effect:` (issue #215) is reserved as the row's per-call effect — it is
+      # NOT forwarded to the row component's init like the other row_kwargs.
+      def append(model = UNSET_ARG, legacy_model = UNSET_ARG, to: UNSET_ARG, effect: nil, **row_kwargs)
+        collection_build!(:build_collection_append, :append, model, legacy_model, to, effect, row_kwargs)
       end
 
-      def prepend(model = UNSET_ARG, legacy_model = UNSET_ARG, to: UNSET_ARG, **row_kwargs)
-        collection_build!(:build_collection_prepend, :prepend, model, legacy_model, to, row_kwargs)
+      def prepend(model = UNSET_ARG, legacy_model = UNSET_ARG, to: UNSET_ARG, effect: nil, **row_kwargs)
+        collection_build!(:build_collection_prepend, :prepend, model, legacy_model, to, effect, row_kwargs)
       end
 
       # Two forms, dispatched on the PRESENCE of `from:` (issue #182 — no sentinel
@@ -74,17 +79,17 @@ module Phlex
       #
       #   reply.remove                       # remove the bound component's element
       #   reply.remove(model, from: :items)  # remove a collection row
-      def remove(model = UNSET_ARG, legacy_model = UNSET_ARG, from: UNSET_ARG)
+      def remove(model = UNSET_ARG, legacy_model = UNSET_ARG, from: UNSET_ARG, effect: nil)
         reject_legacy_form!(:remove, model, legacy_model)
         # Bare `reply.remove` (no positional, no from:) removes self.
-        return Response.build_remove(@component) if from.equal?(UNSET_ARG) && model.equal?(UNSET_ARG)
+        return Response.build_remove(@component, effect:) if from.equal?(UNSET_ARG) && model.equal?(UNSET_ARG)
 
         if from.equal?(UNSET_ARG)
           raise ArgumentError,
             "reply.remove(model, …) needs a source collection — reply.remove(model, from: :name)"
         end
         reject_symbol_first!(:remove, model, :from, from)
-        Response.build_collection_remove(@component, from, resolve_row_arg(model))
+        Response.build_collection_remove(@component, from, resolve_row_arg(model), effect:)
       end
 
       # Subject-free builders — pass straight through so they read naturally.
@@ -136,7 +141,7 @@ module Phlex
       # Shared append/prepend build: catch the old two-positional form, require the
       # `to:` keyword, reject a Symbol-first model, then delegate to the Response
       # builder (name first, model second — its internal order).
-      def collection_build!(builder, verb, model, legacy_model, to, row_kwargs)
+      def collection_build!(builder, verb, model, legacy_model, to, effect, row_kwargs)
         # Old form `reply.append(:name, model)` passes a SECOND positional — the
         # arity would just error, so intercept it with the guided rewrite.
         reject_legacy_form!(verb, model, legacy_model)
@@ -145,7 +150,7 @@ module Phlex
             "reply.#{verb} needs a target collection — reply.#{verb}(model, to: :name)"
         end
         reject_symbol_first!(verb, model, :to, to)
-        Response.public_send(builder, @component, to, resolve_row_arg(model), **row_kwargs)
+        Response.public_send(builder, @component, to, resolve_row_arg(model), effect:, **row_kwargs)
       end
 
       # The pre-#182 call `reply.<verb>(:name, model)` — a Symbol name first, the

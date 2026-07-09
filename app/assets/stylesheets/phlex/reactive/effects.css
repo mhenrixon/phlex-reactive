@@ -1,0 +1,106 @@
+/* phlex-reactive effects (issue #215) — the shipped built-in animations.
+ *
+ * Opt in from your layout:
+ *
+ *   <%= stylesheet_link_tag "phlex/reactive/effects" %>
+ *
+ * The client applies these classes transiently around stream renders:
+ * reactive-fx--<name>-<hook>, where <name> is fade/slide/scale/highlight/
+ * shake and <hook> is enter (append/prepend), exit (remove), or update
+ * (replace/update). Every class is removed again on animationend, so nothing
+ * here leaks into steady-state styling.
+ *
+ * Everything is wrapped in prefers-reduced-motion: no-preference — the client
+ * ALSO skips effects entirely under reduced motion (defense in depth; a zero
+ * computed duration short-circuits the exit wait, so removals never stall).
+ *
+ * Tune globally (or per component root) by overriding the custom properties:
+ *
+ *   :root { --reactive-fx-duration: 200ms; --reactive-fx-highlight-color: #bae6fd80; }
+ *
+ * Keep durations comfortably under 1s — the client hard-caps any effect wait
+ * at 1000ms (an exit past the cap is removed mid-animation).
+ */
+@media (prefers-reduced-motion: no-preference) {
+  :root {
+    --reactive-fx-duration: 300ms;
+    --reactive-fx-highlight-duration: 700ms;
+    --reactive-fx-highlight-color: rgba(250, 204, 21, 0.5);
+  }
+
+  /* fade — opacity in/out. The update variant re-fades the fresh render in. */
+  @keyframes reactive-fx-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes reactive-fx-fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  .reactive-fx--fade-enter,
+  .reactive-fx--fade-update {
+    animation: reactive-fx-fade-in var(--reactive-fx-duration) ease-out both;
+  }
+  .reactive-fx--fade-exit {
+    animation: reactive-fx-fade-out var(--reactive-fx-duration) ease-in both;
+  }
+
+  /* slide — a short vertical travel + fade. */
+  @keyframes reactive-fx-slide-in {
+    from { opacity: 0; transform: translateY(0.5rem); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes reactive-fx-slide-out {
+    from { opacity: 1; transform: none; }
+    to { opacity: 0; transform: translateY(0.5rem); }
+  }
+  .reactive-fx--slide-enter,
+  .reactive-fx--slide-update {
+    animation: reactive-fx-slide-in var(--reactive-fx-duration) ease-out both;
+  }
+  .reactive-fx--slide-exit {
+    animation: reactive-fx-slide-out var(--reactive-fx-duration) ease-in both;
+  }
+
+  /* scale — grow in / shrink out around the element's center. */
+  @keyframes reactive-fx-scale-in {
+    from { opacity: 0; transform: scale(0.92); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes reactive-fx-scale-out {
+    from { opacity: 1; transform: none; }
+    to { opacity: 0; transform: scale(0.92); }
+  }
+  .reactive-fx--scale-enter,
+  .reactive-fx--scale-update {
+    animation: reactive-fx-scale-in var(--reactive-fx-duration) ease-out both;
+  }
+  .reactive-fx--scale-exit {
+    animation: reactive-fx-scale-out var(--reactive-fx-duration) ease-in both;
+  }
+
+  /* highlight — the classic background flash that fades to the element's own
+   * background. One animation for every hook: flash on arrival, on change,
+   * and as a last flare before a removal. */
+  @keyframes reactive-fx-highlight {
+    from { background-color: var(--reactive-fx-highlight-color); }
+  }
+  .reactive-fx--highlight-enter,
+  .reactive-fx--highlight-update,
+  .reactive-fx--highlight-exit {
+    animation: reactive-fx-highlight var(--reactive-fx-highlight-duration) ease-out both;
+  }
+
+  /* shake — a quick horizontal oscillation (attention / destructive cue). */
+  @keyframes reactive-fx-shake {
+    10%, 90% { transform: translateX(-1px); }
+    20%, 80% { transform: translateX(2px); }
+    30%, 50%, 70% { transform: translateX(-3px); }
+    40%, 60% { transform: translateX(3px); }
+  }
+  .reactive-fx--shake-enter,
+  .reactive-fx--shake-update,
+  .reactive-fx--shake-exit {
+    animation: reactive-fx-shake 400ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  }
+}

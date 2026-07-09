@@ -114,7 +114,12 @@ module Phlex
         # thread-local path (so exclude:/visible_to: reach pgbus and Action Cable
         # no-ops). Self-targeting verbs derive the target from the component's #id
         # and REQUIRE a Streamable payload; container verbs need an explicit target.
-        def broadcast_component(owner, verb, payload, component, keys, morph:, target:, exclude:, visible_to:)
+        def broadcast_component(owner, verb, payload, component, keys, morph:, target:, exclude:, visible_to:, effect: nil)
+          if verb == :js && !effect.nil?
+            raise ArgumentError,
+              "broadcast_to js: takes no effect: — effects animate element streams (replace/update/" \
+              "append/prepend/remove), not client-op dispatches"
+          end
           resolved_target = resolve_broadcast_target(verb, component, payload, target)
           # broadcast_js_ops_json is a private class method on the owner Streamable
           # class (reached via send); the instrumentation + pgbus thread-locals are
@@ -127,7 +132,7 @@ module Phlex
             with_pgbus_broadcast_opts(exclude:, visible_to:) do
               html = verb == :js ? nil : render_broadcast_html(component)
               ops_json = verb == :js ? owner.send(:broadcast_js_ops_json, payload) : nil
-              keys.each { dispatch_broadcast(verb, it, resolved_target, html, ops_json, morph) }
+              keys.each { dispatch_broadcast(verb, it, resolved_target, html, ops_json, morph, effect) }
             end
           end
         end
@@ -192,14 +197,18 @@ module Phlex
         # Route ONE key to its Turbo::StreamsChannel call for the verb (issue #185).
         # exclude:/visible_to: are NOT passed here — they ride the pgbus thread-locals
         # set by with_pgbus_broadcast_opts (turbo-rails would swallow them as kwargs).
-        def dispatch_broadcast(verb, key, target, html, ops_json, morph)
+        # `effect` (issue #215) rides the same attributes: seam morph does — every
+        # broadcast_*_to delegates to broadcast_action_to(attributes:), so the attr
+        # lands on the <turbo-stream> element on every verb.
+        def dispatch_broadcast(verb, key, target, html, ops_json, morph, effect = nil)
           parts = Array(key)
+          wire = broadcast_wire(morph, effect)
           case verb
-          when :replace then ::Turbo::StreamsChannel.broadcast_replace_to(*parts, target:, html:, **morph_wire(morph))
-          when :update then ::Turbo::StreamsChannel.broadcast_update_to(*parts, target:, html:, **morph_wire(morph))
-          when :append then ::Turbo::StreamsChannel.broadcast_append_to(*parts, target:, html:)
-          when :prepend then ::Turbo::StreamsChannel.broadcast_prepend_to(*parts, target:, html:)
-          when :remove then ::Turbo::StreamsChannel.broadcast_remove_to(*parts, target:)
+          when :replace then ::Turbo::StreamsChannel.broadcast_replace_to(*parts, target:, html:, **wire)
+          when :update then ::Turbo::StreamsChannel.broadcast_update_to(*parts, target:, html:, **wire)
+          when :append then ::Turbo::StreamsChannel.broadcast_append_to(*parts, target:, html:, **wire)
+          when :prepend then ::Turbo::StreamsChannel.broadcast_prepend_to(*parts, target:, html:, **wire)
+          when :remove then ::Turbo::StreamsChannel.broadcast_remove_to(*parts, target:, **wire)
           when :js
             ::Turbo::StreamsChannel.broadcast_action_to(
               *parts, action: "reactive:js", target:, attributes: { data: { reactive_ops: ops_json } }, render: false
@@ -207,11 +216,18 @@ module Phlex
           end
         end
 
-        # The ONE morph wire compiler (issue #185): the broadcast path emits the
-        # method="morph" attribute via `attributes:` (it has no `method:` kwarg).
-        # Replaces the morph_method/morph_attributes twins.
-        def morph_wire(morph)
-          morph ? { attributes: { method: "morph" } } : {}
+        # The ONE broadcast attributes compiler (issue #185, extended #215): the
+        # broadcast path emits extra <turbo-stream> attributes via `attributes:`
+        # (it has no `method:` kwarg) — method="morph" and/or the per-call
+        # data-reactive-effect. {} when neither, so the plain call's wire is
+        # byte-identical. (Replaces morph_wire.)
+        def broadcast_wire(morph, effect = nil)
+          return {} if !morph && effect.nil?
+
+          attrs = {}
+          attrs[:method] = "morph" if morph
+          attrs[:data] = { reactive_effect: Phlex::Reactive::Effects.wire_value(effect) } unless effect.nil?
+          { attributes: attrs }
         end
 
         # Split the single verb kwarg out of the module-level broadcast_to's **verb
@@ -326,10 +342,17 @@ module Phlex
         # action/target/token-ness structurally. renders_root: true — a replace
         # re-renders the component's own root (carrying its fresh token); wire
         # bytes are byte-identical.
-        def replace(model = nil, morph: false, **options)
+        # `effect:` (issue #215) — the PER-CALL effect override, stamped as
+        # data-reactive-effect on the <turbo-stream> element (false → "off").
+        # nil (the default) leaves the wire byte-identical. Same on every
+        # builder below.
+        def replace(model = nil, morph: false, effect: nil, **options)
           component = build(model, options)
           Phlex::Reactive::Stream.wrap(
-            turbo_stream_builder.replace(component.id, html: render_component(component), **morph_method(morph)),
+            Phlex::Reactive::Effects.annotate(
+              turbo_stream_builder.replace(component.id, html: render_component(component), **morph_method(morph)),
+              effect
+            ),
             action: "replace", target: component.id, renders_root: true
           )
         end
@@ -338,10 +361,13 @@ module Phlex
         # Turbo 8 morphs the inner HTML in place instead of replacing it (issue
         # #113) — a cross-tab update no longer clobbers a peer's focus/caret.
         # Default (morph: false) is the unchanged plain update.
-        def update(model = nil, morph: false, **options)
+        def update(model = nil, morph: false, effect: nil, **options)
           component = build(model, options)
           Phlex::Reactive::Stream.wrap(
-            turbo_stream_builder.update(component.id, html: render_component(component), **morph_method(morph)),
+            Phlex::Reactive::Effects.annotate(
+              turbo_stream_builder.update(component.id, html: render_component(component), **morph_method(morph)),
+              effect
+            ),
             action: "update", target: component.id, renders_root: true
           )
         end
@@ -349,26 +375,32 @@ module Phlex
         # renders_root: false — append inserts a CHILD into `target`; even when
         # the appended component carries its OWN token, that must never count as
         # the container's own refresh (issue #44).
-        def append(target:, model: nil, **options)
+        def append(target:, model: nil, effect: nil, **options)
           component = build(model, options)
           Phlex::Reactive::Stream.wrap(
-            turbo_stream_builder.append(target, html: render_component(component)),
+            Phlex::Reactive::Effects.annotate(
+              turbo_stream_builder.append(target, html: render_component(component)),
+              effect
+            ),
             action: "append", target: target, renders_root: false
           )
         end
 
-        def prepend(target:, model: nil, **options)
+        def prepend(target:, model: nil, effect: nil, **options)
           component = build(model, options)
           Phlex::Reactive::Stream.wrap(
-            turbo_stream_builder.prepend(target, html: render_component(component)),
+            Phlex::Reactive::Effects.annotate(
+              turbo_stream_builder.prepend(target, html: render_component(component)),
+              effect
+            ),
             action: "prepend", target: target, renders_root: false
           )
         end
 
-        def remove(model = nil, **options)
+        def remove(model = nil, effect: nil, **options)
           component = build(model, options)
           Phlex::Reactive::Stream.wrap(
-            turbo_stream_builder.remove(component.id),
+            Phlex::Reactive::Effects.annotate(turbo_stream_builder.remove(component.id), effect),
             action: "remove", target: component.id, renders_root: false
           )
         end
@@ -415,12 +447,13 @@ module Phlex
         # thread to pgbus via the capability-gated instrument_broadcast path; on
         # Action Cable they no-op. The class-level and module-level (Phlex::Reactive.
         # broadcast_to) forms share broadcast_component (below).
-        def broadcast_to(*streamables, morph: false, target: nil, exclude: nil, visible_to: nil, each: nil, **verb)
+        def broadcast_to(*streamables, morph: false, target: nil, exclude: nil, visible_to: nil, each: nil,
+                         effect: nil, **verb)
           name, payload = extract_broadcast_verb(verb)
           component = name == :js ? nil : coerce_broadcast_payload(payload)
           keys = each ? each.map { Array(it) } : [streamables]
           Phlex::Reactive::Streamable.broadcast_component(
-            self, name, payload, component, keys, morph:, target:, exclude:, visible_to:
+            self, name, payload, component, keys, morph:, target:, exclude:, visible_to:, effect:
           )
         end
 
@@ -509,9 +542,9 @@ module Phlex
           morph ? { method: :morph } : {}
         end
 
-        # (The broadcast path's morph wire moved to Streamable.morph_wire, issue
-        # #185 — the single compiler both the class-level and module-level
-        # broadcast_to share.)
+        # (The broadcast path's extra-attribute wire lives in
+        # Streamable.broadcast_wire — the single compiler both the class-level
+        # and module-level broadcast_to share; issue #185, extended #215.)
 
         def renderer
           Phlex::Reactive.renderer
@@ -586,10 +619,13 @@ module Phlex
       # refreshes). Default (morph: false) is the plain outerHTML replace,
       # byte-identical to before. Used by reply.replace / reply.morph. The morph:
       # kwarg replaces the deleted to_stream_morph (issue #185).
-      def to_stream_replace(morph: false)
+      # `effect:` (issue #215) — the per-call effect override on the actor's
+      # own reply stream, same wire as the class builders (nil = untouched).
+      def to_stream_replace(morph: false, effect: nil)
         builder = self.class.turbo_stream_builder
         html = self.class.render_component(self)
         rendered = morph ? builder.replace(id, html:, method: :morph) : builder.replace(id, html:)
+        rendered = Phlex::Reactive::Effects.annotate(rendered, effect)
         Phlex::Reactive::Stream.wrap(rendered, action: "replace", target: id, renders_root: true)
       end
 
@@ -606,10 +642,11 @@ module Phlex
       # false) is the unchanged plain update. Passing `method: :morph` inline
       # (as #to_stream_morph does) keeps the plain call's wire byte-identical.
       # Used by reply.update.
-      def to_stream_update(morph: false)
+      def to_stream_update(morph: false, effect: nil)
         builder = self.class.turbo_stream_builder
         html = self.class.render_component(self)
         rendered = morph ? builder.update(id, html:, method: :morph) : builder.update(id, html:)
+        rendered = Phlex::Reactive::Effects.annotate(rendered, effect)
         Phlex::Reactive::Stream.wrap(rendered, action: "update", target: id, renders_root: true)
       end
 
@@ -647,9 +684,9 @@ module Phlex
       # Render THIS instance as a remove stream. The component already knows its
       # own #id, so no record/class reconstruction is needed (works for record-
       # and state-backed components alike). Used by reply.remove.
-      def to_stream_remove
+      def to_stream_remove(effect: nil)
         Phlex::Reactive::Stream.wrap(
-          self.class.turbo_stream_builder.remove(id),
+          Phlex::Reactive::Effects.annotate(self.class.turbo_stream_builder.remove(id), effect),
           action: "remove", target: id, renders_root: false
         )
       end

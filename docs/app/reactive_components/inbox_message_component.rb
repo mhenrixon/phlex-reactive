@@ -11,6 +11,11 @@ class InboxMessageComponent < Phlex::HTML
   include Phlex::Reactive::Streamable
   include Phlex::Reactive::Component
 
+  # Effects (issue #215): a new message slides into every open inbox; a
+  # mark-read replace flashes so peers notice the change; an archived row
+  # fades out for peers (the actor's is optimistically hidden already).
+  reactive_effects enter: :slide, exit: :fade, update: :highlight
+
   def self.model_param_name = :message
 
   def initialize(message:)

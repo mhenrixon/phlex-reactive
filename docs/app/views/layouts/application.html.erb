@@ -20,6 +20,8 @@
 
     <%# Includes all stylesheet files in app/assets/stylesheets %>
     <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
+    <%# The gem's opt-in effects built-ins (issue #215) — the live demos dogfood them %>
+    <%= stylesheet_link_tag "phlex/reactive/effects", "data-turbo-track": "reload" %>
     <%= javascript_importmap_tags %>
   </head>
 
