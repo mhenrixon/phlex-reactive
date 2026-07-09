@@ -704,6 +704,33 @@ module Phlex
 
       attr_writer :flash_target
 
+      # Global effects opt-in (issue #215). nil (the default) = OFF: no root
+      # attrs are emitted anywhere, the wire is byte-identical to pre-effects,
+      # and the client interceptor sees nothing to do. Setting it is the
+      # opt-in AND the app-wide default set — refined per component with
+      # `reactive_effects` and per call with `effect:` (most specific wins):
+      #
+      #   Phlex::Reactive.effects = true   # { enter: :fade, exit: :fade, update: :highlight }
+      #   Phlex::Reactive.effects = { enter: :slide, update: :highlight }
+      #
+      # Stored pre-normalized (wire strings), validated at WRITE time — a
+      # typo'd effect name raises here, not at render time.
+      def effects
+        defined?(@effects) ? @effects : nil
+      end
+
+      def effects=(value)
+        @effects = Phlex::Reactive::Effects.normalize_config(value)
+        @effects_generation = effects_generation + 1
+      end
+
+      # Monotonic write counter for effects= — the cache key half that lets
+      # each component class memoize its RESOLVED effect attrs (reactive_attrs
+      # is the token-signing hot path) without ever serving a stale config.
+      def effects_generation
+        @effects_generation ||= 0
+      end
+
       # A user-visible flash rendered on every endpoint rescue path (issue #100).
       # Default nil = today's behavior (a bare head, or the verbose_errors
       # plain-text diagnostic). Set a lambda ->(kind) { "message" } (kind is
