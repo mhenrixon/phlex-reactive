@@ -8,6 +8,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Reactive effects — animate enter/exit/update on every stream render (#215).**
+  Opt-in at three levels, most specific wins: `Phlex::Reactive.effects = true`
+  (or a `{ enter:/exit:/update: }` hash) is the global switch AND the app-wide
+  default set; `reactive_effects enter: :slide, update: false` refines per
+  component (`false` opts out entirely; declaring on a component also works
+  standalone with no global switch); `effect:` on every stream builder, reply
+  verb, and `broadcast_to` overrides one stream (`effect: false` suppresses a
+  declared effect for that call). Five built-ins ship as an engine stylesheet —
+  `stylesheet_link_tag "phlex/reactive/effects"` — fade/slide/scale/highlight/
+  shake, all inside `prefers-reduced-motion: no-preference` and tunable via
+  `--reactive-fx-*` custom properties; `:random` picks a built-in per
+  application; custom effects take the `{ during:, from:, to: }` class-legs
+  vocabulary (issue #186), Tailwind-friendly and stylesheet-free. On the wire
+  the resolved hooks ride the component root as `data-reactive-effect-<hook>`
+  attributes (omitted entirely when off — byte-identical to previous releases)
+  and per-call overrides ride the `<turbo-stream>` element itself; ONE
+  document-level `turbo:before-stream-render` interceptor animates replies AND
+  broadcasts identically on Action Cable and pgbus. `remove` is special: the
+  exit animation runs BEFORE the element leaves the DOM, awaited via
+  `animationend`/`transitionend` with a computed-duration fallback hard-capped
+  at 1s — and a zero computed duration (no effects CSS loaded) skips the wait
+  entirely, so a missing stylesheet can never freeze a removal. Unknown names
+  raise at class load server-side and warn-and-skip client-side (two-sided
+  default-deny). Zero additional allocations per render with effects on (the
+  resolved fragment is a per-class memo keyed on the config + registry
+  generations); the render/token hot paths hold flat with effects off.
+
 - **Fill-then-add for draft nested rows — `reactive_nested_add(:assoc, from:, clear:)` (#208).**
   The draft-rows primitive's add is *inline-edit* — it clones the template and
   focuses the new row's first field, so you type INTO the row. A common
