@@ -12,9 +12,10 @@
 // save.
 //
 // Run with: bun test spec/javascript
-import { test, expect, mock, beforeAll } from "bun:test"
+import { test, expect, mock, beforeAll, beforeEach } from "bun:test"
 
 let ReactiveController
+let confirmModule
 
 beforeAll(async () => {
   mock.module("@hotwired/stimulus", () => ({
@@ -23,6 +24,20 @@ beforeAll(async () => {
     },
   }))
   ReactiveController = (await import("../../app/javascript/phlex/reactive/reactive_controller.js")).default
+  confirmModule = await import("../../app/javascript/phlex/reactive/confirm.js")
+})
+
+// confirmResolver is module-global mutable state (setConfirmResolver). Another
+// confirm test file can run first in the shared bun worker and leave a custom
+// resolver installed (e.g. `() => true`, which never touches window.confirm) —
+// so the nestedRemove(confirm:) tests below must reinstall the DEFAULT resolver
+// (Promise-wrapped window.confirm) before each, or they'd inherit a leaked one
+// and never see the stubbed prompt. This mirrors the reset in the other confirm
+// specs; it's inert for the add/remove tests that don't touch confirm.
+beforeEach(() => {
+  confirmModule.setConfirmResolver((message) =>
+    Promise.resolve(typeof globalThis.window !== "undefined" ? globalThis.window.confirm(message) : true),
+  )
 })
 
 // The reactive_tags FakeNode, extended for the nested-rows clone/renumber:
