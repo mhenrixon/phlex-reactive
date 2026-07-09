@@ -20,10 +20,8 @@ RSpec.describe 'AI endpoint rate limiting', type: :request do
     Rack::Attack.cache.store.clear
   end
 
-  after do
-    travel_back
-    Rack::Attack.cache.store.clear
-  end
+  # (No explicit travel_back — Rails resets stubbed time after each example.)
+  after { Rack::Attack.cache.store.clear }
 
   it 'lets a normal burst through and 429s past the per-IP limit' do
     60.times do
