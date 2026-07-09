@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Project board — the kanban flagship demo (#216).** A live three-lane board
+  on the docs site (`/docs/example-project-board`, `/demos/project-board`)
+  composing the toolkit end to end: each card is its own nested reactive root
+  (record + signed style state) whose move is ONE reply — the row's remove
+  (its exit effect animates before the element leaves), a fresh-token append
+  into the new lane (wearing its enter effect), and a `reactive:js` text-op
+  stream repainting all three count badges — with the same delta broadcast to
+  peers, actor echo excluded. Inline rename morphs in place, archive is
+  confirm-gated + optimistic, per-lane composers flash on a blank title, and
+  the effect-style picker (including `random`) rides signed state to drive
+  per-call `effect:` overrides. Peer count badges stay live everywhere via
+  `broadcast_to(js:)` — closing the stale-badge gap the team-inbox flagship
+  documents — and empty lanes are pure CSS `:empty`, so the 0↔1 boundary
+  needs no bookkeeping on either delivery path. Docs-app only; no gem code
+  changes.
+
 - **Reactive effects — animate enter/exit/update on every stream render (#215).**
   Opt-in at three levels, most specific wins: `Phlex::Reactive.effects = true`
   (or a `{ enter:/exit:/update: }` hash) is the global switch AND the app-wide

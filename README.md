@@ -332,11 +332,13 @@ The [inline edit example](https://phlex-reactive.zoolutions.llc/docs/example-inl
 | [Client-only ops](https://phlex-reactive.zoolutions.llc/docs/example-client-ops) | `on_client` tabs / outside-close menu / accessible drawer — zero fetches, zero custom JS |
 | [Failure surface](https://phlex-reactive.zoolutions.llc/docs/example-failure) | `error_flash` + `data-reactive-error` + `dismiss_after:` — what you get for free when an action fails |
 | [Team inbox (flagship)](https://phlex-reactive.zoolutions.llc/docs/example-team-inbox) | The whole toolkit in one UI: collection rows, optimistic archive that **reverts on failure**, cross-tab broadcast, an `on_client` kebab, error flashes |
+| [Project board (flagship)](https://phlex-reactive.zoolutions.llc/docs/example-project-board) | The kanban: cards move across lanes with **enter/exit effects** (per-visitor style picker incl. `random`), live count badges in every tab via `broadcast_to(js:)`, nested reactive rows with inline rename, confirm-gated archive |
 
 Every page renders its **real** reactive component inline (source read straight
 off the file), so the demo and the code can never drift. The
-[Team inbox](https://phlex-reactive.zoolutions.llc/docs/example-team-inbox) is the
-flagship — every feature composed into one believable UI.
+[Team inbox](https://phlex-reactive.zoolutions.llc/docs/example-team-inbox) and the
+[Project board](https://phlex-reactive.zoolutions.llc/docs/example-project-board) are the
+flagships — every feature composed into believable UIs.
 
 ---
 
