@@ -29,8 +29,10 @@ If exactly one open PR exists for the current branch, use it. If none or multipl
 Once you have the PR number, confirm it:
 
 ```bash
-gh pr view <PR_NUMBER> --json title,state,url
+gh pr view <PR_NUMBER> --json title,state,url,mergeable
 ```
+
+**Pre-flight: merge conflicts.** If `mergeable` is `CONFLICTING` (or `UNKNOWN` and a local `git fetch origin <base> && git merge-tree --write-tree origin/<base> HEAD` exits non-zero), resolve the conflicts BEFORE diagnosing CI — follow `/github-review-pr` Phase A0 (merge the base in, never rebase a shared branch; regenerate `*.min.js` + vendored copies from source instead of hand-merging; union CHANGELOG entries; take the base's `version.rb` and lockfiles then `bundle install`). CI red on a conflicted or stale branch may be fixed — or caused — by the merge itself, so failure diagnosis only makes sense afterwards.
 
 ---
 
