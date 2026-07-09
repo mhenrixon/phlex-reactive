@@ -790,7 +790,8 @@ module Phlex
       # verbs (replace:/remove:) require a Streamable payload (its #id is the target)
       # — a plain component gets a guided error steering to update:. Shares the one
       # broadcast implementation with the class-level form.
-      def broadcast_to(*streamables, morph: false, target: nil, exclude: nil, visible_to: nil, each: nil, **verb)
+      def broadcast_to(*streamables, morph: false, target: nil, exclude: nil, visible_to: nil, each: nil,
+                       effect: nil, **verb)
         name, payload = Phlex::Reactive::Streamable.extract_module_broadcast_verb(verb)
         component = name == :js ? nil : payload
         keys = each ? each.map { Array(it) } : [streamables]
@@ -800,7 +801,7 @@ module Phlex
         # the module form is for BUILT component payloads.
         owner = payload.is_a?(Phlex::Reactive::Streamable) ? payload.class : Phlex::Reactive::Streamable
         Phlex::Reactive::Streamable.broadcast_component(
-          owner, name, payload, component, keys, morph:, target:, exclude:, visible_to:
+          owner, name, payload, component, keys, morph:, target:, exclude:, visible_to:, effect:
         )
       end
 

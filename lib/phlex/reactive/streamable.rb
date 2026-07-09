@@ -114,7 +114,12 @@ module Phlex
         # thread-local path (so exclude:/visible_to: reach pgbus and Action Cable
         # no-ops). Self-targeting verbs derive the target from the component's #id
         # and REQUIRE a Streamable payload; container verbs need an explicit target.
-        def broadcast_component(owner, verb, payload, component, keys, morph:, target:, exclude:, visible_to:)
+        def broadcast_component(owner, verb, payload, component, keys, morph:, target:, exclude:, visible_to:, effect: nil)
+          if verb == :js && !effect.nil?
+            raise ArgumentError,
+              "broadcast_to js: takes no effect: — effects animate element streams (replace/update/" \
+              "append/prepend/remove), not client-op dispatches"
+          end
           resolved_target = resolve_broadcast_target(verb, component, payload, target)
           # broadcast_js_ops_json is a private class method on the owner Streamable
           # class (reached via send); the instrumentation + pgbus thread-locals are
@@ -127,7 +132,7 @@ module Phlex
             with_pgbus_broadcast_opts(exclude:, visible_to:) do
               html = verb == :js ? nil : render_broadcast_html(component)
               ops_json = verb == :js ? owner.send(:broadcast_js_ops_json, payload) : nil
-              keys.each { dispatch_broadcast(verb, it, resolved_target, html, ops_json, morph) }
+              keys.each { dispatch_broadcast(verb, it, resolved_target, html, ops_json, morph, effect) }
             end
           end
         end
@@ -192,14 +197,18 @@ module Phlex
         # Route ONE key to its Turbo::StreamsChannel call for the verb (issue #185).
         # exclude:/visible_to: are NOT passed here — they ride the pgbus thread-locals
         # set by with_pgbus_broadcast_opts (turbo-rails would swallow them as kwargs).
-        def dispatch_broadcast(verb, key, target, html, ops_json, morph)
+        # `effect` (issue #215) rides the same attributes: seam morph does — every
+        # broadcast_*_to delegates to broadcast_action_to(attributes:), so the attr
+        # lands on the <turbo-stream> element on every verb.
+        def dispatch_broadcast(verb, key, target, html, ops_json, morph, effect = nil)
           parts = Array(key)
+          wire = broadcast_wire(morph, effect)
           case verb
-          when :replace then ::Turbo::StreamsChannel.broadcast_replace_to(*parts, target:, html:, **morph_wire(morph))
-          when :update then ::Turbo::StreamsChannel.broadcast_update_to(*parts, target:, html:, **morph_wire(morph))
-          when :append then ::Turbo::StreamsChannel.broadcast_append_to(*parts, target:, html:)
-          when :prepend then ::Turbo::StreamsChannel.broadcast_prepend_to(*parts, target:, html:)
-          when :remove then ::Turbo::StreamsChannel.broadcast_remove_to(*parts, target:)
+          when :replace then ::Turbo::StreamsChannel.broadcast_replace_to(*parts, target:, html:, **wire)
+          when :update then ::Turbo::StreamsChannel.broadcast_update_to(*parts, target:, html:, **wire)
+          when :append then ::Turbo::StreamsChannel.broadcast_append_to(*parts, target:, html:, **wire)
+          when :prepend then ::Turbo::StreamsChannel.broadcast_prepend_to(*parts, target:, html:, **wire)
+          when :remove then ::Turbo::StreamsChannel.broadcast_remove_to(*parts, target:, **wire)
           when :js
             ::Turbo::StreamsChannel.broadcast_action_to(
               *parts, action: "reactive:js", target:, attributes: { data: { reactive_ops: ops_json } }, render: false
@@ -207,11 +216,18 @@ module Phlex
           end
         end
 
-        # The ONE morph wire compiler (issue #185): the broadcast path emits the
-        # method="morph" attribute via `attributes:` (it has no `method:` kwarg).
-        # Replaces the morph_method/morph_attributes twins.
-        def morph_wire(morph)
-          morph ? { attributes: { method: "morph" } } : {}
+        # The ONE broadcast attributes compiler (issue #185, extended #215): the
+        # broadcast path emits extra <turbo-stream> attributes via `attributes:`
+        # (it has no `method:` kwarg) — method="morph" and/or the per-call
+        # data-reactive-effect. {} when neither, so the plain call's wire is
+        # byte-identical. (Replaces morph_wire.)
+        def broadcast_wire(morph, effect = nil)
+          return {} if !morph && effect.nil?
+
+          attrs = {}
+          attrs[:method] = "morph" if morph
+          attrs[:data] = { reactive_effect: Phlex::Reactive::Effects.wire_value(effect) } unless effect.nil?
+          { attributes: attrs }
         end
 
         # Split the single verb kwarg out of the module-level broadcast_to's **verb
@@ -431,12 +447,13 @@ module Phlex
         # thread to pgbus via the capability-gated instrument_broadcast path; on
         # Action Cable they no-op. The class-level and module-level (Phlex::Reactive.
         # broadcast_to) forms share broadcast_component (below).
-        def broadcast_to(*streamables, morph: false, target: nil, exclude: nil, visible_to: nil, each: nil, **verb)
+        def broadcast_to(*streamables, morph: false, target: nil, exclude: nil, visible_to: nil, each: nil,
+                         effect: nil, **verb)
           name, payload = extract_broadcast_verb(verb)
           component = name == :js ? nil : coerce_broadcast_payload(payload)
           keys = each ? each.map { Array(it) } : [streamables]
           Phlex::Reactive::Streamable.broadcast_component(
-            self, name, payload, component, keys, morph:, target:, exclude:, visible_to:
+            self, name, payload, component, keys, morph:, target:, exclude:, visible_to:, effect:
           )
         end
 
@@ -525,9 +542,9 @@ module Phlex
           morph ? { method: :morph } : {}
         end
 
-        # (The broadcast path's morph wire moved to Streamable.morph_wire, issue
-        # #185 — the single compiler both the class-level and module-level
-        # broadcast_to share.)
+        # (The broadcast path's extra-attribute wire lives in
+        # Streamable.broadcast_wire — the single compiler both the class-level
+        # and module-level broadcast_to share; issue #185, extended #215.)
 
         def renderer
           Phlex::Reactive.renderer
