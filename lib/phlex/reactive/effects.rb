@@ -91,6 +91,23 @@ module Phlex
           attrs.empty? ? nil : attrs.freeze
         end
 
+        # Stamp a built turbo-stream tag with the PER-CALL effect override:
+        # `data-reactive-effect` on the <turbo-stream> element itself (it beats
+        # the root-declared attrs on the client; "off" suppresses them). String
+        # injection into the opening tag — turbo-rails' TagBuilder only takes
+        # `method:` as a tag attribute, and hand-built escaped attrs are the
+        # to_stream_token precedent. `.sub` hits the FIRST "<turbo-stream",
+        # which is always the opening tag (template content is escaped or
+        # nested later). nil = not given → the input passes through UNTOUCHED
+        # (byte-identical wire). Value validated + escaped — a legs JSON's
+        # quotes land as &quot;.
+        def annotate(html, effect)
+          return html if effect.nil?
+
+          attr = %( data-reactive-effect="#{ERB::Util.html_escape(wire_value(effect))}")
+          html.to_s.sub("<turbo-stream", "<turbo-stream#{attr}").html_safe
+        end
+
         # ONE effect value → its wire string: a built-in/random name, "off"
         # (per-call suppression), or the legs JSON array.
         def wire_value(value)

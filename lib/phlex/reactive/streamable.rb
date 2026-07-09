@@ -326,10 +326,17 @@ module Phlex
         # action/target/token-ness structurally. renders_root: true — a replace
         # re-renders the component's own root (carrying its fresh token); wire
         # bytes are byte-identical.
-        def replace(model = nil, morph: false, **options)
+        # `effect:` (issue #215) — the PER-CALL effect override, stamped as
+        # data-reactive-effect on the <turbo-stream> element (false → "off").
+        # nil (the default) leaves the wire byte-identical. Same on every
+        # builder below.
+        def replace(model = nil, morph: false, effect: nil, **options)
           component = build(model, options)
           Phlex::Reactive::Stream.wrap(
-            turbo_stream_builder.replace(component.id, html: render_component(component), **morph_method(morph)),
+            Phlex::Reactive::Effects.annotate(
+              turbo_stream_builder.replace(component.id, html: render_component(component), **morph_method(morph)),
+              effect
+            ),
             action: "replace", target: component.id, renders_root: true
           )
         end
@@ -338,10 +345,13 @@ module Phlex
         # Turbo 8 morphs the inner HTML in place instead of replacing it (issue
         # #113) — a cross-tab update no longer clobbers a peer's focus/caret.
         # Default (morph: false) is the unchanged plain update.
-        def update(model = nil, morph: false, **options)
+        def update(model = nil, morph: false, effect: nil, **options)
           component = build(model, options)
           Phlex::Reactive::Stream.wrap(
-            turbo_stream_builder.update(component.id, html: render_component(component), **morph_method(morph)),
+            Phlex::Reactive::Effects.annotate(
+              turbo_stream_builder.update(component.id, html: render_component(component), **morph_method(morph)),
+              effect
+            ),
             action: "update", target: component.id, renders_root: true
           )
         end
@@ -349,26 +359,32 @@ module Phlex
         # renders_root: false — append inserts a CHILD into `target`; even when
         # the appended component carries its OWN token, that must never count as
         # the container's own refresh (issue #44).
-        def append(target:, model: nil, **options)
+        def append(target:, model: nil, effect: nil, **options)
           component = build(model, options)
           Phlex::Reactive::Stream.wrap(
-            turbo_stream_builder.append(target, html: render_component(component)),
+            Phlex::Reactive::Effects.annotate(
+              turbo_stream_builder.append(target, html: render_component(component)),
+              effect
+            ),
             action: "append", target: target, renders_root: false
           )
         end
 
-        def prepend(target:, model: nil, **options)
+        def prepend(target:, model: nil, effect: nil, **options)
           component = build(model, options)
           Phlex::Reactive::Stream.wrap(
-            turbo_stream_builder.prepend(target, html: render_component(component)),
+            Phlex::Reactive::Effects.annotate(
+              turbo_stream_builder.prepend(target, html: render_component(component)),
+              effect
+            ),
             action: "prepend", target: target, renders_root: false
           )
         end
 
-        def remove(model = nil, **options)
+        def remove(model = nil, effect: nil, **options)
           component = build(model, options)
           Phlex::Reactive::Stream.wrap(
-            turbo_stream_builder.remove(component.id),
+            Phlex::Reactive::Effects.annotate(turbo_stream_builder.remove(component.id), effect),
             action: "remove", target: component.id, renders_root: false
           )
         end
@@ -586,10 +602,13 @@ module Phlex
       # refreshes). Default (morph: false) is the plain outerHTML replace,
       # byte-identical to before. Used by reply.replace / reply.morph. The morph:
       # kwarg replaces the deleted to_stream_morph (issue #185).
-      def to_stream_replace(morph: false)
+      # `effect:` (issue #215) — the per-call effect override on the actor's
+      # own reply stream, same wire as the class builders (nil = untouched).
+      def to_stream_replace(morph: false, effect: nil)
         builder = self.class.turbo_stream_builder
         html = self.class.render_component(self)
         rendered = morph ? builder.replace(id, html:, method: :morph) : builder.replace(id, html:)
+        rendered = Phlex::Reactive::Effects.annotate(rendered, effect)
         Phlex::Reactive::Stream.wrap(rendered, action: "replace", target: id, renders_root: true)
       end
 
@@ -606,10 +625,11 @@ module Phlex
       # false) is the unchanged plain update. Passing `method: :morph` inline
       # (as #to_stream_morph does) keeps the plain call's wire byte-identical.
       # Used by reply.update.
-      def to_stream_update(morph: false)
+      def to_stream_update(morph: false, effect: nil)
         builder = self.class.turbo_stream_builder
         html = self.class.render_component(self)
         rendered = morph ? builder.update(id, html:, method: :morph) : builder.update(id, html:)
+        rendered = Phlex::Reactive::Effects.annotate(rendered, effect)
         Phlex::Reactive::Stream.wrap(rendered, action: "update", target: id, renders_root: true)
       end
 
@@ -647,9 +667,9 @@ module Phlex
       # Render THIS instance as a remove stream. The component already knows its
       # own #id, so no record/class reconstruction is needed (works for record-
       # and state-backed components alike). Used by reply.remove.
-      def to_stream_remove
+      def to_stream_remove(effect: nil)
         Phlex::Reactive::Stream.wrap(
-          self.class.turbo_stream_builder.remove(id),
+          Phlex::Reactive::Effects.annotate(self.class.turbo_stream_builder.remove(id), effect),
           action: "remove", target: id, renders_root: false
         )
       end
