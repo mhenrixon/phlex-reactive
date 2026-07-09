@@ -29,3 +29,13 @@ if ChatMessage.where(room: 'lobby').none?
     { author: 'you', body: 'Send a message — it broadcasts with zero custom JS.' }
   ].each { |attrs| ChatMessage.create!(room: 'lobby', **attrs) }
 end
+
+if Card.none?
+  {
+    'todo' => ['Sketch the onboarding flow', 'Write the Q3 planning doc'],
+    'doing' => ['Ship the billing webhook'],
+    'done' => ['Fix the flaky signup spec']
+  }.each do |lane, titles|
+    titles.each_with_index { |title, i| Card.create!(title:, lane:, position: i + 1) }
+  end
+end
