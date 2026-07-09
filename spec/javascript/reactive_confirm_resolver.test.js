@@ -10,7 +10,7 @@
 // leaks no unhandled rejection.
 //
 // Run with: bun test spec/javascript
-import { test, expect, mock, beforeAll, beforeEach } from "bun:test"
+import { test, expect, mock, beforeAll, beforeEach, afterAll } from "bun:test"
 
 let ReactiveController
 let confirmModule
@@ -23,6 +23,17 @@ beforeAll(async () => {
   }))
   ReactiveController = (await import("../../app/javascript/phlex/reactive/reactive_controller.js")).default
   confirmModule = await import("../../app/javascript/phlex/reactive/confirm.js")
+})
+
+// confirmResolver is module-global. This file's tests deliberately install
+// non-default resolvers (including `() => true`, which never prompts); without a
+// teardown the LAST one leaks into whatever file bun runs next in the shared
+// worker (a CI-order-dependent failure). Restore the shipped default on the way
+// out so a later spec inherits the real window.confirm-backed gate.
+afterAll(() => {
+  confirmModule.setConfirmResolver((message) =>
+    Promise.resolve(typeof globalThis.window !== "undefined" ? globalThis.window.confirm(message) : true),
+  )
 })
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))

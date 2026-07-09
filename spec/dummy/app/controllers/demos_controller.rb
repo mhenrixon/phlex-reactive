@@ -159,6 +159,13 @@ class DemosController < ActionController::Base
     render_component DraftOrderJsonFormComponent.new
   end
 
+  # Issue #218: a JSON-mode draft list whose per-row remove gates behind
+  # reactive_nested_remove(confirm:). Reconciled through the SAME /orders_json
+  # endpoint, so the confirm is the only thing under test.
+  def draft_order_confirm_remove
+    render_component DraftOrderConfirmRemoveComponent.new
+  end
+
   # The JSON-mode reconcile: the app parses a SERIALIZED JSON param by hand
   # (NO accepts_nested_attributes_for), the exact controller path an app that
   # already ships a JSON param keeps unchanged when adopting the primitive.

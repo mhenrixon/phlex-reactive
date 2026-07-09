@@ -32,6 +32,9 @@ Rails.application.routes.draw do
   # wire modes, reconciled through the SAME /orders and /orders_json endpoints.
   get "draft_order_fill" => "demos#draft_order_fill"
   get "draft_order_fill_json" => "demos#draft_order_fill_json"
+  # Issue #218: a JSON-mode draft list whose per-row remove confirms first —
+  # reconciled through the SAME /orders_json endpoint.
+  get "draft_order_confirm_remove" => "demos#draft_order_confirm_remove"
   get "post_preview/:id" => "demos#post_preview"
   get "compute_seed" => "demos#compute_seed"
   get "notifications" => "demos#notifications"

@@ -2567,6 +2567,46 @@ RSpec.describe Phlex::Reactive::Component do
       expect(attrs[:data][:action]).to eq("click->reactive#nestedRemove")
     end
 
+    # Issue #218: reactive_nested_remove gains the SAME confirm: the other
+    # triggers (on/on_client) accept — routed through the shared apply_confirm!,
+    # so the static String, conditional when:, and named predicate: forms all
+    # work for parity. No confirm → the plain fast-path trigger, unchanged.
+    describe "confirm: (issue #218)" do
+      it "emits a static confirm message (data-reactive-confirm-param)" do
+        attrs = instance.send(:reactive_nested_remove, confirm: "Really delete this row?")
+        expect(attrs[:data][:reactive_confirm_param]).to eq("Really delete this row?")
+      end
+
+      it "omits the confirm wire entirely when no confirm: is given" do
+        attrs = instance.send(:reactive_nested_remove)
+        expect(attrs[:data]).not_to have_key(:reactive_confirm_param)
+        expect(attrs[:data]).not_to have_key(:reactive_confirm_when_param)
+      end
+
+      it "compiles a conditional when: Hash through the shared apply_confirm! (parity with on)" do
+        attrs = instance.send(:reactive_nested_remove,
+          confirm: { when: { amount: 0 }, message: "Remove empty row?" })
+
+        payload = JSON.parse(attrs[:data][:reactive_confirm_when_param])
+        expect(payload["message"]).to eq("Remove empty row?")
+        expect(payload.dig("groups", "any", 0, 0)["field"]).to eq("amount")
+        expect(attrs[:data]).not_to have_key(:reactive_confirm_param)
+      end
+
+      it "carries a named predicate: verbatim" do
+        attrs = instance.send(:reactive_nested_remove,
+          confirm: { predicate: "row_has_value", message: "This row has data — remove?" })
+
+        payload = JSON.parse(attrs[:data][:reactive_confirm_when_param])
+        expect(payload["predicate"]).to eq("row_has_value")
+      end
+
+      it "raises on a non-String/Hash confirm: (the shared apply_confirm! guard)" do
+        expect { instance.send(:reactive_nested_remove, confirm: 42) }
+          .to raise_error(ArgumentError)
+      end
+    end
+
     it "raises on an association name that isn't a plain identifier" do
       expect { instance.send(:reactive_nested_add, "line items") }
         .to raise_error(ArgumentError, /association/)

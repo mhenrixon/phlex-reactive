@@ -2246,6 +2246,35 @@ export default class extends Controller {
     // inside ANOTHER collection's row (the issue #15 closest-form posture).
     if (row.closest?.('[data-controller~="reactive"]') !== this.element) return
 
+    // Confirm gate (issue #218): reactive_nested_remove(confirm:) emits the SAME
+    // data-reactive-confirm[-when]-param the other triggers do (nestedRemove reads
+    // params via getAttribute, not event.params, so pull them off the trigger),
+    // routed through the SAME #effectiveConfirmMessage + confirmResolver seam. A
+    // static string always shows; a conditional Hash fires only when it matches,
+    // else null. No confirm attr → null → the immediate-remove fast path.
+    const confirm = trigger?.getAttribute?.("data-reactive-confirm-param")
+    const confirmWhen = trigger?.getAttribute?.("data-reactive-confirm-when-param")
+    const message = this.#effectiveConfirmMessage(confirm, confirmWhen)
+    if (!message) return this.#removeNestedRow(row)
+
+    // Gate through the overridable confirmResolver (issues #52/#55/#178) — a
+    // themed dialog set with setConfirmResolver covers this trigger too. Call the
+    // resolver INSIDE the chain so even a SYNCHRONOUS override throw is a cancel
+    // (like a dismissed dialog), and remove ONLY on a truthy resolution.
+    return Promise.resolve()
+      .then(() => confirmResolver(message))
+      .catch(() => false)
+      .then((ok) => {
+        if (ok) this.#removeNestedRow(row)
+      })
+  }
+
+  // The remove itself, shared by the confirmed and no-confirm paths. Draft rows
+  // leave the DOM; a persisted row (a hidden [_destroy] input present) is marked
+  // "1" + hidden instead (set-value + dispatch contract, #183), so Rails destroys
+  // it on save. Then re-sync every owned JSON-mode list (#208) — an absent row
+  // IS the removal; a form without a JSON list iterates an empty set and exits.
+  #removeNestedRow(row) {
     const destroy = [...(row.querySelectorAll?.('input[name$="[_destroy]"]') ?? [])][0]
     if (destroy) {
       destroy.value = "1"
@@ -2257,9 +2286,6 @@ export default class extends Controller {
       row.parentNode?.removeChild?.(row)
     }
 
-    // JSON mode (issue #208): the removed (or _destroy-hidden) row must leave
-    // the serialized array too — an absent row IS the removal. Re-sync every
-    // owned JSON-mode list; a form without one iterates an empty set and exits.
     this.#syncAllNestedJson()
   }
 
