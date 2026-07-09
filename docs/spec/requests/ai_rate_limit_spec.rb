@@ -8,8 +8,22 @@ require 'rails_helper'
 # in a real MemoryStore (Rails.cache is NullStore there), so the limit is
 # exercisable. 60 req/min/IP → the 61st in a window is a 429 with Retry-After.
 RSpec.describe 'AI endpoint rate limiting', type: :request do
-  before { Rack::Attack.cache.store.clear }
-  after { Rack::Attack.cache.store.clear }
+  include ActiveSupport::Testing::TimeHelpers
+
+  # Rack::Attack buckets counts by epoch window (Time.now.to_i / period), so a
+  # 60-request burst that starts near second :59 straddles TWO buckets — the
+  # 61st request lands in the fresh window with a count of 1 and sails through
+  # with a 200 (a real CI flake: the falcon demo-site job hit the boundary).
+  # Pin the clock mid-window so the whole burst always counts in ONE bucket.
+  before do
+    travel_to Time.zone.parse('2026-01-01 12:00:05')
+    Rack::Attack.cache.store.clear
+  end
+
+  after do
+    travel_back
+    Rack::Attack.cache.store.clear
+  end
 
   it 'lets a normal burst through and 429s past the per-IP limit' do
     60.times do
