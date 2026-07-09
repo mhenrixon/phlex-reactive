@@ -897,8 +897,23 @@ module Phlex
         # A row's remove trigger — client-only. Draft rows leave the DOM;
         # persisted rows (a hidden [_destroy] input present) are marked and
         # hidden instead, so Rails destroys them on save.
-        def reactive_nested_remove
-          { type: "button", data: { action: "click->reactive#nestedRemove" } }
+        #
+        # CONFIRM (issue #218). Removing a row can be a real loss (line items
+        # with entered amounts), so this trigger accepts the SAME confirm: the
+        # other triggers (on/on_client) do — routed through the shared
+        # apply_confirm!, so the client gates the remove behind the overridable
+        # confirmResolver (the styled-modal seam, #52/#55/#178). A String is
+        # the static message; a Hash is the CONDITIONAL form (#179) — prompt
+        # only when { when: … } matches or a { predicate: … } fires. Per-row
+        # messages come for free: the app builds a different string per row at
+        # render time. No confirm: → the plain immediate-remove fast path,
+        # unchanged.
+        #
+        #   button(**reactive_nested_remove(confirm: "Really delete #{row.name}?")) { "×" }
+        def reactive_nested_remove(confirm: nil)
+          data = { action: "click->reactive#nestedRemove" }
+          apply_confirm!(data, confirm) if confirm
+          { type: "button", data: }
         end
 
         # CROSS-ROOT value-conditional visibility (issue #164) — the visibility

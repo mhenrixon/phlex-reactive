@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Confirm on the draft-row remove — `reactive_nested_remove(confirm:)` (#218).**
+  `reactive_nested_remove` now accepts the SAME `confirm:` the other triggers
+  (`on`/`on_client`) do — a static message String, or the conditional Hash form
+  (`{ when: …, message: }` / `{ predicate: …, message: }`, #179) — routed through
+  the shared `apply_confirm!` and gated client-side behind the same overridable
+  `confirmResolver` (the styled-modal seam, #52/#55/#178). On accept it does the
+  existing remove (a draft row leaves the DOM; a persisted row is `_destroy`-marked
+  + hidden) and the existing JSON/attributes re-sync; on cancel, nothing. Per-row
+  messages come for free — the confirm is a per-render string. Works in BOTH wire
+  modes (`:attributes` and `as: :json`). No confirm: → the immediate-remove fast
+  path, unchanged.
+
 - **Fill-then-add for draft nested rows — `reactive_nested_add(:assoc, from:, clear:)` (#208).**
   The draft-rows primitive's add is *inline-edit* — it clones the template and
   focuses the new row's first field, so you type INTO the row. A common

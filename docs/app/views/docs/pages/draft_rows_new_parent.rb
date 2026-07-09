@@ -26,6 +26,7 @@ module Views
           the_reconcile
           json_mode
           fill_then_add
+          confirm_on_remove
           draft_actions
           notes
         end
@@ -247,6 +248,46 @@ module Views
                 never throws on click.
               MD
             end
+          end
+        end
+
+        def confirm_on_remove
+          DocsUI::Section('Confirm before removing a row') do
+            md <<~'MD'
+              Removing a row can be a real loss — a line item with an entered
+              amount, not just an empty new row. `reactive_nested_remove` accepts
+              the **same** `confirm:` the other triggers (`on`/`on_client`) do,
+              gated behind the same overridable `confirmResolver` (the
+              styled-modal seam) — so a "sure?" needs no bespoke JS:
+
+              ```ruby
+              button(**reactive_nested_remove(confirm: 'Really delete this row?')) { '×' }
+              ```
+
+              On click the client runs the confirm; on **accept** it does the
+              existing remove (a draft row leaves the DOM; a persisted row is
+              `_destroy`-marked + hidden) and the existing JSON/attributes
+              re-sync; on **cancel** nothing happens. It works in both wire modes.
+
+              **Per-row messages come for free** — the confirm is a per-render
+              string, so a row that wants row-specific detail just renders a
+              different one (no gem-side interpolation feature needed, exactly as
+              with `on(:destroy, confirm:)`):
+
+              ```ruby
+              button(**reactive_nested_remove(
+                confirm: "Really delete #{row.name} (#{row.amount})?")) { '×' }
+              ```
+
+              It also composes with the conditional-confirm Hash form — prompt
+              only when a condition matches, for parity with `on`/`on_client`:
+
+              ```ruby
+              # Only ask if the row still has a value; a blank draft row goes quietly.
+              button(**reactive_nested_remove(
+                confirm: { when: { amount: 1.. }, message: 'Remove this line item?' })) { '×' }
+              ```
+            MD
           end
         end
 

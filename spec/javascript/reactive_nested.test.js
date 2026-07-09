@@ -110,8 +110,16 @@ class FakeNode {
     if (attrEq) return this.getAttribute(attrEq[1]) === (attrEq[2] ?? attrEq[3])
     const attrPresent = selector.match(/^\[([\w-]+)\]$/)
     if (attrPresent) return this.getAttribute(attrPresent[1]) !== null
-    const tagList = selector.split(",").map((s) => s.trim())
-    if (tagList.every((s) => /^[a-z]+$/.test(s))) return tagList.includes(this.tag)
+    // A comma-list of bare tags OR `tag[attr]` segments (e.g. #collectFields'
+    // "input[name], select[name], textarea[name]"): match if ANY segment fits.
+    const segList = selector.split(",").map((s) => s.trim())
+    if (segList.every((s) => /^[a-z]+(\[[\w-]+\])?$/.test(s))) {
+      return segList.some((s) => {
+        const [, tag, attr] = s.match(/^([a-z]+)(?:\[([\w-]+)\])?$/)
+        if (this.tag !== tag) return false
+        return attr ? this.getAttribute(attr) !== null : true
+      })
+    }
     return false
   }
 
@@ -524,4 +532,131 @@ test("a checkbox source copies its checked state to a checkbox row field", () =>
   clickAdd(controller, add)
 
   expect(fieldByKey(list.children[0], "gift").checked).toBe(true)
+})
+
+// Confirm on remove (issue #218): reactive_nested_remove(confirm:) gates the
+// remove behind the SAME overridable confirmResolver on(:action, confirm:) uses
+// — declining leaves the row; accepting removes it (draft leaves the DOM /
+// persisted _destroy-marks + hides) and re-syncs JSON mode. No confirm attr →
+// the immediate-remove fast path, unchanged. The gate makes nestedRemove async
+// only when a message is present.
+//
+// confirmResolver defaults to window.confirm; buildController sets globalThis.window,
+// so stub .confirm on it. Returns the messages the prompt saw.
+function stubConfirm(answer) {
+  const seen = []
+  globalThis.window.confirm = (message) => {
+    seen.push(message)
+    return answer
+  }
+  return seen
+}
+
+// A draft row already in the list, with a remove button carrying the given
+// confirm attributes. Returns { row, remove }.
+function draftRowWithRemove(list, confirmAttrs = {}) {
+  const row = new FakeNode({ tag: "div", attrs: { "data-reactive-nested-row": "" } })
+  const remove = new FakeNode({
+    tag: "button",
+    attrs: { "data-action": "click->reactive#nestedRemove", ...confirmAttrs },
+  })
+  row.append(new FakeNode({ tag: "input", name: "order[line_items_attributes][0][quantity]", value: "3" }), remove)
+  list.append(row)
+  return { row, remove }
+}
+
+test("nestedRemove(confirm) — declining leaves the row (no removal)", async () => {
+  const { root, list } = nestedWidget()
+  const controller = buildController(root)
+  const { remove } = draftRowWithRemove(list, { "data-reactive-confirm-param": "Really delete this row?" })
+  const seen = stubConfirm(false)
+
+  await controller.nestedRemove({ currentTarget: remove, preventDefault: () => {} })
+
+  expect(seen).toEqual(["Really delete this row?"]) // prompted with our message
+  expect(list.children.length).toBe(1) // declined → still there
+})
+
+test("nestedRemove(confirm) — accepting removes the row", async () => {
+  const { root, list } = nestedWidget()
+  const controller = buildController(root)
+  const { remove } = draftRowWithRemove(list, { "data-reactive-confirm-param": "Sure?" })
+  stubConfirm(true)
+
+  await controller.nestedRemove({ currentTarget: remove, preventDefault: () => {} })
+
+  expect(list.children.length).toBe(0) // confirmed → gone
+})
+
+test("nestedRemove without a confirm attr removes immediately (unchanged fast path)", () => {
+  const { root, list } = nestedWidget()
+  const controller = buildController(root)
+  const { remove } = draftRowWithRemove(list) // no confirm attrs
+  stubConfirm(false) // even if a prompt exists, no attr means no prompt
+
+  controller.nestedRemove({ currentTarget: remove, preventDefault: () => {} })
+
+  expect(list.children.length).toBe(0) // removed with no gate
+})
+
+test("nestedRemove(confirm) — declining still preventDefaults (no native submit on cancel)", async () => {
+  const { root, list } = nestedWidget()
+  const controller = buildController(root)
+  const { remove } = draftRowWithRemove(list, { "data-reactive-confirm-param": "Sure?" })
+  stubConfirm(false)
+  let prevented = 0
+
+  await controller.nestedRemove({ currentTarget: remove, preventDefault: () => (prevented += 1) })
+
+  expect(prevented).toBe(1)
+  expect(list.children.length).toBe(1)
+})
+
+test("nestedRemove(confirm) — accepting a PERSISTED row marks _destroy and hides it", async () => {
+  const { root, list } = nestedWidget()
+  const controller = buildController(root)
+  const row = new FakeNode({ tag: "div", attrs: { "data-reactive-nested-row": "" } })
+  const destroy = new FakeNode({
+    tag: "input",
+    type: "hidden",
+    name: "order[line_items_attributes][0][_destroy]",
+    value: "0",
+  })
+  const remove = new FakeNode({
+    tag: "button",
+    attrs: { "data-action": "click->reactive#nestedRemove", "data-reactive-confirm-param": "Delete saved item?" },
+  })
+  row.append(destroy, remove)
+  list.append(row)
+  stubConfirm(true)
+
+  await controller.nestedRemove({ currentTarget: remove, preventDefault: () => {} })
+
+  expect(destroy.value).toBe("1")
+  expect(row.hidden).toBe(true)
+})
+
+test("nestedRemove(confirm-when) — the conditional Hash only prompts when it fires", async () => {
+  // { groups, message } — the reactive_show DNF fold over collected fields. The
+  // row's quantity field is 0, so an "equals 0" condition MATCHES → prompt.
+  const { root, list } = nestedWidget()
+  const confirmWhen = JSON.stringify({
+    groups: { any: [[{ field: "order[line_items_attributes][0][quantity]", equals: "0" }]] },
+    message: "Empty row — remove?",
+  })
+  const row = new FakeNode({ tag: "div", attrs: { "data-reactive-nested-row": "" } })
+  const field = new FakeNode({ tag: "input", name: "order[line_items_attributes][0][quantity]", value: "0" })
+  const remove = new FakeNode({
+    tag: "button",
+    attrs: { "data-action": "click->reactive#nestedRemove", "data-reactive-confirm-when-param": confirmWhen },
+  })
+  row.append(field, remove)
+  list.append(row)
+  const controller = buildController(root)
+  const seen = stubConfirm(false)
+
+  await controller.nestedRemove({ currentTarget: remove, preventDefault: () => {} })
+
+  expect(seen).toEqual(["Empty row — remove?"]) // condition fired → prompted
+  expect(list.children.length).toBe(1) // declined → kept
 })
