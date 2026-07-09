@@ -67,6 +67,30 @@ module Phlex
           end.freeze
         end
 
+        # The RESOLVED root attrs for a component class: global ⊕ component
+        # (Hash#merge — the component's per-hook values win), false hooks
+        # dropped at emission (they exist to cancel a global hook), the whole
+        # thing nil when everything is off. `reactive_effects false` opts the
+        # class out regardless of the global set. Returns a frozen
+        # { reactive_effect_<hook>: wire } fragment ready for data.merge!.
+        def root_attrs_for(klass)
+          component = klass.respond_to?(:reactive_effects_config) ? klass.reactive_effects_config : nil
+          return nil if component == false
+
+          global = Phlex::Reactive.effects
+          resolved =
+            if global && component then global.merge(component)
+            else global || component
+            end
+          return nil if resolved.nil? || resolved.empty?
+
+          attrs = {}
+          resolved.each do |hook, wire|
+            attrs[:"reactive_effect_#{hook}"] = wire unless wire == false
+          end
+          attrs.empty? ? nil : attrs.freeze
+        end
+
         # ONE effect value → its wire string: a built-in/random name, "off"
         # (per-call suppression), or the legs JSON array.
         def wire_value(value)
