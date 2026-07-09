@@ -63,6 +63,16 @@ RSpec.describe Phlex::Reactive::Engine do
     it "does not precompile the unminified source (it is not served)" do
       expect(assets.precompile).not_to include("phlex/reactive/reactive_controller.js")
     end
+
+    it "precompiles the effects stylesheet (issue #215)" do
+      expect(assets.precompile).to include("phlex/reactive/effects.css")
+    end
+
+    it "adds the gem's stylesheets dir to the asset paths" do
+      # The initializer resolves paths off the ENGINE root (the gem), not the
+      # host app's root — assert against the same base.
+      expect(assets.paths).to include(described_class.root.join("app/assets/stylesheets").to_s)
+    end
   end
 
   describe "phlex_reactive.importmap (pins)" do

@@ -13,6 +13,12 @@ class NotificationRowComponent < Phlex::HTML
   include Phlex::Reactive::Streamable
   include Phlex::Reactive::Component
 
+  # Effects (issue #215): an arriving notification slides in — for the actor's
+  # reply.append AND the cross-tab broadcast append alike. Dismiss stays
+  # instant for the actor (the optimistic hide already removed it from view);
+  # peers see the broadcast remove fade the row out.
+  reactive_effects enter: :slide, exit: :fade
+
   def self.model_param_name = :notification
 
   def initialize(notification:)

@@ -57,6 +57,8 @@ module Phlex
           dirty: :@reactive_own_dirty,
           # Deferred reply segments — reactive_lazy (issue #165).
           lazy: :@reactive_own_lazy,
+          # Enter/exit/update effects — reactive_effects (issue #215).
+          effects: :@reactive_own_effects,
           # verify_authorized opt-out (issue #168): a scalar bare flag (skip the
           # WHOLE component) plus a list of named actions.
           skip_all: :@reactive_own_skip_all,

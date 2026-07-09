@@ -58,8 +58,10 @@ module Phlex
         # Re-render the component in place (explicit form of today's default).
         # `morph: true` morphs the subtree (preserves the focused input + caret)
         # instead of an outerHTML swap — see .build_morph (issue #28).
-        def build_replace(component, morph: false)
-          new(streams: [component.to_stream_replace(morph:)],
+        # `effect:` (issue #215) stamps the per-call effect override on the
+        # emitted stream — same on every self-targeting builder below.
+        def build_replace(component, morph: false, effect: nil)
+          new(streams: [component.to_stream_replace(morph:, effect:)],
             subject_component: component)
         end
 
@@ -69,19 +71,23 @@ module Phlex
         # per-field reactive editing (a "spreadsheet" grid where a debounced save
         # fires while the user is still typing/tabbing). The morphed root still
         # carries the fresh signed token, so the next action verifies.
-        def build_morph(component) = new(streams: [component.to_stream_replace(morph: true)], subject_component: component)
+        def build_morph(component, effect: nil)
+          new(streams: [component.to_stream_replace(morph: true, effect:)], subject_component: component)
+        end
 
         # Update only inner HTML (preserves the root element + its token attr).
         # `morph: true` morphs the inner HTML in place (issue #113) instead of
         # replacing it, so a cross-tab update keeps a peer's focus/caret.
-        def build_update(component, morph: false)
-          new(streams: [component.to_stream_update(morph:)], subject_component: component)
+        def build_update(component, morph: false, effect: nil)
+          new(streams: [component.to_stream_update(morph:, effect:)], subject_component: component)
         end
 
         # Remove the component's element from the DOM. Uses the instance
         # to_stream_remove (the component already knows its own #id — no
         # class-builder reconstruction; works for record- and state-backed).
-        def build_remove(component) = new(streams: [component.to_stream_remove], render_self: false)
+        def build_remove(component, effect: nil)
+          new(streams: [component.to_stream_remove(effect:)], render_self: false)
+        end
 
         # Client-side full navigation (Turbo.visit). Use when the current URL
         # is dead (slug rename) or the outcome belongs on another page. Pass a
@@ -110,21 +116,24 @@ module Phlex
         # container owns the add/remove trigger, so the endpoint appends its inert
         # `reactive:token` stream (the same #30 machinery reply.streams uses) to roll
         # the token forward without re-rendering the rows.
-        def build_collection_append(component, name, model, **row_kwargs)
+        # `effect:` (issue #215) stamps the ROW stream only — the count
+        # companion and the empty-state toggle are bookkeeping, not the thing
+        # entering/leaving.
+        def build_collection_append(component, name, model, effect: nil, **row_kwargs)
           definition = collection_def!(component, name)
-          new(streams: collection_add_streams(definition, component, model, :append, row_kwargs),
+          new(streams: collection_add_streams(definition, component, model, :append, row_kwargs, effect:),
             render_self: false, token_component: component)
         end
 
-        def build_collection_prepend(component, name, model, **row_kwargs)
+        def build_collection_prepend(component, name, model, effect: nil, **row_kwargs)
           definition = collection_def!(component, name)
-          new(streams: collection_add_streams(definition, component, model, :prepend, row_kwargs),
+          new(streams: collection_add_streams(definition, component, model, :prepend, row_kwargs, effect:),
             render_self: false, token_component: component)
         end
 
-        def build_collection_remove(component, name, model)
+        def build_collection_remove(component, name, model, effect: nil)
           definition = collection_def!(component, name)
-          new(streams: collection_remove_streams(definition, component, model),
+          new(streams: collection_remove_streams(definition, component, model, effect:),
             render_self: false, token_component: component)
         end
 
@@ -141,10 +150,10 @@ module Phlex
         # Row add (append/prepend) + count + empty-state clear. The empty-state is
         # removed only when the list just crossed 0->1 (size == 1) — appending to
         # an already-populated list leaves it untouched.
-        def collection_add_streams(definition, component, model, action, row_kwargs = {})
+        def collection_add_streams(definition, component, model, action, row_kwargs = {}, effect: nil)
           # row_kwargs (issue #186) thread to the row component's init via the class
           # stream builder's **options passthrough (ItemRow.new(model:, **row_kwargs)).
-          streams = [definition.item.public_send(action, target: definition.container, model:, **row_kwargs)]
+          streams = [definition.item.public_send(action, target: definition.container, model:, effect:, **row_kwargs)]
           append_count_stream(streams, definition, component)
 
           size = definition.size_for(component)
@@ -154,8 +163,8 @@ module Phlex
 
         # Row remove + count + empty-state restore. The empty-state is appended
         # back into the container only when the list just emptied (size == 0).
-        def collection_remove_streams(definition, component, model)
-          streams = [collection_row_remove(definition, model)]
+        def collection_remove_streams(definition, component, model, effect: nil)
+          streams = [collection_row_remove(definition, model, effect)]
           append_count_stream(streams, definition, component)
 
           size = definition.size_for(component)
@@ -170,11 +179,11 @@ module Phlex
 
         # Remove the row by its DOM id. Accepts the record (so dom_id is derived)
         # or an already-built dom-id string (e.g. the value the row used as #id).
-        def collection_row_remove(definition, model)
+        def collection_row_remove(definition, model, effect = nil)
           if model.is_a?(String)
-            Phlex::Reactive.stream_builder.remove(model)
+            Phlex::Reactive::Effects.annotate(Phlex::Reactive.stream_builder.remove(model), effect)
           else
-            definition.item.remove(model)
+            definition.item.remove(model, effect:)
           end
         end
 

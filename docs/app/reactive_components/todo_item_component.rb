@@ -18,6 +18,11 @@ class TodoItemComponent < Phlex::HTML
   include Phlex::Reactive::Component
 
   reactive_record :todo
+  # Effects (issue #215, declared standalone — no global switch): a new row
+  # slides in, a toggle/rename flashes (actor AND peers — the broadcast morph
+  # rides the same interceptor), an archived row fades out for peers (the
+  # actor's row is already optimistically hidden, so its exit is invisible).
+  reactive_effects enter: :slide, exit: :fade, update: :highlight
   action :toggle
   action :rename, params: { title: :string }
   action :archive

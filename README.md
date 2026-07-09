@@ -2133,6 +2133,66 @@ end
   `reactive_collection` is the per-actor add/remove + count + empty-state wrapper,
   not a replacement for the broadcast.
 
+### Effects — animate enter/exit/update (opt-in)
+
+Reactive updates land instantly and invisibly: a removed row pops out of
+existence, an appended row pops in, a cross-tab change gives no cue. Effects
+make the reactivity *visible* — rows fade/slide in and out, updates flash —
+with zero app JS. Strictly **opt-in at three levels**, most specific wins:
+
+```ruby
+# 1. GLOBAL — setting it is the opt-in AND the app-wide default set:
+Phlex::Reactive.effects = true   # { enter: :fade, exit: :fade, update: :highlight }
+Phlex::Reactive.effects = { enter: :slide, exit: :fade, update: :highlight }
+
+# 2. PER COMPONENT — refine or opt out (works standalone too; declaring on a
+#    component opts it in even without the global switch):
+class Notifications::Row < ApplicationComponent
+  reactive_effects enter: :slide, exit: :fade   # built-ins (shipped CSS)
+  # reactive_effects update: false              # disable one hook
+  # reactive_effects false                      # opt this component out entirely
+  # reactive_effects enter: :random             # a random built-in per application
+end
+
+# 3. PER CALL — the escape hatch for one stream:
+reply.remove(effect: :shake)                    # a dramatic one-off exit
+reply.append(item, to: :items, effect: :scale)  # this row only
+Item.replace(@todo, effect: false)              # suppress a declared effect once
+Row.broadcast_to(@list, :todos, append: todo, target: "rows", effect: :slide)
+```
+
+The hooks map to stream actions: **enter** (`append`/`prepend`) animates the
+arriving element, **exit** (`remove`) runs *before* the element leaves the DOM
+(the removal waits for the animation, capped at 1s so a missing stylesheet can
+never wedge it), **update** (`replace`/`update`, plain or morph) flashes the
+fresh render. Effects fire for the actor's own reply AND for broadcasts alike
+— if a debounced-save grid flashes too much, declare `reactive_effects
+update: false` on that component.
+
+Link the shipped stylesheet once (five built-ins — `:fade`, `:slide`,
+`:scale`, `:highlight`, `:shake` — wrapped in `prefers-reduced-motion:
+no-preference`, tunable via `--reactive-fx-*` CSS custom properties):
+
+```erb
+<%= stylesheet_link_tag "phlex/reactive/effects" %>
+```
+
+Custom effects skip the stylesheet entirely: pass named class legs (the same
+`{ during:, from:, to: }` vocabulary `js.toggle(transition:)` uses), perfect
+for Tailwind utilities:
+
+```ruby
+reactive_effects enter: { during: %w[transition-all duration-300],
+                          from: %w[opacity-0 translate-y-2],
+                          to: %w[opacity-100 translate-y-0] }
+```
+
+Unknown effect names raise at class load (server) and warn-and-skip on the
+client (default-deny, two-sided). With effects off (the default) the wire is
+byte-identical to previous releases; with them on, the resolved hooks ride the
+component root as `data-reactive-effect-*` attributes — identity, never state,
+and identical on Action Cable and pgbus.
+
 ### Configuration (`config/initializers/phlex_reactive.rb`)
 
 ```ruby
@@ -2179,6 +2239,10 @@ Phlex::Reactive.error_flash = ->(kind) do
   else                  "Something went wrong — please try again."
   end
 end
+
+# Effects (issue #215): opt in globally + set the app-wide default hooks; see
+# "Effects" above. Off (nil) by default — byte-identical wire when off.
+Phlex::Reactive.effects = { enter: :fade, exit: :fade, update: :highlight }
 
 # Turnkey APM integration. Names each action Component#action in AppSignal/Sentry/
 # Datadog and reports action-body crashes with component/action tags. SDK is
