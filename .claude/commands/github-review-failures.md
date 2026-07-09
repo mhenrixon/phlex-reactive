@@ -32,7 +32,7 @@ Once you have the PR number, confirm it:
 gh pr view <PR_NUMBER> --json title,state,url,mergeable
 ```
 
-**Pre-flight: merge conflicts.** If `mergeable` is `CONFLICTING` (or `UNKNOWN` and a local `git fetch origin <base> && git merge-tree --write-tree origin/<base> HEAD` exits non-zero), resolve the conflicts BEFORE diagnosing CI — follow `/github-review-pr` Phase A0 (merge the base in, never rebase a shared branch; regenerate `*.min.js` + vendored copies from source instead of hand-merging; union CHANGELOG entries; take the base's `version.rb` and lockfiles then `bundle install`). CI red on a conflicted or stale branch may be fixed — or caused — by the merge itself, so failure diagnosis only makes sense afterwards.
+**Pre-flight: merge conflicts (detection only).** If `mergeable` is `CONFLICTING`, STOP — do not diagnose CI on a conflicted branch (the merge itself may fix or cause the failures). Report the conflict and hand off to `/github-review-pr`, whose Phase A0 owns the resolution runbook — this command's toolset deliberately does not include the merge machinery. If `mergeable` is `UNKNOWN`, note it and proceed: the orchestrator resolves the ambiguity; a standalone run shouldn't block on GitHub's recompute.
 
 ---
 

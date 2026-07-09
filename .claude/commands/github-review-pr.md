@@ -2,7 +2,7 @@
 model: opus
 description: "Use when a PR needs full review — resolves merge conflicts with the base first, then fixes CI failures, then addresses unresolved review comments. Conflicts first so CI diagnoses the post-merge reality; failures before comments because comment fixes trigger new CI runs that obscure the original failures."
 argument-hint: "PR number (e.g., 156 or #156)"
-allowed-tools: Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr checks:*), Bash(gh pr diff:*), Bash(gh pr comment:*), Bash(gh api:*), Bash(gh run view:*), Bash(git log:*), Bash(git blame:*), Bash(git diff:*), Bash(git status:*), Bash(git fetch:*), Bash(git merge:*), Bash(git merge-tree:*), Bash(git push:*), Bash(git commit:*), Bash(git add:*), Bash(bundle exec:*), Bash(rake:*), Bash(bun:*), Read, Write, Edit, Glob, Grep, Agent
+allowed-tools: Bash(gh pr list:*), Bash(gh pr view:*), Bash(gh pr checks:*), Bash(gh pr checkout:*), Bash(gh pr diff:*), Bash(gh pr comment:*), Bash(gh api:*), Bash(gh run view:*), Bash(git log:*), Bash(git blame:*), Bash(git diff:*), Bash(git status:*), Bash(git switch:*), Bash(git fetch:*), Bash(git merge:*), Bash(git merge-tree:*), Bash(git rev-parse:*), Bash(git push:*), Bash(git commit:*), Bash(git add:*), Bash(bundle exec:*), Bash(bundle install:*), Bash(rake:*), Bash(bun:*), Bash(cp:*), Bash(cd:*), Read, Write, Edit, Glob, Grep, Agent
 ---
 
 # Review GitHub PR (full pass): $ARGUMENTS
@@ -61,18 +61,18 @@ gh pr view <PR_NUMBER> --json mergeable,mergeStateStatus,baseRefName
 | `mergeable` | Action |
 |-------------|--------|
 | `MERGEABLE` | Skip to Phase A. |
-| `UNKNOWN` | GitHub is recomputing (common right after pushes, and it can stay UNKNOWN for minutes). Don't poll it — verify **locally** instead: `git fetch origin <base>` then `git merge-tree --write-tree origin/<base> HEAD`; a clean exit means no conflicts (skip to Phase A), a non-zero exit means conflicts (resolve below). |
+| `UNKNOWN` | GitHub is recomputing (common right after pushes, and it can stay UNKNOWN for minutes). Don't poll it — verify **locally**, against the PR's actual head (NOT `HEAD`, which may be some other checked-out branch): `git fetch origin <base>` and `git fetch origin pull/<PR>/head`, verify both refs resolve (`git rev-parse --verify origin/<base>^{commit}` and `git rev-parse --verify FETCH_HEAD^{commit}` — a bad ref also exits 1 from merge-tree, so exit code alone can't be trusted), then `git merge-tree --write-tree --name-only origin/<base> FETCH_HEAD`. Clean exit → no conflicts, skip to Phase A. Exit 1 **with conflict output** → resolve below (the `--name-only` file list is your work list). |
 | `CONFLICTING` | Resolve, below. |
 
 ### Resolution procedure
 
-1. Make sure you are on the PR's branch with a clean tree (`git status`). Stash nothing — if the tree is dirty, stop and ask the user.
+1. Check out the PR's branch (`gh pr checkout <PR_NUMBER>`) with a clean tree (`git status`). Stash nothing — if the tree is dirty, stop and ask the user.
 2. `git fetch origin <base>` then **`git merge origin/<base>`** — MERGE, never rebase. The branch is shared (it has a PR); a rebase would require a force-push, which `.claude/rules/git-workflow.md` forbids on shared branches.
 3. Resolve every conflicted file **semantically** — read both sides and produce the version that preserves BOTH changes' intent. Never blanket `--ours`/`--theirs` a source file. Repo-specific rules:
-   - **Generated client artifacts** (`app/javascript/phlex/reactive/*.min.js`, `*.min.js.map`, `spec/dummy/public/vendor/*.js`): NEVER hand-merge the artifact. Resolve the SOURCE file (`reactive_controller.js` etc.) semantically, then regenerate: `rake build:js` and re-copy the vendored twins. `rake build:js_check` and `spec/phlex/vendored_controller_sync_spec.rb` will catch a hand-merged artifact — trust them.
-   - **`CHANGELOG.md` (Unreleased)**: union — keep BOTH sides' entries (main's landed bullets and this branch's), most recent first. Losing either side is a real regression reviewers rarely catch.
-   - **`lib/phlex/reactive/version.rb`**: take the BASE's version. Releases bump it on `main`; a feature branch never owns the version.
-   - **`docs/Gemfile.lock`** (the only tracked lockfile — the gem root's is gitignored): take the base's file, then run `bundle install` in `docs/` so the branch's own dependency changes, if any, re-resolve on top. Never hand-edit a lockfile.
+   - **The gem's generated client artifacts** — `app/javascript/phlex/reactive/*.min.js` + `*.min.js.map`, and the FIVE vendored twins named in `spec/phlex/vendored_controller_sync_spec.rb`'s map (`spec/dummy/public/vendor/{reactive_controller,confirm,confirm_predicate,compute,inspect}.js`): NEVER hand-merge the artifact. Resolve the SOURCE file (`reactive_controller.js` etc.) semantically, then regenerate: `rake build:js` and `cp` each rebuilt `.min.js` over its vendored twin. `rake build:js_check` and the sync spec will catch a hand-merged artifact — trust them. Everything ELSE under `spec/dummy/public/vendor/` (stimulus.js, turbo.js, the turbo-rails/pgbus shims, the dummy's hand-written reducers) is NOT generated — merge those semantically like any source, or re-vendor from upstream.
+   - **`CHANGELOG.md` (Unreleased)**: union — keep BOTH sides' entries (main's landed bullets and this branch's), most recent first, without duplicating the `### Added`/`### Fixed` subheads. Losing either side is a real regression reviewers rarely catch.
+   - **`lib/phlex/reactive/version.rb`**: releases land DIRECTLY on `main` via `rake release` (no PR), so an ordinary feature branch never edits this file — a conflict here means the BRANCH bumped it on purpose (a release-prep PR). Keep the branch's bump in that case; if the intent isn't obvious from the branch's own commits, stop and ask. Only take the base's version when the branch's edit was clearly accidental.
+   - **`docs/Gemfile.lock`** (the only tracked lockfile — the gem root's is gitignored and can never conflict): take the base's file, then run `bundle install` in `docs/` so the branch's own dependency changes, if any, re-resolve on top. Never hand-edit a lockfile.
    - **Append-only registries** (`docs/app/models/doc.rb`, route files, `spec/dummy/config/routes.rb`): both sides usually appended — keep both lines, in base order first.
 4. Run the verification gates BEFORE pushing the merge — scoped to what the conflict touched, at minimum:
    ```bash
@@ -80,8 +80,9 @@ gh pr view <PR_NUMBER> --json mergeable,mergeStateStatus,baseRefName
    bundle exec rspec spec/phlex spec/requests
    # client artifacts involved:
    bun test spec/javascript && rake build:js_check
-   # docs/ files involved:
-   cd docs && bundle exec rubocop <the resolved files> && bundle exec rspec
+   # docs/ files involved (docs' CI lint gate is its own rake lint task —
+   # a bare rubocop there inspects 0 files):
+   cd docs && bundle exec rake lint && bundle exec rspec
    ```
 5. Commit the merge (keep git's standard merge-commit message; add a body line naming any non-obvious resolution choice) and `git push` — a merge commit never needs force.
 
