@@ -697,14 +697,25 @@ function runEnterOrUpdateEffect(el, effect) {
 // Custom class legs — runTransition's choreography (add during+from, swap
 // from→to on the next frame, settle, clean up), promise-shaped so an exit can
 // await it. Class lists are space-separated (the #96/#186 wire).
+//
+// Rapid re-application on the same element RESTARTS, mirroring the named
+// path's token guard: each run takes the per-element token, clears any
+// earlier run's leg classes, and a superseded run stops touching the element
+// the moment a newer run owns it — so a stale settle can never strip classes
+// mid-animation or double-swap the legs. A superseded EXIT run resolves
+// early, which only lets Turbo's removal proceed sooner (never later).
 async function runLegsEffect(el, legs) {
   const [during, from, to] = legs.map(splitEffectClasses)
+  const token = (el.__reactiveFxToken = (el.__reactiveFxToken ?? 0) + 1)
+  el.classList.remove(...during, ...from, ...to)
   el.classList.add(...during, ...from)
   await effectNextFrame()
+  if (el.__reactiveFxToken !== token) return
   el.classList.remove(...from)
   el.classList.add(...to)
   const duration = effectDurationMs(el)
   if (duration > 0) await effectSettled(el, duration)
+  if (el.__reactiveFxToken !== token) return
   el.classList.remove(...during, ...to)
 }
 

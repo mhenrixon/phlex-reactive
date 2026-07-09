@@ -234,6 +234,45 @@ test("legs: exit runs during+from → to, settles, and cleans every leg up", asy
   expect(el.classList.contains("fx-to")).toBe(false)
 })
 
+test("legs: a rapid re-application restarts — a stale settle can't strip the newer run's classes", async () => {
+  const el = addTarget("card", { "data-test-duration": "0.2s" })
+  const legs = JSON.stringify(["fx-during", "fx-from", "fx-to"])
+  const tick = () => new Promise((resolve) => realSetTimeout(resolve, 0))
+
+  // Manual frame control for THIS test: capture rAF callbacks so each run can
+  // be frozen mid-choreography (the suite default invokes them synchronously).
+  const frames = []
+  globalThis.requestAnimationFrame = (fn) => frames.push(fn)
+
+  // Run 1: applies during+from, suspends awaiting its frame.
+  const first = fire(makeStream("replace", "card", { effect: legs }), async () => {})
+  await first.render(first.newStream)
+  frames.shift()() // frame 1 → run 1 swaps from→to and registers its settle listeners
+  await tick()
+  expect(el.classList.contains("fx-to")).toBe(true)
+
+  // Run 2: takes the token, clears run 1's classes, re-applies during+from,
+  // and suspends at ITS frame — settle listeners NOT yet registered.
+  const second = fire(makeStream("replace", "card", { effect: legs }), async () => {})
+  await second.render(second.newStream)
+  expect(el.classList.contains("fx-from")).toBe(true)
+
+  // This transitionend settles ONLY the stale run 1 — whose cleanup must now
+  // be a no-op (the token guard), leaving run 2's mid-flight classes alone.
+  el.dispatchEvent(new window.Event("transitionend"))
+  await tick()
+  expect(el.classList.contains("fx-during")).toBe(true)
+  expect(el.classList.contains("fx-from")).toBe(true)
+
+  // Let run 2 finish normally: its frame swaps from→to, its settle cleans up.
+  frames.shift()()
+  await tick()
+  el.dispatchEvent(new window.Event("transitionend"))
+  await tick()
+  expect(el.classList.contains("fx-during")).toBe(false)
+  expect(el.classList.contains("fx-to")).toBe(false)
+})
+
 test('"random" resolves to one of the shipped built-ins', () => {
   const el = addTarget("row", { "data-test-duration": "0.2s" })
   const detail = fire(makeStream("remove", "row", { effect: "random" }), async () => {})

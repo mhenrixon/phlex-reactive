@@ -135,14 +135,24 @@ module Phlex
 
         # Named legs (issue #186 vocabulary) → the [during, from, to] wire
         # array runTransition consumes. Class lists may be a String or an
-        # Array of strings.
+        # Array of strings. A SINGLE blank leg is legitimate (an element whose
+        # own CSS carries the `transition` property needs no during: utilities
+        # — the same tolerance js.rb's normalize_transition gives), but ALL
+        # legs blank is a dead effect with nothing to animate — fail loudly,
+        # like the empty-ops-chain guard in js_ops_json.
         def legs_wire(legs)
           unless LEG_KEYS.all? { legs.key?(it) }
             raise ArgumentError,
               "effect legs must name during:, from:, to: class lists — got #{legs.inspect}"
           end
 
-          JSON.generate(LEG_KEYS.map { Array(legs[it]).join(" ") })
+          compiled = LEG_KEYS.map { Array(legs[it]).join(" ") }
+          if compiled.all? { it.strip.empty? }
+            raise ArgumentError,
+              "effect legs are all blank — a dead effect with no classes to animate; got #{legs.inspect}"
+          end
+
+          JSON.generate(compiled)
         end
 
         # The old positional triple — reject with the named-legs rewrite, the

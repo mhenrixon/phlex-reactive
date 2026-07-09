@@ -90,6 +90,16 @@ RSpec.describe Phlex::Reactive::Effects do
         .to raise_error(ArgumentError, /during.*from.*to/m)
     end
 
+    it "rejects ALL-blank legs — a dead effect with no classes to animate" do
+      expect { Phlex::Reactive.effects = { enter: { during: nil, from: "", to: [] } } }
+        .to raise_error(ArgumentError, /blank.*dead|dead.*blank/m)
+    end
+
+    it "tolerates a single blank leg (element-owned transitions need no during: utilities — the #186 contract)" do
+      Phlex::Reactive.effects = { enter: { during: nil, from: "opacity-0", to: "opacity-100" } }
+      expect(Phlex::Reactive.effects).to eq(enter: %(["","opacity-0","opacity-100"]))
+    end
+
     it "rejects the old positional-array legs form with the named-legs rewrite" do
       expect { Phlex::Reactive.effects = { enter: %w[during from to] } }
         .to raise_error(ArgumentError, /during:.*from:.*to:/m)
