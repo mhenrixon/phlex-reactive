@@ -25,7 +25,8 @@ module Views
               Each page below renders its **real** reactive component inline — click
               it, it round-trips. They build from the smallest reactive component up
               to record-backed actions, live broadcasts, declared-once collections,
-              and the flagship inbox that composes everything.
+              and the two flagships — the inbox and the kanban board — that compose
+              everything.
 
               | Example | What it shows |
               |---|---|
@@ -41,6 +42,7 @@ module Views
               | [Client-only ops](/docs/example-client-ops) | `on_client` tabs / outside-close menu / accessible drawer — zero fetches, zero custom JS. |
               | [Failure surface](/docs/example-failure) | `error_flash` + `data-reactive-error` + `dismiss_after:` — what an adopter gets for free when an action fails. |
               | [Team inbox (flagship)](/docs/example-team-inbox) | The whole toolkit in one UI: collection rows, optimistic archive that **reverts on failure**, cross-tab broadcast, an `on_client` kebab, and error flashes. |
+              | [Project board (flagship)](/docs/example-project-board) | The kanban: cards move across lanes with **enter/exit effects** (per-visitor style picker incl. `random`), live count badges in every tab via `broadcast_to(js:)`, nested reactive rows with inline rename, confirm-gated archive. |
 
               **Every headline feature now has a live page.** Pick a capability:
 
@@ -53,7 +55,8 @@ module Views
               | **Optimistic visual hints** — `optimistic:` (flip a checkbox / hide a row instantly; revert on failure) | [Todo list](/docs/example-todo-list), [Collections](/docs/example-collections), [Team inbox](/docs/example-team-inbox) |
               | **Keyboard triggers** — `event: "keydown.enter"` / `"keydown.esc"` (Enter-to-add, Escape-to-cancel) | [Todo list](/docs/example-todo-list), [Inline edit](/docs/example-inline-edit) |
               | **Debounced / morph editing** — `debounce:` live-as-you-type + `reply.morph` to keep the caret | [Payment split](/docs/example-payment-split), [Inline edit](/docs/example-inline-edit) |
-              | **Live broadcasts** — `broadcast_to(replace:)` / `broadcast_to(append:)` / `broadcast_to(js:)` → cross-tab sync | [Chat](/docs/example-chat), [Notifications](/docs/example-notifications), [Todo list](/docs/example-todo-list), [Team inbox](/docs/example-team-inbox) |
+              | **Effects** — `reactive_effects` enter/exit/update + per-call `effect:` (incl. `random`) — see the [Effects guide](/docs/effects) | [Project board](/docs/example-project-board) |
+              | **Live broadcasts** — `broadcast_to(replace:)` / `broadcast_to(append:)` / `broadcast_to(js:)` → cross-tab sync | [Chat](/docs/example-chat), [Notifications](/docs/example-notifications), [Todo list](/docs/example-todo-list), [Team inbox](/docs/example-team-inbox), [Project board](/docs/example-project-board) |
               | **Failure surface** — `error_flash` / `data-reactive-error` / `dismiss_after:` / timeout + offline | [Failure surface](/docs/example-failure), [Team inbox](/docs/example-team-inbox) |
               | **Combobox keyboard navigation** — `reactive_listnav` (Arrow keys move a client highlight, Enter picks), composed via `mix` | [Searchable combobox demo](/demos/searchable-combobox) |
               | **File uploads & custom param types** — `:file` / `[:file]` (multipart `FormData`), `Phlex::Reactive.param_type` | [File uploads & custom types](/docs/example-uploads) (code-first) |

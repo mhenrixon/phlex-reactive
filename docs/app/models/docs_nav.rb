@@ -11,7 +11,8 @@ module DocsNav
     'payment-split' => 'scale',
     'todos' => 'list-checks',
     'chat' => 'messages-square',
-    'team-inbox' => 'inbox'
+    'team-inbox' => 'inbox',
+    'project-board' => 'columns-3'
   }.freeze
 
   # A lucide icon per doc group.

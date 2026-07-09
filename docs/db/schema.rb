@@ -10,7 +10,15 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_03_210005) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_09_120000) do
+  create_table "cards", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "lane", default: "todo", null: false
+    t.integer "position", default: 0, null: false
+    t.string "title", null: false
+    t.datetime "updated_at", null: false
+  end
+
   create_table "chat_messages", force: :cascade do |t|
     t.string "author", default: "anon", null: false
     t.text "body", null: false

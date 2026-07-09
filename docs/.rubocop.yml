@@ -66,6 +66,9 @@ Metrics/ClassLength:
   - app/views/**/*
   - app/components/**/*
   - app/reactive_components/**/*
+  # The demo registry is a data literal that grows with every demo entry —
+  # length here is content, not complexity.
+  - app/models/demo.rb
 Metrics/CyclomaticComplexity:
   Exclude:
   - app/views/**/*

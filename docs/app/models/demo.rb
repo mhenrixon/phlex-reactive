@@ -89,6 +89,23 @@ class Demo
         # change broadcasts to teammates' tabs; the row kebab is a pure client op:
         render TeamInboxComponent.new
       RUBY
+    },
+    {
+      slug: 'project-board',
+      title: 'Project board',
+      group: 'Records',
+      blurb: 'The kanban flagship — cards move across lanes with enter/exit effects, ' \
+             'live in every open tab, with inline rename, confirm-gated archive, and ' \
+             'a per-visitor effect-style picker.',
+      component: 'ProjectBoardComponent',
+      build: -> { ProjectBoardComponent.new },
+      call_site: <<~RUBY
+        # One shared board, three lanes. A move is one reply: the row's remove
+        # (its exit animates before the element leaves), the append into the new
+        # lane, and a reactive:js repaint of every count badge — broadcast to
+        # peers with the actor's echo excluded:
+        render ProjectBoardComponent.new
+      RUBY
     }
   ].freeze
 

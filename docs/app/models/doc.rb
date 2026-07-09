@@ -42,7 +42,9 @@ class Doc
     { slug: 'example-failure', title: 'Failure surface', group: 'Examples',
       view: 'ExampleFailure' },
     { slug: 'example-team-inbox', title: 'Team inbox (flagship)', group: 'Examples',
-      view: 'ExampleTeamInbox' }
+      view: 'ExampleTeamInbox' },
+    { slug: 'example-project-board', title: 'Project board (flagship)', group: 'Examples',
+      view: 'ExampleProjectBoard' }
   ].freeze
 
   attr_reader :slug, :title, :group, :view_name
