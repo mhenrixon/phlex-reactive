@@ -1512,9 +1512,27 @@ the user dismissed the dialog) cancels the action, exactly like declining the
 native prompt. The native default is always prevented up front, so a `submit`
 trigger never navigates while the dialog is open.
 
-Unset, behavior is identical to the native `window.confirm` — the `confirm:`
-markup and `on(...)` API are unchanged; only the client's resolution strategy
-gains a seam.
+The resolver also gets an **optional second argument** — a context object — so a
+power-user override can build the string itself instead of relying on the message
+alone. It always carries `{ el }` (the trigger element the confirm fired from);
+on a `reactive_nested_remove` it additionally carries `{ row, fields }` (the row
+element and its `{ key => value }` field map), so a themed dialog can render
+row-specific detail programmatically:
+
+```js
+setConfirmResolver((message, ctx) => {
+  // message is already interpolated (client-added rows resolve %{field}, see below)
+  return myThemedDialog(message, { trigger: ctx.el, fields: ctx.fields })
+})
+```
+
+The second argument is purely additive — a one-parameter resolver keeps working
+untouched. Unset, behavior is identical to the native `window.confirm`; the
+`confirm:` markup and `on(...)` API are unchanged. For per-row confirm messages
+on **client-added** draft rows, the message the resolver receives is already
+interpolated from the row's live field values (`confirm: "Delete '%{name}'?"` →
+`Delete 'Widget'?`) — see [Draft rows for a new
+parent](#draft-rows-for-a-new-parent-reactive_nested_).
 
 ### `reply` — controlling the action's reply
 

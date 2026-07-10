@@ -35,6 +35,9 @@ Rails.application.routes.draw do
   # Issue #218: a JSON-mode draft list whose per-row remove confirms first —
   # reconciled through the SAME /orders_json endpoint.
   get "draft_order_confirm_remove" => "demos#draft_order_confirm_remove"
+  # Issue #222: the per-row remove confirm carries a %{field} PLACEHOLDER; a
+  # client-added row interpolates it from its own live field value on remove.
+  get "draft_order_confirm_interpolate" => "demos#draft_order_confirm_interpolate"
   get "post_preview/:id" => "demos#post_preview"
   get "compute_seed" => "demos#compute_seed"
   get "notifications" => "demos#notifications"
