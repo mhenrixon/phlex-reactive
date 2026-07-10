@@ -1742,8 +1742,10 @@ export default class extends Controller {
     // so a dismissed/erroring dialog never surfaces as an unhandled rejection AND a
     // genuine bug inside #proceed is NOT silently swallowed. Enqueue ONLY on a
     // truthy resolution — nothing is enqueued, no timer scheduled, otherwise.
+    // The resolver's optional 2nd arg (issue #222) carries the trigger element,
+    // so an override has the same ctx shape here as on nestedRemove ({ el, … }).
     Promise.resolve()
-      .then(() => confirmResolver(message))
+      .then(() => confirmResolver(message, { el: target }))
       .catch(() => false)
       .then((ok) => {
         if (ok) this.#proceed(target, action, params, debounce, throttle, optimistic, busy)
@@ -1758,6 +1760,9 @@ export default class extends Controller {
   // owns state that must survive re-renders).
   runOps(event) {
     const { ops, confirm, confirmWhen, outside, window: windowBound } = event.params
+    // The trigger element on_client was spread onto (issue #222 ctx: { el }),
+    // captured now — currentTarget resets before the confirm resolver's microtask.
+    const trigger = event.currentTarget ?? event.target
 
     // Outside guard FIRST — identical semantics to dispatch() (issue #80): an
     // outside: trigger is a COMPLETE no-op for events inside this root, before
@@ -1789,7 +1794,7 @@ export default class extends Controller {
     // here (the user gesture), NOT in #applyOps: that applier is shared with the
     // server-pushed reactive:js stream action, which must NEVER prompt.
     Promise.resolve()
-      .then(() => confirmResolver(message))
+      .then(() => confirmResolver(message, { el: trigger }))
       .catch(() => false)
       .then((ok) => {
         if (ok) this.#applyOps(this.#parseOps(ops))
@@ -2254,19 +2259,45 @@ export default class extends Controller {
     // else null. No confirm attr → null → the immediate-remove fast path.
     const confirm = trigger?.getAttribute?.("data-reactive-confirm-param")
     const confirmWhen = trigger?.getAttribute?.("data-reactive-confirm-when-param")
-    const message = this.#effectiveConfirmMessage(confirm, confirmWhen)
-    if (!message) return this.#removeNestedRow(row)
+    const rawMessage = this.#effectiveConfirmMessage(confirm, confirmWhen)
+    if (!rawMessage) return this.#removeNestedRow(row)
+
+    // Per-row confirm interpolation (issue #222). A row added client-side is a
+    // cloneNode of the <template>, and the clone carries the TEMPLATE's confirm
+    // string verbatim — the renumber/seed steps never rewrite the confirm attr.
+    // So resolve %{field} placeholders here, from THIS row's live field values
+    // (read now, not at clone time, so a later edit is reflected). An unresolved
+    // key is left as its literal %{key} (debuggable, never throws). Server-
+    // rendered rows already interpolate server-side, so their finished strings
+    // carry no %{}; this is a no-op for them.
+    const fields = this.#nestedRowObject(row)
+    const message = this.#interpolateConfirm(rawMessage, fields)
 
     // Gate through the overridable confirmResolver (issues #52/#55/#178) — a
-    // themed dialog set with setConfirmResolver covers this trigger too. Call the
-    // resolver INSIDE the chain so even a SYNCHRONOUS override throw is a cancel
-    // (like a dismissed dialog), and remove ONLY on a truthy resolution.
+    // themed dialog set with setConfirmResolver covers this trigger too. Pass the
+    // row context (issue #222, superset of proposal 3) as an optional 2nd arg so
+    // a power-user override can build the string itself; the message is already
+    // interpolated for the default window.confirm path. Call the resolver INSIDE
+    // the chain so even a SYNCHRONOUS override throw is a cancel (like a dismissed
+    // dialog), and remove ONLY on a truthy resolution.
     return Promise.resolve()
-      .then(() => confirmResolver(message))
+      .then(() => confirmResolver(message, { el: trigger, row, fields }))
       .catch(() => false)
       .then((ok) => {
         if (ok) this.#removeNestedRow(row)
       })
+  }
+
+  // Resolve %{field} placeholders in a confirm message from a row's field map
+  // (issue #222). Ruby-style %{name} tokens; an unresolved key is left verbatim
+  // (a visible, debuggable placeholder — never an empty hole or a throw). A
+  // message with no placeholders returns unchanged, so this is inert for every
+  // server-rendered (already-interpolated) confirm string.
+  #interpolateConfirm(message, fields) {
+    if (!message.includes("%{")) return message
+    return message.replace(/%\{(\w+)\}/g, (whole, key) =>
+      Object.prototype.hasOwnProperty.call(fields, key) ? fields[key] : whole,
+    )
   }
 
   // The remove itself, shared by the confirmed and no-confirm paths. Draft rows

@@ -12,7 +12,7 @@
 // save.
 //
 // Run with: bun test spec/javascript
-import { test, expect, mock, beforeAll, beforeEach } from "bun:test"
+import { test, expect, mock, beforeAll, beforeEach, afterAll } from "bun:test"
 
 let ReactiveController
 let confirmModule
@@ -35,6 +35,16 @@ beforeAll(async () => {
 // and never see the stubbed prompt. This mirrors the reset in the other confirm
 // specs; it's inert for the add/remove tests that don't touch confirm.
 beforeEach(() => {
+  confirmModule.setConfirmResolver((message) =>
+    Promise.resolve(typeof globalThis.window !== "undefined" ? globalThis.window.confirm(message) : true),
+  )
+})
+
+// The issue-222 ctx test installs a custom (message, ctx) resolver and does not
+// reset it. Like reactive_confirm_resolver.test.js, restore the shipped default
+// on the way out so a later file in the shared bun worker inherits the real
+// window.confirm-backed gate (else its window.confirm stub never fires).
+afterAll(() => {
   confirmModule.setConfirmResolver((message) =>
     Promise.resolve(typeof globalThis.window !== "undefined" ? globalThis.window.confirm(message) : true),
   )
@@ -674,4 +684,146 @@ test("nestedRemove(confirm-when) — the conditional Hash only prompts when it f
 
   expect(seen).toEqual(["Empty row — remove?"]) // condition fired → prompted
   expect(list.children.length).toBe(1) // declined → kept
+})
+
+// Per-row confirm interpolation (issue #222). A row added client-side via
+// nestedAdd is a cloneNode of the <template>, and the clone carries the
+// TEMPLATE's confirm string verbatim — the renumber/seed steps never touch
+// data-reactive-confirm[-when]-param. So a per-row confirm like
+// "Delete '%{name}'?" is frozen to the template's (value-less) string on every
+// added row. Fix: nestedRemove interpolates %{field} placeholders from the
+// row's LIVE field values at click time (reflects later edits too), and passes
+// the row context to confirmResolver as an optional 2nd arg.
+//
+// A row already in the list carrying a confirm with %{key} placeholders and the
+// given field values. Returns { row, remove }.
+function rowWithConfirmPlaceholders(list, confirmMessage, fieldValues) {
+  const row = new FakeNode({ tag: "div", attrs: { "data-reactive-nested-row": "" } })
+  const controls = Object.entries(fieldValues).map(
+    ([key, value]) =>
+      new FakeNode({ tag: "input", name: `order[line_items_attributes][0][${key}]`, value: String(value) }),
+  )
+  const remove = new FakeNode({
+    tag: "button",
+    attrs: { "data-action": "click->reactive#nestedRemove", "data-reactive-confirm-param": confirmMessage },
+  })
+  row.append(...controls, remove)
+  list.append(row)
+  return { row, remove }
+}
+
+test("nestedRemove(confirm) — interpolates %{field} from the row's live values", async () => {
+  const { root, list } = nestedWidget()
+  const controller = buildController(root)
+  const { remove } = rowWithConfirmPlaceholders(list, "Delete '%{name}' (%{amount})?", {
+    name: "Widget",
+    amount: "42",
+  })
+  const seen = stubConfirm(false)
+
+  await controller.nestedRemove({ currentTarget: remove, preventDefault: () => {} })
+
+  expect(seen).toEqual(["Delete 'Widget' (42)?"]) // read the row NOW, not the template
+})
+
+test("nestedRemove(confirm) — a %{field} the row lacks stays as the literal placeholder", async () => {
+  const { root, list } = nestedWidget()
+  const controller = buildController(root)
+  const { remove } = rowWithConfirmPlaceholders(list, "Delete '%{name}' (%{gone})?", { name: "Widget" })
+  const seen = stubConfirm(false)
+
+  await controller.nestedRemove({ currentTarget: remove, preventDefault: () => {} })
+
+  expect(seen).toEqual(["Delete 'Widget' (%{gone})?"]) // unresolved key left visible/debuggable
+})
+
+test("nestedRemove(confirm) — a client-ADDED row's confirm reflects its own typed value", async () => {
+  // The exact issue-222 scenario: the template row is value-less, so its confirm
+  // string is a %{quantity} placeholder. Add clones it; typing into the row's
+  // quantity field then makes the per-row confirm reflect THAT row's value.
+  const proto = new FakeNode({ tag: "div", attrs: { "data-reactive-nested-row": "" } })
+  proto.append(
+    new FakeNode({ tag: "input", name: "order[line_items_attributes][NEW_ROW][quantity]" }),
+    new FakeNode({
+      tag: "button",
+      attrs: {
+        "data-action": "click->reactive#nestedRemove",
+        "data-reactive-confirm-param": "Remove row with quantity %{quantity}?",
+      },
+    }),
+  )
+  const template = new FakeNode({ tag: "template", attrs: { "data-reactive-nested-template": "line_items" } })
+  template.content = { firstElementChild: proto }
+  const { root, list, add } = nestedWidget({ template })
+  const controller = buildController(root)
+
+  clickAdd(controller, add)
+  const row = list.children[0]
+  fieldByKey(row, "quantity").value = "7" // user types into the added row
+  const remove = row.querySelectorAll("button")[0]
+  const seen = stubConfirm(false)
+
+  await controller.nestedRemove({ currentTarget: remove, preventDefault: () => {} })
+
+  expect(seen).toEqual(["Remove row with quantity 7?"]) // the ADDED row's own value
+})
+
+test("nestedRemove(confirm) — reflects a LATER edit (click-time, not clone-time)", async () => {
+  const { root, list } = nestedWidget()
+  const controller = buildController(root)
+  const { row, remove } = rowWithConfirmPlaceholders(list, "Delete '%{name}'?", { name: "Widget" })
+  const seen = stubConfirm(false)
+
+  fieldByKey(row, "name").value = "Gadget" // edited AFTER the row exists
+  await controller.nestedRemove({ currentTarget: remove, preventDefault: () => {} })
+
+  expect(seen).toEqual(["Delete 'Gadget'?"]) // live read, not a frozen snapshot
+})
+
+test("nestedRemove(confirm-when) — the conditional Hash message is interpolated too", async () => {
+  const { root, list } = nestedWidget()
+  const confirmWhen = JSON.stringify({
+    groups: { any: [[{ field: "order[line_items_attributes][0][quantity]", equals: "0" }]] },
+    message: "Remove '%{name}' (empty)?",
+  })
+  const row = new FakeNode({ tag: "div", attrs: { "data-reactive-nested-row": "" } })
+  row.append(
+    new FakeNode({ tag: "input", name: "order[line_items_attributes][0][quantity]", value: "0" }),
+    new FakeNode({ tag: "input", name: "order[line_items_attributes][0][name]", value: "Bolt" }),
+    new FakeNode({
+      tag: "button",
+      attrs: { "data-action": "click->reactive#nestedRemove", "data-reactive-confirm-when-param": confirmWhen },
+    }),
+  )
+  list.append(row)
+  const controller = buildController(root)
+  const seen = stubConfirm(false)
+
+  await controller.nestedRemove({ currentTarget: row.querySelectorAll("button")[0], preventDefault: () => {} })
+
+  expect(seen).toEqual(["Remove 'Bolt' (empty)?"]) // condition fired AND message interpolated
+})
+
+// confirmResolver ctx (issue #222, superset of proposal 3). The resolver gets an
+// optional 2nd arg so a power-user override can build the string itself. On
+// nestedRemove it carries the row element, the row's field map, and the trigger.
+test("nestedRemove(confirm) — passes the row context to confirmResolver as a 2nd arg", async () => {
+  const { root, list } = nestedWidget()
+  const controller = buildController(root)
+  const { row, remove } = rowWithConfirmPlaceholders(list, "Delete '%{name}'?", { name: "Widget", amount: "42" })
+
+  let receivedMessage
+  let receivedCtx
+  confirmModule.setConfirmResolver((message, ctx) => {
+    receivedMessage = message
+    receivedCtx = ctx
+    return false
+  })
+
+  await controller.nestedRemove({ currentTarget: remove, preventDefault: () => {} })
+
+  expect(receivedMessage).toBe("Delete 'Widget'?") // already interpolated
+  expect(receivedCtx.row).toBe(row)
+  expect(receivedCtx.el).toBe(remove)
+  expect(receivedCtx.fields).toEqual({ name: "Widget", amount: "42" })
 })

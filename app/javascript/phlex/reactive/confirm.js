@@ -20,6 +20,14 @@
 // Promise.resolve, so a bare boolean and a Promise<boolean> both work. It must
 // resolve truthy to proceed; a falsy resolve (or a rejection) cancels the
 // action — exactly like declining the native prompt.
+//
+// The resolver receives an OPTIONAL 2nd arg (issue #222): a context object,
+// always `{ el }` (the trigger element), plus `{ row, fields }` on a
+// reactive_nested_remove (the row element + its { key: value } field map). It's
+// purely additive — a one-arg resolver (and window.confirm, which ignores extra
+// args) keeps working unchanged. On a client-added draft row the `message` the
+// resolver receives is already interpolated from the row's live field values
+// (`confirm: "Delete '%{name}'?"` → "Delete 'Widget'?").
 
 // The default: wrap the synchronous native confirm in a Promise so the call
 // site can always `await` it. Read window lazily (per call), not at module load

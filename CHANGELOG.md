@@ -220,6 +220,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`reactive_nested_remove(confirm:)` now interpolates `%{field}` on client-added
+  rows (#222).** A row added in the browser via `reactive_nested_add` is a
+  `cloneNode` of the `<template>`, and the clone path (`#renumberNestedRow` /
+  `#seedNestedRow`) never rewrote the confirm attribute — so a per-row confirm
+  froze to the template's value-less string on every added row (the exact rows
+  the primitive exists for). The client now resolves `%{field}` placeholders in
+  the confirm message from **that row's live field values** at click time (keyed
+  by the same trailing-bracket inference `as: :json` uses), so
+  `confirm: "Delete '%{name}'?"` on the template shows `Delete 'Widget'?` on the
+  added row — reflecting a later edit too (resolved on remove, not on clone). An
+  unresolved `%{key}` is left as its literal text (debuggable, never a silent
+  blank); the placeholder works in the conditional Hash's `message:` as well.
+  Server-rendered rows already interpolate server-side, so their finished strings
+  are unaffected. **Also (superset of the issue's proposal 3):** `confirmResolver`
+  now receives an optional second argument — a context object, always `{ el }`
+  (the trigger), plus `{ row, fields }` on a `reactive_nested_remove` — so a
+  themed-dialog override can build row-specific messages programmatically. The
+  arg is additive: a one-parameter resolver (and `window.confirm`) is unchanged.
+
 - **A draft (unsaved-parent) token can now round-trip real server actions (#208).**
   `Component::Identity` already signed a gid-less `{c, state}` token for an
   unpersisted (or nil) record, but `from_identity` still `fetch`ed the absent

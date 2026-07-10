@@ -251,6 +251,11 @@ module Views
           end
         end
 
+        # The %{field} tokens in the confirm examples below are the CLIENT's
+        # interpolation syntax (the reactive runtime parses them on remove), not
+        # Ruby format strings — Style/FormatStringToken's annotated-token
+        # preference doesn't apply to documentation of client-side markup.
+        # rubocop:disable Style/FormatStringToken
         def confirm_on_remove
           DocsUI::Section('Confirm before removing a row') do
             md <<~'MD'
@@ -269,9 +274,8 @@ module Views
               `_destroy`-marked + hidden) and the existing JSON/attributes
               re-sync; on **cancel** nothing happens. It works in both wire modes.
 
-              **Per-row messages come for free** — the confirm is a per-render
-              string, so a row that wants row-specific detail just renders a
-              different one (no gem-side interpolation feature needed, exactly as
+              **Server-rendered rows** get per-row detail for free — the confirm
+              is a per-render string, so a persisted row just renders its own (as
               with `on(:destroy, confirm:)`):
 
               ```ruby
@@ -279,17 +283,47 @@ module Views
                 confirm: "Really delete #{row.name} (#{row.amount})?")) { '×' }
               ```
 
+              **Client-added rows use a `%{field}` placeholder (#222).** A row you
+              add in the browser is a `cloneNode` of the `<template>`, so it can
+              only carry the template's confirm string — and the template row has
+              no values yet. Interpolate at the client instead: put a
+              `%{field_key}` placeholder in the message, and on remove the client
+              substitutes **that row's own live field values** (keyed by the same
+              trailing-bracket inference `as: :json` uses). The message reflects
+              the row the user actually built, and a later edit is reflected too
+              (it resolves at click time, not clone time):
+
+              ```ruby
+              # The template row is value-less, so this renders "%{name}"/"%{amount}"
+              # literally; the client fills them from the ADDED row on remove.
+              td { input(name: nested_field_name(:line_items, :name)) }
+              td { input(name: nested_field_name(:line_items, :amount), type: 'number') }
+              button(**reactive_nested_remove(
+                confirm: "Delete '%{name}' (%{amount})?")) { '×' }
+              # a row the user filled with "Widget"/42 prompts: Delete 'Widget' (42)?
+              ```
+
+              A `%{key}` with no matching row field is left as its literal text
+              (visible and debuggable, never a silent blank). The placeholder
+              works in the conditional Hash's `message:` too. Interpolation
+              applies to `reactive_nested_remove` confirms only — `on`/`on_client`
+              confirms never substitute — so if a remove confirm needs a
+              **literal** `%{word}` where `word` also happens to be a field on the
+              row, reword it (there is no escape); this only bites text that
+              deliberately contains a field name in braces.
+
               It also composes with the conditional-confirm Hash form — prompt
               only when a condition matches, for parity with `on`/`on_client`:
 
               ```ruby
               # Only ask if the row still has a value; a blank draft row goes quietly.
               button(**reactive_nested_remove(
-                confirm: { when: { amount: 1.. }, message: 'Remove this line item?' })) { '×' }
+                confirm: { when: { amount: 1.. }, message: 'Remove %{name}?' })) { '×' }
               ```
             MD
           end
         end
+        # rubocop:enable Style/FormatStringToken
 
         def draft_actions
           DocsUI::Section('Bonus: real server actions on a draft parent') do

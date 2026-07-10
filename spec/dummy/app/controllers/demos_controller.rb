@@ -166,6 +166,13 @@ class DemosController < ActionController::Base
     render_component DraftOrderConfirmRemoveComponent.new
   end
 
+  # Issue #222: the per-row remove confirm carries a %{quantity} PLACEHOLDER;
+  # a row the user ADDS client-side interpolates it from its own live value at
+  # click time. Reconciled through the SAME /orders_json endpoint.
+  def draft_order_confirm_interpolate
+    render_component DraftOrderConfirmInterpolateComponent.new
+  end
+
   # The JSON-mode reconcile: the app parses a SERIALIZED JSON param by hand
   # (NO accepts_nested_attributes_for), the exact controller path an app that
   # already ships a JSON param keeps unchanged when adopting the primitive.
