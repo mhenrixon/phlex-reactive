@@ -8,6 +8,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Instance-dynamic wire names — keyword escape hatches on the
+  field-compiling helpers (#224).** A form builder's wire name is computed per
+  instance (`user[tags]`), which the class-level `reactive_scope` compile can't
+  express — the gap that forced phlex-forms' `tag_field` draft
+  (mhenrixon/phlex-forms#6) onto raw data attrs. Every helper that compiles a
+  field name now takes a verbatim keyword escape hatch (never re-scoped,
+  validated at render, mutually exclusive with the blessed field form):
+  `reactive_tags(name: "user[tags]")`, `reactive_filter(input: "#tags_query")`
+  (a raw CSS selector — the deliberately **name-less** query input inside a
+  real form, targeted by id, so it can never submit a stray param),
+  `nested_field_name(:items, :qty, scope: "order")` (a per-call parent prefix
+  that wins over `reactive_scope`), and
+  `reactive_nested_list(:items, as: :json, name: "order[items]")` (the hidden
+  JSON sync field, JSON mode only). Server-side sugar only — the client already
+  resolves these attributes as arbitrary root-scoped selectors; the shipped
+  wire for existing calls is byte-identical. Note: `reactive_filter(input:)`
+  deliberately re-blesses the kwarg removed in #186 — the field form stays the
+  blessed default, and a pre-0.10 `input:`/`option:` call shape is valid again
+  with identical semantics instead of raising the removal error.
+
 - **Project board — the kanban flagship demo (#216).** A live three-lane board
   on the docs site (`/docs/example-project-board`, `/demos/project-board`)
   composing the toolkit end to end: each card is its own nested reactive root

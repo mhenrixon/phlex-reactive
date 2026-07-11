@@ -601,20 +601,35 @@ module Phlex
         # hidden options) and each option's own on(:select, …) trigger —
         # selection still round-trips as a signed action; only FILTERING is
         # local. Blank selectors raise: a dead binding must fail at render.
-        def reactive_filter(field = nil, input: :__removed, option: nil, group: nil, empty: nil)
-          # Issue #186: the four-selector kwarg form is removed — name the FIELD that
-          # drives the filter instead. A leftover input: means the old call shape.
-          unless input == :__removed
+        #
+        # Issue #224: `input:` is the ESCAPE HATCH — a raw CSS selector for the
+        # one driving input the field form can't express: a deliberately
+        # NAME-LESS query input inside a real POST form (a named input would
+        # submit a stray param), targeted by id. A form builder (phlex-forms'
+        # tag_field) computes that id per instance. Verbatim, never re-scoped;
+        # exactly one of field/input: per call — the field form stays the
+        # blessed default:
+        #   reactive_filter(input: "#user_tags_query")
+        def reactive_filter(field = nil, input: nil, option: nil, group: nil, empty: nil)
+          # nil-presence, NOT truthiness: `input: cond && "#sel"` with cond false
+          # must fail loudly in filter_selector! below (a boolean is never a
+          # selector), never slip into the field branch and emit a dead binding.
+          if field && !input.nil?
             raise ArgumentError,
-              "reactive_filter(input:) was removed in issue #186 — name the driving field: " \
-              "reactive_filter(:q) (compiles to [name=\"q\"], scope-aware; option defaults to [role=option])."
+              "reactive_filter takes ONE driving-input form — a field name (reactive_filter(:q), " \
+              "scope-aware) OR input: (a raw CSS selector for a name-less input), not both"
           end
-          raise ArgumentError, "reactive_filter needs a field name — reactive_filter(:q)" if field.nil?
+          if field.nil? && input.nil?
+            raise ArgumentError,
+              "reactive_filter needs a field name — reactive_filter(:q) — or the input: " \
+              "escape hatch (a raw CSS selector, e.g. input: \"#tags_query\")"
+          end
 
           data = {
             # Compile the field to a scoped [name="…"] selector (same scope convention
-            # reactive_field uses, so the filter input aligns with its own field).
-            reactive_filter_input: %([name="#{scoped_field_name(field)}"]),
+            # reactive_field uses, so the filter input aligns with its own field) — or
+            # take the input: selector verbatim (issue #224).
+            reactive_filter_input: input.nil? ? %([name="#{scoped_field_name(field)}"]) : filter_selector!(:input, input),
             # option defaults to the [role=option] convention; a kwarg overrides it.
             reactive_filter_option: option ? filter_selector!(:option, option) : "[role=option]"
           }
@@ -680,9 +695,30 @@ module Phlex
         # and reactive_listnav (Arrow/Enter/Escape; Enter picks the highlighted
         # option via its own tagsPick trigger, and reactive_tags_add only adds
         # the TYPED text when nothing is highlighted — no double add).
-        def reactive_tags(field = nil)
+        #
+        # Issue #224: `name:` is the ESCAPE HATCH for an instance-dynamic wire
+        # name — a form builder (phlex-forms' tag_field) computes "user[tags]"
+        # per instance, which the class-level reactive_scope compile can't
+        # express. Verbatim, NEVER re-scoped (reactive_field's explicit-name
+        # precedent); exactly one of field/name: per call:
+        #   reactive_tags(name: "user[tags]")
+        def reactive_tags(field = nil, name: nil)
+          # nil-presence, NOT truthiness: `name: cond && "user[tags]"` with cond
+          # false must fail loudly in verbatim_name_selector!, never silently
+          # fall through to the field branch.
+          unless name.nil?
+            if field
+              raise ArgumentError,
+                "reactive_tags takes ONE field form — a field name (reactive_tags(:tags), scope-aware) " \
+                "OR name: (a verbatim wire name, never re-scoped), not both"
+            end
+            return { data: { reactive_tags_field: verbatim_name_selector!(:reactive_tags, name) } }
+          end
+
           if field.nil? || field.to_s.strip.empty?
-            raise ArgumentError, "reactive_tags needs a field name — reactive_tags(:tags)"
+            raise ArgumentError,
+              "reactive_tags needs a field name — reactive_tags(:tags) — or the name: " \
+              "escape hatch (a verbatim wire name, e.g. name: \"user[tags]\")"
           end
 
           # Compile the field to a scoped [name="…"] selector, the reactive_filter
@@ -785,7 +821,15 @@ module Phlex
         # a `reactive_scope :order` component emits
         # order[line_items_attributes][3][quantity] (never a nested-bracket
         # corruption of the scope wrap).
-        def nested_field_name(association, field, index: NESTED_NEW_ROW)
+        #
+        # Issue #224: `scope:` is the per-call ESCAPE HATCH — a form builder's
+        # object name is per-instance ("order", or itself bracketed for a
+        # nested fieldset: "user[profile]"), which the class-level
+        # reactive_scope can't express. Used verbatim as the wrap and WINS over
+        # reactive_scope:
+        #   nested_field_name(:line_items, :quantity, scope: "order")
+        #   # => order[line_items_attributes][NEW_ROW][quantity]
+        def nested_field_name(association, field, index: NESTED_NEW_ROW, scope: nil)
           nested_identifier!(:nested_field_name, :association, association)
           nested_identifier!(:nested_field_name, :field, field)
           unless index.to_s == NESTED_NEW_ROW || index.to_s.match?(/\A\d+\z/)
@@ -794,7 +838,9 @@ module Phlex
               "got #{index.inspect} — anything else corrupts the bracketed wire name"
           end
 
-          "#{scoped_field_name(:"#{association}_attributes")}[#{index}][#{field}]"
+          base = :"#{association}_attributes"
+          prefix = scope.nil? ? scoped_field_name(base) : "#{nested_scope!(scope)}[#{base}]"
+          "#{prefix}[#{index}][#{field}]"
         end
 
         # The container cloned rows land in — one per association, inside the
@@ -810,10 +856,23 @@ module Phlex
         # naming the hidden field the client mirrors the rows into on every
         # add/remove/input. The default (:attributes) is unchanged — the plain
         # accepts_nested_attributes_for wire.
-        def reactive_nested_list(association, as: :attributes)
-          name = nested_identifier!(:reactive_nested_list, :association, association)
-          data = { reactive_nested_list: name }
-          return { data: } if as == :attributes
+        #
+        # Issue #224: `name:` is the verbatim ESCAPE HATCH for that hidden
+        # field's wire name — a form builder's "order[todos]" the class-level
+        # reactive_scope compile can't express. JSON-mode only (the
+        # :attributes mode has no field to name); never re-scoped:
+        #   reactive_nested_list(:todos, as: :json, name: "order[todos]")
+        def reactive_nested_list(association, as: :attributes, name: nil)
+          assoc = nested_identifier!(:reactive_nested_list, :association, association)
+          data = { reactive_nested_list: assoc }
+          if as == :attributes
+            unless name.nil?
+              raise ArgumentError,
+                "reactive_nested_list(name:) only applies to as: :json — it names the hidden JSON " \
+                "sync field; the :attributes mode has no field to name"
+            end
+            return { data: }
+          end
 
           unless as == :json
             raise ArgumentError,
@@ -824,9 +883,17 @@ module Phlex
           # JSON mode: mark the container and name the hidden field the client
           # keeps in sync — a scope-aware [name="…"] selector, the same
           # convention reactive_tags/reactive_filter use so the field resolves
-          # under reactive_scope too.
-          data[:reactive_nested_json] = name
-          data[:reactive_nested_json_field] = %([name="#{scoped_field_name(association)}"])
+          # under reactive_scope too. name: takes the wire name verbatim
+          # (issue #224).
+          data[:reactive_nested_json] = assoc
+          # nil-presence, NOT truthiness (the reactive_tags rationale): a falsy
+          # non-nil name: must fail loudly in verbatim_name_selector!.
+          data[:reactive_nested_json_field] =
+            if name.nil?
+              %([name="#{scoped_field_name(association)}"])
+            else
+              verbatim_name_selector!(:reactive_nested_list, name)
+            end
           { data: }
         end
 
@@ -1109,10 +1176,12 @@ module Phlex
         # A reactive_filter/reactive_listnav selector, validated non-blank and
         # stringified (issue #163). A blank selector is a dead binding — the
         # client would silently match nothing — so it fails loudly at render,
-        # like reactive_show's predicate validation.
+        # like reactive_show's predicate validation. A boolean is rejected too
+        # (issue #224): `input: cond && "#sel"` with cond false would otherwise
+        # stringify to the plausible-looking dead selector "false".
         def filter_selector!(name, value)
           selector = value.to_s
-          if selector.strip.empty?
+          if value == true || value == false || selector.strip.empty?
             raise ArgumentError,
               "reactive_filter/reactive_listnav #{name}: needs a CSS selector, got #{value.inspect}"
           end
@@ -1133,6 +1202,54 @@ module Phlex
           end
 
           value
+        end
+
+        # A verbatim wire name for the name:-form escape hatches (issue #224) —
+        # an instance-dynamic name (a form builder's "user[tags]") used exactly
+        # as given, never re-scoped. The name is interpolated into a
+        # double-quoted [name="…"] attribute selector the CLIENT passes to
+        # querySelectorAll, so anything that breaks a CSS string breaks the
+        # binding IN THE BROWSER: a `"` ends the string early, a `\` CSS-escapes
+        # (a trailing one swallows the closing quote — the selector silently
+        # matches the wrong name), and a raw control character (newline) makes
+        # querySelectorAll THROW, aborting the controller's connect. All fail
+        # loudly here at render instead. Booleans are rejected with the blank
+        # check: `name: cond && "user[tags]"` with cond false must never
+        # compile the plausible-looking [name="false"].
+        def verbatim_name_selector!(helper, name)
+          value = name.to_s
+          if name == true || name == false || value.strip.empty?
+            raise ArgumentError,
+              "#{helper} name: needs a non-blank wire name (e.g. name: \"user[tags]\"), got #{name.inspect}"
+          end
+          if value.match?(/["\\\x00-\x1f]/)
+            raise ArgumentError,
+              "#{helper} name: can't contain a double quote, backslash, or control character — " \
+              "the name is compiled into a [name=\"…\"] selector the client queries with, " \
+              "got #{name.inspect}"
+          end
+
+          %([name="#{value}"])
+        end
+
+        # The per-call scope: override for nested_field_name (issue #224) — a
+        # form builder's parent prefix, possibly itself bracketed
+        # ("user[profile]"), validated non-blank. Used verbatim as the wrap.
+        # String/Symbol only: `scope: cond && "order"` with cond false would
+        # otherwise stringify to the silently-corrupting "false[…]" wire name.
+        def nested_scope!(scope)
+          unless scope.is_a?(String) || scope.is_a?(Symbol)
+            raise ArgumentError,
+              "nested_field_name scope: needs a String or Symbol parent prefix " \
+              "(e.g. scope: \"order\"), got #{scope.inspect}"
+          end
+
+          value = scope.to_s
+          return value unless value.strip.empty?
+
+          raise ArgumentError,
+            "nested_field_name scope: needs a non-blank parent prefix (e.g. scope: \"order\"), " \
+            "got #{scope.inspect}"
         end
 
         # An association/field name for the nested-rows wire (issue #208),

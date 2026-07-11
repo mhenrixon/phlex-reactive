@@ -2175,7 +2175,9 @@ RSpec.describe Phlex::Reactive::Component do
   # selectors. `reactive_filter(:q)` compiles `:q` to [name="q"] (scope-aware) for
   # the input, defaults option to the [role=option] convention, and leaves
   # group/empty opt-in. The client wire (selectors) is unchanged — a server-only
-  # compile. The old input:/option: kwarg form raises a guided error.
+  # compile. Issue #224 re-blesses input: as the ESCAPE HATCH (a raw CSS
+  # selector) for the one case the field form can't express: a deliberately
+  # name-less query input inside a real POST form, targeted by id.
   describe "#reactive_filter (field-driven, issue #186)" do
     subject(:instance) { filter_klass.new }
 
@@ -2220,9 +2222,55 @@ RSpec.describe Phlex::Reactive::Component do
       expect(attrs[:data][:reactive_filter_empty]).to eq("#no-matches")
     end
 
-    it "raises a guided error for the removed input: kwarg form" do
-      expect { instance.send(:reactive_filter, input: "#search", option: "[role=option]") }
-        .to raise_error(ArgumentError, /reactive_filter\(:field\)|field/)
+    # Issue #224: input: returns as the ESCAPE HATCH — a raw CSS selector for
+    # an instance-dynamic driving input the field form can't express: a form
+    # builder's NAME-LESS query input (a named input inside a real POST form
+    # would submit a stray param), targeted by id. The field form stays the
+    # blessed default; exactly one of the two forms per call.
+    context "with the input: escape hatch (issue #224)" do
+      it "emits the selector verbatim (+ the option convention)" do
+        attrs = instance.send(:reactive_filter, input: "#tags_query")
+        expect(attrs[:data][:reactive_filter_input]).to eq("#tags_query")
+        expect(attrs[:data][:reactive_filter_option]).to eq("[role=option]")
+      end
+
+      it "never re-scopes the selector under reactive_scope" do
+        scoped = Class.new(Phlex::HTML) do
+          include Phlex::Reactive::Streamable
+          include Phlex::Reactive::Component
+
+          def self.name = "ScopedFilterEscape"
+          reactive_scope :form
+        end
+        attrs = scoped.new.send(:reactive_filter, input: "#tags_query")
+        expect(attrs[:data][:reactive_filter_input]).to eq("#tags_query")
+      end
+
+      it "composes with the option/group/empty kwargs" do
+        attrs = instance.send(:reactive_filter, input: "#q", option: ".opt", empty: "#none")
+        expect(attrs[:data][:reactive_filter_option]).to eq(".opt")
+        expect(attrs[:data][:reactive_filter_empty]).to eq("#none")
+      end
+
+      it "raises on a blank selector (a dead binding must fail at render)" do
+        expect { instance.send(:reactive_filter, input: " ") }
+          .to raise_error(ArgumentError, /input:/)
+      end
+
+      it "raises on a boolean selector (the input: cond && \"#sel\" idiom must fail loudly)" do
+        expect { instance.send(:reactive_filter, input: false) }
+          .to raise_error(ArgumentError, /CSS selector/)
+      end
+
+      it "raises when BOTH a field and input: are given (one driving-input form per call)" do
+        expect { instance.send(:reactive_filter, :q, input: "#q") }
+          .to raise_error(ArgumentError, /not both/)
+      end
+
+      it "raises when NEITHER a field nor input: is given" do
+        expect { instance.send(:reactive_filter) }
+          .to raise_error(ArgumentError, /field name|input:/)
+      end
     end
 
     it "raises on a blank option override" do
@@ -2342,6 +2390,60 @@ RSpec.describe Phlex::Reactive::Component do
       end
       attrs = client_only.new.send(:reactive_tags, :tags)
       expect(attrs[:data][:reactive_tags_field]).to eq('[name="tags"]')
+    end
+
+    # Issue #224: name: is the ESCAPE HATCH for an instance-dynamic wire name —
+    # a form builder computes "user[tags]" per instance, which the class-level
+    # reactive_scope compile can't express. Verbatim, never re-scoped; the same
+    # fail-at-render posture as the field form (reactive_field's explicit-name
+    # precedent).
+    context "with the name: escape hatch (issue #224)" do
+      it "compiles the verbatim wire name to a [name=…] selector" do
+        attrs = instance.send(:reactive_tags, name: "user[tags]")
+        expect(attrs[:data][:reactive_tags_field]).to eq('[name="user[tags]"]')
+      end
+
+      it "never re-scopes the name under reactive_scope" do
+        scoped = Class.new(Phlex::HTML) do
+          include Phlex::Reactive::Streamable
+          include Phlex::Reactive::Component
+
+          def self.name = "ScopedTagsEscape"
+          reactive_scope :post
+        end
+        attrs = scoped.new.send(:reactive_tags, name: "user[tags]")
+        expect(attrs[:data][:reactive_tags_field]).to eq('[name="user[tags]"]')
+      end
+
+      it "raises on a blank name: (a dead binding must fail at render)" do
+        expect { instance.send(:reactive_tags, name: " ") }
+          .to raise_error(ArgumentError, /name:/)
+      end
+
+      it "raises on a name containing a double quote (would corrupt the compiled selector)" do
+        expect { instance.send(:reactive_tags, name: 'user["tags"]') }
+          .to raise_error(ArgumentError, /double quote/)
+      end
+
+      it "raises on a backslash (CSS-escapes through querySelectorAll — the selector would mismatch)" do
+        expect { instance.send(:reactive_tags, name: "user[tags]\\") }
+          .to raise_error(ArgumentError, /backslash/)
+      end
+
+      it "raises on a control character (querySelectorAll THROWS on a raw newline in a CSS string)" do
+        expect { instance.send(:reactive_tags, name: "user\n[tags]") }
+          .to raise_error(ArgumentError, /control/)
+      end
+
+      it "raises on a boolean name: (the name: cond && \"user[tags]\" idiom must fail loudly)" do
+        expect { instance.send(:reactive_tags, name: false) }
+          .to raise_error(ArgumentError, /name:/)
+      end
+
+      it "raises when BOTH a field and name: are given (one field form per call)" do
+        expect { instance.send(:reactive_tags, :tags, name: "user[tags]") }
+          .to raise_error(ArgumentError, /not both/)
+      end
     end
 
     describe "#reactive_tags_add (the Enter-to-add trigger)" do
@@ -2464,6 +2566,44 @@ RSpec.describe Phlex::Reactive::Component do
         expect { instance.send(:nested_field_name, :line_items, :quantity, index: "x[y]") }
           .to raise_error(ArgumentError, /index/)
       end
+
+      # Issue #224: scope: is the per-call ESCAPE HATCH — a form builder's
+      # object name is per-instance ("order", or itself bracketed for a nested
+      # fieldset), which the class-level reactive_scope can't express.
+      # Verbatim; wins over reactive_scope.
+      context "with the scope: escape hatch (issue #224)" do
+        it "wraps the name in the per-call scope verbatim" do
+          expect(instance.send(:nested_field_name, :line_items, :quantity, scope: "order"))
+            .to eq("order[line_items_attributes][NEW_ROW][quantity]")
+        end
+
+        it "wins over the class-level reactive_scope" do
+          scoped = Class.new(Phlex::HTML) do
+            include Phlex::Reactive::Component
+
+            def self.name = "ScopedNestedEscape"
+            reactive_scope :invoice
+          end
+
+          expect(scoped.new.send(:nested_field_name, :line_items, :quantity, index: 3, scope: "order"))
+            .to eq("order[line_items_attributes][3][quantity]")
+        end
+
+        it "accepts a bracketed scope (a nested fieldset's object name)" do
+          expect(instance.send(:nested_field_name, :line_items, :quantity, scope: "user[profile]"))
+            .to eq("user[profile][line_items_attributes][NEW_ROW][quantity]")
+        end
+
+        it "raises on a blank scope: (a dead prefix must fail at render)" do
+          expect { instance.send(:nested_field_name, :line_items, :quantity, scope: " ") }
+            .to raise_error(ArgumentError, /scope:/)
+        end
+
+        it "raises on a non-String/Symbol scope: (scope: cond && \"order\" must fail loudly, never \"false[…]\")" do
+          expect { instance.send(:nested_field_name, :line_items, :quantity, scope: false) }
+            .to raise_error(ArgumentError, /String or Symbol/)
+        end
+      end
     end
 
     it "emits the association-keyed list marker" do
@@ -2506,6 +2646,44 @@ RSpec.describe Phlex::Reactive::Component do
       it "raises on an unknown as: mode (a typo is a dead binding, fail at render)" do
         expect { instance.send(:reactive_nested_list, :todos, as: :xml) }
           .to raise_error(ArgumentError, /as:/)
+      end
+
+      # Issue #224: name: is the verbatim ESCAPE HATCH for the hidden JSON
+      # sync field — a form builder's wire name ("order[todos]") the
+      # class-level reactive_scope compile can't express. JSON-mode only:
+      # the :attributes mode has no field to name.
+      context "with the name: escape hatch (issue #224)" do
+        it "names the hidden JSON field verbatim" do
+          attrs = instance.send(:reactive_nested_list, :todos, as: :json, name: "order[todos]")
+          expect(attrs[:data][:reactive_nested_json_field]).to eq(%([name="order[todos]"]))
+        end
+
+        it "never re-scopes a verbatim name: under reactive_scope" do
+          scoped = Class.new(Phlex::HTML) do
+            include Phlex::Reactive::Component
+
+            def self.name = "ScopedJsonNestedEscape"
+            reactive_scope :invoice
+          end
+
+          attrs = scoped.new.send(:reactive_nested_list, :todos, as: :json, name: "order[todos]")
+          expect(attrs[:data][:reactive_nested_json_field]).to eq(%([name="order[todos]"]))
+        end
+
+        it "raises on name: without as: :json (there is no field to name in :attributes mode)" do
+          expect { instance.send(:reactive_nested_list, :todos, name: "order[todos]") }
+            .to raise_error(ArgumentError, /as: :json/)
+        end
+
+        it "raises on a blank name:" do
+          expect { instance.send(:reactive_nested_list, :todos, as: :json, name: " ") }
+            .to raise_error(ArgumentError, /name:/)
+        end
+
+        it "raises on a boolean name: (the name: cond && \"…\" idiom must fail loudly)" do
+          expect { instance.send(:reactive_nested_list, :todos, as: :json, name: false) }
+            .to raise_error(ArgumentError, /name:/)
+        end
       end
     end
 

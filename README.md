@@ -390,17 +390,17 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `reactive_text(:name, initial)` | Mirror a compute output (or a declared input) into a **text node** — a live preview heading, a character counter, `"Hello, {name}"` — via `textContent` (XSS-safe). The text sibling of `reactive_field`; carries no `name`, so it's never POSTed. See [Client-side computes](#client-side-computes-reactive_compute--reactive_text). |
 | `reactive_show(if:/if_any:/unless:)` | **Value-conditional visibility** (the `x-show`/`data-show` case): spread onto the element to show/hide — it toggles `hidden` from the fields' **current values**, client-only, zero round trip. One conditions language: a **Hash is an AND**, an **Array is membership**, a **Range is a threshold**, `if_any:` is OR-of-AND, `unless:` negates. `reactive_values` computes first paint; `disable:` disables a hidden section's controls. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
 | `reactive_show_targets(:field, "#id" => value)` | **Cross-root visibility**: the component that owns the field declares which **outside**, id-allowlisted elements it governs (a nav tab, a panel in another pane) — the visibility parallel of `mirror:`. Spread on the **root** via `mix(reactive_root, …)`, **once per root** — several fields go in one call via the hash form. The value uses the same `where`-style vocabulary (`"advanced"`, `%w[a b]`, `10..`); a `"#id"` **key** takes a full conditions Hash for a **multi-field** predicate (`"#warn" => { if: { type: "trade", price: ..0 } }`). Id selectors only (raise at render + client warn-skip); toggles `hidden` only. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
-| `reactive_filter(:field, option: nil, group: nil, empty: nil)` | **Client-side option filtering** for a preloaded combobox: spread onto the root and name the **field** that drives it — `reactive_filter(:q)` compiles `:q` to `[name="q"]` (scope-aware) and typing shows/hides the options by their `data-reactive-filter-text` haystack, **zero round trips**. `option:` defaults to `[role=option]`; optional `group:` collapses an all-hidden group header; `empty:` reveals a no-matches node. See [Client-side option filtering](#client-side-option-filtering-reactive_filter). |
+| `reactive_filter(:field, option: nil, group: nil, empty: nil)` | **Client-side option filtering** for a preloaded combobox: spread onto the root and name the **field** that drives it — `reactive_filter(:q)` compiles `:q` to `[name="q"]` (scope-aware) and typing shows/hides the options by their `data-reactive-filter-text` haystack, **zero round trips**. `option:` defaults to `[role=option]`; optional `group:` collapses an all-hidden group header; `empty:` reveals a no-matches node. `input:` is the escape hatch — a raw CSS selector for a **name-less** driving input (`input: "#tags_query"`), the form-builder case. See [Client-side option filtering](#client-side-option-filtering-reactive_filter). |
 | `reactive_listnav("[role=option]")` | The **standalone** combobox keyboard wiring (Arrow/Enter/Escape) for an input that fires **no action** — the preload-and-filter case. Same behavior as `on(…, listnav:)`, minus the POST. |
-| `reactive_tags(:tags)` | **Tag-chip input** (the combobox/tags widget): spread onto the root and name the hidden field that stores the **comma-joined** value — the client maintains that field + the chip list entirely client-side (form state, zero round trips), rebuilding chips from your server-owned `<template>`. Composes with `reactive_filter` (type to narrow) and `reactive_listnav` (Enter picks the highlighted option). See [Tag-chip input](#tag-chip-input-reactive_tags). |
+| `reactive_tags(:tags)` | **Tag-chip input** (the combobox/tags widget): spread onto the root and name the hidden field that stores the **comma-joined** value — the client maintains that field + the chip list entirely client-side (form state, zero round trips), rebuilding chips from your server-owned `<template>`. Composes with `reactive_filter` (type to narrow) and `reactive_listnav` (Enter picks the highlighted option). `name:` is the escape hatch — a **verbatim** wire name (`name: "user[tags]"`, never re-scoped), the form-builder case. See [Tag-chip input](#tag-chip-input-reactive_tags). |
 | `reactive_tags_add` / `reactive_tags_option(tag)` / `reactive_tags_remove(tag)` | The tags triggers, all **client-only**: `reactive_tags_add` on the query input adds the typed text on Enter (mix it **after** `reactive_listnav`; Enter never submits the enclosing form); `reactive_tags_option` makes a preloaded suggestion add its declared tag on click; `reactive_tags_remove` is a chip's remove button (no arg inside the template — the client fills the tag per chip). |
 | `reactive_compute :name, inputs: { title: :string, qty: :number }, outputs:` | **Typed** inputs: a `:string` reaches the JS reducer raw, a `:number` is coerced through `Number`. The array form (`inputs: %i[a b]`) stays all-numeric; the **permit-style** form (`inputs: [:qty, title: :string]`) mixes both — bare symbols default `:number`, a trailing hash types the exceptions. `outputs:` is the field allowlist; a reducer-result key also paints any owned `reactive_text` node by presence and any `mirror:` id, so an `outputs:` entry that exists only to reach a text node is redundant (harmless — a widening). |
 | `reactive_compute :name, ..., mirror: { sum: "#summary-sum" }` | **Cross-root text mirrors**: paint a compute value into declared, id-allowlisted nodes **outside** the reactive root (a recap in another tab pane) via `textContent` — no bespoke listener. See [Cross-root mirrors](#cross-root-mirrors-mirror--painting-a-recap-outside-the-root). |
 | `reactive_dirty` / `reactive_dirty warn_unsaved: true` / `reactive_dirty only: %i[...]` | **Dirty tracking**, declared once at the class level, against the DOM's own `defaultValue`/`defaultChecked`/`defaultSelected` — no client state. Marks changed fields + the root `data-reactive-dirty`; `warn_unsaved:` arms a `beforeunload`/`turbo:before-visit` guard; `only:` scopes tracking to named fields. Style with `[data-reactive-dirty]`. See [Dirty-field tracking](#dirty-field-tracking-reactive_dirty). |
 | `nested_update!(:assoc, attrs)` | Map a nested param onto `<assoc>_attributes` with id preservation; update the record. |
-| `reactive_nested_list(:assoc, as: :attributes \| :json)` / `reactive_nested_template(:assoc)` / `reactive_nested_row` | **Draft nested-attribute rows** (the "new parent + child rows" form): the container rows land in, the `<template>` holding ONE row's markup, and the row wrapper marker — all **client-only** form state, keyed by association (several collections per root). `as: :json` (default `:attributes`) serializes the rows into ONE hidden JSON field instead of posting `accepts_nested_attributes_for` names — for an app whose controller `JSON.parse`s a serialized param. See [Draft rows for a new parent](#draft-rows-for-a-new-parent-reactive_nested_). |
+| `reactive_nested_list(:assoc, as: :attributes \| :json)` / `reactive_nested_template(:assoc)` / `reactive_nested_row` | **Draft nested-attribute rows** (the "new parent + child rows" form): the container rows land in, the `<template>` holding ONE row's markup, and the row wrapper marker — all **client-only** form state, keyed by association (several collections per root). `as: :json` (default `:attributes`) serializes the rows into ONE hidden JSON field instead of posting `accepts_nested_attributes_for` names — for an app whose controller `JSON.parse`s a serialized param; `name:` names that hidden field **verbatim** (`name: "order[todos]"`, never re-scoped — the form-builder escape hatch, JSON mode only). See [Draft rows for a new parent](#draft-rows-for-a-new-parent-reactive_nested_). |
 | `reactive_nested_add(:assoc, from:, clear:)` / `reactive_nested_remove(confirm:)` | The row triggers, client-only (zero round trips): add clones the template and renumbers its placeholder index; remove deletes a draft row from the DOM, or `_destroy`-marks + hides a persisted row (a hidden `[_destroy]` input present). **Fill-then-add**: `from: { row_field => "#source-selector" }` seeds the new row from add controls that live OUTSIDE it (a preset select, a typeahead), and `clear: true` resets them — composes with `as: :attributes` AND `as: :json`. **Confirm on remove**: `reactive_nested_remove(confirm: "Really delete this row?")` gates the remove behind the same overridable `confirmResolver` as `on`/`on_client` (a per-row string, or the conditional `{ when:, message: }` Hash). See [Draft rows for a new parent](#draft-rows-for-a-new-parent-reactive_nested_). |
-| `nested_field_name(:assoc, :field, index: nil)` | The Rails `accepts_nested_attributes_for` wire name for one row field — `order[line_items_attributes][NEW_ROW][quantity]` (the template placeholder) by default, a real index when given. Scope-aware under `reactive_scope`. |
+| `nested_field_name(:assoc, :field, index: nil)` | The Rails `accepts_nested_attributes_for` wire name for one row field — `order[line_items_attributes][NEW_ROW][quantity]` (the template placeholder) by default, a real index when given. Scope-aware under `reactive_scope`; `scope:` overrides it **per call** (`scope: "order"`, verbatim — the form-builder escape hatch). |
 | `reactive_collection :name, item:, container:, count:, empty:, size:` | Declare an add/remove-row list once; actions call `reply.append`/`prepend`/`remove`. See [Reactive collections](#reactive-collections-addremove-rows--count--empty-state). |
 | `reply.replace` / `.morph` / `.update` / `.remove` / `.redirect(url)` / `.with(*)` / `.js(ops)` | Return from an action to control the reply (flash, remove, redirect, multi-stream, server-pushed client ops). See [Controlling the action's reply](#reply--controlling-the-actions-reply). |
 | `reply.append(name, model)` / `.prepend(...)` / `.remove(name, model)` | Add/remove a row in a declared `reactive_collection` (row + count + empty-state in one reply). |
@@ -1218,6 +1218,17 @@ stays its own signed `on(:select)` trigger. Only *filtering* is client-side —
 selection still round-trips as a real signed action. Blank selectors raise at
 render: a dead binding must fail loudly, not no-op in the browser.
 
+**The escape hatch — a name-less input, targeted by id.** Inside a real
+POST/GET form, a *named* query input submits a stray param alongside your
+value. A form builder (phlex-forms' `tag_field`) therefore renders the query
+input with an **id and no `name`** — which the field form can't express. Pass
+`input:` (a raw CSS selector, verbatim — never re-scoped) instead of the field;
+exactly one of the two per call:
+
+```ruby
+reactive_filter(input: "#user_tags_query")   # the input carries id, NO name
+```
+
 ### Tag-chip input (`reactive_tags`)
 
 The composed combobox/tags widget: preload suggestions, type to narrow, Enter or
@@ -1272,7 +1283,23 @@ dispatches a real `input` event on the hidden field, so `reactive_dirty`,
 
 The styled, form-builder-integrated version of this widget (label/errors/
 theming) belongs in your form layer — these helpers are deliberately the
-unstyled primitives, like `reactive_filter` before them.
+unstyled primitives, like `reactive_filter` before them. That form layer is
+exactly who needs the **escape hatches**: a form builder's wire name is
+computed **per instance** (`user[tags]`, from the builder's object name), which
+the class-level `reactive_scope` compile can't express. `name:` takes the wire
+name **verbatim** (never re-scoped), and the query input goes name-less,
+targeted by id via `reactive_filter(input:)` — so a real form submit carries
+`user[tags]` and nothing else:
+
+```ruby
+div(**mix(reactive_root(id: "user_tags_widget"),
+  reactive_tags(name: "user[tags]"),               # verbatim — never re-scoped
+  reactive_filter(input: "#user_tags_query"))) do  # id-targeted, name-less input
+  input(type: :hidden, name: "user[tags]", id: "user_tags", value: @tags.join(","))
+  # …chips/template/suggestions as above…
+  input(id: "user_tags_query", type: "search", **mix(reactive_listnav, reactive_tags_add))
+end
+```
 
 ### Draft rows for a new parent (`reactive_nested_*`)
 
@@ -1346,6 +1373,12 @@ it on save. Several collections can share one root (everything is keyed by the
 association name); nesting a collection inside another's template is not
 supported.
 
+`nested_field_name` is scope-aware (`reactive_scope :order` → the
+`order[…]` wrap above). When the parent prefix is **per-instance** — a form
+builder's object name, possibly itself bracketed (`"user[profile]"`) — pass
+`scope:` per call instead; it's used verbatim and wins over the class-level
+scope: `nested_field_name(:line_items, :quantity, scope: "order")`.
+
 Two boundaries to respect: the DOM is the single source of truth for unsent
 draft rows, so a **server re-render of the root replaces them** — keep
 replace-shaped actions out of a root holding unsent rows. And once the parent
@@ -1363,6 +1396,9 @@ path exactly as it is:
 div(**reactive_nested_list(:line_items, as: :json)) { }   # + a hidden field to sync
 # the hidden field the client keeps in sync (seed "[]" so an empty submit posts one):
 input(type: "hidden", **reactive_field(:line_items), value: "[]")
+
+# Form-builder escape hatch: name the hidden field VERBATIM (never re-scoped):
+div(**reactive_nested_list(:line_items, as: :json, name: "order[line_items]")) { }
 ```
 
 ```ruby

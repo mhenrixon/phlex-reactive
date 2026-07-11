@@ -121,6 +121,12 @@ module Views
               `order[line_items_attributes][3][quantity]` (a server-rendered row) —
               the scope wraps the `line_items_attributes` base, never the whole
               bracketed path.
+
+              When the parent prefix is **per-instance** — a form builder's
+              object name, possibly itself bracketed (`"user[profile]"`) — pass
+              `scope:` per call instead: it is used verbatim and wins over the
+              class-level scope
+              (`nested_field_name(:line_items, :quantity, scope: 'order')`).
             MD
           end
         end
@@ -166,6 +172,10 @@ module Views
 
               template(**reactive_nested_template(:line_items)) { row_fields }
               button(**reactive_nested_add(:line_items)) { 'Add item' }
+
+              # Form-builder escape hatch: name the hidden field VERBATIM
+              # (never re-scoped) when the wire name is computed per instance:
+              div(**reactive_nested_list(:line_items, as: :json, name: 'order[line_items]')) { }
               ```
 
               The row markup is unchanged — the same `<template>`, the same
