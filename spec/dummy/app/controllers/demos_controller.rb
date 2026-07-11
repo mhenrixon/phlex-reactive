@@ -108,6 +108,19 @@ class DemosController < ActionController::Base
     render_component TagsFieldComponent.new(tags: params[:tags].to_s, submitted: params.key?(:tags))
   end
 
+  # The form-builder shape of the tag-chip input (issue #224): a VERBATIM
+  # bracketed wire name (reactive_tags(name: "user[tags]")) and an id-targeted,
+  # name-less query input (reactive_filter(input:)). The GET submit proves the
+  # wire: user[tags] arrives comma-joined, and stray_params lists every query
+  # key that isn't user[…] — the spec asserts it stays empty.
+  def form_tags_field
+    render_component FormTagsFieldComponent.new(
+      tags: params.dig(:user, :tags).to_s,
+      submitted: params.key?(:user),
+      stray_params: request.query_parameters.keys - ["user"]
+    )
+  end
+
   # A NEW (unsaved) order: the split recomputes in-browser via reactive_compute,
   # no round trip. total=500 seeds the three-way split. The page also carries a
   # read-only recap OUTSIDE the reactive root (issue #159) — the component's

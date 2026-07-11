@@ -19,6 +19,8 @@ Rails.application.routes.draw do
   get "combobox" => "demos#combobox"
   get "filter_combobox" => "demos#filter_combobox"
   get "tags_field" => "demos#tags_field"
+  # Issue #224: the form-builder shape — verbatim name: + id-targeted input:.
+  get "form_tags_field" => "demos#form_tags_field"
   get "new_order" => "demos#new_order"
   get "order/:id" => "demos#order"
   # Issue #208: the draft nested-attribute rows form + its reconcile endpoint.
