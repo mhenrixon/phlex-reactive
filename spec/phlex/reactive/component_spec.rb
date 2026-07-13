@@ -1383,6 +1383,33 @@ RSpec.describe Phlex::Reactive::Component do
       expect(attrs[:data][:reactive_confirm_param]).to eq("Sure?")
       expect(attrs[:data][:reactive_outside_param]).to eq("true")
     end
+
+    # Issue #226: requestSubmit dispatches the very `submit` event an
+    # on_client(:submit, ...) trigger is bound to — a submit op there would
+    # re-fire itself forever. Loud at render, like every dead/hostile binding.
+    it "rejects a submit op bound to the submit event (it would re-fire itself)" do
+      expect { instance.send(:on_client, :submit, instance.js.submit) }
+        .to raise_error(ArgumentError, /re-fire/)
+    end
+
+    it "rejects the self-loop even when submit is buried in a longer chain" do
+      chain = instance.js.add_class(:root, "busy").submit
+      expect { instance.send(:on_client, :submit, chain) }
+        .to raise_error(ArgumentError, /re-fire/)
+    end
+
+    it "allows a submit op on any other event (the general autosubmit story)" do
+      attrs = instance.send(:on_client, :change, instance.js.submit)
+
+      expect(attrs[:data][:action]).to eq("change->reactive#runOps")
+      expect(attrs[:data][:reactive_ops_param]).to eq('[["submit",{"to":"@root"}]]')
+    end
+
+    it "allows non-submit ops on the submit event (a busy-state chain is fine)" do
+      attrs = instance.send(:on_client, :submit, instance.js.add_class(:root, "busy"))
+
+      expect(attrs[:data][:action]).to eq("submit->reactive#runOps")
+    end
   end
 
   # A record-backed component whose record is UNSAVED (new_record?) has no

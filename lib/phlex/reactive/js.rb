@@ -170,6 +170,21 @@ module Phlex
         append("focus_first", target_args(to, global:))
       end
 
+      # --- Submit (issue #226) ---
+      #
+      # submit(to = :root) — requestSubmit() the TARGET'S OWN form: the target
+      # itself when it IS a form, else its form owner (input.form, honoring a
+      # form= attribute), else the nearest ancestor form. requestSubmit runs
+      # constraint validation and fires a REAL cancelable `submit` event, so it
+      # composes with both a native/Turbo form and an on(:action, event:
+      # "submit") interception. ACTOR-ONLY like focus: allowed from on_client /
+      # reply.js / a reducer's $ops, refused in broadcast_to(js:) — a broadcast
+      # submit would force-submit every subscriber's form.
+
+      def submit(to = :root, global: false)
+        append("submit", target_args(to, global:))
+      end
+
       # --- Text content (issue #159) ---
       #
       # text(to, value) — set the target's textContent (stringified; nil clears).

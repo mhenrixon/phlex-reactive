@@ -381,6 +381,14 @@ module Phlex
           raise ArgumentError, "on_client(#{event.inspect}) got no ops — a dead trigger" if ops.empty?
 
           event = event.to_s
+          # Issue #226: requestSubmit dispatches the very `submit` event this
+          # trigger would be bound to — an infinite loop. Loud at render.
+          if event == "submit" && ops.ops.any? { |name, _| name == "submit" }
+            raise ArgumentError,
+              "on_client(:submit, js.submit) would re-fire itself — requestSubmit dispatches the " \
+              "submit event this trigger is bound to. Bind the submit op to another event " \
+              "(change/input), or gate it behind a reducer's $ops / reactive_on_complete."
+          end
           window_bound = window || outside
           attrs = {
             data: {

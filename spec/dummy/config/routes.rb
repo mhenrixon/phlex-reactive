@@ -52,6 +52,8 @@ Rails.application.routes.draw do
   get "debounce" => "demos#debounce"
   get "dropdown" => "demos#dropdown"
   get "client_tabs" => "demos#client_tabs"
+  # Issue #226: the general autosubmit story — on_client(:change, js.submit).
+  get "autosubmit_filter" => "demos#autosubmit_filter"
   get "conditional_fieldset" => "demos#conditional_fieldset"
   get "confirm" => "demos#confirm"
   get "client_op_confirm" => "demos#client_op_confirm"

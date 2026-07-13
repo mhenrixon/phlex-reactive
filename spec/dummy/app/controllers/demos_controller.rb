@@ -314,6 +314,16 @@ class DemosController < ActionController::Base
     render html: component + extras.html_safe, layout: true
   end
 
+  # Issue #226: the general autosubmit story — a plain GET filter form whose
+  # select submits it on change via on_client(:change, js.submit("form")).
+  # Turbo Drive turns the requestSubmit into a visit (no full reload).
+  def autosubmit_filter
+    component = render_to_string(
+      AutosubmitFilterComponent.new(sort: params.fetch(:sort, "name")), layout: false
+    )
+    render html: component, layout: true
+  end
+
   # Value-conditional visibility (issue #161): reactive_show bindings driven by
   # a select, a checkbox, and a radio group — all client-only. The spec's fetch
   # spy proves no round trip ever fires. The badge lives OUTSIDE the component's

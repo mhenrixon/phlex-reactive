@@ -382,6 +382,13 @@ RSpec.describe Phlex::Reactive::Response do
       expect(stream).to include("&quot;focus&quot;")
     end
 
+    # Issue #226: submit is actor-only like focus — refused in broadcasts, but
+    # the actor's own reply may commit a form it just morphed.
+    it "allows a submit op (actor-scoped, mirroring focus)" do
+      stream = counter.reply.with.js(CounterComponent.new(count: 0).js.submit).streams.first
+      expect(stream).to include("&quot;submit&quot;")
+    end
+
     it "enforces the attr allowlist on a raw op array (escape hatch can't bypass it)" do
       hostile = [["set_attr", { "to" => "#x", "name" => "onclick", "value" => "alert(1)" }]]
       expect { counter.reply.with.js(hostile) }.to raise_error(ArgumentError, /onclick/)

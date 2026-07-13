@@ -1092,7 +1092,24 @@ const CLIENT_OPS = Object.freeze({
   dispatch: (el, args) => {
     el.dispatchEvent(new CustomEvent(args.name, { bubbles: true, composed: true, detail: args.detail ?? {} }))
   },
+
+  // Submit the target's OWN form (issue #226) via requestSubmit() — constraint
+  // validation runs and a REAL cancelable `submit` event fires, so an
+  // on(:action, event: "submit") interception or a native/Turbo form handles it
+  // exactly like a user submit. No form → no-op. ACTOR-ONLY like focus: the
+  // broadcast builder refuses it server-side (BROADCAST_REFUSED_OPS).
+  submit: (el) => submitFormFor(el)?.requestSubmit?.(),
 })
+
+// The form a submit op commits (issue #226), in order: the target itself when
+// it IS a form (tagName, not instanceof — fake-node/test friendly), its form
+// owner for a control (input.form — honors a form= attribute), else the nearest
+// ancestor form. closest() may cross the component root by design — the
+// FIELD'S OWN form is the submit scope, not the reactive boundary.
+function submitFormFor(el) {
+  if (el?.tagName === "FORM") return el
+  return el?.form ?? el?.closest?.("form") ?? null
+}
 
 // Apply a hidden-flag change, optionally animated by a [during, from, to]
 // transition (issue #96). Split out so show/hide/toggle share it.
