@@ -10,11 +10,12 @@
 #
 # The point of the bench is the per-CALL multi-KEY cliff. Broadcasting one
 # component to K different stream keys (a per-tenant loop — "the list page
-# stream AND the dashboard stream") with the classic `broadcast_replace_to` is
+# stream AND the dashboard stream") with a hand-written K-call loop is
 # K× build + K× render + K× HMAC for BYTE-IDENTICAL HTML, because `*streamables`
-# concatenates into ONE key. `broadcast_replace_to_each` renders ONCE and fans
-# the shared payload out over K cheap channel calls. This bench measures the
-# gap at 1 key (parity) and over 10 keys (the win).
+# concatenates into ONE key. `broadcast_to(each: keys, ...)` (the issue #185
+# spelling of the old _to_each) renders ONCE and fans the shared payload out
+# over K cheap channel calls. This bench measures the gap at 1 key (parity)
+# and over 10 keys (the win).
 #
 #   ruby benchmark/micro/broadcast.rb
 #   rake bench:micro
@@ -38,33 +39,34 @@ end
 
 KEYS = Array.new(10) { ["tenant:#{it}", :counters] }
 
-BenchSupport.header("broadcast_replace_to: 1 key vs a hand K-key loop vs _to_each")
+BenchSupport.header("broadcast_to replace: 1 key vs a hand K-key loop vs each:")
 BenchSupport.ips do
   # 1 key: the baseline single-key broadcast — one build + one render + one HMAC.
-  it.report("replace_to (1 key)") do
-    CounterComponent.broadcast_replace_to(*KEYS.first, model: nil)
+  it.report("replace (1 key)") do
+    CounterComponent.broadcast_to(*KEYS.first, replace: nil)
   end
 
   # The naive K-key fan-out a developer writes today: K× everything for
   # byte-identical HTML. This is the cliff issue #119 removes.
-  it.report("replace_to loop (10 keys)") do
-    KEYS.each { CounterComponent.broadcast_replace_to(*it, model: nil) }
+  it.report("replace loop (10 keys)") do
+    KEYS.each { CounterComponent.broadcast_to(*it, replace: nil) }
   end
 
-  # The new API: render ONCE, fan out over 10 cheap channel calls.
-  it.report("replace_to_each (10 keys)") do
-    CounterComponent.broadcast_replace_to_each(KEYS, model: nil)
+  # The each: fan-out (issue #185 spelling of _to_each): render ONCE, fan out
+  # over 10 cheap channel calls.
+  it.report("replace each: (10 keys)") do
+    CounterComponent.broadcast_to(each: KEYS, replace: nil)
   end
 end
 
-BenchSupport.header("allocations: K-key fan-out (loop vs _to_each), K=10")
+BenchSupport.header("allocations: K-key fan-out (loop vs each:), K=10")
 # Warm the per-class view-context + token caches so we measure the steady state.
-CounterComponent.broadcast_replace_to(*KEYS.first, model: nil)
-BenchSupport.allocations("replace_to loop (10 keys)") do
-  KEYS.each { CounterComponent.broadcast_replace_to(*it, model: nil) }
+CounterComponent.broadcast_to(*KEYS.first, replace: nil)
+BenchSupport.allocations("replace loop (10 keys)") do
+  KEYS.each { CounterComponent.broadcast_to(*it, replace: nil) }
 end
-BenchSupport.allocations("replace_to_each (10 keys)") do
-  CounterComponent.broadcast_replace_to_each(KEYS, model: nil)
+BenchSupport.allocations("replace each: (10 keys)") do
+  CounterComponent.broadcast_to(each: KEYS, replace: nil)
 end
 
 # --- model_param_name: a measure-first candidate (issue #119) --------------
