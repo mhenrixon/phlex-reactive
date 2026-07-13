@@ -133,6 +133,14 @@ module Views
               Only methods declared with `action :name` are invokable. Don't declare an action
               you don't intend to expose. Public methods without `action` are unreachable, but
               don't rely on obscurity — declare narrowly.
+
+              The **client-op vocabulary** carries the same posture: a fixed frozen whitelist
+              (unknown ops warn-and-skip), an attribute allowlist enforced twice (build time
+              AND interpret time), and an **actor-only tier** — `focus`, `focus_first`, and
+              `submit` (#226) are allowed from the actor's own gesture or reply
+              (`on_client` / `reply.js` / a reducer's `$ops`) but **refused in broadcasts**:
+              a broadcast op must never steal focus in, or force-submit a form from, every
+              subscriber's tab.
             MD
           end
         end

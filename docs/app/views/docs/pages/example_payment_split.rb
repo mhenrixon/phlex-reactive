@@ -33,6 +33,7 @@ module Views
           disabled_field
           live_typing
           compute
+          ops_output
           cross_root_mirror
           transient
           notes
@@ -325,6 +326,49 @@ module Views
               code { 'turbo:morph-element' }
               plain ', so an in-place morph reconciles too.'
             end
+          end
+        end
+
+        def ops_output
+          DocsUI::Section('Commit when complete — the reserved $ops output (#226)') do
+            md <<~MD
+              Outputs write **values**; the reserved `$ops` key emits a
+              **conditional side effect** — the piece that used to force a bespoke
+              controller next to an otherwise-declarative compute. Return an op
+              chain (the `ops` builder mirrors the Ruby `js` verbs) and the
+              controller runs it through the same frozen op whitelist as
+              `on_client`, **after** the field writes, text sinks, and their
+              dispatched `input` events settle. The canonical one-time-code field:
+
+              ```js
+              import { setComputeReducer, ops } from "phlex/reactive/compute"
+
+              setComputeReducer("otp", ({ code }) => {
+                const digits = code.replace(/\D/g, "").slice(0, 6)
+                return { code: digits, $ops: digits.length === 6 ? ops.submit() : null }
+              })
+              ```
+
+              With the component root being the form (carrying
+              `on(:verify, event: "submit")`), six digits — typed, pasted dirty
+              (`123-456`), or SMS-autofilled — normalize and commit as **one**
+              signed action POST. The safety contract:
+
+              - **Rising edge, keyed on chain content**: an identical chain never
+                re-fires (a capped 7th keystroke can't re-submit); a *different*
+                chain fires again — a six-box reducer advancing focus emits a new
+                `ops.focus` target per digit. Returning `null` re-arms.
+              - **Event-gated**: the connect/morph seed pass arms **without**
+                firing, so a validation-error re-render (or browser restore) with
+                an already-complete value never self-submits.
+              - `submit`/`focus` stay **actor-only** — usable here and in
+                `on_client`/`reply.js`, refused in broadcasts.
+
+              When the condition needs no normalization, skip the reducer entirely:
+              `reactive_on_complete if: { code: { length: 6 } }, run: js.dispatch("code:complete")`
+              declares the whole binding in Ruby — see the
+              [client-ops example](/docs/example-client-ops).
+            MD
           end
         end
 

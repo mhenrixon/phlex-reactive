@@ -342,6 +342,13 @@ module Views
               + POST) only when the server must **decide** or **persist** something.
               See the [client-only ops example](/docs/example-client-ops) for the live
               version.
+
+              The vocabulary includes `submit` (#226): `on_client(:change,
+              js.submit("form"))` on a select is the one-line autosubmit filter —
+              `requestSubmit()` fires a real submit event, so a native/Turbo form
+              navigates normally and an `on(:save, event: "submit")` interception
+              turns it into a signed action instead. Actor-only like focus: refused
+              in broadcasts.
             MD
           end
         end

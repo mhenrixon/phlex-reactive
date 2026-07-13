@@ -8,6 +8,50 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Reducer-emitted client ops (`$ops`), a `submit` op, and declarative
+  `reactive_on_complete` (#226).** The "normalize on input, commit when
+  complete" field (a one-time-code entry being the canonical case) is now
+  declarable end to end, single- or multi-input, with no bespoke controller:
+  - **`js.submit(to = :root)`** joins the op vocabulary: requestSubmit the
+    target's own form (the target itself when it *is* a form, `input.form`
+    for a control, else `closest("form")`). A real cancelable `submit` event
+    fires, so it composes with native/Turbo forms AND
+    `on(:save, event: "submit")` interception —
+    `select(**on_client(:change, js.submit("form")))` is the one-line general
+    autosubmit. **Actor-only like focus**: refused in `broadcast_to(js:)`
+    (allowed in `reply.js`); `on_client(:submit, js.submit)` raises (it would
+    re-fire itself).
+  - **The reserved `$ops` reducer output**: a `reactive_compute` reducer may
+    return `$ops` holding an op chain — built with the new immutable `ops`
+    builder exported from `phlex/reactive/compute` (verbs mirror the wire op
+    names) or a raw `[[op, args], …]` list — run through the same frozen
+    client-op whitelist as a final phase after the write set settles.
+    **Rising-edge, keyed on chain content, event-gated**: an identical chain
+    never re-fires (a capped 7th keystroke can't re-submit), a changed chain
+    fires again (per-digit focus advance across split boxes), and the
+    connect/morph seed pass arms without firing (a validation-error re-render
+    with a complete value never self-submits).
+  - **`{ length: … }` in the ONE conditions language**: exact
+    (`{ length: 6 }`) or Integer-Range length predicates for
+    `reactive_show` / `reactive_show_targets` / `reactive_on_complete`,
+    counted in **codepoints** on both sides (Ruby `String#length`, client
+    `[...value].length`) — the shared parity fixture gains a multibyte proof
+    vector.
+  - **`reactive_on_complete`** — the zero-JavaScript declarative twin: the
+    same `if:`/`if_any:`/`unless:` kwargs as `reactive_show` plus `run:` (a
+    `js` chain, now buildable at class level, or an allowlist-checked raw
+    list), emitted as one root attr and evaluated by the generic controller
+    with the same rising-edge/arming semantics as `$ops`.
+    `reactive_on_complete if: { code: { length: 6 } },
+    run: js.dispatch("code:complete")` + `on(:verify, event: "code:complete")`
+    is a complete auto-committing code field with no reducer at all.
+  - Dummy flagships: `VerificationCodeComponent` (single input + `$ops`
+    submit), `SplitCodeComponent` (six boxes: paste redistribution,
+    reducer-driven focus advance, hidden joined-code output),
+    `CodeCompleteComponent` (declarative, zero JS), and the
+    `AutosubmitFilterComponent` select-driven GET filter — each with a
+    real-browser system spec.
+
 - **Instance-dynamic wire names — keyword escape hatches on the
   field-compiling helpers (#224).** A form builder's wire name is computed per
   instance (`user[tags]`), which the class-level `reactive_scope` compile can't
@@ -239,6 +283,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     to settle.
 
 ### Fixed
+
+- **`rake bench` ran the removed `broadcast_replace_to` API and exited 1.**
+  `benchmark/micro/broadcast.rb` migrated to the #185 spellings
+  (`broadcast_to(*key, replace:)` / `broadcast_to(each:, replace:)`); the
+  transport double is unchanged.
 
 - **`reactive_nested_remove(confirm:)` now interpolates `%{field}` on client-added
   rows (#222).** A row added in the browser via `reactive_nested_add` is a
