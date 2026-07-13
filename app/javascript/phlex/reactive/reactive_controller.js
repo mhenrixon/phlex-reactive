@@ -1365,6 +1365,20 @@ function parseOps(raw) {
   }
 }
 
+// Normalize a reducer's reserved $ops output (issue #226): the compute `ops`
+// builder (its .ops list), a raw [[name, args], ...] array, or null/undefined
+// (no effect this pass). An EMPTY list is the same as null — "nothing to run"
+// must not latch the rising edge. Anything else warns + is dropped
+// (default-deny, like every other malformed op source). Reducers are trusted
+// app code, but their ops still run through the frozen CLIENT_OPS whitelist.
+function computeOpsList(raw) {
+  if (raw == null) return null
+  const list = Array.isArray(raw) ? raw : raw.ops
+  if (Array.isArray(list)) return list.length > 0 ? list : null
+  console.warn("[phlex-reactive] $ops must be an ops chain or a [[op, args], ...] list — skipped")
+  return null
+}
+
 // Interpret a [[name, args], ...] op list against the frozen CLIENT_OPS
 // whitelist (issues #95/#96/#97). `resolveTargets(args)` returns the element(s)
 // an op applies to — the controller scopes to its root (excluding nested
@@ -1433,6 +1447,10 @@ export default class extends Controller {
   // (single-pass write set). Per-instance, so another root's events are never
   // swallowed. WeakSet: entries drop when the short-lived Event is GC'd.
   #computeSelfDispatched = new WeakSet()
+  // Issue #226: whether the LAST reducer pass returned a $ops chain — the
+  // rising-edge latch. Ops fire only on the false→true transition of an
+  // event-driven pass; the seed pass arms this without firing.
+  #computeOpsWasPresent = false
   // Dirty tracking (issue #103): the bound re-scan (turbo:morph-element) and the
   // navigate-away guard handlers, held so disconnect() can remove exactly them.
   #boundScanDirty
@@ -1945,7 +1963,12 @@ export default class extends Controller {
     // snapshot above (issue #183): its result drives the whole single-pass write.
     const result = reduce(values, { changed: this.#changedComputeField(event, inputs, scope) }) || {}
 
-    // Issue #183 — SINGLE-PASS WRITE SET. Three ordered phases, so declared output
+    // The reserved $ops output (issue #226) is CONSUMED here — normalized once,
+    // then excluded from every write phase below (it is an op chain, never a
+    // field value, text sink, or mirror), and applied as phase 4.
+    const reducerOps = computeOpsList(result.$ops)
+
+    // Issue #183 — SINGLE-PASS WRITE SET. Ordered phases, so declared output
     // order stops being semantics and a wrong order can no longer corrupt values:
     //
     //   1. BATCH the field writes from the ONE result. Each output name in the
@@ -1959,9 +1982,12 @@ export default class extends Controller {
     //      per-instance WeakSet) makes recompute skip re-running the reducer for our
     //      own write, while the event still fires every OTHER listener (chained
     //      repaint, dirty tracking, show bindings, sibling roots).
+    //   4. RUN the reducer's $ops chain (issue #226) — rising-edge, event-gated —
+    //      so its ops (dispatch a completion event, submit the form) always see
+    //      the fully settled DOM and every chained listener has already run.
     const changedFields = []
     for (const name of outputs) {
-      if (!(name in result)) continue
+      if (name === "$ops" || !(name in result)) continue
       const field = ownedField(name)
       if (!field) continue // a non-field output paints as a text sink in phase 2
       if (String(result[name]) === field.value) continue // change-guard — unchanged, skip
@@ -1975,6 +2001,7 @@ export default class extends Controller {
     // undefined result value is SKIPPED (never stringified to "null"/"undefined") —
     // the same "no value this pass, don't paint" filter #applyComputeMirrors uses.
     for (const name of Object.keys(result)) {
+      if (name === "$ops") continue
       const value = result[name]
       if (value === undefined || value === null) continue
       this.#mirrorText(name, value)
@@ -1996,6 +2023,25 @@ export default class extends Controller {
       this.#computeSelfDispatched.add(inputEvent)
       field.dispatchEvent(inputEvent)
     }
+
+    // Phase 4 — the reducer's $ops chain (issue #226), after everything settled.
+    // Event-gated: a seed/direct recompute() pass (no event) arms the latch but
+    // never fires, so a restored/re-rendered complete value can't auto-fire.
+    this.#applyComputeOps(reducerOps, Boolean(event))
+  }
+
+  // Apply a reducer-emitted $ops chain (issue #226) on its RISING EDGE: fire
+  // only when THIS pass returned ops, the LAST pass did not, and the pass was
+  // event-driven. The latch updates on every pass either way, so "still
+  // complete" never re-fires and "went incomplete" re-arms. Ops run through the
+  // shared CLIENT_OPS interpreter with runOps's root-scoped target resolution;
+  // a missing to: defaults to "@root" (hand-written reducer ergonomics).
+  #applyComputeOps(list, eventDriven) {
+    const present = list !== null
+    const fire = present && !this.#computeOpsWasPresent && eventDriven
+    this.#computeOpsWasPresent = present
+    if (!fire) return
+    applyOps(list, (args) => this.#opTargets(args.to == null ? { ...args, to: "@root" } : args))
   }
 
   // Client-side list navigation (combobox keyboard nav, issue #72). Wired by

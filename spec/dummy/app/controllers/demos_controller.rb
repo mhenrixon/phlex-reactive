@@ -314,6 +314,14 @@ class DemosController < ActionController::Base
     render html: component + extras.html_safe, layout: true
   end
 
+  # Issue #226: the $ops flagship — a one-time-code field whose reducer
+  # normalizes on input and auto-commits (submit → intercepted signed action)
+  # exactly once when the value first becomes complete.
+  def verification
+    component = render_to_string(VerificationCodeComponent.new, layout: false)
+    render html: component, layout: true
+  end
+
   # Issue #226: the general autosubmit story — a plain GET filter form whose
   # select submits it on change via on_client(:change, js.submit("form")).
   # Turbo Drive turns the requestSubmit into a visit (no full reload).

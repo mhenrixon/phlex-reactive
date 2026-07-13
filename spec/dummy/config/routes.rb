@@ -42,6 +42,8 @@ Rails.application.routes.draw do
   get "draft_order_confirm_interpolate" => "demos#draft_order_confirm_interpolate"
   get "post_preview/:id" => "demos#post_preview"
   get "compute_seed" => "demos#compute_seed"
+  # Issue #226: the $ops flagship — normalize on input, auto-commit when complete.
+  get "verification" => "demos#verification"
   get "notifications" => "demos#notifications"
   get "reactive_rows" => "demos#reactive_rows"
   get "rich_editor/:id" => "demos#rich_editor"
