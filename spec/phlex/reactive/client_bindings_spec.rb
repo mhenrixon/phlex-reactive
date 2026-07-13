@@ -131,6 +131,23 @@ RSpec.describe Phlex::Reactive::ClientBindings do
       end.not_to raise_error
     end
 
+    # Issue #226: a completion binding is client-only behavior (conditions +
+    # local ops, no token, no action), so it belongs on ClientBindings too —
+    # and its tokenless root still emits the wire attr.
+    it "allows reactive_on_complete and emits its root attr tokenlessly" do
+      klass = Class.new(Phlex::HTML) do
+        include Phlex::Reactive::ClientBindings
+
+        def self.name = "ClientWithOnComplete"
+        reactive_on_complete if: { code: { length: 6 } }, run: js.dispatch("code:complete")
+      end
+
+      attrs = klass.new.send(:reactive_attrs)
+      expect(attrs[:data]).not_to have_key(:reactive_token_value)
+      expect(JSON.parse(attrs[:data][:reactive_on_complete]).first)
+        .to include("any" => [[{ "field" => "code", "len_eq" => 6 }]])
+    end
+
     it "does NOT raise for those macros on a full Component (Identity present)" do
       expect do
         Class.new(Phlex::HTML) do
