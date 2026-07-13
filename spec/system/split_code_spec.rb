@@ -25,9 +25,16 @@ RSpec.describe "Split code boxes (issue #226 multi-input $ops)", type: :system d
     expect(page).to have_css("[data-testid='status']", text: "waiting")
     install_post_counter
 
-    # Paste-shaped input into the FIRST box: the reducer joins, strips, and
-    # fans one digit out per box, completes, and submits.
-    find("[data-testid='d1']").set("987-654")
+    # A real paste is ONE input event carrying the full dirty string —
+    # dispatch exactly that. (Capybara's .set is driver-version-dependent:
+    # some builds type per character, which is the TYPING flow — with focus
+    # advance and per-keystroke redistribution — that the next spec covers.
+    # The scrambled-order CI failure on 3c263d0 is the receipt.)
+    page.execute_script(<<~JS)
+      const box = document.querySelector('[data-testid="d1"]')
+      box.value = "987-654"
+      box.dispatchEvent(new Event("input", { bubbles: true }))
+    JS
 
     expect(page).to have_css("[data-testid='status']", text: "verified:987654")
     expect(page).to have_field("d1", with: "9")
