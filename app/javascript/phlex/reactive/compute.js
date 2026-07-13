@@ -147,12 +147,14 @@ function targetArgs(to, { global, transition } = {}) {
 
 // Named legs { during, from, to } → the [during, from, to] wire array (the
 // issue #186 vocabulary). Loud at authoring time, like the Ruby builder.
+// Frozen, like every nested payload — the chain's immutability contract must
+// hold all the way down (the Ruby twin freezes its legs array too).
 function normalizeTransition(transition) {
   const named =
     transition && typeof transition === "object" && !Array.isArray(transition) &&
     ["during", "from", "to"].every((k) => k in transition)
   if (!named) throw new Error("[phlex-reactive] ops transition takes named legs { during, from, to }")
-  return [String(transition.during), String(transition.from), String(transition.to)]
+  return Object.freeze([String(transition.during), String(transition.from), String(transition.to)])
 }
 
 class OpsChain {
@@ -230,11 +232,12 @@ class OpsChain {
 
 // classes: one class string or an array of them (never whitespace-split — a
 // classList token can't contain spaces, so splitting would only mask a bug).
-// Loud on an empty/missing list, like the Ruby builder.
+// Loud on an empty/missing list, and frozen (the Ruby twin freezes its class
+// list too) — a chain held in a constant must stay immutable all the way down.
 function classArgs(to, classes, opts) {
   const list = classes == null ? [] : (Array.isArray(classes) ? classes : [classes]).map(String)
   if (list.length === 0) throw new Error("[phlex-reactive] a class op needs at least one class")
-  return { ...targetArgs(to, opts), classes: list }
+  return { ...targetArgs(to, opts), classes: Object.freeze(list) }
 }
 
 // The shared empty chain — start every reducer effect from here:

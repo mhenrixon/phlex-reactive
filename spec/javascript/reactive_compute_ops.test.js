@@ -130,6 +130,21 @@ test("ops is an immutable chain: every verb returns a NEW instance", () => {
   expect(chained.ops.length).toBe(1)
 })
 
+test("ops payloads are frozen ALL the way down (nested classes/transition arrays)", () => {
+  const { ops } = computeModule
+  const chain = ops
+    .add_class(".x", ["a", "b"])
+    .show("#y", { transition: { during: "t", from: "f", to: "to" } })
+
+  expect(Object.isFrozen(chain.ops)).toBe(true)
+  expect(Object.isFrozen(chain.ops[0])).toBe(true)
+  expect(Object.isFrozen(chain.ops[0][1])).toBe(true)
+  expect(Object.isFrozen(chain.ops[0][1].classes)).toBe(true)
+  expect(Object.isFrozen(chain.ops[1][1].transition)).toBe(true)
+  // A chain held in a constant can never be mutated by later use.
+  expect(() => chain.ops[0][1].classes.push("evil")).toThrow()
+})
+
 test("ops verbs mirror the Ruby wire: dispatch defaults + submit default root", () => {
   const { ops } = computeModule
   const chain = ops.dispatch("code:complete", { detail: { digits: 6 } }).submit()
