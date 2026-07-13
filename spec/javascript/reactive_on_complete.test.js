@@ -121,19 +121,16 @@ class FakeNode {
   }
 }
 
+// No CustomEvent stub: bun's native CustomEvent carries type/detail, which is
+// all these tests read — and a bare recorder class left on globalThis would
+// break every later file whose events need cancelable/preventDefault (bun runs
+// the whole suite in ONE process; the CI-order lifecycle failure proved it).
 function buildController(rootEl) {
   const controller = new ReactiveController()
   controller.element = rootEl
   controller.tokenValue = "tok"
   globalThis.document = { querySelector: () => null, dispatchEvent: () => {} }
   globalThis.window = { addEventListener: () => {}, removeEventListener: () => {} }
-  globalThis.CustomEvent = class {
-    constructor(type, init = {}) {
-      this.type = type
-      this.detail = init.detail
-      this.bubbles = !!init.bubbles
-    }
-  }
   return controller
 }
 
