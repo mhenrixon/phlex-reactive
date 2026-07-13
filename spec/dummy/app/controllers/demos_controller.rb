@@ -329,6 +329,13 @@ class DemosController < ActionController::Base
     render html: component, layout: true
   end
 
+  # Issue #226: the declarative completion binding — reactive_on_complete with
+  # zero JavaScript (no reducer; the Ruby length: condition drives the ops).
+  def code_complete
+    component = render_to_string(CodeCompleteComponent.new, layout: false)
+    render html: component, layout: true
+  end
+
   # Issue #226: the general autosubmit story — a plain GET filter form whose
   # select submits it on change via on_client(:change, js.submit("form")).
   # Turbo Drive turns the requestSubmit into a visit (no full reload).

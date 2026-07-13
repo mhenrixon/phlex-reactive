@@ -46,6 +46,8 @@ Rails.application.routes.draw do
   get "verification" => "demos#verification"
   # Issue #226: the multi-box variant — paste redistribution + focus advance.
   get "split_code" => "demos#split_code"
+  # Issue #226: the declarative twin — reactive_on_complete, zero JavaScript.
+  get "code_complete" => "demos#code_complete"
   get "notifications" => "demos#notifications"
   get "reactive_rows" => "demos#reactive_rows"
   get "rich_editor/:id" => "demos#rich_editor"

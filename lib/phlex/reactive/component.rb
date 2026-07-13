@@ -104,6 +104,15 @@ module Phlex
       # default-deny; the client interpreter re-checks the shape).
       ComputeDefinition = Data.define(:name, :inputs, :outputs, :reducer, :input_types, :mirror)
 
+      # A declared completion binding (issue #226): `conditions` are the
+      # pre-compiled ShowConditions DNF groups (the ONE conditions language,
+      # including the #226 length: form); `ops` is the validated [[op, args],…]
+      # client-op chain. The generic controller evaluates the conditions over
+      # the owned fields on input/change and runs the ops on the RISING EDGE —
+      # the conditions' first flip to true — through the same frozen CLIENT_OPS
+      # whitelist as on_client. The connect/morph pass arms without firing.
+      OnCompleteDefinition = Data.define(:name, :conditions, :ops)
+
       # A declared add/remove-row collection (issue #35): the list contract tied
       # into one unit — the per-row item component, the container DOM id rows
       # live in, an optional companion count id, an optional empty-state

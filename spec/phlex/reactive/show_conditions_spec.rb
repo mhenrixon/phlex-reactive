@@ -168,6 +168,86 @@ RSpec.describe Phlex::Reactive::ShowConditions do
     end
   end
 
+  # Issue #226: the length: value form — a Hash value names a structural
+  # predicate over the field's CODEPOINT count. { length: 6 } is exact;
+  # Integer Ranges reuse the threshold vocabulary with len_* wire keys.
+  describe ".normalize — the length: value form (issue #226)" do
+    it "compiles { length: N } to a len_eq term" do
+      expect(normalize(if: { code: { length: 6 } }))
+        .to eq([[{ "field" => "code", "len_eq" => 6 }]])
+    end
+
+    it "compiles an endless length range to len_gte" do
+      expect(normalize(if: { code: { length: 6.. } }))
+        .to eq([[{ "field" => "code", "len_gte" => 6 }]])
+    end
+
+    it "compiles a beginless exclusive length range to len_lt" do
+      expect(normalize(if: { code: { length: ...6 } }))
+        .to eq([[{ "field" => "code", "len_lt" => 6 }]])
+    end
+
+    it "compiles a bounded length range to gte+lte terms in ONE group" do
+      expect(normalize(if: { code: { length: 4..8 } }))
+        .to eq([[{ "field" => "code", "len_gte" => 4 }, { "field" => "code", "len_lte" => 8 }]])
+    end
+
+    it "ANDs a length term with its sibling fields in the same group" do
+      expect(normalize(if: { code: { length: 6 }, kind: "sms" }))
+        .to eq([[{ "field" => "code", "len_eq" => 6 }, { "field" => "kind", "equals" => "sms" }]])
+    end
+
+    it "negates { length: N } under unless: to the len_lt OR len_gt disjunction" do
+      expect(normalize(unless: { code: { length: 6 } }))
+        .to eq([[{ "field" => "code", "len_lt" => 6 }], [{ "field" => "code", "len_gt" => 6 }]])
+    end
+
+    it "negates a bounded length range under unless: to the outside disjunction" do
+      expect(normalize(unless: { code: { length: 4..8 } }))
+        .to eq([[{ "field" => "code", "len_lt" => 4 }], [{ "field" => "code", "len_gt" => 8 }]])
+    end
+
+    it "negates an endless length range under unless: to the single complement" do
+      expect(normalize(unless: { code: { length: 6.. } }))
+        .to eq([[{ "field" => "code", "len_lt" => 6 }]])
+    end
+
+    it "rejects a non-Integer length literal" do
+      expect { normalize(if: { code: { length: "6" } }) }.to raise_error(ArgumentError, /length/)
+      expect { normalize(if: { code: { length: 6.5 } }) }.to raise_error(ArgumentError, /length/)
+    end
+
+    it "rejects a negative length" do
+      expect { normalize(if: { code: { length: -1 } }) }.to raise_error(ArgumentError, /length/)
+    end
+
+    it "rejects a non-Integer length Range endpoint" do
+      expect { normalize(if: { code: { length: 1.5..8 } }) }.to raise_error(ArgumentError, /length/)
+    end
+
+    it "rejects a Hash value with keys other than length: (loud, never silent)" do
+      expect { normalize(if: { code: { min: 6 } }) }.to raise_error(ArgumentError, /length/)
+      expect { normalize(unless: { code: { min: 6 } }) }.to raise_error(ArgumentError, /length/)
+    end
+
+    it "rejects an empty Hash value" do
+      expect { normalize(if: { code: {} }) }.to raise_error(ArgumentError, /length/)
+    end
+
+    it "evaluates length by CODEPOINTS (multibyte-safe, mirrors the client)" do
+      groups = normalize(if: { note: { length: 2 } })
+      expect(match?(groups, { "note" => "😀🎈" })).to be(true)
+      expect(match?(groups, { "note" => "ab" })).to be(true)
+      expect(match?(groups, { "note" => "abc" })).to be(false)
+    end
+
+    it "treats a blank/absent field as length 0" do
+      groups = normalize(if: { code: { length: 0 } })
+      expect(match?(groups, {})).to be(true)
+      expect(match?(groups, { "code" => "x" })).to be(false)
+    end
+  end
+
   describe ".normalize — loud validation" do
     it "raises on an empty if: hash" do
       expect { normalize(if: {}) }.to raise_error(ArgumentError, /if: needs at least one field/)

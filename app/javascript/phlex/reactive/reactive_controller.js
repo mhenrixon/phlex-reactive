@@ -1182,6 +1182,39 @@ function showBindingMatches(el, value) {
 // present. Each coerces BOTH sides to Number and compares.
 const SHOW_NUMERIC_KEYS = ["gte", "gt", "lte", "lt"]
 
+// The length predicate keys (issue #226) — the client half of Ruby's
+// ShowConditions::LENGTH_KEYS. Length is counted in CODEPOINTS
+// ([...str].length), NOT UTF-16 code units (str.length), so Ruby's
+// String#length and this evaluator agree on multibyte values — the shared
+// fixture's emoji vector proves it.
+const SHOW_LENGTH_KEYS = ["len_eq", "len_gte", "len_gt", "len_lte", "len_lt"]
+
+// Evaluate one length predicate. Length is a TOTAL function (blank/absent →
+// 0), so every field value is decidable — no fail-closed special case like the
+// numeric thresholds ({ length: 0 } legitimately matches a blank field). A
+// non-Integer LITERAL is a malformed binding — warn-skip (null), default-deny.
+function lengthPredicateMatches(key, literal, value) {
+  if (!Number.isInteger(literal)) {
+    console.warn(`[phlex-reactive] reactive_show ${key}: needs an integer literal, got ${JSON.stringify(literal)} — skipped`)
+    return null
+  }
+  const length = [...String(value ?? "")].length
+  switch (key) {
+    case "len_eq":
+      return length === literal
+    case "len_gte":
+      return length >= literal
+    case "len_gt":
+      return length > literal
+    case "len_lte":
+      return length <= literal
+    case "len_lt":
+      return length < literal
+    default:
+      return null
+  }
+}
+
 // Evaluate one numeric threshold predicate against a field value. Returns
 // true/false for a decidable comparison, or null when the LITERAL itself is
 // non-numeric (a malformed binding — warn-skip, default-deny). A non-numeric
@@ -1235,6 +1268,10 @@ function showPredicateMatches(pred, value) {
   for (const key of SHOW_NUMERIC_KEYS) {
     if (key in pred) return numericPredicateMatches(key, pred[key], value)
   }
+  // Length predicates (issue #226): codepoint count vs an Integer literal.
+  for (const key of SHOW_LENGTH_KEYS) {
+    if (key in pred) return lengthPredicateMatches(key, pred[key], value)
+  }
   return null
 }
 
@@ -1257,6 +1294,27 @@ function parseShowCompound(raw) {
   }
   console.warn(`[phlex-reactive] malformed compound reactive_show payload ${JSON.stringify(raw)} — skipped`)
   return null
+}
+
+// Parse a data-reactive-on-complete payload (issue #226): a JSON array of
+// { any: [[term, …], …], ops: [[op, args], …] } bindings. Malformed JSON, a
+// non-array, or a binding missing either half degrades to [] WITH a warn — a
+// bad payload must never throw or fire an op (client-side default-deny, the
+// parseShowCompound posture).
+function parseOnComplete(raw) {
+  try {
+    const list = JSON.parse(raw)
+    if (
+      Array.isArray(list) &&
+      list.every((b) => b && typeof b === "object" && Array.isArray(b.any) && Array.isArray(b.ops))
+    ) {
+      return list
+    }
+  } catch {
+    // fall through to the warn
+  }
+  console.warn(`[phlex-reactive] malformed reactive_on_complete payload ${JSON.stringify(raw)} — skipped`)
+  return []
 }
 
 // Evaluate one DNF TERM against a resolved field value (issue #180). A missing
@@ -1462,6 +1520,15 @@ export default class extends Controller {
   // Show bindings (issue #161): the ONE delegated sync handler shared by the
   // root's input/change/turbo:morph-element listeners, held for teardown.
   #boundSyncShow
+  // Completion bindings (issue #226): the delegated gesture handler + the
+  // no-gesture morph arm, held for teardown; the per-binding rising-edge
+  // latches; and the raw-attr memo that re-parses (and resets the latches)
+  // when a morph rewrites the payload.
+  #boundSyncOnComplete
+  #boundArmOnComplete
+  #onCompleteRaw
+  #onCompleteParsed
+  #onCompleteStates
   // Option filtering (issue #163): the ONE delegated sync handler shared by the
   // root's input/turbo:morph-element listeners, held for teardown.
   #boundSyncFilter
@@ -1570,6 +1637,26 @@ export default class extends Controller {
       this.#syncShow()
     }
 
+    // Completion bindings (issue #226) — ONLY when the root declares
+    // data-reactive-on-complete (the show/filter gate precedent). ONE
+    // delegated input+change listener evaluates every binding's DNF over the
+    // owned fields and runs its ops on the RISING EDGE — the event-driven
+    // flip to true. The connect pass ARMS without firing (a fresh render with
+    // already-satisfied conditions must never self-fire — the $ops seed
+    // precedent), and turbo:morph-element re-arms the same way after an
+    // in-place morph. Listeners added HERE run after the Stimulus-wired
+    // recompute delegation for the same event, so the evaluation reads
+    // compute-NORMALIZED values (and a compute output write dispatches a real
+    // input event that re-evaluates anyway).
+    if (this.#onCompleteEnabled()) {
+      this.#boundSyncOnComplete = (event) => this.#syncOnComplete(event)
+      this.#boundArmOnComplete = () => this.#syncOnComplete(null)
+      this.element.addEventListener?.("input", this.#boundSyncOnComplete)
+      this.element.addEventListener?.("change", this.#boundSyncOnComplete)
+      this.element.addEventListener?.("turbo:morph-element", this.#boundArmOnComplete)
+      this.#syncOnComplete(null)
+    }
+
     // Option filtering (issue #163) — ONLY when the root declares the binding
     // (reactive_filter emits both attrs together), so a component without one
     // pays two attribute reads. ONE delegated input listener on the root — the
@@ -1673,6 +1760,7 @@ export default class extends Controller {
     this.#clearAllThrottles()
     this.#teardownDirtyTracking()
     this.#teardownShowSync()
+    this.#teardownOnCompleteSync()
     this.#teardownFilterSync()
     this.#teardownTagsSync()
     this.#teardownNestedJsonSync()
@@ -3456,6 +3544,60 @@ export default class extends Controller {
     const nodes = this.element.querySelectorAll?.(SHOW_BINDING_SELECTOR) ?? []
     for (const el of nodes) if (this.#ownsField(el)) return true
     return false
+  }
+
+  // The connect() gate for completion bindings (issue #226) — one attribute read.
+  #onCompleteEnabled() {
+    return !!this.element.getAttribute?.("data-reactive-on-complete")
+  }
+
+  // Parse-and-memoize the completion bindings, keyed on the RAW attr string:
+  // a morph that rewrote the payload re-parses and RESETS the latches (the
+  // morph listener's own arm pass then re-arms without firing). A removed
+  // attr yields [] silently; malformed JSON warns (in parseOnComplete).
+  #onCompleteBindings() {
+    const raw = this.element.getAttribute?.("data-reactive-on-complete") ?? null
+    if (raw !== this.#onCompleteRaw) {
+      this.#onCompleteRaw = raw
+      this.#onCompleteParsed = raw == null ? [] : parseOnComplete(raw)
+      this.#onCompleteStates = this.#onCompleteParsed.map(() => false)
+    }
+    return this.#onCompleteParsed
+  }
+
+  // Evaluate every completion binding (issue #226) over the owned fields —
+  // the SAME memoized, scope-aware field resolver and DNF fold the show sync
+  // uses — and run each binding's ops on ITS OWN rising edge. `event` null
+  // (the connect/morph arm pass) updates the latches WITHOUT firing, so ops
+  // only ever run from a real user gesture. An undecidable payload (no
+  // groups) leaves its latch alone — default-deny, like every malformed-wire
+  // arm. Ops resolve through runOps's root-scoped targets; a missing to:
+  // defaults to "@root" (the $ops convention).
+  #syncOnComplete(event) {
+    const bindings = this.#onCompleteBindings()
+    if (!bindings.length) return
+
+    const owns = this.#ownershipFilter()
+    const scope = this.element.getAttribute?.("data-reactive-scope") || null
+    const values = new Map()
+    const fieldValue = (name) => {
+      if (!values.has(name)) values.set(name, this.#showFieldValue(name, owns, scope))
+      return values.get(name)
+    }
+    bindings.forEach((binding, i) => {
+      const matches = anyOfAllsMatches(binding.any, fieldValue)
+      if (matches === null) return
+      const fire = matches && !this.#onCompleteStates[i] && Boolean(event)
+      this.#onCompleteStates[i] = matches
+      if (fire) applyOps(binding.ops, (args) => this.#opTargets(args.to == null ? { ...args, to: "@root" } : args))
+    })
+  }
+
+  #teardownOnCompleteSync() {
+    if (!this.#boundSyncOnComplete) return
+    this.element.removeEventListener?.("input", this.#boundSyncOnComplete)
+    this.element.removeEventListener?.("change", this.#boundSyncOnComplete)
+    this.element.removeEventListener?.("turbo:morph-element", this.#boundArmOnComplete)
   }
 
   // Re-evaluate every OWNED show binding in one pass (issue #161): read the

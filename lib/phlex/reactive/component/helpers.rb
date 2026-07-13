@@ -98,6 +98,14 @@ module Phlex
           if self.class.respond_to?(:reactive_effect_attrs) && (effects = self.class.reactive_effect_attrs)
             data.merge!(effects)
           end
+          # Completion bindings (issue #226): the declared reactive_on_complete
+          # bindings ride the root as ONE JSON attr the client evaluates over
+          # the owned fields (rising edge → run the ops). nil when undeclared —
+          # no key, byte-stable wire. Per-class memo (one integer compare).
+          if self.class.respond_to?(:reactive_on_complete_attr) &&
+             (on_complete = self.class.reactive_on_complete_attr)
+            data[:reactive_on_complete] = on_complete
+          end
           { data: }
         end
 
