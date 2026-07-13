@@ -322,6 +322,13 @@ class DemosController < ActionController::Base
     render html: component, layout: true
   end
 
+  # Issue #226: the multi-box code entry — one reducer joins six boxes,
+  # redistributes pastes, advances focus per digit, submits on completion.
+  def split_code
+    component = render_to_string(SplitCodeComponent.new, layout: false)
+    render html: component, layout: true
+  end
+
   # Issue #226: the general autosubmit story — a plain GET filter form whose
   # select submits it on change via on_client(:change, js.submit("form")).
   # Turbo Drive turns the requestSubmit into a visit (no full reload).

@@ -44,6 +44,8 @@ Rails.application.routes.draw do
   get "compute_seed" => "demos#compute_seed"
   # Issue #226: the $ops flagship — normalize on input, auto-commit when complete.
   get "verification" => "demos#verification"
+  # Issue #226: the multi-box variant — paste redistribution + focus advance.
+  get "split_code" => "demos#split_code"
   get "notifications" => "demos#notifications"
   get "reactive_rows" => "demos#reactive_rows"
   get "rich_editor/:id" => "demos#rich_editor"

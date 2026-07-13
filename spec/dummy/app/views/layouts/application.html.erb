@@ -33,6 +33,7 @@
           "post_preview_reducer": "/vendor/post_preview_reducer.js",
           "compute_seed_reducer": "/vendor/compute_seed_reducer.js",
           "otp_reducer": "/vendor/otp_reducer.js",
+          "split_code_reducer": "/vendor/split_code_reducer.js",
           "confirm_predicate_registration": "/vendor/confirm_predicate_registration.js"<% if ENV["TRANSPORT"] == "pgbus" %>,
           <%# Issue #187: pgbus's turbo_stream_from injects `import
               "pgbus/stream_source_element"`; pin it to the vendored engine asset
@@ -50,6 +51,7 @@
       import { registerPostPreview } from "post_preview_reducer"
       import { registerComputeSeed } from "compute_seed_reducer"
       import { registerOtp } from "otp_reducer"
+      import { registerSplitCode } from "split_code_reducer"
       import { registerConfirmPredicates } from "confirm_predicate_registration"
 
       const application = Application.start()
@@ -64,6 +66,7 @@
       registerPostPreview()
       registerComputeSeed()
       registerOtp() // issue #226: the $ops auto-commit flagship
+      registerSplitCode() // issue #226: the multi-box variant
       registerConfirmPredicates()
     </script>
   </head>

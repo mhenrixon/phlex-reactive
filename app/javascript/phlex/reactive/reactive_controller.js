@@ -1447,10 +1447,13 @@ export default class extends Controller {
   // (single-pass write set). Per-instance, so another root's events are never
   // swallowed. WeakSet: entries drop when the short-lived Event is GC'd.
   #computeSelfDispatched = new WeakSet()
-  // Issue #226: whether the LAST reducer pass returned a $ops chain — the
-  // rising-edge latch. Ops fire only on the false→true transition of an
-  // event-driven pass; the seed pass arms this without firing.
-  #computeOpsWasPresent = false
+  // Issue #226: the serialized $ops chain of the LAST reducer pass (null when
+  // absent) — the rising-edge latch, keyed on CONTENT: an identical chain
+  // never re-fires (a capped extra keystroke can't re-submit), while a chain
+  // that CHANGED fires again (a multi-box reducer advancing focus box-by-box
+  // emits a different focus target per digit). The seed pass arms this
+  // without firing.
+  #computeOpsSignature = null
   // Dirty tracking (issue #103): the bound re-scan (turbo:morph-element) and the
   // navigate-away guard handlers, held so disconnect() can remove exactly them.
   #boundScanDirty
@@ -2030,16 +2033,20 @@ export default class extends Controller {
     this.#applyComputeOps(reducerOps, Boolean(event))
   }
 
-  // Apply a reducer-emitted $ops chain (issue #226) on its RISING EDGE: fire
-  // only when THIS pass returned ops, the LAST pass did not, and the pass was
-  // event-driven. The latch updates on every pass either way, so "still
-  // complete" never re-fires and "went incomplete" re-arms. Ops run through the
-  // shared CLIENT_OPS interpreter with runOps's root-scoped target resolution;
-  // a missing to: defaults to "@root" (hand-written reducer ergonomics).
+  // Apply a reducer-emitted $ops chain (issue #226) on its RISING EDGE, keyed
+  // on CONTENT: fire only when THIS pass's chain differs from the LAST pass's
+  // (including from "absent"), and only on an event-driven pass. An unchanged
+  // chain never re-fires — "still complete, same submit" is settled, exactly
+  // like the change-guarded field writes. A pass with no $ops re-arms; a pass
+  // whose chain CHANGED fires again (per-keystroke focus advance across OTP
+  // boxes is a different focus target each time — a deliberately new intent).
+  // Ops run through the shared CLIENT_OPS interpreter with runOps's
+  // root-scoped target resolution; a missing to: defaults to "@root"
+  // (hand-written reducer ergonomics).
   #applyComputeOps(list, eventDriven) {
-    const present = list !== null
-    const fire = present && !this.#computeOpsWasPresent && eventDriven
-    this.#computeOpsWasPresent = present
+    const signature = list === null ? null : JSON.stringify(list)
+    const fire = signature !== null && signature !== this.#computeOpsSignature && eventDriven
+    this.#computeOpsSignature = signature
     if (!fire) return
     applyOps(list, (args) => this.#opTargets(args.to == null ? { ...args, to: "@root" } : args))
   }

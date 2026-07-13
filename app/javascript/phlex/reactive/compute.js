@@ -79,10 +79,15 @@
 // settle, through the SAME frozen CLIENT_OPS whitelist on_client uses (an
 // unknown op warns + is skipped). `null`/`undefined`/absent = no effect.
 //
-// RISING-EDGE semantics: the chain runs only on the transition from "$ops
-// absent last pass" to "present this pass", and only on EVENT-DRIVEN passes.
-// The connect/morph SEED pass (issue #199 — recompute with no event) ARMS the
-// state but never fires — a form re-rendered with an already-complete value
+// RISING-EDGE semantics, keyed on CONTENT: the chain runs only when it
+// DIFFERS from the previous pass's chain (including from "absent"), and only
+// on EVENT-DRIVEN passes. Returning the SAME chain again is settled — no
+// re-fire (a 7th keystroke capped back to the same complete value can't
+// re-submit), mirroring the change-guarded field writes. Returning a
+// DIFFERENT chain fires again — a multi-box reducer advancing focus
+// box-by-box emits a new focus target per digit, each a new intent. The
+// connect/morph SEED pass (issue #199 — recompute with no event) ARMS the
+// latch but never fires — a form re-rendered with an already-complete value
 // (a validation-error morph, a browser restore) must not auto-fire; that is
 // what breaks the submit → error re-render → re-seed → submit loop. A later
 // pass returning no $ops re-arms. The canonical use — a one-time-code field

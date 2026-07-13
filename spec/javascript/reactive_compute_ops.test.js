@@ -212,6 +212,28 @@ test("$ops does NOT re-fire while the condition holds (no per-keystroke storm)",
   expect(root.dispatched.length).toBe(1)
 })
 
+test("a CHANGED $ops chain fires again — per-keystroke focus advance works", () => {
+  // The multi-box OTP shape: each digit emits a DIFFERENT focus target. The
+  // latch is keyed on chain CONTENT, so a new target is a new intent and
+  // fires, while an identical chain (the submit case above) stays settled.
+  const fields = { code: makeField("code", "") }
+  computeModule.setComputeReducer("otp", ({ code }) => ({
+    code,
+    $ops: code.length > 0 ? [["dispatch", { name: `focus:d${code.length + 1}` }]] : null,
+  }))
+  const root = makeRoot({ reducer: "otp", inputs: { code: "string" }, outputs: ["code"], fields })
+  const controller = buildController(root)
+
+  fields.code.value = "1"
+  controller.recompute({ target: fields.code })
+  fields.code.value = "12"
+  controller.recompute({ target: fields.code })
+  fields.code.value = "12" // unchanged pass — same chain, no re-fire
+  controller.recompute({ target: fields.code })
+
+  expect(root.dispatched.map((e) => e.type)).toEqual(["focus:d2", "focus:d3"])
+})
+
 test("$ops re-arms when a pass returns no ops, then fires again", () => {
   const { controller, fields, root } = otpController({ complete: sixDigits })
 
