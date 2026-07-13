@@ -225,6 +225,60 @@
       "groups": [[{ "field": "a", "not": "1" }], [{ "field": "b", "not": "2" }]],
       "values": { "a": "1", "b": "9" },
       "expect": true
+    },
+    {
+      "name": "len_eq match (issue #226 length predicate)",
+      "groups": [[{ "field": "code", "len_eq": 6 }]],
+      "values": { "code": "123456" },
+      "expect": true
+    },
+    {
+      "name": "len_eq miss (too short)",
+      "groups": [[{ "field": "code", "len_eq": 6 }]],
+      "values": { "code": "12345" },
+      "expect": false
+    },
+    {
+      "name": "len_eq counts CODEPOINTS, not UTF-16 units (multibyte parity)",
+      "groups": [[{ "field": "note", "len_eq": 2 }]],
+      "values": { "note": "😀🎈" },
+      "expect": true
+    },
+    {
+      "name": "absent field has length 0 (len_eq 0 matches blank)",
+      "groups": [[{ "field": "code", "len_eq": 0 }]],
+      "values": {},
+      "expect": true
+    },
+    {
+      "name": "len_gte boundary match",
+      "groups": [[{ "field": "title", "len_gte": 3 }]],
+      "values": { "title": "abc" },
+      "expect": true
+    },
+    {
+      "name": "len_gte miss",
+      "groups": [[{ "field": "title", "len_gte": 3 }]],
+      "values": { "title": "ab" },
+      "expect": false
+    },
+    {
+      "name": "bounded length range ANDs len_gte and len_lte in one group",
+      "groups": [[{ "field": "title", "len_gte": 2 }, { "field": "title", "len_lte": 4 }]],
+      "values": { "title": "abc" },
+      "expect": true
+    },
+    {
+      "name": "unless length complement — outside on the long side matches",
+      "groups": [[{ "field": "code", "len_lt": 6 }], [{ "field": "code", "len_gt": 6 }]],
+      "values": { "code": "1234567" },
+      "expect": true
+    },
+    {
+      "name": "unless length complement — exactly the length stays unmatched",
+      "groups": [[{ "field": "code", "len_lt": 6 }], [{ "field": "code", "len_gt": 6 }]],
+      "values": { "code": "123456" },
+      "expect": false
     }
   ]
 }

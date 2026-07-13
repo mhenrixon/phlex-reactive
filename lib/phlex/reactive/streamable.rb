@@ -33,9 +33,12 @@ module Phlex
       # up without ever sharing a mutable context across threads.
       ThreadViewContext = Struct.new(:view_context, :builder, :renderer, :generation)
 
-      # Focus ops are actor-only (they steal focus): a js broadcast rejects a
-      # broadcast that carries one. Names mirror Phlex::Reactive::JS's focus verbs.
-      BROADCAST_REFUSED_OPS = %w[focus focus_first].freeze
+      # Actor-only ops: a js broadcast rejects a broadcast that carries one.
+      # Focus ops steal focus in every subscriber's tab (issue #96); submit
+      # (issue #226) would force-submit every subscriber's form. Both belong to
+      # the actor's own reply (reply.js) or gesture (on_client / a reducer's
+      # $ops), never a broadcast. Names mirror Phlex::Reactive::JS's verbs.
+      BROADCAST_REFUSED_OPS = %w[focus focus_first submit].freeze
 
       # The broadcast_to verb kwargs (issue #185) → their Turbo stream action.
       # SELF-TARGETING verbs derive the target from the component's #id (require a
@@ -516,16 +519,18 @@ module Phlex
         # instrumentation + pgbus-threading path for the class-level and module-level
         # broadcast_to, so the transport logic has exactly one spelling.)
 
-        # Validate + serialize broadcast ops: reject focus-class ops (they steal
-        # focus in every tab) and an empty chain (a dead broadcast), then return
-        # the JSON wire form. Works on a JS chain (inspect .ops) and a raw array.
+        # Validate + serialize broadcast ops: reject actor-only ops (focus steals
+        # focus in every tab; submit force-submits every subscriber's form) and an
+        # empty chain (a dead broadcast), then return the JSON wire form. Works on
+        # a JS chain (inspect .ops) and a raw array.
         def broadcast_js_ops_json(ops)
           pairs = ops.is_a?(Phlex::Reactive::JS) ? ops.ops : Array(ops)
           refused = pairs.map { |name, _| name.to_s } & Phlex::Reactive::Streamable::BROADCAST_REFUSED_OPS
           unless refused.empty?
             raise ArgumentError,
-              "broadcast_js_to refuses focus op(s) #{refused.join(", ")} — broadcasting focus " \
-              "steals it in every subscriber's tab. Focus is an actor-reply concern (reply.js)."
+              "broadcast_to(js:) refuses actor-only op(s) #{refused.join(", ")} — broadcasting focus " \
+              "steals it in every subscriber's tab; broadcasting submit force-submits every " \
+              "subscriber's form. These are actor concerns (reply.js / on_client / $ops)."
           end
 
           Phlex::Reactive::Response.js_ops_json(ops)

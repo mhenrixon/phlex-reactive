@@ -50,6 +50,8 @@ module Phlex
           state_keys: :@reactive_own_state_keys,
           collections: :@reactive_own_collections,
           computes: :@reactive_own_computes,
+          # Completion bindings — reactive_on_complete (issue #226).
+          on_completes: :@reactive_own_on_completes,
           record_key: :@reactive_own_record_key,
           # Form-field namespace — reactive_scope (issue #180).
           scope: :@reactive_own_scope,

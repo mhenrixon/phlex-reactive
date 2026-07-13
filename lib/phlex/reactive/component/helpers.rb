@@ -98,6 +98,14 @@ module Phlex
           if self.class.respond_to?(:reactive_effect_attrs) && (effects = self.class.reactive_effect_attrs)
             data.merge!(effects)
           end
+          # Completion bindings (issue #226): the declared reactive_on_complete
+          # bindings ride the root as ONE JSON attr the client evaluates over
+          # the owned fields (rising edge → run the ops). nil when undeclared —
+          # no key, byte-stable wire. Per-class memo (one integer compare).
+          if self.class.respond_to?(:reactive_on_complete_attr) &&
+             (on_complete = self.class.reactive_on_complete_attr)
+            data[:reactive_on_complete] = on_complete
+          end
           { data: }
         end
 
@@ -381,6 +389,14 @@ module Phlex
           raise ArgumentError, "on_client(#{event.inspect}) got no ops — a dead trigger" if ops.empty?
 
           event = event.to_s
+          # Issue #226: requestSubmit dispatches the very `submit` event this
+          # trigger would be bound to — an infinite loop. Loud at render.
+          if event == "submit" && ops.ops.any? { |name, _| name == "submit" }
+            raise ArgumentError,
+              "on_client(:submit, js.submit) would re-fire itself — requestSubmit dispatches the " \
+              "submit event this trigger is bound to. Bind the submit op to another event " \
+              "(change/input), or gate it behind a reducer's $ops / reactive_on_complete."
+          end
           window_bound = window || outside
           attrs = {
             data: {

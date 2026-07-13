@@ -42,6 +42,12 @@ Rails.application.routes.draw do
   get "draft_order_confirm_interpolate" => "demos#draft_order_confirm_interpolate"
   get "post_preview/:id" => "demos#post_preview"
   get "compute_seed" => "demos#compute_seed"
+  # Issue #226: the $ops flagship — normalize on input, auto-commit when complete.
+  get "verification" => "demos#verification"
+  # Issue #226: the multi-box variant — paste redistribution + focus advance.
+  get "split_code" => "demos#split_code"
+  # Issue #226: the declarative twin — reactive_on_complete, zero JavaScript.
+  get "code_complete" => "demos#code_complete"
   get "notifications" => "demos#notifications"
   get "reactive_rows" => "demos#reactive_rows"
   get "rich_editor/:id" => "demos#rich_editor"
@@ -52,6 +58,8 @@ Rails.application.routes.draw do
   get "debounce" => "demos#debounce"
   get "dropdown" => "demos#dropdown"
   get "client_tabs" => "demos#client_tabs"
+  # Issue #226: the general autosubmit story — on_client(:change, js.submit).
+  get "autosubmit_filter" => "demos#autosubmit_filter"
   get "conditional_fieldset" => "demos#conditional_fieldset"
   get "confirm" => "demos#confirm"
   get "client_op_confirm" => "demos#client_op_confirm"

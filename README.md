@@ -853,6 +853,16 @@ button(**on_client(:click, js
   another component or a plain Stimulus controller can react to a client-only
   interaction — `to:` picks the element (default: the component root), `detail:`
   is the payload.
+- **`submit(to = :root)`** commits the **target's own form** via
+  `requestSubmit()`: the target itself when it *is* a form, its form owner for a
+  control (`input.form`, honoring a `form=` attribute), else the nearest ancestor
+  form. Constraint validation runs and a **real cancelable `submit` event**
+  fires, so it composes with both a native/Turbo form *and* an
+  `on(:save, event: "submit")` interception. **Actor-only like focus**: allowed
+  from `on_client` / `reply.js` / a reducer's `$ops`, refused in
+  `broadcast_to(js:)` (a broadcast would force-submit every subscriber's form).
+  Binding a submit op to the `submit` event itself raises at render — it would
+  re-fire itself forever.
 - **`transition: { during:, from:, to: }`** on `show`/`hide`/`toggle` animates the
   visibility flip: `during`+`from` are applied, then `from`→`to` swaps on the next
   frame, and the helper classes are cleaned up on `animationend` (with a timeout
@@ -862,6 +872,27 @@ button(**on_client(:click, js
 `window:`, `once:`, and `outside:` compose exactly like `on(...)`'s event
 modifiers: the dropdown above closes on any click outside the component, and
 window-bound triggers never `preventDefault`, so links elsewhere keep working.
+
+**The general autosubmit story.** With `submit` in the vocabulary, the classic
+`onchange="this.form.requestSubmit()"` filter form is one declared line — no
+bespoke controller, no reactive action, and Turbo Drive turns the resulting
+submit into a normal visit:
+
+```ruby
+form(action: "/products", method: "get") do
+  select(name: "sort", **mix(on_client(:change, js.submit("form")), data: { testid: "sort" })) do
+    option(value: "name") { "Name" }
+    option(value: "price") { "Price" }
+  end
+end
+```
+
+Use `change`-bound autosubmit for discrete controls (selects, radios,
+checkboxes). For a **text** field that should commit "when the value is
+complete," an unconditional `on_client(:input, js.submit)` would fire on every
+keystroke — that conditional case is exactly what a reducer's
+[`$ops`](#client-side-computes-reactive_compute--reactive_text) and
+[`reactive_on_complete`](#declarative-completion-reactive_on_complete) are for.
 
 **Client ops are ephemeral UI — the one contract to internalize.** Any server
 re-render of the component (an action reply, a broadcast, a morph) rebuilds
@@ -958,7 +989,11 @@ end
 - **The value language**: a **Hash is an AND** (multiple keys ANDed), an
   **Array is membership**, a **Range is a threshold** (`10..` ≥ 10, `..10` ≤ 10,
   `...10` < 10, `10..20` between), `true`/`false` compare a checkbox's checked
-  state, `nil` matches blank. `unless:` **negates** and composes with `if:`.
+  state, `nil` matches blank, and **`{ length: … }` compares the value's
+  length** — exact (`{ length: 6 }`) or an Integer Range (`{ length: 6.. }`,
+  `{ length: 4..8 }`). Length counts **codepoints** on both sides (Ruby
+  `String#length`, client `[...value].length`), so multibyte input agrees; a
+  blank field has length 0. `unless:` **negates** and composes with `if:`.
   Never an expression — every term is a declared literal, so there is no eval
   surface. A blank/non-numeric value fails a numeric term **closed** (hidden).
 - **OR-of-AND** — `if_any:` takes an array of AND-hashes (`if_any: [{ director:
@@ -1096,6 +1131,105 @@ setComputeReducer("preview", ({ title }) => ({
   same derived value the reducer would (`reactive_text(:char_count, "5/80")`), or
   a later morph repaints stale text — the same reconcile contract the whole
   new-vs-persisted split relies on.
+
+**Reducer-emitted ops (`$ops`) — commit when complete.** A reducer's outputs
+write fields and text; the reserved **`$ops`** key lets it emit a **conditional
+side effect** — the missing piece that used to force a bespoke controller next
+to an otherwise-declarative compute. Return an op chain (the `ops` builder
+mirrors the Ruby `js` verbs, or use a raw `[[op, args], …]` array) and the
+controller runs it through the **same frozen op whitelist** `on_client` uses,
+as a final phase **after** the field writes, text sinks, and their dispatched
+`input` events settle. The canonical one-time-code field:
+
+```js
+import { setComputeReducer, ops } from "phlex/reactive/compute"
+
+setComputeReducer("otp", ({ code }) => {
+  const digits = code.replace(/\D/g, "").slice(0, 6)
+  return { code: digits, $ops: digits.length === 6 ? ops.submit() : null }
+})
+```
+
+```ruby
+form(action: "/verify", method: "post",
+  **mix(reactive_root(compute: :otp), on(:verify, event: "submit"))) do
+  input(name: "code", inputmode: "numeric", autocomplete: "one-time-code")
+end
+```
+
+Typing, pasting `123-456`, or platform SMS autofill all arrive as `input`
+events → the reducer normalizes, and at six digits `submit` requestSubmits the
+form — which `on(:verify, event: "submit")` intercepts into **one signed action
+POST**. The contract that makes this safe:
+
+- **Rising edge, keyed on content.** The chain runs only when it **differs**
+  from the previous pass's chain (including from "absent"). Returning the same
+  chain again is settled — a 7th keystroke capped back to the same six digits
+  can't re-submit — while a **different** chain fires again (a multi-box
+  reducer advancing focus emits a new `ops.focus` target per digit). A pass
+  returning `null`/no `$ops` re-arms.
+- **Event-gated.** The connect/morph **seed pass arms without firing** — a form
+  re-rendered with an already-complete value (a validation-error morph, a
+  browser restore) never auto-fires, which is what breaks the
+  submit → error re-render → re-seed → submit loop.
+- **Whitelisted.** `$ops` is consumed before the write phases (never painted as
+  a field/text/mirror), and unknown ops warn-and-skip while siblings apply.
+- **Multi-input works with the same machinery**: declare all boxes as inputs,
+  join + redistribute in the reducer (a paste into any box fans out one digit
+  per box), mirror the joined value into a hidden field, advance focus with a
+  per-digit `ops.focus`, and `ops.submit()` on completion. See
+  `spec/dummy/app/components/split_code_component.rb` for the full six-box
+  example.
+
+When you *don't* want to auto-submit, the same slot dispatches a completion
+event (`ops.dispatch("code:complete")`) for a sibling to react to, or enables
+the submit button (`ops.remove_attr("[type=submit]", "disabled")`) and leaves
+the commit to the user.
+
+### Declarative completion (`reactive_on_complete`)
+
+The `$ops` escape hatch puts the condition in the reducer; when the condition
+is expressible in the [conditions language](#value-conditional-visibility-reactive_show),
+`reactive_on_complete` declares the whole binding in Ruby — **zero JavaScript,
+no reducer**:
+
+```ruby
+class CodeCompleteComponent < ApplicationComponent
+  include Phlex::Reactive::Streamable
+  include Phlex::Reactive::Component
+
+  reactive_state :code
+  action :verify, params: { code: :string }
+
+  reactive_on_complete if: { code: { length: 6 } }, run: js.dispatch("code:complete")
+
+  def view_template
+    div(**mix(reactive_root, on(:verify, event: "code:complete"))) do
+      input(name: "code")
+    end
+  end
+end
+```
+
+The generic controller evaluates the conditions over the owned fields on every
+`input`/`change` (scope-aware, same resolver as `reactive_show`) and runs the
+declared ops on the **rising edge** — once, when the conditions first become
+true; going false re-arms; the connect/morph pass arms **without** firing, so a
+re-render with already-satisfied conditions never self-fires. The pieces:
+
+- **Conditions** are the same `if:` / `if_any:` / `unless:` kwargs
+  `reactive_show` takes — including the `length:` form above, which is what
+  makes "exactly six characters" declarable.
+- **`run:`** is a `js` chain (available at class level) or a raw op list
+  (re-checked through the attribute allowlist). `run: js.submit` auto-commits;
+  `run: js.dispatch(...)` lets a sibling `on(:action, event: "...")` turn
+  completion into a signed action, as above.
+- **Several bindings** coexist under names:
+  `reactive_on_complete :commit, if: …, run: js.submit` — each latches
+  independently; redeclaring a name overrides it (normal registry inheritance).
+- Prefer `$ops` when completion needs **normalization first** (strip
+  separators, cap length) — the reducer already knows the cleaned value;
+  prefer `reactive_on_complete` when the raw field value is the truth.
 
 ### Cross-root mirrors (`mirror:`) — painting a recap outside the root
 

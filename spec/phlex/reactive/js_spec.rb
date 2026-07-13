@@ -187,6 +187,29 @@ RSpec.describe Phlex::Reactive::JS do
     end
   end
 
+  # --- Issue #226: submit — commit the target's own form ---
+
+  describe "submit op (#submit) — requestSubmit the target's own form" do
+    it "defaults to the component root" do
+      expect(JSON.parse(js.submit.to_json)).to eq([["submit", { "to" => "@root" }]])
+    end
+
+    it "accepts a selector target" do
+      expect(JSON.parse(js.submit("#checkout").to_json))
+        .to eq([["submit", { "to" => "#checkout" }]])
+    end
+
+    it "carries global: true only when asked (root-scoped is the lean default)" do
+      expect(JSON.parse(js.submit("#checkout", global: true).to_json).dig(0, 1))
+        .to include("global" => true)
+      expect(JSON.parse(js.submit.to_json).dig(0, 1)).not_to have_key("global")
+    end
+
+    it "rejects a target that is neither :root nor a CSS selector string" do
+      expect { js.submit(:form) }.to raise_error(ArgumentError, /:root or a CSS selector/)
+    end
+  end
+
   # --- Issue #96: dispatch a bubbling CustomEvent ---
 
   describe "dispatch (#dispatch) — a bubbling CustomEvent" do

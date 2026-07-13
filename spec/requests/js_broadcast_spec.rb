@@ -57,6 +57,20 @@ RSpec.describe "broadcast_js_to (issue #97)", type: :request do
       .to raise_error(ArgumentError, /focus/)
   end
 
+  # Issue #226: submit joins the actor-only set — a broadcast submit would
+  # force-submit the form in EVERY subscriber's tab.
+  it "rejects a submit op (broadcasting submit force-submits every subscriber's form)" do
+    submit_ops = TodoItemComponent.new(todo: Todo.new).js.submit
+
+    expect { TodoItemComponent.broadcast_to("alerts", js: submit_ops) }
+      .to raise_error(ArgumentError, /submit/)
+  end
+
+  it "rejects a raw-array submit op the same way (escape hatch can't bypass it)" do
+    expect { TodoItemComponent.broadcast_to("alerts", js: [["submit", { "to" => "@root" }]]) }
+      .to raise_error(ArgumentError, /submit/)
+  end
+
   it "rejects an empty op chain (a dead reactive:js broadcast is a mistake)" do
     empty = TodoItemComponent.new(todo: Todo.new).js
 

@@ -450,6 +450,71 @@ module Phlex
             Registry.resolve_hash(self, :computes, :reactive_computes)
           end
 
+          # A fresh client-op chain at CLASS level (issue #226), so a
+          # reactive_on_complete declaration reads like its on_client sibling:
+          #
+          #   reactive_on_complete if: { code: { length: 6 } },
+          #     run: js.dispatch("code:complete")
+          #
+          # The instance helper (Component::Helpers#js) is unchanged.
+          def js
+            Phlex::Reactive::JS.new
+          end
+
+          # Declarative completion binding (issue #226): when the declared
+          # conditions FIRST become true — evaluated client-side over the owned
+          # fields on input/change — run a chain of client DOM ops. The
+          # conditions are the SAME if:/if_any:/unless: kwargs reactive_show
+          # takes (the ONE ShowConditions language, including the length: form);
+          # `run:` is a js chain or a raw [[op, args], …] list (allowlist
+          # re-checked, like every raw-ops escape hatch).
+          #
+          #   reactive_on_complete if: { code: { length: 6 } },
+          #     run: js.dispatch("code:complete")
+          #   reactive_on_complete :commit, if: { code: { length: 6 } }, run: js.submit
+          #
+          # RISING-EDGE, actor-gesture semantics on the client: ops fire once on
+          # the flip to true, re-arm when the conditions go false, and the
+          # connect/morph pass arms WITHOUT firing (a re-render with already-
+          # satisfied conditions never self-fires). The optional NAME (default
+          # :default) keys the registry so a component can declare several
+          # independent bindings; redeclaring a name overrides it (inheritance
+          # follows the Registry rules, like reactive_compute).
+          def reactive_on_complete(name = :default, run:, **conditions)
+            groups = Phlex::Reactive::ShowConditions.normalize(**conditions)
+            Registry.write_entry(
+              self, :on_completes, name.to_sym,
+              OnCompleteDefinition.new(
+                name: name.to_sym, conditions: groups,
+                ops: normalize_on_complete_ops(name, run)
+              )
+            )
+          end
+
+          def reactive_on_completes
+            Registry.resolve_hash(self, :on_completes, :reactive_on_completes)
+          end
+
+          # The wire JSON for the root's data-reactive-on-complete attr — a
+          # frozen array of { any:, ops: } bindings, or nil when undeclared
+          # (byte-stable wire). Memoized per class against the registry
+          # generation (one integer compare) because reactive_attrs is the
+          # token-signing hot path — the reactive_effect_attrs precedent.
+          def reactive_on_complete_attr
+            registry_gen = Registry.generation
+            return @reactive_on_complete_attr if @reactive_on_complete_attr_gen == registry_gen
+
+            bindings = reactive_on_completes
+            @reactive_on_complete_attr =
+              if bindings.empty?
+                nil
+              else
+                bindings.values.map { { "any" => it.conditions, "ops" => it.ops } }.to_json.freeze
+              end
+            @reactive_on_complete_attr_gen = registry_gen
+            @reactive_on_complete_attr
+          end
+
           # Fetch one compute definition — the reader form matching
           # reactive_collection_def (issue #115). The bare reactive_compute(name)
           # getter above is a PERMANENT documented alias (it shipped in the same
@@ -480,6 +545,25 @@ module Phlex
           #     nil types, so the array-form wire stays byte-identical and the client
           #     keeps its numeric coercion.
           #
+          # Validate + normalize a reactive_on_complete run: chain (issue #226)
+          # to the raw [[op, args], …] pairs. A js chain is already validated at
+          # build time; a raw list re-runs the attr allowlist — the same
+          # defense-in-depth every raw-ops escape hatch gets (js([...]) /
+          # broadcast_to(js: [...])). Loud on anything else — a dead or hostile
+          # binding must fail at class load, never no-op in the browser.
+          def normalize_on_complete_ops(name, run)
+            pairs = run.is_a?(Phlex::Reactive::JS) ? run.ops : run
+            unless pairs.is_a?(Array)
+              raise ArgumentError,
+                "reactive_on_complete #{name.inspect} run: takes a js chain " \
+                "(js.dispatch(\"code:complete\")) or a raw [[op, args], ...] list, got #{run.class}"
+            end
+            raise ArgumentError, "reactive_on_complete #{name.inspect} got no ops — a dead binding" if pairs.empty?
+
+            Phlex::Reactive::JS.assert_ops_allowed!(pairs) unless run.is_a?(Phlex::Reactive::JS)
+            pairs
+          end
+
           # Named after the shape it normalizes.
           def normalize_compute_inputs(inputs)
             return normalize_typed_compute_inputs(inputs) if inputs.is_a?(Hash)

@@ -1383,6 +1383,33 @@ RSpec.describe Phlex::Reactive::Component do
       expect(attrs[:data][:reactive_confirm_param]).to eq("Sure?")
       expect(attrs[:data][:reactive_outside_param]).to eq("true")
     end
+
+    # Issue #226: requestSubmit dispatches the very `submit` event an
+    # on_client(:submit, ...) trigger is bound to — a submit op there would
+    # re-fire itself forever. Loud at render, like every dead/hostile binding.
+    it "rejects a submit op bound to the submit event (it would re-fire itself)" do
+      expect { instance.send(:on_client, :submit, instance.js.submit) }
+        .to raise_error(ArgumentError, /re-fire/)
+    end
+
+    it "rejects the self-loop even when submit is buried in a longer chain" do
+      chain = instance.js.add_class(:root, "busy").submit
+      expect { instance.send(:on_client, :submit, chain) }
+        .to raise_error(ArgumentError, /re-fire/)
+    end
+
+    it "allows a submit op on any other event (the general autosubmit story)" do
+      attrs = instance.send(:on_client, :change, instance.js.submit)
+
+      expect(attrs[:data][:action]).to eq("change->reactive#runOps")
+      expect(attrs[:data][:reactive_ops_param]).to eq('[["submit",{"to":"@root"}]]')
+    end
+
+    it "allows non-submit ops on the submit event (a busy-state chain is fine)" do
+      attrs = instance.send(:on_client, :submit, instance.js.add_class(:root, "busy"))
+
+      expect(attrs[:data][:action]).to eq("submit->reactive#runOps")
+    end
   end
 
   # A record-backed component whose record is UNSAVED (new_record?) has no
@@ -1582,6 +1609,140 @@ RSpec.describe Phlex::Reactive::Component do
         expect(child.reactive_computes.key?(:payment_split)).to be(true) # inherited
         expect(child.reactive_computes.key?(:totals)).to be(true)        # own
         expect(compute_klass.reactive_computes.key?(:totals)).to be(false) # parent unaffected
+      end
+    end
+
+    # Issue #226: reactive_on_complete — the declarative completion binding.
+    # Conditions reuse the ONE ShowConditions language (including the #226
+    # length: form); run: is a js chain (or a raw op list, allowlist-checked)
+    # the client applies on the RISING EDGE of the conditions, through the
+    # same frozen CLIENT_OPS whitelist as on_client.
+    describe "reactive_on_complete (issue #226 — declarative completion binding)" do
+      let(:complete_klass) do
+        Class.new do
+          include Phlex::Reactive::Component
+
+          def self.name = "OtpForm"
+
+          reactive_state :count
+          reactive_on_complete if: { code: { length: 6 } },
+            run: Phlex::Reactive::JS.new.dispatch("code:complete")
+
+          def initialize(count: 0) = @count = count
+        end
+      end
+
+      describe "declaration registry" do
+        it "registers under :default when unnamed" do
+          expect(complete_klass.reactive_on_completes.key?(:default)).to be(true)
+        end
+
+        it "compiles the conditions through the ShowConditions language" do
+          expect(complete_klass.reactive_on_completes[:default].conditions)
+            .to eq([[{ "field" => "code", "len_eq" => 6 }]])
+        end
+
+        it "captures the op chain pairs" do
+          expect(complete_klass.reactive_on_completes[:default].ops)
+            .to eq([["dispatch", { "name" => "code:complete", "to" => "@root", "detail" => {} }]])
+        end
+
+        it "supports multiple NAMED bindings" do
+          klass = Class.new do
+            include Phlex::Reactive::Component
+
+            def self.name = "TwoBindings"
+            reactive_on_complete :ready, if: { code: { length: 6 } },
+              run: Phlex::Reactive::JS.new.submit
+            reactive_on_complete :too_long, if: { code: { length: 10.. } },
+              run: Phlex::Reactive::JS.new.add_class(:root, "overflow")
+          end
+          expect(klass.reactive_on_completes.keys).to eq(%i[ready too_long])
+        end
+
+        it "is inherited without mutating the parent" do
+          child = Class.new(complete_klass) do
+            def self.name = "OtpChild"
+            reactive_on_complete :extra, if: { kind: "sms" }, run: Phlex::Reactive::JS.new.submit
+          end
+
+          expect(child.reactive_on_completes.keys).to contain_exactly(:default, :extra)
+          expect(complete_klass.reactive_on_completes.keys).to eq([:default])
+        end
+
+        it "exposes js at class level so declarations read naturally" do
+          klass = Class.new do
+            include Phlex::Reactive::Component
+
+            def self.name = "NaturalJs"
+            reactive_on_complete if: { a: "1" }, run: js.dispatch("x")
+          end
+          expect(klass.reactive_on_completes[:default].ops.first.first).to eq("dispatch")
+        end
+      end
+
+      describe "loud validation" do
+        it "rejects a run: that is neither a JS chain nor an op list" do
+          expect do
+            Class.new do
+              include Phlex::Reactive::Component
+
+              def self.name = "BadRun"
+              reactive_on_complete if: { a: "1" }, run: "submit"
+            end
+          end.to raise_error(ArgumentError, /run:/)
+        end
+
+        it "rejects an empty chain (a dead binding)" do
+          expect do
+            Class.new do
+              include Phlex::Reactive::Component
+
+              def self.name = "EmptyRun"
+              reactive_on_complete if: { a: "1" }, run: Phlex::Reactive::JS.new
+            end
+          end.to raise_error(ArgumentError, /no ops/)
+        end
+
+        it "re-validates a raw op list through the attr allowlist (escape hatch can't bypass)" do
+          expect do
+            Class.new do
+              include Phlex::Reactive::Component
+
+              def self.name = "HostileRun"
+              reactive_on_complete if: { a: "1" },
+                run: [["set_attr", { "to" => "#x", "name" => "onclick", "value" => "x" }]]
+            end
+          end.to raise_error(ArgumentError, /onclick/)
+        end
+
+        it "requires conditions (the ShowConditions kwargs)" do
+          expect do
+            Class.new do
+              include Phlex::Reactive::Component
+
+              def self.name = "NoConditions"
+              reactive_on_complete run: Phlex::Reactive::JS.new.submit
+            end
+          end.to raise_error(ArgumentError, /if:, if_any:, or unless:/)
+        end
+      end
+
+      describe "wire emission (reactive_attrs)" do
+        it "rides the root as ONE data-reactive-on-complete JSON attr" do
+          attrs = complete_klass.new.send(:reactive_attrs)
+          payload = JSON.parse(attrs[:data][:reactive_on_complete])
+
+          expect(payload).to eq([{
+            "any" => [[{ "field" => "code", "len_eq" => 6 }]],
+            "ops" => [["dispatch", { "name" => "code:complete", "to" => "@root", "detail" => {} }]]
+          }])
+        end
+
+        it "emits nothing when undeclared (byte-stable wire)" do
+          attrs = state_klass.new.send(:reactive_attrs)
+          expect(attrs[:data]).not_to have_key(:reactive_on_complete)
+        end
       end
     end
 

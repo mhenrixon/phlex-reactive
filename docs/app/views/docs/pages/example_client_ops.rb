@@ -48,8 +48,9 @@ module Views
               them locally through the one generic reactive controller. The ops are a
               **frozen whitelist** — `show`/`hide`/`toggle`, `add_class`/
               `remove_class`/`toggle_class`, `set_attr`/`toggle_attr`/`remove_attr`,
-              `focus`/`focus_first`, `text`, `dispatch` — each a pure, local DOM
-              mutation. Nothing is read back, nothing is sent anywhere.
+              `focus`/`focus_first`, `text`, `dispatch`, `submit` — each a pure,
+              local DOM mutation. Nothing is read back, nothing is sent anywhere
+              (`submit` hands the form to its own native/intercepted submit path).
 
               - **Tabs:** `js.hide(".ct-panel").show("#ct-panel-1")` plus class ops on
                 the tab buttons — the "I had to write a Stimulus controller" case, now
@@ -71,15 +72,36 @@ module Views
               Ops are built with the server-side `js` helper and serialized into a
               `data-reactive-ops` attribute the client interprets. An op name not on
               the whitelist is warn-and-skipped (client-side default-deny) — a stale
-              or newer ops attribute can never break the page. `focus`/`focus_first`
-              are allowed here (an actor's own gesture) but **rejected** from a
-              broadcast, where stealing focus in every subscriber's tab would be hostile.
+              or newer ops attribute can never break the page. `focus`/`focus_first`/
+              `submit` are allowed here (an actor's own gesture) but **rejected**
+              from a broadcast — stealing focus in every subscriber's tab, or
+              force-submitting every subscriber's form, would be hostile.
 
               `text(to, value)` (#159) sets the target's `textContent` — stringified,
               `nil` clears, **never `innerHTML`** — so a chain can paint a label or a
               derived number without a round trip. Pair it with `global: true` to
               reach a node **outside** the component's root (the cross-root text
               escape a read-only recap needs).
+
+              `submit(to = :root)` (#226) commits the **target's own form** via
+              `requestSubmit()` — the target itself when it *is* a form, a
+              control's form owner, else the nearest ancestor form. A real
+              cancelable `submit` event fires, so a native/Turbo form navigates
+              normally and an `on(:save, event: "submit")` interception turns it
+              into a signed action. That makes the classic autosubmit filter one
+              declared line, with Turbo Drive handling the visit:
+
+              ```ruby
+              form(action: "/products", method: "get") do
+                select(name: "sort", **on_client(:change, js.submit("form"))) { sort_options }
+              end
+              ```
+
+              Binding a submit op to the `submit` event itself raises at render —
+              requestSubmit dispatches the very event the trigger would listen to.
+              For "submit when a **text** value becomes complete", see the
+              conditional forms below and the compute reducer's `$ops` output on
+              the [payment-split example](/docs/example-payment-split).
             MD
             DocsUI::Callout(:tip) do
               md <<~MD
@@ -104,7 +126,9 @@ module Views
               values on every `input`/`change`. Still client-only: no token, no POST.
 
               A **Hash is an AND**, an **Array is membership**, a **Range is a
-              threshold**, and `unless:` **negates** — the whole value vocabulary:
+              threshold**, `{ length: … }` compares the value's **codepoint
+              count** (#226), and `unless:` **negates** — the whole value
+              vocabulary:
 
               ```ruby
               div(**reactive_show(unless: { mode: "off" }))            { "shipping details" }
@@ -112,6 +136,7 @@ module Views
               div(**reactive_show(if: { delivery: "ship" }))           { "address fields" } # radio value
               div(**reactive_show(if: { size: %w[l xl] }))             { "surcharge note" } # membership
               div(**reactive_show(if: { quantity: 10.. }))             { "bulk note" }      # threshold
+              div(**reactive_show(if: { code: { length: 6 } }))        { "ready badge" }    # exact length
               ```
 
               Extra HTML attrs pass through unambiguously (conditions live in `if:`),
@@ -176,6 +201,35 @@ module Views
                 mode: { "#advanced-tab" => "advanced" }
               )
               ```
+
+              **Conditional OPS — `reactive_on_complete` (#226).** `reactive_show`
+              decides *visibility* from a condition; `reactive_on_complete` runs a
+              **client-op chain** on the condition's rising edge — once, when it
+              first becomes true; going false re-arms; the connect/morph pass arms
+              *without* firing, so a re-render with already-satisfied conditions
+              never self-fires. Same `if:`/`if_any:`/`unless:` kwargs, `run:` takes
+              a `js` chain (class-level `js` is available in the declaration):
+
+              ```ruby
+              reactive_state :code
+              action :verify, params: { code: :string }
+              reactive_on_complete if: { code: { length: 6 } }, run: js.dispatch("code:complete")
+
+              def view_template
+                div(**mix(reactive_root, on(:verify, event: "code:complete"))) do
+                  input(name: "code")
+                end
+              end
+              ```
+
+              That is a complete auto-committing verification-code field with
+              **zero JavaScript** — the dispatch bubbles to the root's own
+              `on(:verify, event: "code:complete")`, which turns completion into
+              one signed action POST. `run: js.submit` commits the surrounding
+              form instead. When completion needs **normalization first** (strip
+              separators, cap length), put the condition in the reducer and use
+              its `$ops` output — see the
+              [compute example](/docs/example-payment-split).
             MD
             render Views::Examples::LiveExample.new(
               component: ConditionalFieldsetComponent.new,

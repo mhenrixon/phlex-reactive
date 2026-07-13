@@ -71,6 +71,39 @@
 // the re-entrant `changed === "field_c"` pass derives field_a back to the
 // value it already holds — no write, no event, settled in one bounce.
 
+// THE RESERVED `$ops` OUTPUT (issue #226). Besides field/text outputs, a
+// reducer may return the reserved key `$ops` holding a chain of client DOM
+// ops — built with the `ops` builder below, or a raw [[name, args], ...]
+// array. The controller consumes it as a PHASE 4 of the single-pass write set:
+// the ops run AFTER the field writes, text sinks, and phase-3 input dispatches
+// settle, through the SAME frozen CLIENT_OPS whitelist on_client uses (an
+// unknown op warns + is skipped). `null`/`undefined`/absent = no effect.
+//
+// RISING-EDGE semantics, keyed on CONTENT: the chain runs only when it
+// DIFFERS from the previous pass's chain (including from "absent"), and only
+// on EVENT-DRIVEN passes. Returning the SAME chain again is settled — no
+// re-fire (a 7th keystroke capped back to the same complete value can't
+// re-submit), mirroring the change-guarded field writes. Returning a
+// DIFFERENT chain fires again — a multi-box reducer advancing focus
+// box-by-box emits a new focus target per digit, each a new intent. The
+// connect/morph SEED pass (issue #199 — recompute with no event) ARMS the
+// latch but never fires — a form re-rendered with an already-complete value
+// (a validation-error morph, a browser restore) must not auto-fire; that is
+// what breaks the submit → error re-render → re-seed → submit loop. A later
+// pass returning no $ops re-arms. The canonical use — a one-time-code field
+// that normalizes on input and commits when complete:
+//
+//   import { setComputeReducer, ops } from "phlex/reactive/compute"
+//   setComputeReducer("otp", ({ code }) => {
+//     const digits = code.replace(/\D/g, "").slice(0, 6)
+//     return { code: digits, $ops: digits.length === 6 ? ops.submit() : null }
+//   })
+//
+// `submit` commits the target's own form via requestSubmit() — the real submit
+// event fires, so an on(:verify, event: "submit") interception (or a native/
+// Turbo form) handles it exactly like a user submit. submit/focus are
+// ACTOR-ONLY: usable here and in on_client/reply.js, refused in broadcasts.
+
 const reducers = new Map()
 
 // Register (or replace) the reducer for `key`. `fn` is
@@ -91,3 +124,122 @@ export function computeReducer(key) {
 export function __resetComputeRegistryForTest() {
   reducers.clear()
 }
+
+// --- The reducer-side op-chain builder (issue #226) --------------------------
+//
+// A thin, IMMUTABLE mirror of the Ruby Phlex::Reactive::JS builder: verbs carry
+// the WIRE op names (snake_case) and append [name, args] pairs; every verb
+// returns a NEW instance, so a chain held in a constant can never be mutated by
+// later use. `.ops` exposes the raw [[name, args], ...] list the controller
+// interprets (and toJSON serializes it, so a chain can also feed a hand-built
+// ops attr). Targets: a CSS selector string, or omit for "@root" (the
+// component's own root). No build-time attr validation here — the interpreter's
+// allowlist (guardAttr) is the enforcement point; this builder only shapes the
+// wire.
+const ROOT_SENTINEL = "@root"
+
+function targetArgs(to, { global, transition } = {}) {
+  const args = { to: to ?? ROOT_SENTINEL }
+  if (global) args.global = true
+  if (transition) args.transition = normalizeTransition(transition)
+  return args
+}
+
+// Named legs { during, from, to } → the [during, from, to] wire array (the
+// issue #186 vocabulary). Loud at authoring time, like the Ruby builder.
+// Frozen, like every nested payload — the chain's immutability contract must
+// hold all the way down (the Ruby twin freezes its legs array too).
+function normalizeTransition(transition) {
+  const named =
+    transition && typeof transition === "object" && !Array.isArray(transition) &&
+    ["during", "from", "to"].every((k) => k in transition)
+  if (!named) throw new Error("[phlex-reactive] ops transition takes named legs { during, from, to }")
+  return Object.freeze([String(transition.during), String(transition.from), String(transition.to)])
+}
+
+class OpsChain {
+  constructor(list = Object.freeze([])) {
+    this.ops = list
+    Object.freeze(this)
+  }
+
+  show(to, opts) {
+    return this.#append("show", targetArgs(to, opts))
+  }
+
+  hide(to, opts) {
+    return this.#append("hide", targetArgs(to, opts))
+  }
+
+  toggle(to, opts) {
+    return this.#append("toggle", targetArgs(to, opts))
+  }
+
+  add_class(to, classes, opts) {
+    return this.#append("add_class", classArgs(to, classes, opts))
+  }
+
+  remove_class(to, classes, opts) {
+    return this.#append("remove_class", classArgs(to, classes, opts))
+  }
+
+  toggle_class(to, classes, opts) {
+    return this.#append("toggle_class", classArgs(to, classes, opts))
+  }
+
+  set_attr(to, name, value, opts) {
+    return this.#append("set_attr", { ...targetArgs(to, opts), name: String(name), value: String(value) })
+  }
+
+  remove_attr(to, name, opts) {
+    return this.#append("remove_attr", { ...targetArgs(to, opts), name: String(name) })
+  }
+
+  toggle_attr(to, name, opts) {
+    return this.#append("toggle_attr", { ...targetArgs(to, opts), name: String(name) })
+  }
+
+  focus(to, opts) {
+    return this.#append("focus", targetArgs(to, opts))
+  }
+
+  focus_first(to, opts) {
+    return this.#append("focus_first", targetArgs(to, opts))
+  }
+
+  text(to, value, opts) {
+    return this.#append("text", { ...targetArgs(to, opts), value: String(value ?? "") })
+  }
+
+  dispatch(name, { to, detail, global } = {}) {
+    const args = { name: String(name), to: to ?? ROOT_SENTINEL, detail: detail ?? {} }
+    if (global) args.global = true
+    return this.#append("dispatch", args)
+  }
+
+  submit(to, opts) {
+    return this.#append("submit", targetArgs(to, opts))
+  }
+
+  toJSON() {
+    return this.ops
+  }
+
+  #append(name, args) {
+    return new OpsChain(Object.freeze([...this.ops, Object.freeze([name, Object.freeze(args)])]))
+  }
+}
+
+// classes: one class string or an array of them (never whitespace-split — a
+// classList token can't contain spaces, so splitting would only mask a bug).
+// Loud on an empty/missing list, and frozen (the Ruby twin freezes its class
+// list too) — a chain held in a constant must stay immutable all the way down.
+function classArgs(to, classes, opts) {
+  const list = classes == null ? [] : (Array.isArray(classes) ? classes : [classes]).map(String)
+  if (list.length === 0) throw new Error("[phlex-reactive] a class op needs at least one class")
+  return { ...targetArgs(to, opts), classes: Object.freeze(list) }
+}
+
+// The shared empty chain — start every reducer effect from here:
+//   $ops: done ? ops.dispatch("code:complete").submit() : null
+export const ops = new OpsChain()

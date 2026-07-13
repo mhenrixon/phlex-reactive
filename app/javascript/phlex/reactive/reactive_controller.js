@@ -1092,7 +1092,24 @@ const CLIENT_OPS = Object.freeze({
   dispatch: (el, args) => {
     el.dispatchEvent(new CustomEvent(args.name, { bubbles: true, composed: true, detail: args.detail ?? {} }))
   },
+
+  // Submit the target's OWN form (issue #226) via requestSubmit() — constraint
+  // validation runs and a REAL cancelable `submit` event fires, so an
+  // on(:action, event: "submit") interception or a native/Turbo form handles it
+  // exactly like a user submit. No form → no-op. ACTOR-ONLY like focus: the
+  // broadcast builder refuses it server-side (BROADCAST_REFUSED_OPS).
+  submit: (el) => submitFormFor(el)?.requestSubmit?.(),
 })
+
+// The form a submit op commits (issue #226), in order: the target itself when
+// it IS a form (tagName, not instanceof — fake-node/test friendly), its form
+// owner for a control (input.form — honors a form= attribute), else the nearest
+// ancestor form. closest() may cross the component root by design — the
+// FIELD'S OWN form is the submit scope, not the reactive boundary.
+function submitFormFor(el) {
+  if (el?.tagName === "FORM") return el
+  return el?.form ?? el?.closest?.("form") ?? null
+}
 
 // Apply a hidden-flag change, optionally animated by a [during, from, to]
 // transition (issue #96). Split out so show/hide/toggle share it.
@@ -1165,6 +1182,39 @@ function showBindingMatches(el, value) {
 // present. Each coerces BOTH sides to Number and compares.
 const SHOW_NUMERIC_KEYS = ["gte", "gt", "lte", "lt"]
 
+// The length predicate keys (issue #226) — the client half of Ruby's
+// ShowConditions::LENGTH_KEYS. Length is counted in CODEPOINTS
+// ([...str].length), NOT UTF-16 code units (str.length), so Ruby's
+// String#length and this evaluator agree on multibyte values — the shared
+// fixture's emoji vector proves it.
+const SHOW_LENGTH_KEYS = ["len_eq", "len_gte", "len_gt", "len_lte", "len_lt"]
+
+// Evaluate one length predicate. Length is a TOTAL function (blank/absent →
+// 0), so every field value is decidable — no fail-closed special case like the
+// numeric thresholds ({ length: 0 } legitimately matches a blank field). A
+// non-Integer LITERAL is a malformed binding — warn-skip (null), default-deny.
+function lengthPredicateMatches(key, literal, value) {
+  if (!Number.isInteger(literal)) {
+    console.warn(`[phlex-reactive] reactive_show ${key}: needs an integer literal, got ${JSON.stringify(literal)} — skipped`)
+    return null
+  }
+  const length = [...String(value ?? "")].length
+  switch (key) {
+    case "len_eq":
+      return length === literal
+    case "len_gte":
+      return length >= literal
+    case "len_gt":
+      return length > literal
+    case "len_lte":
+      return length <= literal
+    case "len_lt":
+      return length < literal
+    default:
+      return null
+  }
+}
+
 // Evaluate one numeric threshold predicate against a field value. Returns
 // true/false for a decidable comparison, or null when the LITERAL itself is
 // non-numeric (a malformed binding — warn-skip, default-deny). A non-numeric
@@ -1218,6 +1268,10 @@ function showPredicateMatches(pred, value) {
   for (const key of SHOW_NUMERIC_KEYS) {
     if (key in pred) return numericPredicateMatches(key, pred[key], value)
   }
+  // Length predicates (issue #226): codepoint count vs an Integer literal.
+  for (const key of SHOW_LENGTH_KEYS) {
+    if (key in pred) return lengthPredicateMatches(key, pred[key], value)
+  }
   return null
 }
 
@@ -1240,6 +1294,27 @@ function parseShowCompound(raw) {
   }
   console.warn(`[phlex-reactive] malformed compound reactive_show payload ${JSON.stringify(raw)} — skipped`)
   return null
+}
+
+// Parse a data-reactive-on-complete payload (issue #226): a JSON array of
+// { any: [[term, …], …], ops: [[op, args], …] } bindings. Malformed JSON, a
+// non-array, or a binding missing either half degrades to [] WITH a warn — a
+// bad payload must never throw or fire an op (client-side default-deny, the
+// parseShowCompound posture).
+function parseOnComplete(raw) {
+  try {
+    const list = JSON.parse(raw)
+    if (
+      Array.isArray(list) &&
+      list.every((b) => b && typeof b === "object" && Array.isArray(b.any) && Array.isArray(b.ops))
+    ) {
+      return list
+    }
+  } catch {
+    // fall through to the warn
+  }
+  console.warn(`[phlex-reactive] malformed reactive_on_complete payload ${JSON.stringify(raw)} — skipped`)
+  return []
 }
 
 // Evaluate one DNF TERM against a resolved field value (issue #180). A missing
@@ -1348,6 +1423,20 @@ function parseOps(raw) {
   }
 }
 
+// Normalize a reducer's reserved $ops output (issue #226): the compute `ops`
+// builder (its .ops list), a raw [[name, args], ...] array, or null/undefined
+// (no effect this pass). An EMPTY list is the same as null — "nothing to run"
+// must not latch the rising edge. Anything else warns + is dropped
+// (default-deny, like every other malformed op source). Reducers are trusted
+// app code, but their ops still run through the frozen CLIENT_OPS whitelist.
+function computeOpsList(raw) {
+  if (raw == null) return null
+  const list = Array.isArray(raw) ? raw : raw.ops
+  if (Array.isArray(list)) return list.length > 0 ? list : null
+  console.warn("[phlex-reactive] $ops must be an ops chain or a [[op, args], ...] list — skipped")
+  return null
+}
+
 // Interpret a [[name, args], ...] op list against the frozen CLIENT_OPS
 // whitelist (issues #95/#96/#97). `resolveTargets(args)` returns the element(s)
 // an op applies to — the controller scopes to its root (excluding nested
@@ -1416,6 +1505,13 @@ export default class extends Controller {
   // (single-pass write set). Per-instance, so another root's events are never
   // swallowed. WeakSet: entries drop when the short-lived Event is GC'd.
   #computeSelfDispatched = new WeakSet()
+  // Issue #226: the serialized $ops chain of the LAST reducer pass (null when
+  // absent) — the rising-edge latch, keyed on CONTENT: an identical chain
+  // never re-fires (a capped extra keystroke can't re-submit), while a chain
+  // that CHANGED fires again (a multi-box reducer advancing focus box-by-box
+  // emits a different focus target per digit). The seed pass arms this
+  // without firing.
+  #computeOpsSignature = null
   // Dirty tracking (issue #103): the bound re-scan (turbo:morph-element) and the
   // navigate-away guard handlers, held so disconnect() can remove exactly them.
   #boundScanDirty
@@ -1424,6 +1520,15 @@ export default class extends Controller {
   // Show bindings (issue #161): the ONE delegated sync handler shared by the
   // root's input/change/turbo:morph-element listeners, held for teardown.
   #boundSyncShow
+  // Completion bindings (issue #226): the delegated gesture handler + the
+  // no-gesture morph arm, held for teardown; the per-binding rising-edge
+  // latches; and the raw-attr memo that re-parses (and resets the latches)
+  // when a morph rewrites the payload.
+  #boundSyncOnComplete
+  #boundArmOnComplete
+  #onCompleteRaw
+  #onCompleteParsed
+  #onCompleteStates
   // Option filtering (issue #163): the ONE delegated sync handler shared by the
   // root's input/turbo:morph-element listeners, held for teardown.
   #boundSyncFilter
@@ -1532,6 +1637,26 @@ export default class extends Controller {
       this.#syncShow()
     }
 
+    // Completion bindings (issue #226) — ONLY when the root declares
+    // data-reactive-on-complete (the show/filter gate precedent). ONE
+    // delegated input+change listener evaluates every binding's DNF over the
+    // owned fields and runs its ops on the RISING EDGE — the event-driven
+    // flip to true. The connect pass ARMS without firing (a fresh render with
+    // already-satisfied conditions must never self-fire — the $ops seed
+    // precedent), and turbo:morph-element re-arms the same way after an
+    // in-place morph. Listeners added HERE run after the Stimulus-wired
+    // recompute delegation for the same event, so the evaluation reads
+    // compute-NORMALIZED values (and a compute output write dispatches a real
+    // input event that re-evaluates anyway).
+    if (this.#onCompleteEnabled()) {
+      this.#boundSyncOnComplete = (event) => this.#syncOnComplete(event)
+      this.#boundArmOnComplete = () => this.#syncOnComplete(null)
+      this.element.addEventListener?.("input", this.#boundSyncOnComplete)
+      this.element.addEventListener?.("change", this.#boundSyncOnComplete)
+      this.element.addEventListener?.("turbo:morph-element", this.#boundArmOnComplete)
+      this.#syncOnComplete(null)
+    }
+
     // Option filtering (issue #163) — ONLY when the root declares the binding
     // (reactive_filter emits both attrs together), so a component without one
     // pays two attribute reads. ONE delegated input listener on the root — the
@@ -1635,6 +1760,7 @@ export default class extends Controller {
     this.#clearAllThrottles()
     this.#teardownDirtyTracking()
     this.#teardownShowSync()
+    this.#teardownOnCompleteSync()
     this.#teardownFilterSync()
     this.#teardownTagsSync()
     this.#teardownNestedJsonSync()
@@ -1928,7 +2054,12 @@ export default class extends Controller {
     // snapshot above (issue #183): its result drives the whole single-pass write.
     const result = reduce(values, { changed: this.#changedComputeField(event, inputs, scope) }) || {}
 
-    // Issue #183 — SINGLE-PASS WRITE SET. Three ordered phases, so declared output
+    // The reserved $ops output (issue #226) is CONSUMED here — normalized once,
+    // then excluded from every write phase below (it is an op chain, never a
+    // field value, text sink, or mirror), and applied as phase 4.
+    const reducerOps = computeOpsList(result.$ops)
+
+    // Issue #183 — SINGLE-PASS WRITE SET. Ordered phases, so declared output
     // order stops being semantics and a wrong order can no longer corrupt values:
     //
     //   1. BATCH the field writes from the ONE result. Each output name in the
@@ -1942,9 +2073,12 @@ export default class extends Controller {
     //      per-instance WeakSet) makes recompute skip re-running the reducer for our
     //      own write, while the event still fires every OTHER listener (chained
     //      repaint, dirty tracking, show bindings, sibling roots).
+    //   4. RUN the reducer's $ops chain (issue #226) — rising-edge, event-gated —
+    //      so its ops (dispatch a completion event, submit the form) always see
+    //      the fully settled DOM and every chained listener has already run.
     const changedFields = []
     for (const name of outputs) {
-      if (!(name in result)) continue
+      if (name === "$ops" || !(name in result)) continue
       const field = ownedField(name)
       if (!field) continue // a non-field output paints as a text sink in phase 2
       if (String(result[name]) === field.value) continue // change-guard — unchanged, skip
@@ -1958,6 +2092,7 @@ export default class extends Controller {
     // undefined result value is SKIPPED (never stringified to "null"/"undefined") —
     // the same "no value this pass, don't paint" filter #applyComputeMirrors uses.
     for (const name of Object.keys(result)) {
+      if (name === "$ops") continue
       const value = result[name]
       if (value === undefined || value === null) continue
       this.#mirrorText(name, value)
@@ -1979,6 +2114,29 @@ export default class extends Controller {
       this.#computeSelfDispatched.add(inputEvent)
       field.dispatchEvent(inputEvent)
     }
+
+    // Phase 4 — the reducer's $ops chain (issue #226), after everything settled.
+    // Event-gated: a seed/direct recompute() pass (no event) arms the latch but
+    // never fires, so a restored/re-rendered complete value can't auto-fire.
+    this.#applyComputeOps(reducerOps, Boolean(event))
+  }
+
+  // Apply a reducer-emitted $ops chain (issue #226) on its RISING EDGE, keyed
+  // on CONTENT: fire only when THIS pass's chain differs from the LAST pass's
+  // (including from "absent"), and only on an event-driven pass. An unchanged
+  // chain never re-fires — "still complete, same submit" is settled, exactly
+  // like the change-guarded field writes. A pass with no $ops re-arms; a pass
+  // whose chain CHANGED fires again (per-keystroke focus advance across OTP
+  // boxes is a different focus target each time — a deliberately new intent).
+  // Ops run through the shared CLIENT_OPS interpreter with runOps's
+  // root-scoped target resolution; a missing to: defaults to "@root"
+  // (hand-written reducer ergonomics).
+  #applyComputeOps(list, eventDriven) {
+    const signature = list === null ? null : JSON.stringify(list)
+    const fire = signature !== null && signature !== this.#computeOpsSignature && eventDriven
+    this.#computeOpsSignature = signature
+    if (!fire) return
+    applyOps(list, (args) => this.#opTargets(args.to == null ? { ...args, to: "@root" } : args))
   }
 
   // Client-side list navigation (combobox keyboard nav, issue #72). Wired by
@@ -3386,6 +3544,60 @@ export default class extends Controller {
     const nodes = this.element.querySelectorAll?.(SHOW_BINDING_SELECTOR) ?? []
     for (const el of nodes) if (this.#ownsField(el)) return true
     return false
+  }
+
+  // The connect() gate for completion bindings (issue #226) — one attribute read.
+  #onCompleteEnabled() {
+    return !!this.element.getAttribute?.("data-reactive-on-complete")
+  }
+
+  // Parse-and-memoize the completion bindings, keyed on the RAW attr string:
+  // a morph that rewrote the payload re-parses and RESETS the latches (the
+  // morph listener's own arm pass then re-arms without firing). A removed
+  // attr yields [] silently; malformed JSON warns (in parseOnComplete).
+  #onCompleteBindings() {
+    const raw = this.element.getAttribute?.("data-reactive-on-complete") ?? null
+    if (raw !== this.#onCompleteRaw) {
+      this.#onCompleteRaw = raw
+      this.#onCompleteParsed = raw == null ? [] : parseOnComplete(raw)
+      this.#onCompleteStates = this.#onCompleteParsed.map(() => false)
+    }
+    return this.#onCompleteParsed
+  }
+
+  // Evaluate every completion binding (issue #226) over the owned fields —
+  // the SAME memoized, scope-aware field resolver and DNF fold the show sync
+  // uses — and run each binding's ops on ITS OWN rising edge. `event` null
+  // (the connect/morph arm pass) updates the latches WITHOUT firing, so ops
+  // only ever run from a real user gesture. An undecidable payload (no
+  // groups) leaves its latch alone — default-deny, like every malformed-wire
+  // arm. Ops resolve through runOps's root-scoped targets; a missing to:
+  // defaults to "@root" (the $ops convention).
+  #syncOnComplete(event) {
+    const bindings = this.#onCompleteBindings()
+    if (!bindings.length) return
+
+    const owns = this.#ownershipFilter()
+    const scope = this.element.getAttribute?.("data-reactive-scope") || null
+    const values = new Map()
+    const fieldValue = (name) => {
+      if (!values.has(name)) values.set(name, this.#showFieldValue(name, owns, scope))
+      return values.get(name)
+    }
+    bindings.forEach((binding, i) => {
+      const matches = anyOfAllsMatches(binding.any, fieldValue)
+      if (matches === null) return
+      const fire = matches && !this.#onCompleteStates[i] && Boolean(event)
+      this.#onCompleteStates[i] = matches
+      if (fire) applyOps(binding.ops, (args) => this.#opTargets(args.to == null ? { ...args, to: "@root" } : args))
+    })
+  }
+
+  #teardownOnCompleteSync() {
+    if (!this.#boundSyncOnComplete) return
+    this.element.removeEventListener?.("input", this.#boundSyncOnComplete)
+    this.element.removeEventListener?.("change", this.#boundSyncOnComplete)
+    this.element.removeEventListener?.("turbo:morph-element", this.#boundArmOnComplete)
   }
 
   // Re-evaluate every OWNED show binding in one pass (issue #161): read the
