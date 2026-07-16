@@ -408,6 +408,11 @@ module Phlex
           # on()'s flags above.
           attrs[:data][:reactive_outside_param] = "true" if outside
           attrs[:data][:reactive_window_param] = "true" if window_bound
+          # Issue #228: mark a clipboard-reading trigger so the client can gate
+          # its visibility on availability — on connect the controller sets
+          # hidden = !navigator.clipboard.readText. Render the trigger `hidden`
+          # for reveal-when-available (a dead paste button never shows).
+          attrs[:data][:reactive_clipboard] = "true" if ops.ops.any? { |name, _| name == "paste_into" }
           # Issue #178: confirm: gates the client-op chain behind the SAME
           # overridable confirmResolver on(:action, confirm:) uses (#52/#55). Emits
           # the identical data-reactive-confirm-param; the client's runOps prompts

@@ -1410,6 +1410,29 @@ RSpec.describe Phlex::Reactive::Component do
 
       expect(attrs[:data][:action]).to eq("submit->reactive#runOps")
     end
+
+    # Issue #228: a paste_into trigger is marked so the client can gate its
+    # visibility on clipboard availability (hidden wherever the API is missing
+    # — a dead paste button must never show).
+    it "marks a paste_into trigger with data-reactive-clipboard (string true, never boolean)" do
+      attrs = instance.send(:on_client, :click, instance.js.paste_into("#code"))
+
+      expect(attrs[:data][:reactive_clipboard]).to eq("true")
+      expect(attrs[:data][:reactive_ops_param]).to eq('[["paste_into",{"to":"#code"}]]')
+    end
+
+    it "marks the trigger even when paste_into is buried in a longer chain" do
+      chain = instance.js.add_class(:root, "busy").paste_into("#code")
+      attrs = instance.send(:on_client, :click, chain)
+
+      expect(attrs[:data][:reactive_clipboard]).to eq("true")
+    end
+
+    it "does not mark a non-paste trigger (byte-stable wire for existing callers)" do
+      attrs = instance.send(:on_client, :click, ops)
+
+      expect(attrs[:data]).not_to have_key(:reactive_clipboard)
+    end
   end
 
   # A record-backed component whose record is UNSAVED (new_record?) has no

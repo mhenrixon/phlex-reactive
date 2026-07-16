@@ -349,6 +349,13 @@ module Views
               navigates normally and an `on(:save, event: "submit")` interception
               turns it into a signed action instead. Actor-only like focus: refused
               in broadcasts.
+
+              And `paste_into` (#228): `on_client(:click,
+              js.paste_into("[name=code]"))` reads the clipboard into a field on the
+              user's gesture and feeds it through the normal `input` pipeline — the
+              explicit paste affordance for a field whose real input is visually
+              hidden (an OTP cell UI). Author the trigger `hidden` and the controller
+              reveals it only where the clipboard API exists. Actor-only too.
             MD
           end
         end

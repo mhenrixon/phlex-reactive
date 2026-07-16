@@ -385,7 +385,7 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `busy_on(:save)` | Mark any element so it carries `data-reactive-busy` **only while `save` is in flight** — a spinner styled with pure CSS, zero Ruby. See [Loading states](#declarative-loading-states-loading--disable_with). |
 | `on(:action, once: true)` | Fire at most once, then unbind (Stimulus's native `:once`). |
 | `on_client(:click, js.toggle("#menu"))` | **Client-only** trigger: applies declared DOM ops with ZERO round trip — no token, no POST, ever. Takes the same `window:`/`once:`/`outside:` modifiers. See [Client-only ops](#client-only-ops-on_client--js--zero-round-trips). |
-| `js` | The immutable op builder behind `on_client`: `show`/`hide`/`toggle` (the `hidden` attribute, with an optional `transition:`), `add_class`/`remove_class`/`toggle_class`, `set_attr`/`remove_attr`/`toggle_attr` (allowlisted names), `focus`/`focus_first`, `text` (set `textContent` — XSS-safe), and `dispatch` — chainable. |
+| `js` | The immutable op builder behind `on_client`: `show`/`hide`/`toggle` (the `hidden` attribute, with an optional `transition:`), `add_class`/`remove_class`/`toggle_class`, `set_attr`/`remove_attr`/`toggle_attr` (allowlisted names), `focus`/`focus_first`, `text` (set `textContent` — XSS-safe), `dispatch`, `submit` (requestSubmit the target's own form), and `paste_into` (read the clipboard into a field, gesture-gated) — chainable. |
 | `reactive_field(:param, **attrs)` | The attribute hash that binds a control to an action param (no magic `name:`) — spread onto any control: `input(**reactive_field(:value, value: @record.name))`, `select(**reactive_field(:status)) { … }`. |
 | `reactive_text(:name, initial)` | Mirror a compute output (or a declared input) into a **text node** — a live preview heading, a character counter, `"Hello, {name}"` — via `textContent` (XSS-safe). The text sibling of `reactive_field`; carries no `name`, so it's never POSTed. See [Client-side computes](#client-side-computes-reactive_compute--reactive_text). |
 | `reactive_show(if:/if_any:/unless:)` | **Value-conditional visibility** (the `x-show`/`data-show` case): spread onto the element to show/hide — it toggles `hidden` from the fields' **current values**, client-only, zero round trip. One conditions language: a **Hash is an AND**, an **Array is membership**, a **Range is a threshold**, `if_any:` is OR-of-AND, `unless:` negates. `reactive_values` computes first paint; `disable:` disables a hidden section's controls. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
@@ -863,6 +863,25 @@ button(**on_client(:click, js
   `broadcast_to(js:)` (a broadcast would force-submit every subscriber's form).
   Binding a submit op to the `submit` event itself raises at render — it would
   re-fire itself forever.
+- **`paste_into(to)`** reads the clipboard into a field on a **user gesture**
+  (issue #228): `navigator.clipboard.readText()`, then the field gets the text
+  through the **normal `input` pipeline** — `.value` is set, a bubbling `input`
+  event fires (compute reducers, `reactive_show`, `reactive_on_complete` all run
+  exactly as if the user had typed), and the field is focused so a partial paste
+  continues from the caret. Built for fields whose real `<input>` is visually
+  hidden (an OTP cell UI), where right-click → Paste can't reach the editable
+  input. The permission UX is the **browser's own** (Chromium prompts, Safari
+  shows its paste pill); a denied/dismissed read, empty text, or a missing API
+  is a **silent no-op**. `on_client` marks the trigger with
+  `data-reactive-clipboard` and the controller sets `hidden = !available` on
+  connect — author the trigger `hidden` and it is revealed only where the
+  clipboard API exists, so a dead button never shows. The gate **owns** the
+  trigger's `hidden` flag: render the trigger unconditionally and don't also
+  bind `reactive_show` to it (the two passes would fight over the same
+  attribute). **Actor-only like focus/submit**: refused in `broadcast_to(js:)`
+  (a broadcast that reads every subscriber's clipboard would be hostile). The
+  op is async fire-and-forget — chained siblings apply immediately, never
+  waiting for the read.
 - **`transition: { during:, from:, to: }`** on `show`/`hide`/`toggle` animates the
   visibility flip: `during`+`from` are applied, then `from`→`to` swaps on the next
   frame, and the helper classes are cleaned up on `animationend` (with a timeout
@@ -1136,7 +1155,9 @@ setComputeReducer("preview", ({ title }) => ({
 write fields and text; the reserved **`$ops`** key lets it emit a **conditional
 side effect** — the missing piece that used to force a bespoke controller next
 to an otherwise-declarative compute. Return an op chain (the `ops` builder
-mirrors the Ruby `js` verbs, or use a raw `[[op, args], …]` array) and the
+mirrors the Ruby `js` verbs — minus `paste_into`, deliberately: a reducer runs
+on every input event, and a clipboard read per keystroke would spam permission
+prompts — or use a raw `[[op, args], …]` array) and the
 controller runs it through the **same frozen op whitelist** `on_client` uses,
 as a final phase **after** the field writes, text sinks, and their dispatched
 `input` events settle. The canonical one-time-code field:
@@ -1977,10 +1998,12 @@ Notifications::Badge.broadcast_to(user, :alerts,
   js: js.add_class("#bell", "has-unread"), exclude: reactive_connection_id)
 ```
 
-`broadcast_to` with `js:` **refuses focus-class ops** (`focus`/`focus_first` raise
-`ArgumentError`): broadcasting focus would steal it in every subscriber's tab, so
-focus is an actor-reply concern only. Everything else is a fair broadcast (class
-and attribute toggles, `dispatch`). As with `on_client`, the ops are
+`broadcast_to` with `js:` **refuses the actor-only ops** (`focus`/`focus_first`/
+`submit`/`paste_into` raise `ArgumentError`): broadcasting focus would steal it
+in every subscriber's tab, a broadcast submit would force-submit every
+subscriber's form, and a broadcast clipboard read would be hostile — these
+belong to the actor's own reply or gesture. Everything else is a fair broadcast
+(class and attribute toggles, `text`, `dispatch`). As with `on_client`, the ops are
 whitelist-interpreted client-side — an unknown op warns and is skipped — and the
 ops attribute is HTML-escaped, so a value can't break out of it. `reactive:js`
 is not a self-render: it never counts toward the token refresh, so the reply's

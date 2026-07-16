@@ -1047,9 +1047,11 @@ function runTransition(el, transition, flip) {
 // Phlex::Reactive::JS's vocabulary; an op name not in this map is
 // warn-and-skipped by #applyOps (client-side default-deny — a stale or newer
 // ops attr must never break the page). Each op is a pure, local DOM mutation:
-// nothing is read back, nothing is sent anywhere. Frozen so nothing can be
-// registered into it at runtime — extending the vocabulary is a gem change,
-// not an app hook.
+// nothing is sent anywhere, and nothing is read back — with ONE deliberate
+// exception, paste_into (issue #228), which reads the clipboard behind the
+// browser's own gesture + permission gates and still only writes locally.
+// Frozen so nothing can be registered into it at runtime — extending the
+// vocabulary is a gem change, not an app hook.
 const CLIENT_OPS = Object.freeze({
   show: (el, args) => setHidden(el, false, args),
   hide: (el, args) => setHidden(el, true, args),
@@ -1099,6 +1101,24 @@ const CLIENT_OPS = Object.freeze({
   // exactly like a user submit. No form → no-op. ACTOR-ONLY like focus: the
   // broadcast builder refuses it server-side (BROADCAST_REFUSED_OPS).
   submit: (el) => submitFormFor(el)?.requestSubmit?.(),
+
+  // Clipboard-source paste (issue #228): on a user gesture, read
+  // navigator.clipboard.readText() and feed the text into the target field
+  // through the normal input pipeline — exactly what a native Cmd/Ctrl+V does.
+  // The ONE op that reads a browser API and is async: fire-and-forget, so
+  // applyOps stays sync and chain siblings never wait (the runTransition
+  // posture). A rejected/dismissed read, empty text, or a missing API is a
+  // SILENT no-op — page state must not change. ACTOR-ONLY like focus/submit:
+  // the broadcast builder refuses it server-side (BROADCAST_REFUSED_OPS) —
+  // and that server gate is the REAL one. The browser only partially backs it
+  // up: Safari gates every read on a fresh gesture and Firefox shows its
+  // paste picker per read, but Chromium's clipboard-read is a PERSISTENT
+  // per-origin permission — once granted (the legit paste button itself
+  // induces that), readText() succeeds with no gesture. No client-side
+  // refusal is possible here: the reactive:js interpreter cannot distinguish
+  // an actor reply's stream from a broadcast's, and reply.js legitimately
+  // carries this op.
+  paste_into: (el) => pasteClipboardInto(el),
 })
 
 // The form a submit op commits (issue #226), in order: the target itself when
@@ -1109,6 +1129,32 @@ const CLIENT_OPS = Object.freeze({
 function submitFormFor(el) {
   if (el?.tagName === "FORM") return el
   return el?.form ?? el?.closest?.("form") ?? null
+}
+
+// Read the clipboard into a field (issue #228) — the body of the paste_into
+// op. The write mirrors a native paste: set .value, dispatch a bubbling
+// `input` event (the set-value + dispatch contract, issue #183 — compute
+// reducers, show bindings, and on_complete all run exactly as if the user
+// had typed), then focus (the caret lands where the user continues typing on
+// a partial paste). Availability-guarded: insecure contexts and some
+// webviews have no navigator.clipboard — the connect()-time gate hides
+// marked triggers there, so this guard is belt-and-braces. Empty text is a
+// no-op: "paste nothing" must not clear a half-typed field.
+function pasteClipboardInto(field) {
+  const clipboard = globalThis.navigator?.clipboard
+  if (typeof clipboard?.readText !== "function") return
+  clipboard
+    .readText()
+    .then((text) => {
+      if (!text) return
+      field.value = text
+      if (typeof field.dispatchEvent === "function") field.dispatchEvent(new Event("input", { bubbles: true }))
+      field.focus?.()
+    })
+    .catch(() => {
+      // Permission denied or the prompt dismissed — the browser's own UX said
+      // no. The issue-#228 contract: a silent no-op, never an error.
+    })
 }
 
 // Apply a hidden-flag change, optionally animated by a [during, from, to]
@@ -1554,6 +1600,9 @@ export default class extends Controller {
   // Lazy initial mount (issue #165): the bound re-probe attached to
   // turbo:morph-element so a Turbo page-refresh morph re-fires the defer fetch.
   #boundProbeLazyDefer
+  // Clipboard-trigger availability gate (issue #228): the bound morph re-sync,
+  // held for teardown.
+  #boundSyncClipboard
 
   // Mark that a reactive controller actually connected, so the registration
   // guard above knows the controller was registered (issue #26 part 2).
@@ -1735,6 +1784,24 @@ export default class extends Controller {
       this.element.addEventListener?.("turbo:morph-element", this.#boundSeedCompute)
       this.recompute()
     }
+
+    // Clipboard-trigger availability gate (issue #228) — ONLY when this root
+    // owns a paste trigger (on_client marks one with data-reactive-clipboard),
+    // so every other component pays a single probe (the show/filter/tags gate
+    // precedent). The Async Clipboard API is absent in insecure contexts and
+    // some webviews; a paste button that can never work must not show. The
+    // gate OWNS a marked trigger's `hidden` flag: author the trigger `hidden`
+    // and this pass reveals it where the API exists (a dead button never
+    // paints); turbo:morph-element re-syncs because a morph rewrites the
+    // trigger back to its authored hidden state. Like every sibling gate the
+    // decision is made ONCE at connect — render the paste trigger
+    // unconditionally: a trigger first INTRODUCED by a later morph stays
+    // ungated (hidden) until a full replace re-connects the controller.
+    if (this.#clipboardGateEnabled()) {
+      this.#boundSyncClipboard = () => this.#syncClipboardTriggers()
+      this.element.addEventListener?.("turbo:morph-element", this.#boundSyncClipboard)
+      this.#syncClipboardTriggers()
+    }
   }
 
   // Whether this root opts into dirty tracking (issue #103): track_dirty: puts the
@@ -1765,6 +1832,7 @@ export default class extends Controller {
     this.#teardownTagsSync()
     this.#teardownNestedJsonSync()
     this.#teardownComputeSeed()
+    this.#teardownClipboardGate()
     if (this.#boundProbeLazyDefer) {
       this.element.removeEventListener?.("turbo:morph-element", this.#boundProbeLazyDefer)
     }
@@ -3549,6 +3617,35 @@ export default class extends Controller {
   // The connect() gate for completion bindings (issue #226) — one attribute read.
   #onCompleteEnabled() {
     return !!this.element.getAttribute?.("data-reactive-on-complete")
+  }
+
+  // Whether this root owns a clipboard-marked paste trigger (issue #228) —
+  // the connect() gate. One scoped query; a NESTED root's triggers are its
+  // own controller's to gate (issue #15 ownership).
+  #clipboardGateEnabled() {
+    const nodes = this.element.querySelectorAll?.("[data-reactive-clipboard]") ?? []
+    for (const el of nodes) if (this.#ownsField(el)) return true
+    return false
+  }
+
+  // Set every owned paste trigger's `hidden` from clipboard availability
+  // (issue #228): available → revealed (the authored `hidden` was only the
+  // no-dead-button first paint), missing → hidden (insecure context /
+  // webview). The gate owns the flag on MARKED elements only — nothing else
+  // is ever touched.
+  #syncClipboardTriggers() {
+    const available = typeof globalThis.navigator?.clipboard?.readText === "function"
+    for (const el of this.element.querySelectorAll?.("[data-reactive-clipboard]") ?? []) {
+      if (this.#ownsField(el)) el.hidden = !available
+    }
+  }
+
+  // Remove the clipboard gate's morph listener on disconnect, so a stray
+  // morph event after a Turbo navigation never re-syncs a detached root.
+  #teardownClipboardGate() {
+    if (!this.#boundSyncClipboard) return
+    this.element.removeEventListener?.("turbo:morph-element", this.#boundSyncClipboard)
+    this.#boundSyncClipboard = undefined
   }
 
   // Parse-and-memoize the completion bindings, keyed on the RAW attr string:

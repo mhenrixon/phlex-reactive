@@ -185,6 +185,35 @@ module Phlex
         append("submit", target_args(to, global:))
       end
 
+      # --- Clipboard-source paste (issue #228) ---
+      #
+      # paste_into(to) — on a user gesture, read navigator.clipboard.readText()
+      # and feed the text into the target field through the normal `input`
+      # pipeline: set .value, dispatch a bubbling `input` event (so
+      # reactive_compute reducers, reactive_show, and reactive_on_complete all
+      # run exactly as if the user had typed it), then focus the field. The
+      # permission UX is the browser's own; a rejected or unavailable read is a
+      # SILENT NO-OP — page state must not change. The target is a FIELD: there
+      # is no :root default and an explicit :root is refused loudly (pasting
+      # into the root div is always a call-site bug). ACTOR-ONLY like
+      # focus/submit: allowed from on_client / reply.js / reactive_on_complete,
+      # refused in broadcast_to(js:) — a broadcast that reads every
+      # subscriber's clipboard would be hostile. on_client marks the trigger
+      # with data-reactive-clipboard so the client can hide it wherever the
+      # clipboard API is missing (no dead button). NOTE: the gate owns the
+      # trigger's `hidden` flag — don't also bind reactive_show to the trigger
+      # element (the two passes would fight over the same attribute).
+
+      def paste_into(to, global: false)
+        if to == :root
+          raise ArgumentError,
+            "#{self.class}: paste_into targets a field, not the component root — " \
+            "pass the input's CSS selector (e.g. js.paste_into(\"[name=code]\"))"
+        end
+
+        append("paste_into", target_args(to, global:))
+      end
+
       # --- Text content (issue #159) ---
       #
       # text(to, value) — set the target's textContent (stringified; nil clears).

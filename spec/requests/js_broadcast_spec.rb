@@ -71,11 +71,51 @@ RSpec.describe "broadcast_js_to (issue #97)", type: :request do
       .to raise_error(ArgumentError, /submit/)
   end
 
+  # Issue #228: paste_into joins the actor-only set — a broadcast that reads
+  # every subscriber's clipboard would be hostile (browsers would block it
+  # without a gesture anyway, but default-deny regardless).
+  it "rejects a paste_into op (broadcasting a clipboard read would be hostile)" do
+    paste_ops = TodoItemComponent.new(todo: Todo.new).js.paste_into("#code")
+
+    expect { TodoItemComponent.broadcast_to("alerts", js: paste_ops) }
+      .to raise_error(ArgumentError, /paste_into/)
+  end
+
+  it "rejects a raw-array paste_into op the same way (escape hatch can't bypass it)" do
+    expect { TodoItemComponent.broadcast_to("alerts", js: [["paste_into", { "to" => "#code" }]]) }
+      .to raise_error(ArgumentError, /paste_into/)
+  end
+
   it "rejects an empty op chain (a dead reactive:js broadcast is a mistake)" do
     empty = TodoItemComponent.new(todo: Todo.new).js
 
     expect { TodoItemComponent.broadcast_to("alerts", js: empty) }
       .to raise_error(ArgumentError, /no ops/)
+  end
+
+  # The MODULE-LEVEL door (issue #185) must behave exactly like the class-level
+  # one: same emission, same actor-only refusal. Pinned because the ops
+  # serializer used to live only on the includer class — the module form
+  # crashed with NoMethodError instead of refusing, and a naive future fix
+  # could have routed it around BROADCAST_REFUSED_OPS entirely (issue #228
+  # channel audit).
+  describe "module-level Phlex::Reactive.broadcast_to(js:)" do
+    it "broadcasts a reactive:js stream exactly like the class-level form" do
+      broadcasts = capture_turbo_stream_broadcasts("alerts") do
+        Phlex::Reactive.broadcast_to("alerts", js: ops)
+      end
+
+      html = broadcasts.map(&:to_s).join # rubocop:disable Style/MapJoin
+      expect(html).to include('action="reactive:js"')
+      expect(html).to include("add_class")
+    end
+
+    it "rejects the actor-only ops (the refusal covers BOTH broadcast doors)" do
+      paste_ops = TodoItemComponent.new(todo: Todo.new).js.paste_into("#code")
+
+      expect { Phlex::Reactive.broadcast_to("alerts", js: paste_ops) }
+        .to raise_error(ArgumentError, /paste_into/)
+    end
   end
 
   # Transport opts (exclude:/visible_to:) thread to pgbus via THREAD-LOCALS (its

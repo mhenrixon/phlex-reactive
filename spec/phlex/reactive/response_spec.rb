@@ -389,6 +389,13 @@ RSpec.describe Phlex::Reactive::Response do
       expect(stream).to include("&quot;submit&quot;")
     end
 
+    # Issue #228: paste_into is actor-only the same way — refused in broadcasts,
+    # but the actor's own reply may arm a clipboard paste it just rendered.
+    it "allows a paste_into op (actor-scoped, mirroring focus/submit)" do
+      stream = counter.reply.with.js(CounterComponent.new(count: 0).js.paste_into("#code")).streams.first
+      expect(stream).to include("&quot;paste_into&quot;")
+    end
+
     it "enforces the attr allowlist on a raw op array (escape hatch can't bypass it)" do
       hostile = [["set_attr", { "to" => "#x", "name" => "onclick", "value" => "alert(1)" }]]
       expect { counter.reply.with.js(hostile) }.to raise_error(ArgumentError, /onclick/)

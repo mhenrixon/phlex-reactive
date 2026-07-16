@@ -136,11 +136,12 @@ module Views
 
               The **client-op vocabulary** carries the same posture: a fixed frozen whitelist
               (unknown ops warn-and-skip), an attribute allowlist enforced twice (build time
-              AND interpret time), and an **actor-only tier** — `focus`, `focus_first`, and
-              `submit` (#226) are allowed from the actor's own gesture or reply
-              (`on_client` / `reply.js` / a reducer's `$ops`) but **refused in broadcasts**:
-              a broadcast op must never steal focus in, or force-submit a form from, every
-              subscriber's tab.
+              AND interpret time), and an **actor-only tier** — `focus`, `focus_first`,
+              `submit` (#226), and `paste_into` (#228) are allowed from the actor's own
+              gesture or reply (`on_client` / `reply.js` / a reducer's `$ops` — though the
+              reducer builder deliberately omits `paste_into`) but **refused in
+              broadcasts**: a broadcast op must never steal focus in, force-submit a form
+              from, or read the clipboard of, every subscriber's tab.
             MD
           end
         end

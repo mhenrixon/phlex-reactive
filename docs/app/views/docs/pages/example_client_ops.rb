@@ -48,9 +48,12 @@ module Views
               them locally through the one generic reactive controller. The ops are a
               **frozen whitelist** — `show`/`hide`/`toggle`, `add_class`/
               `remove_class`/`toggle_class`, `set_attr`/`toggle_attr`/`remove_attr`,
-              `focus`/`focus_first`, `text`, `dispatch`, `submit` — each a pure,
-              local DOM mutation. Nothing is read back, nothing is sent anywhere
-              (`submit` hands the form to its own native/intercepted submit path).
+              `focus`/`focus_first`, `text`, `dispatch`, `submit`, `paste_into` —
+              each a local DOM mutation. Nothing is sent anywhere, and nothing is
+              read back (`submit` hands the form to its own native/intercepted
+              submit path) — with one deliberate exception: `paste_into` (#228)
+              reads the **clipboard**, behind the browser's own gesture and
+              permission gates, and still only writes locally.
 
               - **Tabs:** `js.hide(".ct-panel").show("#ct-panel-1")` plus class ops on
                 the tab buttons — the "I had to write a Stimulus controller" case, now
@@ -73,9 +76,10 @@ module Views
               `data-reactive-ops` attribute the client interprets. An op name not on
               the whitelist is warn-and-skipped (client-side default-deny) — a stale
               or newer ops attribute can never break the page. `focus`/`focus_first`/
-              `submit` are allowed here (an actor's own gesture) but **rejected**
-              from a broadcast — stealing focus in every subscriber's tab, or
-              force-submitting every subscriber's form, would be hostile.
+              `submit`/`paste_into` are allowed here (an actor's own gesture) but
+              **rejected** from a broadcast — stealing focus in every subscriber's
+              tab, force-submitting every subscriber's form, or reading every
+              subscriber's clipboard, would be hostile.
 
               `text(to, value)` (#159) sets the target's `textContent` — stringified,
               `nil` clears, **never `innerHTML`** — so a chain can paint a label or a
@@ -102,6 +106,28 @@ module Views
               For "submit when a **text** value becomes complete", see the
               conditional forms below and the compute reducer's `$ops` output on
               the [payment-split example](/docs/example-payment-split).
+
+              `paste_into(to)` (#228) reads the clipboard into a field on a
+              **user gesture** — built for fields whose real `<input>` is
+              visually hidden (an OTP cell UI), where right-click → Paste can
+              never reach the editable input. On click it awaits
+              `navigator.clipboard.readText()` (the permission UX is the
+              browser's own) and feeds the text through the **normal `input`
+              pipeline**: set `.value`, dispatch a bubbling `input` (compute
+              reducers, `reactive_show`, `reactive_on_complete` run exactly as
+              if typed), then focus the field so a partial paste continues from
+              the caret. A denied read, empty text, or a missing API is a
+              **silent no-op**. The trigger is marked `data-reactive-clipboard`
+              and the controller sets `hidden = !available` on connect — author
+              it `hidden` and a dead button never shows. The gate **owns** the
+              trigger's `hidden` flag: render it unconditionally, and don't also
+              bind `reactive_show` to the trigger element:
+
+              ```ruby
+              button(hidden: true,
+                **mix(on_client(:click, js.paste_into("[name=code]")),
+                  class: "btn")) { "Paste code" }
+              ```
             MD
             DocsUI::Callout(:tip) do
               md <<~MD
