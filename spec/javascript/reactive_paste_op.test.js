@@ -30,12 +30,19 @@ beforeAll(async () => {
   ReactiveController = (await import("../../app/javascript/phlex/reactive/reactive_controller.js")).default
 })
 
-// bun runs the whole suite in ONE process — snapshot the real navigator and
-// restore it after every test so a clipboard stub never leaks into later files
-// (the reactive_latency_sim precedent).
+// bun runs the whole suite in ONE process — snapshot EVERY global these tests
+// touch (navigator for the clipboard stub, plus the fetch/document/window
+// stubs buildController installs) and restore them after every test so
+// nothing leaks into later files (the reactive_run_ops_extended precedent).
 const REAL_NAVIGATOR = globalThis.navigator
+const REAL_FETCH = globalThis.fetch
+const REAL_DOCUMENT = globalThis.document
+const REAL_WINDOW = globalThis.window
 afterEach(() => {
   globalThis.navigator = REAL_NAVIGATOR
+  globalThis.fetch = REAL_FETCH
+  globalThis.document = REAL_DOCUMENT
+  globalThis.window = REAL_WINDOW
 })
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -331,6 +338,32 @@ test("a turbo:morph-element re-runs the gate (the morph re-rendered the authored
   root.emit("turbo:morph-element")
 
   expect(trigger.hidden).toBe(false)
+})
+
+test("a marker on the ROOT itself is gated too (a button-only component mixes on_client onto reactive_root)", () => {
+  globalThis.navigator = { clipboard: { readText: async () => "" } }
+  const root = new FakeNode({ "data-controller": "reactive", "data-reactive-clipboard": "true", hidden: "" })
+  root.id = "paste-button"
+  const controller = buildController(root)
+  controller.tokenValue = "tok"
+  globalThis.window = { addEventListener: () => {}, removeEventListener: () => {} }
+
+  controller.connect()
+
+  expect(root.hidden).toBe(false) // revealed: the root IS the trigger
+})
+
+test("a ROOT trigger is hidden when the API is missing (the whole component IS the dead button)", () => {
+  globalThis.navigator = {}
+  const root = new FakeNode({ "data-controller": "reactive", "data-reactive-clipboard": "true" })
+  root.id = "paste-button"
+  const controller = buildController(root)
+  controller.tokenValue = "tok"
+  globalThis.window = { addEventListener: () => {}, removeEventListener: () => {} }
+
+  controller.connect()
+
+  expect(root.hidden).toBe(true)
 })
 
 test("a NESTED reactive root's trigger is left to its own controller (issue #15 ownership)", () => {

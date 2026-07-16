@@ -3620,9 +3620,12 @@ export default class extends Controller {
   }
 
   // Whether this root owns a clipboard-marked paste trigger (issue #228) —
-  // the connect() gate. One scoped query; a NESTED root's triggers are its
-  // own controller's to gate (issue #15 ownership).
+  // the connect() gate. The ROOT itself counts (a button-only component that
+  // mixes on_client(paste_into) onto reactive_root — the #dirtyTrackingEnabled
+  // root-then-descendants precedent), then one scoped query; a NESTED root's
+  // triggers are its own controller's to gate (issue #15 ownership).
   #clipboardGateEnabled() {
+    if (this.element.getAttribute?.("data-reactive-clipboard")) return true
     const nodes = this.element.querySelectorAll?.("[data-reactive-clipboard]") ?? []
     for (const el of nodes) if (this.#ownsField(el)) return true
     return false
@@ -3632,9 +3635,11 @@ export default class extends Controller {
   // (issue #228): available → revealed (the authored `hidden` was only the
   // no-dead-button first paint), missing → hidden (insecure context /
   // webview). The gate owns the flag on MARKED elements only — nothing else
-  // is ever touched.
+  // is ever touched. A marked ROOT is gated too: when the component IS the
+  // paste button, hiding the root is exactly "the dead button never shows".
   #syncClipboardTriggers() {
     const available = typeof globalThis.navigator?.clipboard?.readText === "function"
+    if (this.element.getAttribute?.("data-reactive-clipboard")) this.element.hidden = !available
     for (const el of this.element.querySelectorAll?.("[data-reactive-clipboard]") ?? []) {
       if (this.#ownsField(el)) el.hidden = !available
     }

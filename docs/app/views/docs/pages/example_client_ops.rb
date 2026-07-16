@@ -49,11 +49,13 @@ module Views
               **frozen whitelist** — `show`/`hide`/`toggle`, `add_class`/
               `remove_class`/`toggle_class`, `set_attr`/`toggle_attr`/`remove_attr`,
               `focus`/`focus_first`, `text`, `dispatch`, `submit`, `paste_into` —
-              each a local DOM mutation. Nothing is sent anywhere, and nothing is
-              read back (`submit` hands the form to its own native/intercepted
-              submit path) — with one deliberate exception: `paste_into` (#228)
-              reads the **clipboard**, behind the browser's own gesture and
-              permission gates, and still only writes locally.
+              each a local DOM mutation, with two deliberate exceptions. `submit`
+              hands the form to its own native/intercepted submit path — the form
+              may POST or navigate from there, but that is the form's contract,
+              not the op's. `paste_into` (#228) **reads** the clipboard, behind
+              the browser's own gesture and permission gates, and still only
+              writes locally. Everything else sends nothing and reads nothing
+              back.
 
               - **Tabs:** `js.hide(".ct-panel").show("#ct-panel-1")` plus class ops on
                 the tab buttons — the "I had to write a Stimulus controller" case, now
@@ -110,9 +112,11 @@ module Views
               `paste_into(to)` (#228) reads the clipboard into a field on a
               **user gesture** — built for fields whose real `<input>` is
               visually hidden (an OTP cell UI), where right-click → Paste can
-              never reach the editable input. On click it awaits
-              `navigator.clipboard.readText()` (the permission UX is the
-              browser's own) and feeds the text through the **normal `input`
+              never reach the editable input. On click it starts
+              `navigator.clipboard.readText()` **fire-and-forget** (the
+              permission UX is the browser's own; chained sibling ops apply
+              immediately, never waiting for the read) and, when the read
+              resolves, feeds the text through the **normal `input`
               pipeline**: set `.value`, dispatch a bubbling `input` (compute
               reducers, `reactive_show`, `reactive_on_complete` run exactly as
               if typed), then focus the field so a partial paste continues from

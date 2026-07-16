@@ -15,9 +15,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   line — `button(hidden: true, **on_client(:click, js.paste_into("[name=code]")))
   { "Paste code" }` — replaces the bespoke Stimulus controller:
   - **The op** (the one async, value-reading member of the vocabulary): on the
-    user's gesture it awaits `navigator.clipboard.readText()` (the browser's
-    own permission UX — Chromium prompts, Safari shows its paste pill) and
-    feeds the text through the **normal `input` pipeline** — set `.value`,
+    user's gesture it starts `navigator.clipboard.readText()` fire-and-forget
+    (the browser's own permission UX — Chromium prompts, Safari shows its
+    paste pill) and, when the read resolves, feeds the text through the
+    **normal `input` pipeline** — set `.value`,
     dispatch a bubbling `input` (reducers / `reactive_show` /
     `reactive_on_complete` run exactly as if typed), then focus the field so a
     partial paste continues from the caret. A denied/dismissed read, empty
