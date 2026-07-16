@@ -161,9 +161,11 @@ module Views
             RUBY
             DocsUI::Callout(:note) do
               md <<~MD
-                `broadcast_to(..., js: ops)` **refuses focus ops** (`focus` / `focus_first`
-                raise `ArgumentError`) — broadcasting focus would steal it in every
-                subscriber's tab, so focus stays an actor-reply concern (`reply.js`).
+                `broadcast_to(..., js: ops)` **refuses the actor-only ops** (`focus` /
+                `focus_first` / `submit` / `paste_into` raise `ArgumentError`) —
+                broadcasting focus would steal it in every subscriber's tab, a broadcast
+                submit would force-submit every form, and a broadcast clipboard read
+                would be hostile; those stay actor-reply concerns (`reply.js`).
                 Class and attribute toggles and `dispatch` broadcast fine. Like all
                 client ops, these are **ephemeral**: the next full re-render of the
                 component resets whatever they toggled, so use a signed `action` for

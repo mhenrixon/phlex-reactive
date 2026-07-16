@@ -210,6 +210,33 @@ RSpec.describe Phlex::Reactive::JS do
     end
   end
 
+  # --- Issue #228: paste_into — clipboard-source trigger ---
+
+  describe "paste_into op (#paste_into) — read the clipboard into a bound field" do
+    it "serializes the field selector" do
+      expect(JSON.parse(js.paste_into(".otp-input").to_json))
+        .to eq([["paste_into", { "to" => ".otp-input" }]])
+    end
+
+    it "carries global: true only when asked (root-scoped is the lean default)" do
+      expect(JSON.parse(js.paste_into("#code", global: true).to_json).dig(0, 1))
+        .to include("global" => true)
+      expect(JSON.parse(js.paste_into("#code").to_json).dig(0, 1)).not_to have_key("global")
+    end
+
+    it "requires an explicit field target (no :root default — the target is a field, not the root)" do
+      expect { js.paste_into }.to raise_error(ArgumentError)
+    end
+
+    it "rejects :root LOUDLY (pasting into the root div is always a call-site bug)" do
+      expect { js.paste_into(:root) }.to raise_error(ArgumentError, /field/)
+    end
+
+    it "rejects a target that is not a CSS selector string" do
+      expect { js.paste_into(:code) }.to raise_error(ArgumentError, /:root or a CSS selector/)
+    end
+  end
+
   # --- Issue #96: dispatch a bubbling CustomEvent ---
 
   describe "dispatch (#dispatch) — a bubbling CustomEvent" do

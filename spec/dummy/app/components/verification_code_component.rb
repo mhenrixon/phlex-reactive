@@ -8,6 +8,12 @@
 # submit event fires and on(:verify, event: "submit") intercepts it into ONE
 # signed action POST. The explicit action to the nav-probe page proves
 # interception — a native (un-prevented) submit would navigate away.
+#
+# Issue #228: also the paste_into flagship — the "Paste code" trigger reads
+# the clipboard into the field through the SAME input pipeline, so a mouse
+# paste drives the reducer (and its auto-submit) exactly like typing. It is
+# authored `hidden`: the connect gate reveals it only where the clipboard
+# API exists, so a dead button never shows.
 class VerificationCodeComponent < ApplicationComponent
   include Phlex::Reactive::Streamable
   include Phlex::Reactive::Component
@@ -33,6 +39,8 @@ class VerificationCodeComponent < ApplicationComponent
       input(name: "code", value: @code, inputmode: "numeric",
         autocomplete: "one-time-code", data: { testid: "code" })
       button(type: "submit", data: { testid: "verify" }) { "Verify" }
+      button(hidden: true,
+        **mix(on_client(:click, js.paste_into("[name=code]")), data: { testid: "paste" })) { "Paste code" }
       p(data: { testid: "status" }) { @code.empty? ? "waiting" : "verified:#{@code}" }
     end
   end

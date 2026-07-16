@@ -335,7 +335,9 @@ module Views
               Outputs write **values**; the reserved `$ops` key emits a
               **conditional side effect** — the piece that used to force a bespoke
               controller next to an otherwise-declarative compute. Return an op
-              chain (the `ops` builder mirrors the Ruby `js` verbs) and the
+              chain (the `ops` builder mirrors the Ruby `js` verbs, minus
+              `paste_into` — a reducer runs per keystroke, so the clipboard op
+              stays on the gesture surfaces) and the
               controller runs it through the same frozen op whitelist as
               `on_client`, **after** the field writes, text sinks, and their
               dispatched `input` events settle. The canonical one-time-code field:
@@ -362,7 +364,10 @@ module Views
                 firing, so a validation-error re-render (or browser restore) with
                 an already-complete value never self-submits.
               - `submit`/`focus` stay **actor-only** — usable here and in
-                `on_client`/`reply.js`, refused in broadcasts.
+                `on_client`/`reply.js`, refused in broadcasts. `paste_into`
+                (#228) is actor-only too, but its blessed home is
+                `on_client`/`reply.js`/`reactive_on_complete`, not the
+                reducer builder.
 
               When the condition needs no normalization, skip the reducer entirely:
               `reactive_on_complete if: { code: { length: 6 } }, run: js.dispatch("code:complete")`

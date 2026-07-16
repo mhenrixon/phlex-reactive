@@ -8,6 +8,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`js.paste_into(selector)` — the clipboard-source trigger (#228).** A field
+  whose real `<input>` is visually hidden (an OTP cell UI painted by a
+  `reactive_compute` reducer) has no mouse-reachable paste path: right-click →
+  Paste targets the decorative cells, never the off-screen input. One declared
+  line — `button(hidden: true, **on_client(:click, js.paste_into("[name=code]")))
+  { "Paste code" }` — replaces the bespoke Stimulus controller:
+  - **The op** (the one async, value-reading member of the vocabulary): on the
+    user's gesture it starts `navigator.clipboard.readText()` fire-and-forget
+    (the browser's own permission UX — Chromium prompts, Safari shows its
+    paste pill) and, when the read resolves, feeds the text through the
+    **normal `input` pipeline** — set `.value`,
+    dispatch a bubbling `input` (reducers / `reactive_show` /
+    `reactive_on_complete` run exactly as if typed), then focus the field so a
+    partial paste continues from the caret. A denied/dismissed read, empty
+    text, or a missing API is a **silent no-op**; the op is fire-and-forget,
+    so chained siblings never wait.
+  - **Availability gating**: `on_client` marks a paste trigger with
+    `data-reactive-clipboard`; on connect (and every `turbo:morph-element`)
+    the controller sets `hidden = !available` on owned markers. Author the
+    trigger `hidden` and it is revealed only where the Async Clipboard API
+    exists — a dead button never shows in insecure contexts or webviews.
+  - **Actor-only, default-deny**: `paste_into` joins `focus`/`focus_first`/
+    `submit` in `BROADCAST_REFUSED_OPS` — `broadcast_to(js:)` raises
+    (a broadcast that reads every subscriber's clipboard would be hostile);
+    `reply.js` and gesture paths remain allowed.
+  - Dummy flagship: the `VerificationCodeComponent` OTP field gains the
+    hidden "Paste code" trigger — paste drives the otp reducer's normalize +
+    `$ops` auto-submit end to end, with a real-browser system spec covering
+    reveal-on-connect, dirty-paste auto-commit, partial-paste focus, and the
+    denied-read no-op.
+
 - **Reducer-emitted client ops (`$ops`), a `submit` op, and declarative
   `reactive_on_complete` (#226).** The "normalize on input, commit when
   complete" field (a one-time-code entry being the canonical case) is now

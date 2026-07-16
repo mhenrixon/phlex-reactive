@@ -103,6 +103,11 @@
 // event fires, so an on(:verify, event: "submit") interception (or a native/
 // Turbo form) handles it exactly like a user submit. submit/focus are
 // ACTOR-ONLY: usable here and in on_client/reply.js, refused in broadcasts.
+// paste_into (issue #228) is actor-only too but DELIBERATELY absent from this
+// builder: a reducer runs on every input event, and a clipboard read per
+// keystroke (each changed chain fires) would spam permission prompts. Use it
+// from on_client / reply.js / reactive_on_complete instead; a raw
+// [["paste_into", …]] pair still interprets if you truly need it.
 
 const reducers = new Map()
 
@@ -127,7 +132,8 @@ export function __resetComputeRegistryForTest() {
 
 // --- The reducer-side op-chain builder (issue #226) --------------------------
 //
-// A thin, IMMUTABLE mirror of the Ruby Phlex::Reactive::JS builder: verbs carry
+// A thin, IMMUTABLE mirror of the Ruby Phlex::Reactive::JS builder (minus
+// paste_into — see the actor-only note above): verbs carry
 // the WIRE op names (snake_case) and append [name, args] pairs; every verb
 // returns a NEW instance, so a chain held in a constant can never be mutated by
 // later use. `.ops` exposes the raw [[name, args], ...] list the controller

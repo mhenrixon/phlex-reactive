@@ -119,7 +119,8 @@ module Views
               - `prepend: model` — prepend into container `target:`.
               - `remove: model` — remove the element with id `component.id`.
               - `js: ops` — push **client DOM ops** (class/attr toggles, `dispatch`)
-                to every subscriber. Refuses focus ops (see below).
+                to every subscriber. Refuses the actor-only ops —
+                `focus`/`focus_first`/`submit`/`paste_into` (see below).
 
               `replace:`/`remove:` self-target via the payload's `#id` (it must be a
               `Streamable`); `update:`/`append:`/`prepend:` are container verbs and
@@ -413,7 +414,7 @@ module Views
               ```
             MD
             DocsUI::Callout(:warning) do
-              plain 'Focus ops are refused. '
+              plain 'Actor-only ops are refused. '
               code { 'broadcast_to' }
               plain ' with '
               code { 'js:' }
@@ -423,8 +424,13 @@ module Views
               code { 'focus' }
               plain '/'
               code { 'focus_first' }
-              plain " — broadcasting focus would steal it in every subscriber's tab. Focus is an " \
-                    'actor-reply concern (use '
+              plain '/'
+              code { 'submit' }
+              plain '/'
+              code { 'paste_into' }
+              plain " — broadcasting focus would steal it in every subscriber's tab, a broadcast " \
+                    "submit would force-submit every subscriber's form, and a broadcast clipboard " \
+                    'read would be hostile. These are actor-reply concerns (use '
               code { 'reply.js' }
               plain ').'
             end

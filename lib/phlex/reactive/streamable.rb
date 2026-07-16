@@ -35,10 +35,11 @@ module Phlex
 
       # Actor-only ops: a js broadcast rejects a broadcast that carries one.
       # Focus ops steal focus in every subscriber's tab (issue #96); submit
-      # (issue #226) would force-submit every subscriber's form. Both belong to
+      # (issue #226) would force-submit every subscriber's form; paste_into
+      # (issue #228) would read every subscriber's clipboard. They belong to
       # the actor's own reply (reply.js) or gesture (on_client / a reducer's
       # $ops), never a broadcast. Names mirror Phlex::Reactive::JS's verbs.
-      BROADCAST_REFUSED_OPS = %w[focus focus_first submit].freeze
+      BROADCAST_REFUSED_OPS = %w[focus focus_first submit paste_into].freeze
 
       # The broadcast_to verb kwargs (issue #185) → their Turbo stream action.
       # SELF-TARGETING verbs derive the target from the component's #id (require a
@@ -124,20 +125,43 @@ module Phlex
               "append/prepend/remove), not client-op dispatches"
           end
           resolved_target = resolve_broadcast_target(verb, component, payload, target)
-          # broadcast_js_ops_json is a private class method on the owner Streamable
-          # class (reached via send); the instrumentation + pgbus thread-locals are
-          # owned HERE so the class-level and module-level (plain-component) forms
-          # share ONE path and neither is silently un-instrumented (issue #185).
+          # The instrumentation + pgbus thread-locals are owned HERE so the
+          # class-level and module-level (plain-component) forms share ONE path
+          # and neither is silently un-instrumented (issue #185). The js ops
+          # serializer lives HERE too (issue #228): when it was a private method
+          # on the includer class, the module-level owner (the Streamable module
+          # itself) crashed with NoMethodError instead of refusing — the
+          # actor-only gate must be reachable from BOTH broadcast doors.
           component_name = component ? component.class.name : owner.name
           Phlex::Reactive.instrument(
             "broadcast", { component: component_name, stream_action: BROADCAST_VERBS[verb], streamables: keys.size }
           ) do
             with_pgbus_broadcast_opts(exclude:, visible_to:) do
               html = verb == :js ? nil : render_broadcast_html(component)
-              ops_json = verb == :js ? owner.send(:broadcast_js_ops_json, payload) : nil
+              ops_json = verb == :js ? broadcast_js_ops_json(payload) : nil
               keys.each { dispatch_broadcast(verb, it, resolved_target, html, ops_json, morph, effect) }
             end
           end
+        end
+
+        # Validate + serialize broadcast ops: reject actor-only ops (focus steals
+        # focus in every tab; submit force-submits every subscriber's form;
+        # paste_into reads every subscriber's clipboard) and an empty chain (a
+        # dead broadcast), then return the JSON wire form. Works on a JS chain
+        # (inspect .ops) and a raw array. Lives on the module singleton — the
+        # ONE enforcement point both broadcast doors funnel through.
+        def broadcast_js_ops_json(ops)
+          pairs = ops.is_a?(Phlex::Reactive::JS) ? ops.ops : Array(ops)
+          refused = pairs.map { |name, _| name.to_s } & Phlex::Reactive::Streamable::BROADCAST_REFUSED_OPS
+          unless refused.empty?
+            raise ArgumentError,
+              "broadcast_to(js:) refuses actor-only op(s) #{refused.join(", ")} — broadcasting focus " \
+              "steals it in every subscriber's tab; broadcasting submit force-submits every " \
+              "subscriber's form; broadcasting paste_into reads every subscriber's clipboard. " \
+              "These are actor concerns (reply.js / on_client / $ops)."
+          end
+
+          Phlex::Reactive::Response.js_ops_json(ops)
         end
 
         # Render a built component to HTML for a broadcast, ALWAYS instrumented
@@ -518,23 +542,6 @@ module Phlex
         # were folded into the shared Streamable.broadcast_component — ONE
         # instrumentation + pgbus-threading path for the class-level and module-level
         # broadcast_to, so the transport logic has exactly one spelling.)
-
-        # Validate + serialize broadcast ops: reject actor-only ops (focus steals
-        # focus in every tab; submit force-submits every subscriber's form) and an
-        # empty chain (a dead broadcast), then return the JSON wire form. Works on
-        # a JS chain (inspect .ops) and a raw array.
-        def broadcast_js_ops_json(ops)
-          pairs = ops.is_a?(Phlex::Reactive::JS) ? ops.ops : Array(ops)
-          refused = pairs.map { |name, _| name.to_s } & Phlex::Reactive::Streamable::BROADCAST_REFUSED_OPS
-          unless refused.empty?
-            raise ArgumentError,
-              "broadcast_to(js:) refuses actor-only op(s) #{refused.join(", ")} — broadcasting focus " \
-              "steals it in every subscriber's tab; broadcasting submit force-submits every " \
-              "subscriber's form. These are actor concerns (reply.js / on_client / $ops)."
-          end
-
-          Phlex::Reactive::Response.js_ops_json(ops)
-        end
 
         def build(model, options)
           new(**(model ? component_args(model, options) : options))
