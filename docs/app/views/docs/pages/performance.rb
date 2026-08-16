@@ -901,7 +901,7 @@ module Views
             DocsUI::Prose() do
               p do
                 plain 'See '
-                a(href: 'https://github.com/mhenrixon/phlex-reactive/blob/main/.claude/rules/performance.md') do
+                a(href: 'https://github.com/zoolutions/phlex-reactive/blob/main/.claude/rules/performance.md') do
                   plain '.claude/rules/performance.md'
                 end
                 plain ': any change to a hot path ships with a bench, the README/CHANGELOG/docs are updated, '

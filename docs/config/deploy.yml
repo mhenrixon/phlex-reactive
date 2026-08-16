@@ -2,10 +2,10 @@
 # Routing is via kamal-proxy behind a Cloudflare Tunnel (no Traefik; TLS is
 # terminated at the Cloudflare edge), per oss-infrastructure/docs/adding-a-new-gem.md.
 service: phlex-reactive
-# Match the repo (ghcr.io/mhenrixon/phlex-reactive) so GitHub auto-links the
+# Match the repo (ghcr.io/zoolutions/phlex-reactive) so GitHub auto-links the
 # package to this repo and the Actions GITHUB_TOKEN can push to it. A package
 # named differently from the repo stays user-owned + unlinked → push 403s in CI.
-image: mhenrixon/phlex-reactive
+image: zoolutions/phlex-reactive
 
 servers:
   web:

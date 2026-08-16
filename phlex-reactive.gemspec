@@ -20,13 +20,13 @@ Gem::Specification.new do |spec|
     reliable, transactional, reconnect-safe live updates with no Action Cable
     and no Redis.
   DESC
-  spec.homepage = "https://github.com/mhenrixon/phlex-reactive"
+  spec.homepage = "https://github.com/zoolutions/phlex-reactive"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 3.4.0"
 
   spec.metadata["homepage_uri"] = spec.homepage
-  spec.metadata["source_code_uri"] = "https://github.com/mhenrixon/phlex-reactive/tree/main"
-  spec.metadata["changelog_uri"] = "https://github.com/mhenrixon/phlex-reactive/blob/main/CHANGELOG.md"
+  spec.metadata["source_code_uri"] = "https://github.com/zoolutions/phlex-reactive/tree/main"
+  spec.metadata["changelog_uri"] = "https://github.com/zoolutions/phlex-reactive/blob/main/CHANGELOG.md"
   spec.metadata["rubygems_mfa_required"] = "true"
 
   # List the gem's files. Prefer `git ls-files` (respects .gitignore), but fall

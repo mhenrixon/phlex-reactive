@@ -57,7 +57,7 @@ module Views
             a(href: doc_path('installation'),
               class: 'btn btn-primary', data: { testid: 'cta-get-started' }) { 'Get started' }
             a(href: doc_path('architecture'), class: 'btn btn-ghost') { 'How it works' }
-            a(href: 'https://github.com/mhenrixon/phlex-reactive',
+            a(href: 'https://github.com/zoolutions/phlex-reactive',
               class: 'btn btn-ghost', target: '_blank', rel: 'noopener') { 'GitHub ↗' }
           end
           render Components::Diagrams::MentalModel.new

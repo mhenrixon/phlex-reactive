@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# docs-kit synced: v1.0.8
+
 # Per-site configuration for the shared docs chrome (docs-kit). Everything that
 # makes this site look like "phlex-reactive" rather than any other docs site
 # lives here; the Shell/Sidebar/ThemeSwitcher themselves are shared with the
@@ -37,7 +39,7 @@ Rails.application.config.to_prepare do
     # Topbar: the brand clicks home; a GitHub link with the shipped brand mark.
     c.brand_href    = '/'
     c.topbar_links  = [
-      { href: 'https://github.com/mhenrixon/phlex-reactive', label: 'GitHub', icon: :github }
+      { href: 'https://github.com/zoolutions/phlex-reactive', label: 'GitHub', icon: :github }
     ]
 
     # SEO / social sharing (docs-kit 1.0.2, DocsUI::MetaTags). Every page emits a
