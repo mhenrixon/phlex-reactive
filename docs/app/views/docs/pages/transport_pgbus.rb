@@ -28,7 +28,7 @@ module Views
             DocsUI::Prose() do
               p do
                 plain 'With '
-                a(href: 'https://github.com/mhenrixon/pgbus') { 'pgbus' }
+                a(href: 'https://github.com/zoolutions/pgbus') { 'pgbus' }
                 plain ' installed, '
                 code { 'broadcast_to' }
                 plain ' AND '
