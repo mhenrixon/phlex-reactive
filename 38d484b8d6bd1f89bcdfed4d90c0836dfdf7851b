@@ -1,0 +1,19 @@
+Gemfile
+  s_8bb679c8581ac2::t_9653c172d5e523 25-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "38d484b8d6bd1f89bcdfed4d90c0836dfdf7851b",
+  "prompts": {},
+  "sessions": {
+    "s_8bb679c8581ac2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0c8b5bf7-4f3c-4f28-9823-4be72b543953",
+        "model": "claude-fable-5"
+      },
+      "human_author": "mhenrixon <mikael@mhenrixon.com>"
+    }
+  }
+}
