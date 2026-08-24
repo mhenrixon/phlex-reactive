@@ -67,9 +67,8 @@ RSpec.describe Phlex::Reactive::TestHelpers::System do
     def fake_page(*values)
       queue = values.dup
       Object.new.tap do |o|
-        # rubocop:disable Style/ItBlockParameter -- a stub method body, not an it-example
+        # rubocop:disable-next Style/ItBlockParameter -- a stub method body, not an it-example
         o.define_singleton_method(:evaluate_script) { |*| queue.length > 1 ? queue.shift : queue.first }
-        # rubocop:enable Style/ItBlockParameter
       end
     end
 

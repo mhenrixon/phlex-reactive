@@ -74,14 +74,13 @@ RSpec.describe "broadcast_to (issue #185)", type: :request do
 
   describe "the each: multi-key fan-out" do
     it "broadcasts the verb to EVERY key" do
-      # rubocop:disable Style/ItBlockParameter -- broadcast_key is used in a nested block
+      # rubocop:disable-next Style/ItBlockParameter -- broadcast_key is used in a nested block
       keys.each do |broadcast_key|
         html = capture_turbo_stream_broadcasts(broadcast_key) do
           CounterComponent.broadcast_to(each: keys, replace: nil)
         end.map(&:to_s).join # rubocop:disable Style/MapJoin
         expect(html).to include('action="replace"')
       end
-      # rubocop:enable Style/ItBlockParameter
     end
 
     it "renders the component EXACTLY ONCE for a K-key fan-out" do

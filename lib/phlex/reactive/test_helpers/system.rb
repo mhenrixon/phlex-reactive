@@ -122,7 +122,7 @@ module Phlex
 
           # does_not_match? is RSpec's REQUIRED negated-matcher protocol method — its
           # name is fixed by RSpec, not a predicate we get to rename.
-          # rubocop:disable Naming/PredicatePrefix
+          # rubocop:disable-next Naming/PredicatePrefix
           def does_not_match?(page)
             @page = page
             # The negative is satisfied the moment the property is NOT the expected
@@ -130,7 +130,6 @@ module Phlex
             # as that holds, false if it stayed equal for the whole budget.
             poll_until { current_value != @expected }
           end
-          # rubocop:enable Naming/PredicatePrefix
 
           def failure_message
             "expected ##{@id} to have value #{@expected.inspect} (its .value property), " \

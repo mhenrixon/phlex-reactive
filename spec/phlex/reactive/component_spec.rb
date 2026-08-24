@@ -1947,7 +1947,7 @@ RSpec.describe Phlex::Reactive::Component do
       end
 
       it "rejects a non-id selector LOUDLY at declare time (class, attribute, *, compound)" do
-        # rubocop:disable Style/ItBlockParameter -- `bad` is read inside the nested Class.new block, where `it` would rebind
+        # rubocop:disable-next Style/ItBlockParameter -- `bad` is read inside the nested Class.new block, where `it` would rebind
         [".totals", "[data-x]", "*", "div#x", "#x .y", "#x,#y"].each do |bad|
           expect do
             Class.new do
@@ -1958,7 +1958,6 @@ RSpec.describe Phlex::Reactive::Component do
             end
           end.to raise_error(ArgumentError, /id selector/i), "expected #{bad.inspect} to be refused"
         end
-        # rubocop:enable Style/ItBlockParameter
       end
 
       it "emits the mirror map as a JSON object of name → [ids] on the root attrs" do
@@ -3042,13 +3041,12 @@ RSpec.describe Phlex::Reactive::Component do
     end
 
     it "raises for a non-id selector (declare-time default-deny)" do
-      # rubocop:disable Style/ItBlockParameter
+      # rubocop:disable-next Style/ItBlockParameter
       [".panel", "#a b", "div#a", "*"].each do |selector|
         expect do
           instance.send(:reactive_show_targets, :mode, selector => "x")
         end.to raise_error(ArgumentError, /must be a single ID selector/)
       end
-      # rubocop:enable Style/ItBlockParameter
     end
 
     it "raises for an empty target map" do
