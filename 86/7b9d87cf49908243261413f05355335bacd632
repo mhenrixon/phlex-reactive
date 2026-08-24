@@ -1,0 +1,29 @@
+spec/phlex/reactive/kit_constant_shadowing_spec.rb
+  s_e41b7196818cfe::t_385e2a87dcf928 1-42
+CHANGELOG.md
+  s_e41b7196818cfe::t_82dea59d613be6 318-333
+lib/phlex/reactive/component.rb
+  s_e41b7196818cfe::t_38e0ab26c0f34e 87-94
+spec/phlex/reactive/registry_readers_spec.rb
+  s_e41b7196818cfe::t_35a24923d188b0 32
+lib/phlex/reactive/component/dsl.rb
+  s_e41b7196818cfe::t_396c427b8b8e70 270
+spec/phlex/reactive/authorization_spec.rb
+  s_e41b7196818cfe::t_d577725dad65ec 202
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "867b9d87cf49908243261413f05355335bacd632",
+  "prompts": {},
+  "sessions": {
+    "s_e41b7196818cfe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d2d35c0-632c-4de5-ac67-11d8f8d3ab6e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "mhenrixon <mikael@mhenrixon.com>"
+    }
+  }
+}
