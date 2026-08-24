@@ -1,0 +1,33 @@
+docs/app/views/docs/pages/broadcasting.rb
+  s_37144296b0bef1::t_7a2d01598b7443 25,271-296
+spec/dummy/app/components/settings_link_component.rb
+  s_37144296b0bef1::t_7a2d01598b7443 1-41
+.rubocop.yml
+  s_37144296b0bef1::t_7a2d01598b7443 236-238
+lib/phlex/reactive.rb
+  s_37144296b0bef1::t_7a2d01598b7443 516-531,987-1018
+spec/requests/reply_url_options_spec.rb
+  s_37144296b0bef1::t_7a2d01598b7443 1-83
+spec/phlex/reactive/url_options_spec.rb
+  s_37144296b0bef1::t_7a2d01598b7443 1-73
+app/controllers/phlex/reactive/actions_controller.rb
+  s_37144296b0bef1::t_7a2d01598b7443 42-52,73-80
+lib/phlex/reactive/streamable.rb
+  s_37144296b0bef1::t_7a2d01598b7443 140-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "82d8bc1c6e10a26d8d3ec93359263043ca4b2cd1",
+  "prompts": {},
+  "sessions": {
+    "s_37144296b0bef1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "360ae4ce-0bc2-4d8c-816e-3693840a7d15",
+        "model": "claude-fable-5"
+      },
+      "human_author": "mhenrixon <mikael@mhenrixon.com>"
+    }
+  }
+}
