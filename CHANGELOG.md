@@ -8,6 +8,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Dev-mode warning when a client op resolves zero targets (#237).** A client
+  op that matches nothing is indistinguishable from a working no-op, and the
+  three documented scoping traps — the nested-root ownership filter, a selector
+  that matches the component's own root (root-scoped resolution never includes
+  the root itself), and the op stream's default target scope — all present
+  exactly that way. Now `verbose_errors` (on by default in dev/test) reaches
+  the client as `data-reactive-verbose="true"` on reactive roots and on
+  server-emitted `reactive:js` streams, and under that gate (or full
+  `debug` mode) the interpreter `console.warn`s once per unique
+  (op, selector, scope) naming the op, the selector, and the scoping root —
+  plus the documented escape (`to: :root` / `global: true`) as a hint when the
+  element exists in the DOM but sits outside the op's scope. Covers `on_client`
+  ops, reducer `$ops`, `reply…js(...)` / `broadcast_js_to` streams (including a
+  stream whose `target` root id has left the DOM), and busy/optimistic hint
+  targets. Production (flag off) renders no attribute and stays byte-identical
+  and silent; resolution behavior itself is unchanged everywhere.
+
 - **`js.paste_into(selector)` — the clipboard-source trigger (#228).** A field
   whose real `<input>` is visually hidden (an OTP cell UI painted by a
   `reactive_compute` reducer) has no mouse-reachable paste path: right-click →

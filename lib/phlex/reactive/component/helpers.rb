@@ -85,6 +85,10 @@ module Phlex
           # JS), so the client's attr check would never fire (the on()/warn_unsaved
           # precedent). Off by default → no key, no string, zero client surface.
           data[:reactive_debug] = "true" if Phlex::Reactive.debug
+          # Issue #237: the verbose gate for the client's zero-target op warning.
+          # ON by default in dev/test (Rails.env.local?), so the papercut warning
+          # works out of the box; production renders no attr and stays silent.
+          data[:reactive_verbose] = "true" if Phlex::Reactive.verbose_errors
           # Field-name scope (issue #180): the client prefixes bare binding field
           # names with `scope[...]`. Omitted entirely when undeclared — byte-stable
           # wire for unscoped components.

@@ -825,6 +825,14 @@ field collection); `:root` targets the root element itself; `global: true` on
 an op escapes to the whole document. An op name the client doesn't recognize
 logs a warning and is skipped — the rest of the chain still applies.
 
+In development and test (`verbose_errors`), an op whose selector resolves to
+**zero elements** also warns once per unique (op, selector, scope) — with a
+targeted hint when the element exists but sits outside the op's scope: "use
+`to: :root`" when the selector matches the component's own root (root-scoped
+resolution never includes the root itself), or "use `global: true`" when it
+matches only inside a nested reactive root or elsewhere in the document.
+Production stays silent — a zero-match no-op is legitimate there.
+
 **Attributes, focus, dispatch, and transitions.** Beyond visibility and classes,
 the same chain covers the rest of the client-only vocabulary:
 
@@ -2602,6 +2610,19 @@ A component that declares no actions of its own (a cross-component dispatch
 helper — a child row rendering a trigger for its container's action) is skipped;
 `on_client` triggers are never checked (they aren't declared actions). The
 server's default-deny stays the security boundary — this is a dev-time courtesy.
+
+The flag reaches the **client** too: reactive roots (and server-emitted
+`reactive:js` streams) carry `data-reactive-verbose="true"` when it is on, and
+the client op interpreter uses that gate to `console.warn` when a client op —
+`on_client`, a reducer's `$ops`, `reply…js(...)`, `broadcast_js_to`, or a
+busy/optimistic hint — resolves **zero targets**. The warning names the op, the
+selector, and the scoping root, dedupes per unique case per page, and hints the
+documented escape (`to: :root` / `global: true`) when the element exists but
+was filtered out by root scoping or the nested-root ownership rule — the trap
+where the element is right there in the DOM, just outside the op's scope. A
+`reactive:js` stream whose `target` root id has left the DOM warns the same
+way instead of silently dropping its ops. Production (flag off) renders no
+attribute and stays byte-identical and silent.
 
 See [docs/security.md](https://phlex-reactive.zoolutions.llc/docs/security) for the threat model and a checklist.
 

@@ -77,7 +77,12 @@ module Views
               Ops are built with the server-side `js` helper and serialized into a
               `data-reactive-ops` attribute the client interprets. An op name not on
               the whitelist is warn-and-skipped (client-side default-deny) — a stale
-              or newer ops attribute can never break the page. `focus`/`focus_first`/
+              or newer ops attribute can never break the page. In development and
+              test (`verbose_errors`, #237) an op whose selector resolves to **zero
+              elements** console-warns once per unique case, with a hint —
+              `to: :root` / `global: true` — when the element exists but sits
+              outside the op's scope (the root itself, a nested reactive root, or
+              elsewhere in the document). Production stays silent. `focus`/`focus_first`/
               `submit`/`paste_into` are allowed here (an actor's own gesture) but
               **rejected** from a broadcast — stealing focus in every subscriber's
               tab, force-submitting every subscriber's form, or reading every
