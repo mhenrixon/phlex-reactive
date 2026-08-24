@@ -22,6 +22,7 @@ module Views
           module_level_broadcast
           multi_key_fanout
           from_action
+          url_options_contract
           actor_echo
           visible_to
           cross_tab_morph
@@ -263,6 +264,36 @@ module Views
                 )
               end
               ```
+            MD
+          end
+        end
+
+        def url_options_contract
+          DocsUI::Section('URLs in broadcast-rendered components: keep them host-relative') do
+            md <<~MD
+              A broadcast renders **off-request** — there is no acting request, and
+              the subscribers can be on *different hosts* (multi-tenant apps,
+              `lvh.me` subdomains). So a broadcast-rendered component that emits an
+              **absolute** URL gets the process-default `url_options`, which is the
+              wrong host for at least some subscribers. That makes host-relative
+              URLs the contract:
+
+              ```ruby
+              # In a component that gets BROADCAST — host-relative, correct for every subscriber:
+              img(src: rails_storage_proxy_path(@record.image))
+
+              # Absolute (image_tag on an attachment resolves via polymorphic_url) —
+              # renders the PROCESS-DEFAULT host in a broadcast. Avoid in broadcast paths:
+              image_tag(@record.image)
+              ```
+
+              The actor's own **reply** is different: it renders *during* the request,
+              so absolute URL helpers there carry the requesting protocol/host/port
+              automatically — `image_tag(attachment)` is simply correct in a
+              `reply.replace` / `reply.streams(...)` render. The same applies to a
+              deferred segment fetched over the pull lane. But the *push* lane
+              (`reply.defer` delivered via a job + SSE) and every `broadcast_to`
+              render off-request: keep those host-relative.
             MD
           end
         end

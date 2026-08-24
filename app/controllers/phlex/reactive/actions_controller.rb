@@ -39,9 +39,17 @@ module Phlex
         # #165 security), so the defer endpoint accepts them ONLY back from this
         # same actor. The defer token is built in response_streams (inside this
         # block via the Defer builder), so the binding must be established here.
-        Phlex::Reactive.with_defer_binding(Phlex::Reactive.defer_binding_for(request)) do
-          Phlex::Reactive.instrument("action", event) do
-            create_action(event)
+        # Thread the ACTOR's url_options (protocol/host/port) into the reply
+        # render (issue #232): the reply renders through the memoized
+        # off-request view context, whose process-default url_options emit the
+        # wrong host for absolute URL helpers on a multi-host app. Broadcasts
+        # fired inside the action are exempted at their render (see
+        # Streamable.broadcast_component) — subscribers can be on other hosts.
+        Phlex::Reactive.with_url_options(Phlex::Reactive.url_options_for(request)) do
+          Phlex::Reactive.with_defer_binding(Phlex::Reactive.defer_binding_for(request)) do
+            Phlex::Reactive.instrument("action", event) do
+              create_action(event)
+            end
           end
         end
       end
@@ -62,9 +70,14 @@ module Phlex
         # so a leaked token can't be exchanged here for this actor's render (and
         # its embedded fresh identity token). Unbound requests (no session) are
         # unchanged.
-        Phlex::Reactive.with_defer_binding(Phlex::Reactive.defer_binding_for(request)) do
-          Phlex::Reactive.instrument("defer", event) do
-            deferred_action(event)
+        # The defer PULL is an actor request too (issue #232) — its render gets
+        # the same request-derived url_options as the action reply. The PUSH
+        # lane (job → SSE) has no request and stays on process defaults.
+        Phlex::Reactive.with_url_options(Phlex::Reactive.url_options_for(request)) do
+          Phlex::Reactive.with_defer_binding(Phlex::Reactive.defer_binding_for(request)) do
+            Phlex::Reactive.instrument("defer", event) do
+              deferred_action(event)
+            end
           end
         end
       end
