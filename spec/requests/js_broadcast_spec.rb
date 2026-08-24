@@ -27,6 +27,30 @@ RSpec.describe "broadcast_js_to (issue #97)", type: :request do
     expect(html).to include("has-unread")
   end
 
+  # Issue #237: the broadcast op stream carries the verbose gate too, so a
+  # subscriber's client can warn on zero-target resolution. verbose_errors
+  # defaults ON here (dummy app, Rails.env.local?).
+  it "stamps data-reactive-verbose on the broadcast op stream under verbose_errors" do
+    broadcasts = capture_turbo_stream_broadcasts("alerts") do
+      TodoItemComponent.broadcast_to("alerts", js: ops)
+    end
+
+    expect(broadcasts.map(&:to_s).join).to include('data-reactive-verbose="true"') # rubocop:disable Style/MapJoin
+  end
+
+  it "omits the verbose stamp when verbose_errors is off (production wire unchanged)" do
+    Phlex::Reactive.verbose_errors = false
+    broadcasts = capture_turbo_stream_broadcasts("alerts") do
+      TodoItemComponent.broadcast_to("alerts", js: ops)
+    end
+
+    expect(broadcasts.map(&:to_s).join).not_to include("data-reactive-verbose") # rubocop:disable Style/MapJoin
+  ensure
+    if Phlex::Reactive.instance_variable_defined?(:@verbose_errors)
+      Phlex::Reactive.remove_instance_variable(:@verbose_errors)
+    end
+  end
+
   it "accepts a target for root scoping" do
     broadcasts = capture_turbo_stream_broadcasts("alerts") do
       TodoItemComponent.broadcast_to("alerts", js: ops, target: "sidebar")

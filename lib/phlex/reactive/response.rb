@@ -314,7 +314,11 @@ data-reactive-flash-level="#{level_attr}"#{dismiss_attr(dismiss_after)}>#{body}<
         def js_stream(ops, target: nil)
           json = js_ops_json(ops)
           target_attr = target ? %( target="#{ERB::Util.html_escape(target)}") : ""
-          %(<turbo-stream action="reactive:js"#{target_attr} \
+          # Issue #237: carry the verbose gate on the stream element itself, so
+          # the client can warn on zero-target resolution even for a
+          # document-scoped op with no controller root to read the flag from.
+          verbose_attr = Phlex::Reactive.verbose_errors ? %( data-reactive-verbose="true") : ""
+          %(<turbo-stream action="reactive:js"#{target_attr}#{verbose_attr} \
 data-reactive-ops="#{ERB::Util.html_escape(json)}"></turbo-stream>).html_safe
         end
 

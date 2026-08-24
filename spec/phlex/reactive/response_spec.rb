@@ -411,6 +411,31 @@ RSpec.describe Phlex::Reactive::Response do
       expect(response.streams.size).to eq(3)
       expect(response.streams.last).to include('action="reactive:js"')
     end
+
+    # Issue #237: the op stream carries the verbose gate so the client can warn
+    # on zero-target resolution even for document-scoped ops (no controller root
+    # to read the flag from). Restore the lazy default by removing the ivar.
+    describe "the verbose stamp (issue #237)" do
+      around do
+        it.run
+      ensure
+        if Phlex::Reactive.instance_variable_defined?(:@verbose_errors)
+          Phlex::Reactive.remove_instance_variable(:@verbose_errors)
+        end
+      end
+
+      it "stamps data-reactive-verbose on the op stream when verbose_errors is on" do
+        Phlex::Reactive.verbose_errors = true
+        stream = counter.reply.with.js(ops).streams.first
+        expect(stream).to include('data-reactive-verbose="true"')
+      end
+
+      it "omits the stamp when verbose_errors is off (production wire unchanged)" do
+        Phlex::Reactive.verbose_errors = false
+        stream = counter.reply.with.js(ops).streams.first
+        expect(stream).not_to include("data-reactive-verbose")
+      end
+    end
   end
 
   # Issue #100: dismiss_after — a flash that self-removes after N ms. The wrapper

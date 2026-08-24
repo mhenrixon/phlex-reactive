@@ -732,6 +732,38 @@ RSpec.describe Phlex::Reactive::Component do
     end
   end
 
+  # Issue #237: verbose_errors reaches the CLIENT as data-reactive-verbose so the
+  # runtime can warn (dev/test only) when a client op resolves zero targets. Same
+  # string-"true" convention as the debug stamp above, same ivar-removal restore.
+  describe "#reactive_attrs verbose flag (issue #237)" do
+    subject(:instance) { state_klass.new }
+
+    around do
+      it.run
+    ensure
+      if Phlex::Reactive.instance_variable_defined?(:@verbose_errors)
+        Phlex::Reactive.remove_instance_variable(:@verbose_errors)
+      end
+    end
+
+    it "omits data-reactive-verbose when verbose_errors is off" do
+      Phlex::Reactive.verbose_errors = false
+      expect(instance.send(:reactive_attrs)[:data]).not_to have_key(:reactive_verbose)
+    end
+
+    it "emits data-reactive-verbose=\"true\" (STRING) when verbose_errors is on" do
+      Phlex::Reactive.verbose_errors = true
+      expect(instance.send(:reactive_attrs)[:data][:reactive_verbose]).to eq("true")
+    end
+
+    it "stamps independently of debug (verbose on, debug off)" do
+      Phlex::Reactive.verbose_errors = true
+      attrs = instance.send(:reactive_attrs)
+      expect(attrs[:data][:reactive_verbose]).to eq("true")
+      expect(attrs[:data]).not_to have_key(:reactive_debug)
+    end
+  end
+
   describe "#on trigger attributes (issue #17 debounce)" do
     subject(:instance) { state_klass.new }
 

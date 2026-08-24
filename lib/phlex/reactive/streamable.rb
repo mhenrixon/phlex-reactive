@@ -243,8 +243,12 @@ module Phlex
           when :prepend then ::Turbo::StreamsChannel.broadcast_prepend_to(*parts, target:, html:, **wire)
           when :remove then ::Turbo::StreamsChannel.broadcast_remove_to(*parts, target:, **wire)
           when :js
+            # Issue #237: the broadcast op stream carries the verbose gate too
+            # (same server env for every subscriber of this payload).
+            data = { reactive_ops: ops_json }
+            data[:reactive_verbose] = "true" if Phlex::Reactive.verbose_errors
             ::Turbo::StreamsChannel.broadcast_action_to(
-              *parts, action: "reactive:js", target:, attributes: { data: { reactive_ops: ops_json } }, render: false
+              *parts, action: "reactive:js", target:, attributes: { data: }, render: false
             )
           end
         end

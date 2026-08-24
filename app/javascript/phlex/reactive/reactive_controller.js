@@ -103,10 +103,22 @@ export function registerReactiveJs() {
     const list = parseOps(this.getAttribute("data-reactive-ops"))
     if (!list.length) return
     const targetId = this.getAttribute("target")
+    // Issue #237: the server stamps the verbose gate on the stream element
+    // itself (verbose_errors), so document-scoped ops are diagnosable too.
+    const verbose = this.getAttribute("data-reactive-verbose") === "true"
     // With a target: scope to that element (missing → no-op). Without: document.
     const root = targetId ? document.getElementById(targetId) : null
-    if (targetId && !root) return
-    applyOps(list, (args) => streamOpTargets(args, root))
+    if (targetId && !root) {
+      if (verbose && !zeroTargetAlreadyWarned(`missing-root|#${targetId}`)) {
+        console.warn(`[phlex-reactive] reactive:js stream target root #${targetId} is not in the DOM — its ops were dropped`)
+      }
+      return
+    }
+    applyOps(
+      list,
+      (args) => streamOpTargets(args, root),
+      verbose ? (name, args) => diagnoseStreamZeroTargets(name, args, root) : undefined,
+    )
   }
 }
 
@@ -1491,7 +1503,7 @@ function computeOpsList(raw) {
 // chain still applies — client-side default-deny, one bad op never takes down
 // its siblings. Object.hasOwn (not a bare read) so inherited Object members
 // ("constructor") can't masquerade as ops.
-function applyOps(list, resolveTargets) {
+function applyOps(list, resolveTargets, onZeroTargets) {
   for (const entry of list) {
     if (!Array.isArray(entry)) continue
     const [name, args = {}] = entry
@@ -1499,8 +1511,68 @@ function applyOps(list, resolveTargets) {
       console.warn(`[phlex-reactive] unknown client op ${JSON.stringify(name)} — skipped`)
       continue
     }
-    for (const el of resolveTargets(args)) CLIENT_OPS[name](el, args)
+    const targets = resolveTargets(args)
+    if (targets.length === 0 && onZeroTargets) onZeroTargets(name, args)
+    for (const el of targets) CLIENT_OPS[name](el, args)
   }
+}
+
+// --- zero-target diagnostics (issue #237) -----------------------------------
+// An op resolving ZERO targets is indistinguishable from a working no-op, and
+// the documented scoping traps (nested-root ownership filter, root-self
+// selector, stream default scope) all present exactly that way. Under the
+// verbose gate (data-reactive-verbose, stamped when Phlex::Reactive
+// .verbose_errors is on — dev/test by default — or the debug attr) warn ONCE
+// per unique (label, selector, scope) with a targeted hint when the element
+// EXISTS but sits outside the op's scope. Everything below runs only after a
+// zero-match with the gate on; production (no attr) pays one boolean per empty
+// resolution and never probes the DOM.
+//
+// Dedupe is keyed per document (page lifetime): a WeakMap entry per document
+// means a fresh page — or a fresh unit-harness stub — starts clean, and the
+// per-keystroke reducer ($ops) path can never flood the console.
+const zeroTargetWarnSets = new WeakMap()
+
+function zeroTargetAlreadyWarned(key) {
+  const doc = globalThis.document
+  if (!doc) return true
+  let seen = zeroTargetWarnSets.get(doc)
+  if (!seen) {
+    seen = new Set()
+    zeroTargetWarnSets.set(doc, seen)
+  }
+  if (seen.has(key)) return true
+  seen.add(key)
+  return false
+}
+
+// Guarded probes: unit harnesses stub partial documents/roots, and an exotic
+// selector could throw — a diagnostic must never break the op pipeline.
+function countMatches(node, selector) {
+  try {
+    return node?.querySelectorAll?.(selector)?.length ?? 0
+  } catch {
+    return 0
+  }
+}
+
+function emitZeroTargetWarn(label, to, scope, hint) {
+  if (zeroTargetAlreadyWarned(`${label}|${to}|${scope}`)) return
+  console.warn(`[phlex-reactive] ${label} matched zero targets for selector "${to}" (${scope})${hint}`)
+}
+
+// The stream-path diagnoser (reactive:js). No ownership filter exists here, so
+// the only trap is the target-root scope: the selector matches document-wide
+// but the op was scoped to the stream's target root.
+function diagnoseStreamZeroTargets(name, args, root) {
+  const to = args.to
+  if (typeof to !== "string" || to === "" || to === "@root") return
+  let hint = ""
+  if (root && !args.global) {
+    const n = countMatches(globalThis.document, to)
+    if (n > 0) hint = ` — it matches ${n} element(s) outside the stream's target root; use global: true`
+  }
+  emitZeroTargetWarn(`client op "${name}"`, to, root ? `scoped to #${root.id || "?"}` : "document-scoped", hint)
 }
 
 // Resolve a reactive:js op's targets against its `target` root (issue #97).
@@ -2204,7 +2276,11 @@ export default class extends Controller {
     const fire = signature !== null && signature !== this.#computeOpsSignature && eventDriven
     this.#computeOpsSignature = signature
     if (!fire) return
-    applyOps(list, (args) => this.#opTargets(args.to == null ? { ...args, to: "@root" } : args))
+    applyOps(
+      list,
+      (args) => this.#opTargets(args.to == null ? { ...args, to: "@root" } : args),
+      (name, args) => this.#diagnoseZeroTargets(`client op "${name}"`, args),
+    )
   }
 
   // Client-side list navigation (combobox keyboard nav, issue #72). Wired by
@@ -3691,7 +3767,13 @@ export default class extends Controller {
       if (matches === null) return
       const fire = matches && !this.#onCompleteStates[i] && Boolean(event)
       this.#onCompleteStates[i] = matches
-      if (fire) applyOps(binding.ops, (args) => this.#opTargets(args.to == null ? { ...args, to: "@root" } : args))
+      if (fire) {
+        applyOps(
+          binding.ops,
+          (args) => this.#opTargets(args.to == null ? { ...args, to: "@root" } : args),
+          (name, args) => this.#diagnoseZeroTargets(`client op "${name}"`, args),
+        )
+      }
     })
   }
 
@@ -4329,7 +4411,41 @@ export default class extends Controller {
   // logic lives in the shared applyOps so runOps and the reactive:js stream
   // action interpret the SAME vocabulary the SAME way (client-side default-deny).
   #applyOps(list) {
-    applyOps(list, (args) => this.#opTargets(args))
+    applyOps(
+      list,
+      (args) => this.#opTargets(args),
+      (name, args) => this.#diagnoseZeroTargets(`client op "${name}"`, args),
+    )
+  }
+
+  // Issue #237: the verbose gate for zero-target diagnostics — the
+  // verbose_errors stamp (ON by default in dev/test) or full debug mode (a
+  // debug user must never see less). Read live off the root like #debugEnabled.
+  #verboseEnabled() {
+    return this.element?.getAttribute?.("data-reactive-verbose") === "true" || this.#debugEnabled()
+  }
+
+  // Issue #237: called when a selector-form target resolved to ZERO elements on
+  // this root. Gated + deduped (module helpers); builds the trap-specific hint:
+  // the root-self selector (root-scoped resolution never includes the root),
+  // the nested-reactive-root ownership filter, or plain out-of-scope. All DOM
+  // probes run only here — after a zero-match with the gate on.
+  #diagnoseZeroTargets(label, args) {
+    if (!this.#verboseEnabled()) return
+    const to = args.to
+    if (typeof to !== "string" || to === "" || to === "@root") return
+    let hint = ""
+    if (!args.global) {
+      if (this.element?.matches?.(to)) {
+        hint = " — the selector matches this component's own root, which root-scoped resolution never includes; use to: :root"
+      } else if (countMatches(this.element, to) > 0) {
+        hint = " — it matches only inside a nested reactive root (excluded by ownership scoping); use global: true"
+      } else {
+        const n = countMatches(globalThis.document, to)
+        if (n > 0) hint = ` — it matches ${n} element(s) outside this scope; use global: true`
+      }
+    }
+    emitZeroTargetWarn(label, to, `scoped to #${this.element?.id || "?"}`, hint)
   }
 
   // Resolve an op's targets: "@root" is this element; a selector resolves
@@ -4482,7 +4598,10 @@ export default class extends Controller {
   // this root's owned matches) or, with no `to:`, the trigger itself.
   #hintTargets(hint, trigger) {
     if (hint.to == null) return trigger ? [trigger] : []
-    return this.#opTargets({ to: hint.to })
+    const targets = this.#opTargets({ to: hint.to })
+    // Issue #237: a hint aimed at nothing is the same silent trap as an op.
+    if (targets.length === 0) this.#diagnoseZeroTargets("busy/optimistic hint", { to: hint.to })
+    return targets
   }
 
   // Swap the trigger's disabled/innerHTML for a pending hint, snapshotting the
