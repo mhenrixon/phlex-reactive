@@ -84,7 +84,14 @@ module Phlex
       # is the compiled Phlex::Reactive::ParamSchema (issue #109) the endpoint
       # coerces through — built ONCE at declaration so a typo'd type symbol
       # raises Phlex::Reactive::UnknownParamType at class load, not at click time.
-      Action = Data.define(:name, :params, :schema)
+      #
+      # Named ActionDefinition (issue #233), NOT Action: this module sits in
+      # every reactive component's ancestry, so a bare `Action` constant
+      # shadows a host app's Phlex kit component of the same name under lazy
+      # autoloading (Kit's LazyLoader resolves through the calling class's
+      # const_get). Keep every constant here suffixed / implausible as a kit
+      # component name — and never alias the old name back.
+      ActionDefinition = Data.define(:name, :params, :schema)
 
       # A declared client-side computation (data binding). `inputs`/`outputs` are
       # the action-param names of the fields the reducer reads/writes; `reducer`
