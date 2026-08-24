@@ -315,6 +315,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Multipart path corrupted/dropped fields with Rails-bracketed names (#231).**
+  `#buildFormData` wrapped every collected field/file name verbatim as
+  `params[<name>]`, so `blog_post[summary]` went out as the Rack-unparseable
+  `params[blog_post[summary]]` — the scalar arrived as `{"]" => value}` (and a
+  writer stringified that hash into the record, with a 200), and a `:file` under
+  a bracketed name (`blog_post[image]`) never reached its schema key (silent
+  drop). It only fired when a file input was populated — the JSON path expands
+  the same names server-side — which is why flat-named forms never caught it.
+  The client now bracket-expands the field **name** into wire segments
+  (`params[blog_post][summary]`, `params[blog_post][image]`, and
+  `params[photos][]` for a `multiple` picker named `photos[]`), mirroring the
+  server's `bracket_path` exactly, so a multipart body and a JSON body coerce
+  identically for the same fields. Flat names are byte-identical to before.
+
 - **Reply-rendered components now generate absolute URLs with the REQUESTING
   host, not the process default (#232).** Actor replies (`reply.replace`,
   `reply.streams(...)`, the implicit replace) render through the memoized

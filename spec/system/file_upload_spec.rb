@@ -39,4 +39,29 @@ RSpec.describe "Reactive file upload (issue #34)", type: :system do
     # native multipart form POST that navigates.
     expect(page.evaluate_script("window.__noReload")).to eq("alive")
   end
+
+  # Issue #231: Rails-bracketed field names (blog_post[summary] + blog_post[image])
+  # on the multipart path. The old client wrapped the names verbatim
+  # (params[blog_post[summary]]), which Rack mangled — the scalar corrupted into
+  # a stringified {"]" => …} hash written to the record with a 200, and the file
+  # silently dropped. It ONLY fires with a populated file input (the JSON path
+  # expands the same names server-side), which is exactly why flat-named upload
+  # forms above never caught it. This drives the real browser build end-to-end.
+  it "carries bracketed field names cleanly alongside a file (issue #231)" do
+    document = Document.create!(title: "untitled")
+    visit "/document_upload/#{document.id}"
+
+    fill_in("blog_post[summary]", with: "This is cool")
+    attach_file("blog_post[image]", Rails.root.join("..", "fixtures", "files", "receipt.txt").to_s,
+      make_visible: true)
+    find("[data-testid='save-post']").click
+
+    # The waiting matcher is the async-morph barrier: the CLEAN summary lands —
+    # never the corrupted {"]"=>"This is cool"} stringification.
+    expect(page).to have_css("[data-testid='title']", text: "This is cool")
+    expect(page).to have_css("[data-testid='filename']", text: "receipt.txt")
+
+    expect(document.reload.title).to eq("This is cool")
+    expect(document.file).to be_attached
+  end
 end

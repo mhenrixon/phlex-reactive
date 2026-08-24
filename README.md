@@ -458,7 +458,10 @@ a populated `<input type="file">`, the client sends the action as multipart
 `FormData` (instead of JSON) — `token` + `act` as fields, scalar params as fields,
 any nested/array params bracket-expanded into `params[key][sub]` /
 `params[key][index]` fields (the same Rails-form shape, so a JSON body and a
-multipart body coerce identically — #39), and the file(s) appended; the endpoint
+multipart body coerce identically — #39), and the file(s) appended. A
+Rails-bracketed field **name** (`blog_post[summary]`, `blog_post[image]`)
+expands the same way — `params[blog_post][summary]`, never the unparseable
+`params[blog_post[summary]]` (#231). The endpoint
 coerces `:file` to the `ActionDispatch::Http::UploadedFile`, passed through
 untouched. A non-file value sent to a `:file` param is dropped (the keyword
 default applies — never a fabricated file). Token threading and the
