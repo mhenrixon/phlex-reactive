@@ -1,0 +1,35 @@
+spec/requests/broadcast_to_spec.rb
+  s_e41b7196818cfe::t_15cc9dbe05a3e0 77
+lib/phlex/reactive/streamable.rb
+  s_e41b7196818cfe::t_15cc9dbe05a3e0 496
+spec/dummy/app/components/draft_order_confirm_interpolate_component.rb
+  s_e41b7196818cfe::t_15cc9dbe05a3e0 54
+spec/phlex/reactive/component_spec.rb
+  s_e41b7196818cfe::t_15cc9dbe05a3e0 1950,3044
+lib/phlex/reactive/test_helpers/system.rb
+  s_e41b7196818cfe::t_15cc9dbe05a3e0 125
+spec/phlex/minified_client_spec.rb
+  s_e41b7196818cfe::t_15cc9dbe05a3e0 37
+spec/phlex/reactive/test_helpers_system_spec.rb
+  s_e41b7196818cfe::t_15cc9dbe05a3e0 70
+spec/phlex/reactive/show_conditions_parity_spec.rb
+  s_e41b7196818cfe::t_15cc9dbe05a3e0 13,23
+lib/phlex/reactive/show_conditions.rb
+  s_e41b7196818cfe::t_15cc9dbe05a3e0 124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "306067e9b0b664cf15e8e4440d5892e32da591b6",
+  "prompts": {},
+  "sessions": {
+    "s_e41b7196818cfe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d2d35c0-632c-4de5-ac67-11d8f8d3ab6e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "mhenrixon <mikael@mhenrixon.com>"
+    }
+  }
+}
