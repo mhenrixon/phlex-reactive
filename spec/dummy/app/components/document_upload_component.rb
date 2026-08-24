@@ -21,6 +21,12 @@ class DocumentUploadComponent < ApplicationComponent
   # `meta` used to be dropped on the multipart path (the exact combination the
   # issue flagged); it must now survive next to the file.
   action :upload_with_meta, params: { file: :file, meta: { tag: :string, year: :integer } }
+  # Issue #231: Rails-bracketed FIELD NAMES (blog_post[summary] + blog_post[image])
+  # collected from the form itself. The client must bracket-expand the names on
+  # the multipart path (params[blog_post][summary], not the Rack-unparseable
+  # params[blog_post[summary]]); the server coerces the nested schema exactly as
+  # it would from a JSON body.
+  action :save_post, params: { blog_post: { summary: :string, image: :file } }
 
   def initialize(document:)
     @document = document
@@ -44,6 +50,16 @@ class DocumentUploadComponent < ApplicationComponent
     @document.update!(title: "#{meta[:tag]} #{meta[:year]}") if meta
   end
 
+  # The scalar and the file arrive under ONE bracketed root — write both, so a
+  # spec catches the #231 corruption ({"]"=>…} stringified into title) AND the
+  # silent file drop.
+  def save_post(blog_post: nil)
+    return unless blog_post
+
+    @document.file.attach(blog_post[:image]) if blog_post[:image]
+    @document.update!(title: blog_post[:summary]) if blog_post[:summary].present?
+  end
+
   def view_template
     div(**mix(reactive_attrs, id:, data: { testid: "document" })) do
       span(data: { testid: "title" }) { @document.title }
@@ -54,6 +70,13 @@ class DocumentUploadComponent < ApplicationComponent
         input(type: "file", name: "file", data: { testid: "file" })
         input(name: "caption", data: { testid: "caption" })
         button(type: "submit", data: { testid: "save" }) { "Upload" }
+      end
+
+      # Issue #231: a Rails-conventional form whose field names are bracketed.
+      form(**on(:save_post, event: "submit")) do
+        input(name: "blog_post[summary]", data: { testid: "post-summary" })
+        input(type: "file", name: "blog_post[image]", data: { testid: "post-image" })
+        button(type: "submit", data: { testid: "save-post" }) { "Save post" }
       end
     end
   end
