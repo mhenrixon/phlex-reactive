@@ -513,6 +513,22 @@ module Phlex
         instance = controller_class.new
         instance.set_request!(request)
         instance.set_response!(controller_class.make_response!(request))
+
+        # Issue #232: during a reactive request the endpoint threads the actor's
+        # protocol/host/port via with_url_options; merge them over this
+        # instance's defaults so absolute URL helpers in a reply render the
+        # REQUESTING host. View contexts delegate url_options to their
+        # controller (ActionView::RoutingUrlFor), so this one override covers
+        # every helper spelling. Off-request (thread-local nil — jobs, console,
+        # broadcasts) returns super's frozen memo untouched: zero-alloc, byte-
+        # identical URLs. Defined on the singleton because this instance is
+        # MEMOIZED per thread — its request (and super's @_url_options) never
+        # changes, so the per-call merge is the only per-request seam.
+        def instance.url_options
+          overrides = Phlex::Reactive.current_url_options
+          overrides ? super.merge(overrides) : super
+        end
+
         instance.view_context
       end
 
@@ -966,6 +982,40 @@ module Phlex
         yield
       ensure
         Thread.current[:phlex_reactive_connection_id] = previous
+      end
+
+      # The acting request's url_options during a reactive request, or nil
+      # (issue #232). Set by the ActionsController (the action AND defer
+      # endpoints) so absolute URL helpers in a reply-rendered component —
+      # image_tag on an Active Storage attachment being the everyday case —
+      # carry the REQUESTING host/port/protocol instead of the process default
+      # (the ActiveStorage::SetCurrent move). The memoized off-request view
+      # context merges this over its defaults per call (see
+      # request_bound_view_context); nil (jobs, console, plain broadcasts)
+      # leaves the defaults untouched — byte-identical to before.
+      def current_url_options
+        Thread.current[:phlex_reactive_url_options]
+      end
+
+      # Thread `options` for the block, restoring the previous value after.
+      # `nil` CLEARS the actor options — the broadcast render uses this to keep
+      # a broadcast fired inside an action on process defaults (subscribers can
+      # be on different hosts; "URLs in broadcast-rendered components must be
+      # host-relative" is the broadcast contract).
+      def with_url_options(options)
+        previous = Thread.current[:phlex_reactive_url_options]
+        Thread.current[:phlex_reactive_url_options] = options.presence
+        yield
+      ensure
+        Thread.current[:phlex_reactive_url_options] = previous
+      end
+
+      # The url_options trio derived from a live request. `port` is optional_port
+      # — nil on the default port — and is INCLUDED even when nil so a
+      # default-port request clears any configured default port rather than
+      # inheriting it (the merge must own the whole trio).
+      def url_options_for(request)
+        { protocol: request.protocol, host: request.host, port: request.optional_port }
       end
 
       # The controller a correctly-mounted action path resolves to. Used by the

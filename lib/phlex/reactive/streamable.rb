@@ -137,7 +137,13 @@ module Phlex
             "broadcast", { component: component_name, stream_action: BROADCAST_VERBS[verb], streamables: keys.size }
           ) do
             with_pgbus_broadcast_opts(exclude:, visible_to:) do
-              html = verb == :js ? nil : render_broadcast_html(component)
+              # A broadcast render NEVER inherits the actor's url_options (issue
+              # #232): this call may run inside an action request (where the
+              # endpoint threaded the actor's host), but subscribers can be on
+              # different hosts — absolute URLs in broadcast-rendered components
+              # keep the process defaults, so "host-relative URLs" stays the
+              # broadcast contract. Off-request callers pay one nil-write pair.
+              html = verb == :js ? nil : Phlex::Reactive.with_url_options(nil) { render_broadcast_html(component) }
               ops_json = verb == :js ? broadcast_js_ops_json(payload) : nil
               keys.each { dispatch_broadcast(verb, it, resolved_target, html, ops_json, morph, effect) }
             end
