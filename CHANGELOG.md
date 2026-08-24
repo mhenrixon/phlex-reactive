@@ -329,6 +329,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server's `bracket_path` exactly, so a multipart body and a JSON body coerce
   identically for the same fields. Flat names are byte-identical to before.
 
+- **Reply-rendered components now generate absolute URLs with the REQUESTING
+  host, not the process default (#232).** Actor replies (`reply.replace`,
+  `reply.streams(...)`, the implicit replace) render through the memoized
+  off-request view context, whose `url_options` were process defaults — so any
+  absolute URL helper (`image_tag` on an Active Storage attachment being the
+  everyday case) rendered the wrong host on a multi-host app: a broken image
+  after every save, healed by the next full page load. The action endpoint now
+  threads the request's protocol/host/port into the reply render (the
+  `ActiveStorage::SetCurrent` move) via a thread-local the memoized context
+  merges per call — the context is never rebuilt, so the render memoization
+  win is untouched (allocations byte-identical, throughput flat within noise).
+  The defer **pull** endpoint gets the same treatment (it is an actor request).
+  **Broadcasts are unchanged by design** — there is no request and subscribers
+  can be on different hosts, so a broadcast fired *inside* an action explicitly
+  clears the actor's url_options around its render; "URLs in broadcast-rendered
+  components must be host-relative" is now documented in the Broadcasting guide.
+
 - **`rake bench` ran the removed `broadcast_replace_to` API and exited 1.**
   `benchmark/micro/broadcast.rb` migrated to the #185 spellings
   (`broadcast_to(*key, replace:)` / `broadcast_to(each:, replace:)`); the
