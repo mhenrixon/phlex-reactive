@@ -4233,17 +4233,37 @@ export default class extends Controller {
     fd.append("token", token)
     fd.append("act", action)
     for (const [key, value] of Object.entries(params)) {
-      this.#appendField(fd, `params[${key}]`, value)
+      this.#appendField(fd, this.#wireKey(key), value)
     }
     const multiNames = this.#multiFileNames(files)
     for (const { name, file, multiple } of files) {
       // params[name][] when the input is `multiple` (array shape even for one
       // file) OR the name repeats across inputs; otherwise a lone scalar file.
       const asArray = multiple || multiNames.has(name)
-      const key = asArray ? `params[${name}][]` : `params[${name}]`
+      const key = asArray ? `${this.#wireKey(name)}[]` : this.#wireKey(name)
       fd.append(key, file, file.name)
     }
     return fd
+  }
+
+  // The multipart wire key for a collected field/file name: params[...] with
+  // the name's OWN brackets expanded into nesting segments (issue #231). The
+  // old verbatim wrap of a Rails-bracketed name — params[blog_post[summary]] —
+  // is unparseable by Rack: a scalar arrived as {"blog_post[summary" => {"]" =>
+  // value}} (data corruption written through `update!` with a 200) and a file
+  // never reached its schema key (silent drop). Expanding blog_post[summary]
+  // into params[blog_post][summary] mirrors the server's bracket_path exactly —
+  // split at the first "[", then each non-empty bracket segment; an empty
+  // trailing segment (tags[]) drops, matching how the JSON path's
+  // expand_bracket_keys coerces the same name — so a multipart body and a JSON
+  // body coerce identically for the same fields (the documented contract).
+  // A flat name stays a single params[name] wrap, byte-identical to before.
+  #wireKey(name) {
+    const raw = String(name)
+    const head = raw.indexOf("[")
+    if (head === -1) return `params[${raw}]`
+    const segments = [raw.slice(0, head), ...(raw.slice(head).match(/[^\[\]]+/g) ?? [])]
+    return `params${segments.map((segment) => `[${segment}]`).join("")}`
   }
 
   // Append a param leaf to FormData under its bracketed key. FormData carries

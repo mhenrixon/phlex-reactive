@@ -468,6 +468,131 @@ test("an empty array/object emits NO field — the key is omitted (issue #39 div
   expect(fd.get("params[nested][stay]")).toBe("x")
 })
 
+// ---- issue #231: bracketed FIELD NAMES on the multipart path -----------------
+// #buildFormData used to wrap every collected name verbatim (params[blog_post[summary]]),
+// which Rack cannot parse as nesting — a scalar corrupted into {"]" => value}
+// and a file silently dropped. The name's OWN brackets must expand into wire
+// segments (params[blog_post][summary]), mirroring the server's bracket_path so
+// the multipart body coerces identically to the JSON body for the same fields.
+
+function captureFetch() {
+  const captured = {}
+  globalThis.fetch = (path, opts) => {
+    captured.opts = opts
+    return Promise.resolve({
+      redirected: false,
+      ok: true,
+      headers: { get: () => "text/vnd.turbo-stream.html" },
+      text: () => Promise.resolve(""),
+    })
+  }
+  return captured
+}
+
+test("a scalar field with a Rails-bracketed name expands into params[root][leaf] (issue #231)", async () => {
+  const root = new FakeNode({ tag: "div", controller: "reactive" })
+  const summary = new FakeNode({ tag: "input", name: "blog_post[summary]", value: "<p>clean</p>" })
+  const file = new FakeNode({ tag: "input", type: "file", name: "file", files: [fakeFile("r.txt")] })
+  root.append(summary, file)
+  const captured = captureFetch()
+  stubEnv()
+
+  const controller = buildController(root)
+  await controller.dispatch({ params: { action: "save_post", params: "{}" }, preventDefault: () => {} })
+
+  const fd = captured.opts.body
+  expect(fd instanceof FormData).toBe(true)
+  // Expanded nesting, NOT the verbatim (Rack-unparseable) wrap.
+  expect(fd.get("params[blog_post][summary]")).toBe("<p>clean</p>")
+  expect(fd.get("params[blog_post[summary]]")).toBeNull()
+})
+
+test("a file input with a bracketed name expands too — the silently-dropped case (issue #231)", async () => {
+  const root = new FakeNode({ tag: "div", controller: "reactive" })
+  const image = new FakeNode({ tag: "input", type: "file", name: "blog_post[image]", files: [fakeFile("cover.png")] })
+  root.append(image)
+  const captured = captureFetch()
+  stubEnv()
+
+  const controller = buildController(root)
+  await controller.dispatch({ params: { action: "save_post", params: "{}" }, preventDefault: () => {} })
+
+  const fd = captured.opts.body
+  const sent = fd.get("params[blog_post][image]")
+  expect(sent instanceof File).toBe(true)
+  expect(sent.name).toBe("cover.png")
+  expect(fd.get("params[blog_post[image]]")).toBeNull()
+})
+
+test("a deep bracketed name expands every segment (issue #231)", async () => {
+  const root = new FakeNode({ tag: "div", controller: "reactive" })
+  const qty = new FakeNode({ tag: "input", name: "order[items_attributes][0][qty]", value: "2" })
+  const file = new FakeNode({ tag: "input", type: "file", name: "file", files: [fakeFile("r.txt")] })
+  root.append(qty, file)
+  const captured = captureFetch()
+  stubEnv()
+
+  const controller = buildController(root)
+  await controller.dispatch({ params: { action: "save", params: "{}" }, preventDefault: () => {} })
+
+  expect(captured.opts.body.get("params[order][items_attributes][0][qty]")).toBe("2")
+})
+
+test("a `multiple` file input with a []-suffixed name keeps ONE array suffix (issue #231)", async () => {
+  // Rails convention names a multi-file picker photos[] — the empty segment
+  // drops (mirroring the server's bracket_path) and the multi-file [] suffix is
+  // appended once: params[photos][], never params[photos[]][] or params[photos][][].
+  const root = new FakeNode({ tag: "div", controller: "reactive" })
+  const photos = new FakeNode({
+    tag: "input",
+    type: "file",
+    name: "photos[]",
+    multiple: true,
+    files: [fakeFile("a.png"), fakeFile("b.png")],
+  })
+  root.append(photos)
+  const captured = captureFetch()
+  stubEnv()
+
+  const controller = buildController(root)
+  await controller.dispatch({ params: { action: "upload_photos", params: "{}" }, preventDefault: () => {} })
+
+  const all = captured.opts.body.getAll("params[photos][]")
+  expect(all.map((f) => f.name)).toEqual(["a.png", "b.png"])
+})
+
+test("a bracketed name with a nested-object VALUE composes name + value expansion (issue #231 + #39)", async () => {
+  const root = new FakeNode({ tag: "div", controller: "reactive" })
+  const file = new FakeNode({ tag: "input", type: "file", name: "file", files: [fakeFile("r.txt")] })
+  root.append(file)
+  const captured = captureFetch()
+  stubEnv()
+
+  const controller = buildController(root)
+  await controller.dispatch({
+    params: { action: "save", params: JSON.stringify({ "blog_post[meta]": { tag: "ruby" } }) },
+    preventDefault: () => {},
+  })
+
+  expect(captured.opts.body.get("params[blog_post][meta][tag]")).toBe("ruby")
+})
+
+test("flat names are unchanged by the name expansion (issue #231 regression guard)", async () => {
+  const root = new FakeNode({ tag: "div", controller: "reactive" })
+  const caption = new FakeNode({ tag: "input", name: "caption", value: "still flat" })
+  const file = new FakeNode({ tag: "input", type: "file", name: "file", files: [fakeFile("r.txt")] })
+  root.append(caption, file)
+  const captured = captureFetch()
+  stubEnv()
+
+  const controller = buildController(root)
+  await controller.dispatch({ params: { action: "upload", params: "{}" }, preventDefault: () => {} })
+
+  const fd = captured.opts.body
+  expect(fd.get("params[caption]")).toBe("still flat")
+  expect(fd.get("params[file]") instanceof File).toBe(true)
+})
+
 test("an EMPTY file input (no file chosen) keeps the JSON path (issue #34)", async () => {
   const root = new FakeNode({ tag: "div", controller: "reactive" })
   const caption = new FakeNode({ tag: "input", name: "caption", value: "no file" })

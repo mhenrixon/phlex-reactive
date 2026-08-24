@@ -116,7 +116,12 @@ module Views
               into `params[key][sub]` / `params[key][index]` fields — the same
               Rails-form shape a JSON body produces — so a JSON body and a multipart
               body coerce **identically**. The nested `meta` used to be dropped on
-              the multipart path (issue #39); it now survives next to the file:
+              the multipart path (issue #39); it now survives next to the file.
+              Bracketed field **names** expand the same way: an input named
+              `blog_post[summary]` riding next to `blog_post[image]` is sent as
+              `params[blog_post][summary]` — never the Rack-unparseable
+              `params[blog_post[summary]]` that corrupted scalars and silently
+              dropped files (issue #231):
 
               ```ruby
               action :upload_with_meta,
