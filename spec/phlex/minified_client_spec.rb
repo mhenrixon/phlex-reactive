@@ -34,7 +34,7 @@ RSpec.describe "minified client build" do # rubocop:disable RSpec/DescribeClass
     }
   }
 
-  # rubocop:disable Style/ItBlockParameter
+  # rubocop:disable-next Style/ItBlockParameter
   modules.each do |source_name, spec|
     describe spec[:min] do
       source_path = File.join(js_dir, source_name)
@@ -81,5 +81,4 @@ RSpec.describe "minified client build" do # rubocop:disable RSpec/DescribeClass
       end
     end
   end
-  # rubocop:enable Style/ItBlockParameter
 end

@@ -267,7 +267,7 @@ module Phlex
             assert_no_scope_double_nesting!(scope, params, name.to_sym) if scope
             Registry.write_entry(
               self, :actions, name.to_sym,
-              Action.new(name: name.to_sym, params: params, schema: Phlex::Reactive::ParamSchema.compile(params))
+              ActionDefinition.new(name: name.to_sym, params: params, schema: Phlex::Reactive::ParamSchema.compile(params))
             )
           end
 

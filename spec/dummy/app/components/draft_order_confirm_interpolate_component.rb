@@ -51,10 +51,9 @@ class DraftOrderConfirmInterpolateComponent < ApplicationComponent
       # %{quantity} is a CLIENT interpolation template (the reactive runtime
       # parses it), not a Ruby format string — so Style/FormatStringToken's
       # annotated-token preference doesn't apply here.
-      # rubocop:disable Style/FormatStringToken
+      # rubocop:disable-next Style/FormatStringToken
       button(**mix(reactive_nested_remove(confirm: "Remove line item with quantity %{quantity}?"),
         data: { testid: "remove-item" }), aria: { label: "Remove item" }) { "×" }
-      # rubocop:enable Style/FormatStringToken
     end
   end
 end

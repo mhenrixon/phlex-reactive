@@ -29,7 +29,7 @@ RSpec.describe "registry readers (issue #186)" do # rubocop:disable RSpec/Descri
 
   describe "the plural hash is the fetch-one" do
     it "reads one action from reactive_actions[:name]" do
-      expect(klass.reactive_actions[:increment]).to be_a(Phlex::Reactive::Component::Action)
+      expect(klass.reactive_actions[:increment]).to be_a(Phlex::Reactive::Component::ActionDefinition)
       expect(klass.reactive_actions.key?(:set)).to be(true)
       expect(klass.reactive_actions.key?(:wat)).to be(false)
     end

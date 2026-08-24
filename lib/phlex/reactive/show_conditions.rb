@@ -121,11 +121,10 @@ module Phlex
         end
 
         alternatives = negative.flat_map { |field, value| negative_alternatives(field, value) }
-        # rubocop:disable Style/ItBlockParameter -- nested block: `it` would shadow `group`
+        # rubocop:disable-next Style/ItBlockParameter -- nested block: `it` would shadow `group`
         groups.flat_map do |group|
           alternatives.map { |extra| group + extra }
         end
-        # rubocop:enable Style/ItBlockParameter
       end
 
       # --- the value language (positive) -------------------------------------

@@ -199,7 +199,7 @@ RSpec.describe Phlex::Reactive::Authorization do
         def self.name = "Phlex::Reactive::AuthorizationSpec::Widget"
       end
     end
-    let(:action_def) { Phlex::Reactive::Component::Action.new(name: :save, params: {}, schema: nil) }
+    let(:action_def) { Phlex::Reactive::Component::ActionDefinition.new(name: :save, params: {}, schema: nil) }
 
     it "raises AuthorizationNotVerified when on, not skipped, and unmarked" do
       Phlex::Reactive.verify_authorized = true

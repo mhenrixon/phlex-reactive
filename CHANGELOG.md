@@ -315,6 +315,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`Component::Action` renamed `ActionDefinition` — it shadowed a host kit
+  component named `Action` under dev autoloading (#233).** The mixin sits in
+  every reactive component's ancestry, so its bare `Action` constant satisfied
+  Phlex::Kit's LazyLoader `const_get` check with the wrong class: the kit's
+  real `Action` component never autoloaded and the call fell through to
+  `NoMethodError` — intermittently (any unrelated load of the kit class masks
+  it until the next reload) and only under lazy autoloading, so an
+  eager-loaded test suite stays green. The rename matches its siblings
+  (`ComputeDefinition`, `OnCompleteDefinition`, `CollectionDefinition`) and
+  removes the constant entirely — **deliberately no alias**, since any
+  `Action` constant in the ancestry re-creates the shadowing. Breaking only
+  for code referencing the internal
+  `Phlex::Reactive::Component::Action` Data class directly; the `action :name`
+  DSL and `reactive_actions` registry are unchanged. A regression spec guards
+  the whole component ancestry against `:Action` coming back.
+
 - **Multipart path corrupted/dropped fields with Rails-bracketed names (#231).**
   `#buildFormData` wrapped every collected field/file name verbatim as
   `params[<name>]`, so `blog_post[summary]` went out as the Rack-unparseable
