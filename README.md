@@ -385,11 +385,13 @@ Use in controllers: `render turbo_stream: Counter.replace(counter)`.
 | `busy_on(:save)` | Mark any element so it carries `data-reactive-busy` **only while `save` is in flight** — a spinner styled with pure CSS, zero Ruby. See [Loading states](#declarative-loading-states-loading--disable_with). |
 | `on(:action, once: true)` | Fire at most once, then unbind (Stimulus's native `:once`). |
 | `on_client(:click, js.toggle("#menu"))` | **Client-only** trigger: applies declared DOM ops with ZERO round trip — no token, no POST, ever. Takes the same `window:`/`once:`/`outside:` modifiers. See [Client-only ops](#client-only-ops-on_client--js--zero-round-trips). |
-| `js` | The immutable op builder behind `on_client`: `show`/`hide`/`toggle` (the `hidden` attribute, with an optional `transition:`), `add_class`/`remove_class`/`toggle_class`, `set_attr`/`remove_attr`/`toggle_attr` (allowlisted names), `focus`/`focus_first`, `text` (set `textContent` — XSS-safe), `dispatch`, `submit` (requestSubmit the target's own form), and `paste_into` (read the clipboard into a field, gesture-gated) — chainable. |
+| `js` | The immutable op builder behind `on_client`: `show`/`hide`/`toggle` (the `hidden` attribute, with an optional `transition:`), `add_class`/`remove_class`/`toggle_class`, `set_attr`/`remove_attr`/`toggle_attr` (allowlisted names), `focus`/`focus_first`, `text` (set `textContent` — XSS-safe), `dispatch`, `submit` (requestSubmit the target's own form), `paste_into` (read the clipboard into a field, gesture-gated), and `persist_state`/`persist_clear` (the `reactive_persist` draft) — chainable. |
 | `reactive_field(:param, **attrs)` | The attribute hash that binds a control to an action param (no magic `name:`) — spread onto any control: `input(**reactive_field(:value, value: @record.name))`, `select(**reactive_field(:status)) { … }`. |
 | `reactive_text(:name, initial)` | Mirror a compute output (or a declared input) into a **text node** — a live preview heading, a character counter, `"Hello, {name}"` — via `textContent` (XSS-safe). The text sibling of `reactive_field`; carries no `name`, so it's never POSTed. See [Client-side computes](#client-side-computes-reactive_compute--reactive_text). |
 | `reactive_show(if:/if_any:/unless:)` | **Value-conditional visibility** (the `x-show`/`data-show` case): spread onto the element to show/hide — it toggles `hidden` from the fields' **current values**, client-only, zero round trip. One conditions language: a **Hash is an AND**, an **Array is membership**, a **Range is a threshold**, `if_any:` is OR-of-AND, `unless:` negates. `reactive_values` computes first paint; `disable:` disables a hidden section's controls. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
 | `reactive_show_targets(:field, "#id" => value)` | **Cross-root visibility**: the component that owns the field declares which **outside**, id-allowlisted elements it governs (a nav tab, a panel in another pane) — the visibility parallel of `mirror:`. Spread on the **root** via `mix(reactive_root, …)`, **once per root** — several fields go in one call via the hash form. The value uses the same `where`-style vocabulary (`"advanced"`, `%w[a b]`, `10..`); a `"#id"` **key** takes a full conditions Hash for a **multi-field** predicate (`"#warn" => { if: { type: "trade", price: ..0 } }`). Id selectors only (raise at render + client warn-skip); toggles `hidden` only. See [Value-conditional visibility](#value-conditional-visibility-reactive_show). |
+| `reactive_persist(key:, ttl: 7.days)` | **Client-only drafts**: spread on the **root** (once) and the generic controller keeps a `localStorage` draft of every **owned** control — debounced write on `input`, immediate on `change`, flushed on disconnect, restored into **blank** controls on the next connect (`restore: :always` lets the draft win), cleared by a successful Turbo submit / `ttl` / `js.persist_clear`. Never hidden/file/password; `reactive_persist_skip` opts a control out; `fields:` narrows. See [Client-only drafts](#client-only-drafts-reactive_persist). |
+| `js.persist_state(step: 2)` / `js.persist_clear` | The draft ops (actor-only): merge a flat state bag into the draft (restored as `data-reactive-persist-state` + the `reactive:persist-restored` event) / forget the draft. |
 | `reactive_filter(:field, option: nil, group: nil, empty: nil)` | **Client-side option filtering** for a preloaded combobox: spread onto the root and name the **field** that drives it — `reactive_filter(:q)` compiles `:q` to `[name="q"]` (scope-aware) and typing shows/hides the options by their `data-reactive-filter-text` haystack, **zero round trips**. `option:` defaults to `[role=option]`; optional `group:` collapses an all-hidden group header; `empty:` reveals a no-matches node. `input:` is the escape hatch — a raw CSS selector for a **name-less** driving input (`input: "#tags_query"`), the form-builder case. See [Client-side option filtering](#client-side-option-filtering-reactive_filter). |
 | `reactive_listnav("[role=option]")` | The **standalone** combobox keyboard wiring (Arrow/Enter/Escape) for an input that fires **no action** — the preload-and-filter case. Same behavior as `on(…, listnav:)`, minus the POST. |
 | `reactive_tags(:tags)` | **Tag-chip input** (the combobox/tags widget): spread onto the root and name the hidden field that stores the **comma-joined** value — the client maintains that field + the chip list entirely client-side (form state, zero round trips), rebuilding chips from your server-owned `<template>`. Composes with `reactive_filter` (type to narrow) and `reactive_listnav` (Enter picks the highlighted option). `name:` is the escape hatch — a **verbatim** wire name (`name: "user[tags]"`, never re-scoped), the form-builder case. See [Tag-chip input](#tag-chip-input-reactive_tags). |
@@ -1102,6 +1104,82 @@ The fold is identical to an in-root `reactive_show` (each term reads its own
 field; a missing owned field reads as blank — fail-closed). Every referenced
 field must be owned by the declaring root; a target whose fields are all
 unowned is left alone, like the single-field skip.
+
+### Client-only drafts (`reactive_persist`)
+
+"Don't make me start over": a public application form, a multi-step wizard,
+a long comment box — the user types, navigates away, comes back, and expects
+their draft. Nothing the server needs until submit, no signed-in user to
+autosave for. `reactive_persist` (#239) is the `reactive_show`-shaped answer:
+a **declared, client-only** binding over the fields the root **owns**, no
+token, no POST, no expression surface — the generic controller keeps a
+`localStorage` draft and every hand-rolled "local save" Stimulus controller
+goes away.
+
+```ruby
+class ApplicationForm < ApplicationComponent
+  include Phlex::Reactive::ClientBindings     # or the full Component
+  reactive_scope :apply
+
+  def view_template
+    form(action: "/applications", method: "post") do
+      div(**mix(reactive_root(id: "apply"), reactive_persist(key: "village-apply", ttl: 7.days))) do
+        input(**reactive_field(:name))                              # persisted
+        textarea(**reactive_field(:bio))                            # persisted
+        input(name: "fuckery", **reactive_persist_skip)             # honeypot — never
+        input(type: "hidden", name: "apply[tz]")                    # hidden — never (default)
+        button(**on_client(:click, js.persist_state(step: 2))) { "Next" }
+        button(**on_client(:click, js.persist_clear)) { "Discard draft" }
+        button(type: "submit") { "Apply" }
+      end
+    end
+  end
+end
+```
+
+Spread it on the **root** (`mix` with `reactive_root`), **once per root**. One
+wire attr: `data-reactive-persist='{"key":"village-apply","ttl":604800,"debounce":300}'`.
+
+- **Write** — on `input` (trailing-edge debounce, `debounce:` ms, default 300)
+  and immediately on `change`; a pending write is **flushed on disconnect**, so
+  a fast Turbo navigation never loses the last keystrokes. The snapshot is a
+  full pass over the owned controls: radios store the checked value, checkboxes
+  the checked state, `<select multiple>` an array, everything else `.value`.
+- **Restore** — on connect, **first** among the client bindings, so a
+  `reactive_show` section, `reactive_on_complete` (armed, never fired),
+  `reactive_filter` and a `reactive_compute` root all read the restored values
+  on first paint — no synthetic events. A morph or broadcast re-render is
+  server truth and is **never** re-restored.
+- **`restore: :blank`** (default) — a draft value lands only in a control the
+  server rendered **blank**, so a 422 re-render's submitted values beat an
+  older draft. `restore: :always` lets the draft win.
+- **Clear** — a successful `turbo:submit-end` of the form that contains the
+  root, `ttl` expiry (checked on read; default `7.days`), or `js.persist_clear`.
+  A successful *reactive* action does **not** clear on its own — chain
+  `reply.js(js.persist_clear)` from the action when it should.
+- **`fields:`** narrows the set to declared names (scope-aware symbols):
+  `reactive_persist(key: "k", fields: %i[name bio])`.
+- **Never persisted**: `type=hidden/file/password/submit/button/reset/image`,
+  anything carrying `reactive_persist_skip`, a nested reactive root's controls,
+  and rich-text/`contenteditable` editors (they aren't `input/select/textarea`).
+  `autocomplete="off"` is **not** an implicit skip — a wizard often sets it
+  form-wide. **Honeypots must opt out** (`reactive_persist_skip`) or sit outside
+  the root: an invisible-captcha text input looks like any other field.
+- **State bag** — `js.persist_state(step: 2)` merges a flat hash of scalars
+  into the same draft (a wizard's current step). On restore the root carries
+  `data-reactive-persist-state='{"step":2}'` and dispatches a bubbling
+  `reactive:persist-restored` event (`detail: { key, fields, state }`) — the
+  hook for your own wizard controller to jump to the saved step.
+- **Storage failures are silent** — a private window, a quota error or blocked
+  storage degrades to "no draft". Under `Phlex::Reactive.debug` the controller
+  prints one `console.info` naming the failure so a dev sees why nothing came
+  back.
+
+Threat model: values are replayed via `.value`/`.checked` only (never HTML) — a
+tampered draft can only fill what the user could type. PII sits in this
+browser's `localStorage` for `ttl`; the submit-clear and `ttl` are the
+shared-computer mitigation. `persist_state`/`persist_clear` are **actor-only**
+ops (refused by `broadcast_to(js:)`). See the [security page](docs/security.md).
 
 ### Client-side computes (`reactive_compute` + `reactive_text`)
 

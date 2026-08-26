@@ -8,6 +8,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`reactive_persist` — client-only localStorage drafts (#239).** "Don't make
+  me start over": spread `reactive_persist(key:, ttl: 7.days)` on a root and
+  the generic controller keeps a `localStorage` draft of every **owned**
+  control — a debounced write on `input`, immediate on `change`, flushed on
+  disconnect — and restores it on the next connect, **first** among the
+  client bindings so `reactive_show` / `reactive_on_complete` (armed, never
+  fired) / `reactive_filter` / a compute root read the restored values on
+  first paint with no synthetic events. A draft lands only in controls the
+  server rendered blank (`restore: :always` lets it win); a morph is never
+  re-restored. Cleared by a successful `turbo:submit-end` of the containing
+  form, `ttl` expiry, or the new actor-only `js.persist_clear` op;
+  `js.persist_state(step: 2)` merges a flat state bag into the draft (restored
+  as `data-reactive-persist-state` + the `reactive:persist-restored` event).
+  `hidden`/`file`/`password`/`submit` controls, `reactive_persist_skip`
+  markers, nested roots and rich-text editors are never persisted; `fields:`
+  narrows the set. Storage failures are silent (a `console.info` under
+  `Phlex::Reactive.debug`). Works from `ClientBindings` (no token, no POST).
+
 - **Dev-mode warning when a client op resolves zero targets (#237).** A client
   op that matches nothing is indistinguishable from a working no-op, and the
   three documented scoping traps — the nested-root ownership filter, a selector

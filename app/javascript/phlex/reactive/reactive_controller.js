@@ -1055,6 +1055,215 @@ function runTransition(el, transition, flip) {
   setTimeout(cleanup, 350)
 }
 
+// ---------------------------------------------------------------------------
+// Client-only drafts (issue #239) — reactive_persist. A root that declares
+// data-reactive-persist='{"key","ttl","debounce"[,"fields"][,"restore"]}'
+// keeps a localStorage draft of every persistable OWNED control (write on
+// input/change, restore on connect, clear on a successful submit / TTL / the
+// persist_clear op). The storage layer is MODULE-LEVEL and keyed on the root
+// element — the controller's connect/write path and the persist_state /
+// persist_clear client ops (which receive only the element) share it. Every
+// storage access is try/catch'd: a private window, a quota error or blocked
+// storage degrades to "no draft", never a thrown bootstrap. Nothing here
+// leaves the browser: no token, no POST, values are replayed via
+// .value/.checked only (never HTML).
+// ---------------------------------------------------------------------------
+const PERSIST_VERSION = 1
+const PERSIST_PREFIX = "phlex-reactive:persist:"
+// Never persisted regardless of author intent: no server default to restore
+// into (hidden, file), secrets (password), and non-value controls.
+const PERSIST_EXCLUDED_TYPES = new Set(["hidden", "file", "password", "submit", "button", "reset", "image"])
+const PERSIST_STATE_ATTR = "data-reactive-persist-state"
+// Once-per-root guards: a malformed payload warns once; the storage-failure
+// dev note (debug mode only) prints once.
+const persistPayloadWarned = new WeakSet()
+const persistFailureNoted = new WeakSet()
+
+// The root's parsed payload, or null (undeclared / malformed → warned once).
+// A control-level "off" (reactive_persist_skip) is never a root payload.
+function persistPayload(root) {
+  const raw = root?.getAttribute?.("data-reactive-persist")
+  if (!raw || raw === "off") return null
+  try {
+    const payload = JSON.parse(raw)
+    if (payload && typeof payload === "object" && typeof payload.key === "string" && payload.key !== "") return payload
+  } catch {
+    // fall through to the warn
+  }
+  if (!persistPayloadWarned.has(root)) {
+    persistPayloadWarned.add(root)
+    console.warn(`[phlex-reactive] malformed reactive_persist payload ${JSON.stringify(raw)} — persistence disabled`)
+  }
+  return null
+}
+
+function persistStorage() {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage
+  } catch {
+    return null // the accessor itself can throw (blocked site data)
+  }
+}
+
+// The dev lens for "why did nothing come back": ONLY under data-reactive-debug
+// (Phlex::Reactive.debug), once per root — production stays silent.
+function persistNoteFailure(root, error) {
+  if (root?.getAttribute?.("data-reactive-debug") !== "true" || persistFailureNoted.has(root)) return
+  persistFailureNoted.add(root)
+  console.info(`[phlex-reactive] reactive_persist: storage unavailable — draft skipped (${error?.name ?? error})`)
+}
+
+function persistKeyFor(payload) {
+  return PERSIST_PREFIX + payload.key
+}
+
+// Read + validate the draft: null when absent, unparsable, another schema
+// version, or expired (an expired draft is REMOVED on read). Returns
+// { fields, state } with state null when the draft carries none.
+function persistRead(root, payload) {
+  const store = persistStorage()
+  if (!store) return null
+  let raw
+  try {
+    raw = store.getItem(persistKeyFor(payload))
+  } catch (error) {
+    persistNoteFailure(root, error)
+    return null
+  }
+  if (!raw) return null
+  let draft
+  try {
+    draft = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (!draft || typeof draft !== "object" || draft.v !== PERSIST_VERSION) return null
+  const ttlMs = Number(payload.ttl) * 1000
+  if (!(Number(draft.savedAt) + ttlMs > Date.now())) {
+    persistRemove(root, payload)
+    return null
+  }
+  const fields = draft.fields && typeof draft.fields === "object" ? draft.fields : {}
+  const state = draft.state && typeof draft.state === "object" ? draft.state : null
+  return { fields, state }
+}
+
+function persistWrite(root, payload, { fields, state }) {
+  const store = persistStorage()
+  if (!store) return false
+  const draft = { v: PERSIST_VERSION, savedAt: Date.now(), fields }
+  if (state) draft.state = state
+  try {
+    store.setItem(persistKeyFor(payload), JSON.stringify(draft))
+    return true
+  } catch (error) {
+    persistNoteFailure(root, error)
+    return false
+  }
+}
+
+function persistRemove(root, payload) {
+  root?.removeAttribute?.(PERSIST_STATE_ATTR)
+  const store = persistStorage()
+  if (!store) return
+  try {
+    store.removeItem(persistKeyFor(payload))
+  } catch (error) {
+    persistNoteFailure(root, error)
+  }
+}
+
+// The persistable controls this root OWNS (#15: a nested reactive root's
+// controls are its own), minus the excluded types, the reactive_persist_skip
+// marker, and — when `fields` narrows the set — any undeclared name.
+function persistControls(root, payload) {
+  const allow = Array.isArray(payload.fields) ? new Set(payload.fields) : null
+  const out = []
+  for (const el of root.querySelectorAll("input[name], select[name], textarea[name]")) {
+    if (el.closest('[data-controller~="reactive"]') !== root) continue
+    if (PERSIST_EXCLUDED_TYPES.has(el.type)) continue
+    if (el.getAttribute("data-reactive-persist") === "off") continue
+    if (allow && !allow.has(el.name)) continue
+    out.push(el)
+  }
+  return out
+}
+
+function persistSelectMultiple(el) {
+  return el.tagName === "SELECT" && el.multiple
+}
+
+// Snapshot the owned controls: radio → the checked value (null when the group
+// has none, so a restore leaves it alone), checkbox → checked, multi-select →
+// the selected values, else .value. Mirrors #collectFields' reads.
+function persistSnapshot(root, payload) {
+  const fields = {}
+  for (const el of persistControls(root, payload)) {
+    const name = el.name
+    if (el.type === "radio") {
+      if (el.checked) fields[name] = el.value
+      else if (!Object.hasOwn(fields, name)) fields[name] = null
+    } else if (el.type === "checkbox") {
+      fields[name] = el.checked
+    } else if (persistSelectMultiple(el)) {
+      fields[name] = [...el.options].filter((o) => o.selected).map((o) => o.value)
+    } else {
+      fields[name] = el.value
+    }
+  }
+  return fields
+}
+
+// Replay the draft into the owned controls. Default (restore: blank): a
+// control the server rendered NON-BLANK keeps its value — a 422 re-render's
+// submitted values beat an older draft. restore: "always" lets the draft win.
+// Values land via .value/.checked/.selected only — never HTML.
+function persistApply(root, payload, fields) {
+  const always = payload.restore === "always"
+  const controls = persistControls(root, payload)
+  for (const el of controls) {
+    if (!Object.hasOwn(fields, el.name)) continue
+    const value = fields[el.name]
+    if (value === null || value === undefined) continue
+    if (el.type === "radio") {
+      if (!always && controls.some((c) => c.type === "radio" && c.name === el.name && c.checked)) continue
+      el.checked = el.value === String(value)
+    } else if (el.type === "checkbox") {
+      if (!always && el.checked) continue
+      el.checked = Boolean(value)
+    } else if (persistSelectMultiple(el)) {
+      if (!always && [...el.options].some((o) => o.selected)) continue
+      const wanted = new Set((Array.isArray(value) ? value : [value]).map(String))
+      for (const o of el.options) o.selected = wanted.has(o.value)
+    } else {
+      if (!always && el.value !== "") continue
+      el.value = String(value)
+    }
+  }
+}
+
+// The persist_state op body: merge a FLAT bag into the root's draft (re-
+// snapshotting the fields so the write is whole) and mirror it on the root.
+// A root without reactive_persist is a call-site bug — warn and skip.
+function persistWriteState(root, state) {
+  const payload = persistPayload(root)
+  if (!payload) {
+    console.warn("[phlex-reactive] persist_state on a root without reactive_persist — skipped")
+    return
+  }
+  if (!state || typeof state !== "object") return
+  const current = persistRead(root, payload)
+  const merged = { ...(current?.state ?? {}), ...state }
+  if (persistWrite(root, payload, { fields: persistSnapshot(root, payload), state: merged })) {
+    root.setAttribute?.(PERSIST_STATE_ATTR, JSON.stringify(merged))
+  }
+}
+
+function persistClearRoot(root) {
+  const payload = persistPayload(root)
+  if (payload) persistRemove(root, payload)
+}
+
 // The client-op whitelist behind on_client (issue #95, extended in #96). Mirrors
 // Phlex::Reactive::JS's vocabulary; an op name not in this map is
 // warn-and-skipped by #applyOps (client-side default-deny — a stale or newer
@@ -1131,6 +1340,13 @@ const CLIENT_OPS = Object.freeze({
   // an actor reply's stream from a broadcast's, and reply.js legitimately
   // carries this op.
   paste_into: (el) => pasteClipboardInto(el),
+
+  // Client-only drafts (issue #239): merge a flat state bag into the root's
+  // reactive_persist draft / forget the draft. ACTOR-ONLY like focus/submit
+  // (BROADCAST_REFUSED_OPS server-side) — rewriting or wiping every
+  // subscriber's draft from a broadcast would be hostile.
+  persist_state: (el, args) => persistWriteState(el, args.state),
+  persist_clear: (el) => persistClearRoot(el),
 })
 
 // The form a submit op commits (issue #226), in order: the target itself when
@@ -1675,6 +1891,17 @@ export default class extends Controller {
   // Clipboard-trigger availability gate (issue #228): the bound morph re-sync,
   // held for teardown.
   #boundSyncClipboard
+  // Client-only drafts (issue #239): the parsed root payload (null when
+  // undeclared), the restore-complete latch (no write may run before the
+  // connect restore — a connect must never overwrite a draft with server
+  // blanks), the ONE per-root trailing-edge write timer, and the bound
+  // input/change/turbo:submit-end handlers held for teardown.
+  #persistConfig = null
+  #persistRestored = false
+  #persistTimer = null
+  #boundPersistInput
+  #boundPersistChange
+  #boundPersistSubmitEnd
 
   // Mark that a reactive controller actually connected, so the registration
   // guard above knows the controller was registered (issue #26 part 2).
@@ -1715,6 +1942,18 @@ export default class extends Controller {
       this.#boundProbeLazyDefer = () => this.#probeLazyDefer()
       this.element.addEventListener?.("turbo:morph-element", this.#boundProbeLazyDefer)
     }
+
+    // Client-only drafts (issue #239) — ONLY when the root declares
+    // data-reactive-persist (one attribute read otherwise). Runs FIRST among
+    // the feature blocks ON PURPOSE: the restore writes the draft into the
+    // owned controls, and every later connect seed (dirty baseline, show,
+    // on-complete's arm-without-fire, filter, tags, nested-json, the compute
+    // self-seed) then reads the restored DOM naturally — no synthetic
+    // input/change events (which would FIRE reactive_on_complete bindings and
+    // reducer $ops on page load). Restore is connect-only: a
+    // turbo:morph-element is server truth arriving, never re-restored.
+    this.#persistConfig = persistPayload(this.element)
+    if (this.#persistConfig) this.#connectPersist()
 
     // Dirty tracking (issue #103) — ONLY when this root opts in (track_dirty: or a
     // reactive_field(dirty:)), so a component that never uses it pays nothing (no
@@ -1895,6 +2134,10 @@ export default class extends Controller {
   // leading-edge timer holds no pending POST, but leaving it running would leak
   // it past the element's life.
   disconnect() {
+    // Persist FIRST: flush a pending draft write while the fields are still
+    // readable (Turbo disconnects before leaving the page — a fast visit
+    // otherwise loses the last keystrokes).
+    this.#teardownPersist()
     this.#clearAllDebounces()
     this.#clearAllThrottles()
     this.#teardownDirtyTracking()
@@ -3978,6 +4221,87 @@ export default class extends Controller {
 
   // Remove the show-sync listeners on disconnect, so a stray event after a
   // Turbo morph/navigation never re-evaluates against a detached root.
+  // Client-only drafts (issue #239): restore the draft into the owned
+  // controls, expose the state bag, announce, then arm the write listeners.
+  // The restore reads ONCE and never writes back — the restored latch stays
+  // false until it completes, so no listener can clobber the draft with the
+  // server's blanks. The submit-end listener is DOCUMENT-level (the event
+  // fires on the form, which is usually an ANCESTOR of this root) and gated
+  // on the form containing this root.
+  #connectPersist() {
+    const payload = this.#persistConfig
+    this.#persistRestored = false
+    const draft = persistRead(this.element, payload)
+    if (draft) {
+      persistApply(this.element, payload, draft.fields)
+      if (draft.state) this.element.setAttribute?.(PERSIST_STATE_ATTR, JSON.stringify(draft.state))
+      this.#emit("reactive:persist-restored", { key: payload.key, fields: draft.fields, state: draft.state ?? {} })
+    }
+    this.#persistRestored = true
+
+    this.#boundPersistInput = () => this.#schedulePersistWrite()
+    this.#boundPersistChange = () => this.#persistWriteNow()
+    this.#boundPersistSubmitEnd = (event) => this.#persistSubmitEnd(event)
+    this.element.addEventListener?.("input", this.#boundPersistInput)
+    this.element.addEventListener?.("change", this.#boundPersistChange)
+    document.addEventListener?.("turbo:submit-end", this.#boundPersistSubmitEnd)
+  }
+
+  // Trailing-edge debounce for keystrokes — ONE timer per root (a snapshot is
+  // a full pass, so per-field timers would only multiply writes).
+  #schedulePersistWrite() {
+    if (!this.#persistRestored) return
+    const ms = Number(this.#persistConfig?.debounce) || 0
+    if (ms <= 0) return this.#persistWriteNow()
+    if (this.#persistTimer !== null) clearTimeout(this.#persistTimer)
+    this.#persistTimer = setTimeout(() => {
+      this.#persistTimer = null
+      this.#persistWriteNow()
+    }, ms)
+  }
+
+  // Snapshot every persistable owned control and write. Re-reads the current
+  // draft first so a state bag written by persist_state survives the write
+  // (the bag lives in storage, not on the instance — the op has no instance).
+  #persistWriteNow() {
+    if (!this.#persistRestored || !this.#persistConfig) return
+    if (this.#persistTimer !== null) {
+      clearTimeout(this.#persistTimer)
+      this.#persistTimer = null
+    }
+    const payload = this.#persistConfig
+    const current = persistRead(this.element, payload)
+    persistWrite(this.element, payload, { fields: persistSnapshot(this.element, payload), state: current?.state ?? null })
+  }
+
+  // A SUCCESSFUL Turbo form submission of the form that owns this root
+  // forgets the draft. tagName (not instanceof) so a cross-realm form counts.
+  #persistSubmitEnd(event) {
+    if (!event?.detail?.success) return
+    const form = event.target
+    if (form?.tagName !== "FORM" || typeof form.contains !== "function") return
+    if (!form.contains(this.element)) return
+    // Drop a pending keystroke write too — the disconnect flush that follows
+    // Turbo's redirect visit would otherwise resurrect the just-cleared draft.
+    if (this.#persistTimer !== null) {
+      clearTimeout(this.#persistTimer)
+      this.#persistTimer = null
+    }
+    persistRemove(this.element, this.#persistConfig)
+  }
+
+  // Flush a pending write, then drop every listener (disconnect()).
+  #teardownPersist() {
+    if (!this.#persistConfig) return
+    if (this.#persistTimer !== null) this.#persistWriteNow()
+    this.element.removeEventListener?.("input", this.#boundPersistInput)
+    this.element.removeEventListener?.("change", this.#boundPersistChange)
+    document.removeEventListener?.("turbo:submit-end", this.#boundPersistSubmitEnd)
+    this.#boundPersistInput = this.#boundPersistChange = this.#boundPersistSubmitEnd = undefined
+    this.#persistConfig = null
+    this.#persistRestored = false
+  }
+
   #teardownShowSync() {
     if (!this.#boundSyncShow) return
     this.element.removeEventListener?.("input", this.#boundSyncShow)

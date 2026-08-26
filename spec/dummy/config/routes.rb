@@ -61,6 +61,10 @@ Rails.application.routes.draw do
   # Issue #226: the general autosubmit story — on_client(:change, js.submit).
   get "autosubmit_filter" => "demos#autosubmit_filter"
   get "conditional_fieldset" => "demos#conditional_fieldset"
+  # Issue #239: reactive_persist — client-only localStorage drafts; the POST
+  # redirects so a successful turbo:submit-end clears the draft.
+  get "persist_form" => "demos#persist_form"
+  post "persist_form" => "demos#persist_form_submit"
   get "confirm" => "demos#confirm"
   get "client_op_confirm" => "demos#client_op_confirm"
   get "conditional_confirm" => "demos#conditional_confirm"

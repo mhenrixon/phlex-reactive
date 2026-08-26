@@ -110,6 +110,17 @@ RSpec.describe "broadcast_js_to (issue #97)", type: :request do
       .to raise_error(ArgumentError, /paste_into/)
   end
 
+  # Issue #239: the persist ops join the actor-only set — a broadcast that
+  # rewrites or wipes every subscriber's localStorage draft would be hostile.
+  it "rejects persist_state / persist_clear (broadcasting a draft write would be hostile)" do
+    js = TodoItemComponent.new(todo: Todo.new).js
+
+    expect { TodoItemComponent.broadcast_to("alerts", js: js.persist_state(step: 1)) }
+      .to raise_error(ArgumentError, /persist_state/)
+    expect { TodoItemComponent.broadcast_to("alerts", js: js.persist_clear) }
+      .to raise_error(ArgumentError, /persist_clear/)
+  end
+
   it "rejects an empty op chain (a dead reactive:js broadcast is a mistake)" do
     empty = TodoItemComponent.new(todo: Todo.new).js
 

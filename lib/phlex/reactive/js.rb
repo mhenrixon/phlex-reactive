@@ -252,6 +252,36 @@ module Phlex
         @ops.empty?
       end
 
+      # --- Client-only drafts (issue #239) ---
+      #
+      # persist_state(**state) — merge a FLAT bag of scalars (a wizard's
+      # current step) into the root's reactive_persist draft alongside the
+      # owned fields' values; the client restores it on the next connect as
+      # data-reactive-persist-state on the root plus the
+      # reactive:persist-restored event's detail.state. Always targets the
+      # ROOT (the draft lives there). persist_clear — forget the draft now
+      # (the explicit sibling of the automatic turbo:submit-end clear).
+      # Both ACTOR-ONLY like focus/submit: a broadcast that rewrote or wiped
+      # every subscriber's draft would be hostile (BROADCAST_REFUSED_OPS).
+
+      def persist_state(**state)
+        raise ArgumentError, "#{self.class}: persist_state needs at least one key (e.g. step: 2)" if state.empty?
+
+        state.each do |name, value|
+          next if value.nil? || [String, Numeric, TrueClass, FalseClass].any? { value.is_a?(it) }
+
+          raise ArgumentError,
+            "#{self.class}: persist_state values must be scalar (String/Numeric/true/false/nil) — " \
+            "#{name.inspect} is #{value.class} (the draft stays flat)"
+        end
+
+        append("persist_state", { "to" => ROOT_SENTINEL, "state" => state.transform_keys(&:to_s).freeze }.freeze)
+      end
+
+      def persist_clear
+        append("persist_clear", { "to" => ROOT_SENTINEL }.freeze)
+      end
+
       private
 
       # Immutability: every verb funnels here and returns a NEW frozen chain —
