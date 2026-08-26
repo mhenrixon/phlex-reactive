@@ -1166,7 +1166,7 @@ module Phlex
           list = Array(fields)
           raise ArgumentError, "reactive_persist fields: needs at least one field name" if list.empty?
 
-          list.map { |name| scoped_field_name(name) }
+          list.map { scoped_field_name(it) }
         end
 
         # Scoped busy indicator (issue #99). Marks an element so the generic

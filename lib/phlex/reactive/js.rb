@@ -268,7 +268,7 @@ module Phlex
         raise ArgumentError, "#{self.class}: persist_state needs at least one key (e.g. step: 2)" if state.empty?
 
         state.each do |name, value|
-          next if value.nil? || [String, Numeric, TrueClass, FalseClass].any? { |t| value.is_a?(t) }
+          next if value.nil? || [String, Numeric, TrueClass, FalseClass].any? { value.is_a?(it) }
 
           raise ArgumentError,
             "#{self.class}: persist_state values must be scalar (String/Numeric/true/false/nil) — " \
