@@ -350,6 +350,16 @@ class DemosController < ActionController::Base
   # a select, a checkbox, and a radio group — all client-only. The spec's fetch
   # spy proves no round trip ever fires. The badge lives OUTSIDE the component's
   # root — the #164 cross-root target the component declares by id.
+  # Issue #239: reactive_persist. ?name= renders a server value the draft must
+  # not overwrite; the POST redirects (a successful Turbo submit → draft cleared).
+  def persist_form
+    render_component PersistFormComponent.new(name: params[:name])
+  end
+
+  def persist_form_submit
+    redirect_to "/persist_form?submitted=1"
+  end
+
   def conditional_fieldset
     component = render_to_string(ConditionalFieldsetComponent.new, layout: false)
     outside = <<~HTML

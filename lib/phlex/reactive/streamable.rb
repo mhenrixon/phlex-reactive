@@ -39,7 +39,7 @@ module Phlex
       # (issue #228) would read every subscriber's clipboard. They belong to
       # the actor's own reply (reply.js) or gesture (on_client / a reducer's
       # $ops), never a broadcast. Names mirror Phlex::Reactive::JS's verbs.
-      BROADCAST_REFUSED_OPS = %w[focus focus_first submit paste_into].freeze
+      BROADCAST_REFUSED_OPS = %w[focus focus_first submit paste_into persist_state persist_clear].freeze
 
       # The broadcast_to verb kwargs (issue #185) → their Turbo stream action.
       # SELF-TARGETING verbs derive the target from the component's #id (require a

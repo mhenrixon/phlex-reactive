@@ -20,6 +20,7 @@ module Views
           how
           ops
           value_conditional
+          client_drafts
           when_to_use
         end
 
@@ -269,6 +270,63 @@ module Views
             render Views::Examples::LiveExample.new(
               component: ConditionalFieldsetComponent.new,
               filename: 'app/components/conditional_fieldset_component.rb'
+            )
+          end
+        end
+
+        def client_drafts
+          DocsUI::Section('Client-only drafts (reactive_persist)') do
+            md <<~MD
+              "Don't make me start over." A public application form, a wizard, a
+              long comment box: the user types, navigates away, comes back, and
+              expects the draft. Nothing the server needs until submit, no
+              signed-in user to autosave for — so every app hand-rolls the same
+              `localStorage` Stimulus controller (read, parse, TTL, restore,
+              clear). `reactive_persist` (#239) is the `reactive_show`-shaped
+              answer: a **declared, client-only** binding over the fields the
+              root **owns** — no token, no POST, no expression surface.
+
+              ```ruby
+              div(**mix(reactive_root(id: "apply"), reactive_persist(key: "village-apply", ttl: 7.days))) do
+                input(**reactive_field(:name))                       # persisted
+                input(name: "fuckery", **reactive_persist_skip)      # honeypot — never
+                input(type: "hidden", name: "apply[tz]")             # hidden — never (default)
+                button(**on_client(:click, js.persist_state(step: 2))) { "Next" }
+                button(**on_client(:click, js.persist_clear)) { "Discard draft" }
+              end
+              ```
+
+              Spread on the **root**, once. The controller **writes** a snapshot
+              of every owned control on `input` (trailing-edge debounce,
+              `debounce:` ms) and immediately on `change`, and **flushes** a
+              pending write on disconnect so a fast Turbo visit never loses the
+              last keystrokes. It **restores** on connect — *first* among the
+              client bindings, so a `reactive_show` section, an armed
+              `reactive_on_complete`, a filter and a compute root all read the
+              restored values on first paint with no synthetic events — and
+              never re-restores over a morph (server truth). By default a draft
+              lands only in a control the server rendered **blank**
+              (`restore: :blank`): a 422 re-render's submitted values beat an
+              older draft; `restore: :always` lets the draft win. It **clears**
+              on a successful `turbo:submit-end` of the containing form, on
+              `ttl` expiry, or via `js.persist_clear` — never on a successful
+              reactive action by itself (chain `reply.js(js.persist_clear)`).
+
+              Never persisted: `hidden`/`file`/`password`/`submit` controls,
+              anything carrying `reactive_persist_skip`, a nested root's
+              controls, and rich-text editors. `autocomplete="off"` is **not** an
+              implicit skip — **honeypots must opt out** or sit outside the root.
+              `fields:` narrows to declared names. `js.persist_state(step: 2)`
+              merges a flat state bag into the draft; on restore the root carries
+              `data-reactive-persist-state` and dispatches
+              `reactive:persist-restored` (`detail: { key, fields, state }`) —
+              the hook for a wizard to jump to its saved step. Storage failures
+              (private window, quota, blocked) are silent; under
+              `Phlex::Reactive.debug` one `console.info` names the failure.
+            MD
+            render Views::Examples::LiveExample.new(
+              component: PersistFormComponent.new,
+              filename: 'app/components/persist_form_component.rb'
             )
           end
         end

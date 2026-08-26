@@ -26,6 +26,7 @@ module Views
           failure_ux
           error_flash_ux
           token_lifetime
+          client_drafts
           checklist
         end
 
@@ -465,6 +466,41 @@ module Views
                 answers 400 — the same path as a tampered token. Fail-closed, never fail-open.
               MD
             end
+          end
+        end
+
+        def client_drafts
+          DocsUI::Section('Client-only drafts (reactive_persist) — what lives in localStorage') do
+            md <<~MD
+              `reactive_persist` (#239) keeps a draft of a root's owned field
+              values in **this browser's `localStorage`**. It is client-only in
+              the same sense as `reactive_show`: nothing leaves the browser, no
+              token is minted, no endpoint is touched. What the threat model
+              *does* cover:
+
+              - **Replay is value-only.** A draft is replayed via `.value` /
+                `.checked` / `.selected` — never HTML. A tampered draft can only
+                fill fields the user could type into by hand, and the server
+                still validates the submit exactly as if they had.
+              - **PII sits on disk for `ttl`.** Default 7 days; an expired draft
+                is removed on read, a successful submit clears it. On a shared
+                computer `ttl` + the submit-clear are the mitigation — shorten
+                `ttl:` for sensitive forms.
+              - **Secrets are excluded by default** — `type=password`, `hidden`
+                and `file` controls never reach storage. **Honeypots are not
+                detectable**: an invisible-captcha text input looks like any
+                other field, so mark it `reactive_persist_skip` (or render it
+                outside the root). `autocomplete="off"` is deliberately *not* an
+                implicit skip.
+              - **The draft ops are actor-only.** `js.persist_state` /
+                `js.persist_clear` are allowed from `on_client`, `reply.js` and
+                `reactive_on_complete`, and **refused** by `broadcast_to(js:)` —
+                a broadcast that rewrote or wiped every subscriber's draft would
+                be hostile.
+              - **Storage failure is not an error.** A private window, a quota
+                error or blocked storage degrades to "no draft"; the only
+                diagnostic is a `console.info` under `Phlex::Reactive.debug`.
+            MD
           end
         end
 

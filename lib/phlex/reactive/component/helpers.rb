@@ -1084,6 +1084,91 @@ module Phlex
           { data: { reactive_show_targets: normalized.to_json } }
         end
 
+        # Client-only localStorage draft over the fields this root OWNS (issue
+        # #239) — "don't make me start over". Spread on the ROOT (mix with
+        # reactive_root, like reactive_show_targets); the generic controller
+        # then writes every owned control's value to localStorage as the user
+        # types (debounced on `input`, immediate on `change`, flushed on
+        # disconnect), restores the draft on the NEXT connect, and forgets it
+        # when the owning form submits successfully (turbo:submit-end), when
+        # `ttl` elapses, or on a js.persist_clear op:
+        #
+        #   div(**mix(reactive_root, reactive_persist(key: "village-apply", ttl: 7.days))) do
+        #     input(**reactive_field(:name))                       # persisted
+        #     input(name: "fuckery", **reactive_persist_skip)      # honeypot — never
+        #     input(type: "hidden", name: "tz")                    # hidden — never (default)
+        #   end
+        #
+        # Never persisted: type=hidden/file/password/submit/button/reset/image,
+        # anything carrying reactive_persist_skip, a nested reactive root's
+        # controls (#15 ownership), and — when `fields:` narrows the set —
+        # any name outside it (scope-aware symbols, the reactive_show form).
+        # `autocomplete="off"` is NOT an implicit skip: honeypots (an
+        # invisible_captcha text input looks like any other) must opt out
+        # explicitly or sit outside the root.
+        #
+        # `restore:` — `:blank` (default) restores a draft value only into a
+        # control the server rendered BLANK, so a 422 re-render's submitted
+        # values win over an older draft; `:always` lets the draft win.
+        #
+        # Same posture as reactive_show: no token, no POST, no expression
+        # surface. Stored values are plain user input replayed via
+        # .value/.checked (never HTML) — a tampered draft can only fill what
+        # the user could type. PII sits in localStorage for `ttl`; the
+        # successful-submit clear and `ttl` are the shared-computer mitigation
+        # (see docs/security). ONE call per root — Phlex `mix` space-joins
+        # duplicate string data values, so a second call would corrupt the JSON.
+        def reactive_persist(key:, ttl: 7.days, fields: nil, restore: :blank, debounce: 300)
+          payload = {
+            "key" => validate_persist_key!(key),
+            "ttl" => validate_persist_ttl!(ttl),
+            "debounce" => validate_persist_debounce!(debounce)
+          }
+          payload["restore"] = "always" if validate_persist_restore!(restore) == :always
+          payload["fields"] = validate_persist_fields!(fields) if fields
+
+          { data: { reactive_persist: payload.to_json } }
+        end
+
+        # Mark ONE control as never persisted (issue #239) — a honeypot, a
+        # one-time code. Spread on the control: input(name: "x", **reactive_persist_skip).
+        def reactive_persist_skip
+          { data: { reactive_persist: "off" } }
+        end
+
+        def validate_persist_key!(key)
+          return key if key.is_a?(String) && !key.strip.empty?
+
+          raise ArgumentError, "reactive_persist key: must be a non-blank String, got #{key.inspect}"
+        end
+
+        # Seconds on the wire: an ActiveSupport::Duration (7.days) or an Integer.
+        def validate_persist_ttl!(ttl)
+          seconds = ttl.is_a?(ActiveSupport::Duration) ? ttl.to_i : ttl
+          return seconds if seconds.is_a?(Integer) && seconds.positive?
+
+          raise ArgumentError, "reactive_persist ttl: must be a positive duration or Integer seconds, got #{ttl.inspect}"
+        end
+
+        def validate_persist_debounce!(debounce)
+          return debounce if debounce.is_a?(Integer) && !debounce.negative?
+
+          raise ArgumentError, "reactive_persist debounce: must be a non-negative Integer (ms), got #{debounce.inspect}"
+        end
+
+        def validate_persist_restore!(restore)
+          return restore if %i[blank always].include?(restore)
+
+          raise ArgumentError, "reactive_persist restore: must be :blank or :always, got #{restore.inspect}"
+        end
+
+        def validate_persist_fields!(fields)
+          list = Array(fields)
+          raise ArgumentError, "reactive_persist fields: needs at least one field name" if list.empty?
+
+          list.map { |name| scoped_field_name(name) }
+        end
+
         # Scoped busy indicator (issue #99). Marks an element so the generic
         # controller toggles `data-reactive-busy` on it ONLY while `action` is in
         # flight — the scoped sibling of the always-on `data-reactive-busy` the
