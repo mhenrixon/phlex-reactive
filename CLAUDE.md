@@ -8,7 +8,7 @@ hand-picking Turbo Stream targets.
 
 - **Ruby**: >= 3.4 | **Rails**: >= 7.1
 - **Rendering**: phlex-rails (Phlex 2)
-- **Transport**: turbo-rails (Turbo Streams); [pgbus](https://github.com/mhenrixon/pgbus) optional for Postgres SSE
+- **Transport**: turbo-rails (Turbo Streams); [pgbus](https://github.com/zoolutions/pgbus) optional for Postgres SSE
 - **Client**: one generic Stimulus controller (no per-feature JS)
 - **Autoloading**: zeitwerk
 - **Testing**: RSpec + Capybara/Playwright (via `spec/dummy`)

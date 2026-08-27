@@ -29,14 +29,14 @@ gem "phlex-rails"
 
 # Docs UI: daisyUI Phlex components for chrome (sidebar, drawer, tabs, cards).
 # The reactive demo components themselves stay framework-agnostic.
-gem "daisyui", github: "mhenrixon/daisyui", require: "daisy_ui"
+gem "daisyui", github: "zoolutions/daisyui", require: "daisy_ui"
 
 # Shared docs-site chrome (Shell/Sidebar/Code/Page/...) — the single place the
 # layout/design lives, shared with the daisyUI docs site. Configured per-site via
 # DocsKit.configure (see config/initializers/docs_kit.rb). Pulled from RubyGems
 # now the gem is released there — the old GitHub ref (needed while the sibling
 # repo sat outside the Docker build context) is obsolete.
-gem "docs-kit", "~> 1.0.8", require: "docs_kit"
+gem "docs-kit", "~> 1.1", ">= 1.1.1", require: "docs_kit"
 
 # MCP — docs-kit's optional Model Context Protocol server (read-only, stateless).
 # Not a docs-kit gemspec dependency; present here so the /mcp endpoint (routes in
