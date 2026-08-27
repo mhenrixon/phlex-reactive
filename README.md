@@ -62,7 +62,7 @@ follows* — and implements it the Rails way:
 - **One tiny client runtime.** A single generic Stimulus controller, registered
   once, handles every reactive component. You don't write per-feature JS.
 
-Pair it with [**pgbus**](https://github.com/mhenrixon/pgbus) and your live
+Pair it with [**pgbus**](https://github.com/zoolutions/pgbus) and your live
 updates become *transactional* (no broadcast for a rolled-back change) and
 *reconnect-safe* (missed messages replay) over Postgres SSE — **no Action Cable,
 no Redis.**
@@ -2786,7 +2786,7 @@ end
 
 ## Live updates with pgbus (recommended)
 
-[pgbus](https://github.com/mhenrixon/pgbus) replaces Action Cable's transport
+[pgbus](https://github.com/zoolutions/pgbus) replaces Action Cable's transport
 with Postgres SSE and fixes its reliability gaps. With it installed,
 `broadcast_to` and `turbo_stream_from` route over pgbus automatically:
 
@@ -3004,7 +3004,7 @@ The mental model is stolen, gratefully, from
 [Laravel Livewire](https://livewire.laravel.com) (public method = action) and
 [Phoenix LiveView](https://www.phoenixframework.org) (a component is a re-render
 unit). The transport and reliability come from
-[pgbus](https://github.com/mhenrixon/pgbus). The rendering is all
+[pgbus](https://github.com/zoolutions/pgbus). The rendering is all
 [Phlex](https://www.phlex.fun).
 
 ## License
