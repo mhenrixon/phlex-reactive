@@ -1,6 +1,6 @@
 # phlex-reactive
 
-[![CI](https://github.com/mhenrixon/phlex-reactive/actions/workflows/main.yml/badge.svg)](https://github.com/mhenrixon/phlex-reactive/actions/workflows/main.yml)
+[![CI](https://github.com/zoolutions/phlex-reactive/actions/workflows/main.yml/badge.svg)](https://github.com/zoolutions/phlex-reactive/actions/workflows/main.yml)
 [![Gem Version](https://img.shields.io/gem/v/phlex-reactive)](https://rubygems.org/gems/phlex-reactive)
 [![Docs](https://img.shields.io/badge/docs-phlex--reactive.zoolutions.llc-blue)](https://phlex-reactive.zoolutions.llc)
 

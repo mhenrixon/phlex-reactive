@@ -1,6 +1,6 @@
 # phlex-reactive — interactive demo site
 
-A Rails app that **dogfoods** [phlex-reactive](https://github.com/mhenrixon/phlex-reactive):
+A Rails app that **dogfoods** [phlex-reactive](https://github.com/zoolutions/phlex-reactive):
 every demo is a real reactive component running live, with its source shown
 alongside. It depends on the gem from the repo root (`gem "phlex-reactive", path: ".."`),
 so the site always exercises the working tree.

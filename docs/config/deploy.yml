@@ -1,4 +1,4 @@
-# Kamal deploy for the phlex-reactive docs site → the oss-infrastructure server.
+# dash deploy for the phlex-reactive docs site → the oss-infrastructure server.
 # Routing is via kamal-proxy behind a Cloudflare Tunnel (no Traefik; TLS is
 # terminated at the Cloudflare edge), per oss-infrastructure/docs/adding-a-new-gem.md.
 service: phlex-reactive
@@ -7,16 +7,27 @@ service: phlex-reactive
 # named differently from the repo stays user-owned + unlinked → push 403s in CI.
 image: zoolutions/phlex-reactive
 
+# dash 4 renamed the on-host proxy (kamal-proxy → dash-proxy) and migrates a
+# host in place; an older CLI must not deploy this config.
+minimum_version: 4.0.0
+
+# A stateless docs site never rolls back far — keep the host tidy.
+retain_containers: 2
+
+# Status-named pages (public/502.html, 503, 504) the proxy serves in place of
+# the app's during a deploy gap — paired with `proxy.intercept_errors` below.
+error_pages_path: public
+
 servers:
   web:
     - <%= ENV["DEPLOY_HOST"] %>
 
 # The server's deploy user is `oss` (a sudo, docker-group user; there is no root
-# SSH). Kamal defaults to root, so this MUST be set or the deploy can't connect.
+# SSH). dash defaults to root, so this MUST be set or the deploy can't connect.
 ssh:
   user: <%= ENV.fetch("DEPLOY_SSH_USER", "oss") %>
 
-# Kamal puts the app AND accessories on the auto-created `kamal` Docker network,
+# dash puts the app AND accessories on the auto-created `kamal` Docker network,
 # so the app reaches the postgres accessory by its container name
 # (phlex-reactive-postgres) with no manual network config — see DATABASE_URL.
 
@@ -24,17 +35,51 @@ ssh:
 proxy:
   host: <%= ENV["DEPLOY_DOMAIN"] %>
   app_port: 3000
+  # TLS terminates at Cloudflare; the tunnel reaches the proxy over plain HTTP.
   ssl: false
   healthcheck:
     path: /up
     interval: 5
     timeout: 30
 
+  # --- dash-proxy per-app features ------------------------------------------
+  # zstd / br / gzip negotiated at the edge; responses the app already encoded
+  # (Thruster) pass through untouched.
+  compress: true
+
+  # RFC 9111 shared cache. Only responses the app marks `Cache-Control: public,
+  # max-age` are stored (Propshaft assets, /llms*.txt) — HTML carrying a session
+  # cookie is refused by design. `dash proxy cache stats` shows what it holds.
+  cache:
+    enabled: true
+    max_ttl: 300
+
+  # Security headers set once here instead of per app; drop server fingerprints.
+  headers:
+    response:
+      set:
+        X-Content-Type-Options: nosniff
+        Referrer-Policy: strict-origin-when-cross-origin
+      remove:
+        - Server
+        - X-Powered-By
+
+  # Serve public/<status>.html instead of a bare "Bad Gateway" while a
+  # container is swapped or unhealthy.
+  intercept_errors:
+    - 502
+    - 503
+    - 504
+
+  # Keep the health probe out of the request histograms.
+  exclude_metrics_paths:
+    - /up
+
 registry:
   server: ghcr.io
   username: mhenrixon
   password:
-    - KAMAL_REGISTRY_PASSWORD
+    - DASH_REGISTRY_PASSWORD
 
 # The build context is the REPO ROOT (gem + app, since the app depends on the gem
 # via path: ".."). Run kamal from docs/, so `dockerfile` is relative to docs/
