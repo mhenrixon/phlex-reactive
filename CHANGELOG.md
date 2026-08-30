@@ -508,6 +508,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Client build toolchain: bun 1.3.14 → 1.4.0.** `.bun-version`, the root `engines.bun`
+  floor, and the docs `packageManager` pin all move together. The shipped
+  `*.min.js` / `.map` artifacts (and their vendored twins under
+  `spec/dummy/public/vendor`) are rebuilt — the 1.4 minifier picks different
+  local identifier names and sorts export lists, so the bytes differ, but the
+  code is semantically identical (JS unit, request, and browser suites unchanged).
+
 - **BREAKING: small sharp knives — the last 0.11 API-clarity pass (#186).**
   Four independent edges honed, one contract frozen:
   - **`reactive_filter` speaks fields, not selectors.** `reactive_filter(:q)` names the
