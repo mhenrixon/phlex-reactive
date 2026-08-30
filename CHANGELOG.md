@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`rake release` re-locks the root `Gemfile.lock` too.** Since #246 the gem
+  root's lockfile is committed, and it pins `phlex-reactive` by local path — so
+  the version bump left it stale and the Release workflow's frozen
+  `bundle install` refused it (v0.13.0's first attempt). The release task now
+  re-locks and commits every tracked lockfile that pins the gem (root + docs).
+
 ### Added
 
 - **`reactive_persist` drafts rich editors (#241).** A named `lexxy-editor`,
