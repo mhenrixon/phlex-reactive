@@ -23,10 +23,10 @@ group :test do
   gem "capybara", require: false
   gem "capybara-playwright-driver", require: false
   # The Ruby client MUST track the npm playwright version pinned in bun.lock
-  # (currently 1.61.0) — the root Gemfile.lock is untracked, so CI resolves
-  # fresh every run, and an unpinned client drifts to a newer protocol than the
-  # installed driver speaks (symptom: "timeout: expected float, got undefined"
-  # on every visit). Bump this pin and bun.lock's playwright together.
+  # (currently 1.61.0). Gemfile.lock is committed, but keep the pin anyway: an
+  # unpinned client drifts to a newer protocol than the installed driver speaks
+  # on the next `bundle update` (symptom: "timeout: expected float, got
+  # undefined" on every visit). Bump this pin and bun.lock's playwright together.
   gem "playwright-ruby-client", "~> 1.61.0", require: false
   gem "puma", require: false
   # Falcon is the real-server fallback for the browser suite (CAPYBARA_SERVER=falcon)
