@@ -254,25 +254,26 @@ task :release, %i[version force] do |_t, args|
     success "Updated #{version_file}"
   end
 
-  # Step 1b: Re-lock the docs site's Gemfile.lock. The docs app pins the gem via
-  # a local `path: ".."`, so its lockfile carries the version string — bumping
-  # version.rb without re-locking leaves the committed docs lockfile stale (it
-  # kept the OLD version while every fresh `bundle install` in docs/ regenerated
-  # it, dirtying the tree on every checkout). `bundle lock --local` re-derives
-  # only from the path dep — no network, no rubygems fetch, no checksum to
-  # compute for a path gem — so it works in the release environment and picks up
-  # the new version. Committed alongside the bump in Step 3. Any OTHER tracked
-  # lockfile pinning the gem would belong in this list; today only docs does.
-  docs_lock = "docs/Gemfile.lock"
-  header "Docs lockfile"
-  if File.exist?(docs_lock)
+  # Step 1b: Re-lock every tracked Gemfile.lock that pins this gem via a local
+  # path — the root one (`gemspec` in ./Gemfile, committed since #246) and the
+  # docs site's (`path: ".."`). Both carry the version string, so bumping
+  # version.rb without re-locking leaves a committed lockfile stale: the Release
+  # workflow's frozen `bundle install` then refuses it ("gemspecs for path gems
+  # changed, but the lockfile can't be updated because frozen mode is set") and
+  # every fresh `bundle install` dirties the tree. `bundle lock --local`
+  # re-derives only from the path dep — no network, no rubygems fetch, no
+  # checksum to compute for a path gem — so it works in the release environment.
+  # Committed alongside the bump in Step 3. Any OTHER tracked lockfile pinning
+  # the gem belongs in this list.
+  lockfiles = { "Gemfile.lock" => "Gemfile", "docs/Gemfile.lock" => "docs/Gemfile" }.select { File.exist?(_1) }
+  header "Lockfiles"
+  lockfiles.each do |lock, gemfile|
     # BUNDLE_GEMFILE instead of Dir.chdir — no process-wide cwd change; bundle
-    # writes docs/Gemfile.lock in place next to the pointed-at Gemfile.
-    sh({ "BUNDLE_GEMFILE" => "docs/Gemfile" }, "bundle lock --local")
-    success "Re-locked #{docs_lock} to #{new_version}"
-  else
-    skip "No #{docs_lock}"
+    # writes the lockfile in place next to the pointed-at Gemfile.
+    sh({ "BUNDLE_GEMFILE" => gemfile }, "bundle lock --local")
+    success "Re-locked #{lock} to #{new_version}"
   end
+  skip "No tracked lockfiles" if lockfiles.empty?
 
   # Step 2: Verify gem builds cleanly
   header "Build verification"
@@ -280,21 +281,21 @@ task :release, %i[version force] do |_t, args|
   sh("rm -f phlex-reactive-*.gem")
   success "Gem builds cleanly"
 
-  # Step 3: Commit the version bump + the re-locked docs lockfile together, so a
+  # Step 3: Commit the version bump + the re-locked lockfiles together, so a
   # release never leaves a stale/dirty committed lockfile behind. The guard fires
-  # when EITHER the version file OR the docs lockfile changed (a re-run where only
-  # the lockfile drifted still commits).
+  # when EITHER the version file OR any lockfile changed (a re-run where only a
+  # lockfile drifted — like v0.13.0's first attempt — still commits).
   header "Git commit"
-  release_files = [version_file, (docs_lock if File.exist?(docs_lock))].compact
+  release_files = [version_file, *lockfiles.keys]
   changed = release_files.any? do |f|
     !`git diff #{f}`.strip.empty? || !`git diff --cached #{f}`.strip.empty?
   end
   if changed
     sh("git add #{release_files.join(" ")}")
     sh("git commit -m 'chore: bump version to #{new_version}'")
-    success "Committed version bump + docs lockfile"
+    success "Committed version bump + lockfiles"
   else
-    skip "Nothing to commit (version + docs lockfile already current)"
+    skip "Nothing to commit (version + lockfiles already current)"
   end
 
   # Step 4: Push to origin
