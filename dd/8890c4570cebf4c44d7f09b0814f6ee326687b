@@ -1,0 +1,27 @@
+package.json
+  s_34a9cfe9468448::t_6ef2e981b0c4c0 4
+CHANGELOG.md
+  s_34a9cfe9468448::t_6ef2e981b0c4c0 511-517
+docs/package.json
+  s_34a9cfe9468448::t_6ef2e981b0c4c0 3
+Gemfile
+  s_34a9cfe9468448::t_6ef2e981b0c4c0 26-29
+.bun-version
+  s_34a9cfe9468448::t_6ef2e981b0c4c0 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "dd8890c4570cebf4c44d7f09b0814f6ee326687b",
+  "prompts": {},
+  "sessions": {
+    "s_34a9cfe9468448": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b90db296-fc51-4edd-b00c-a7722f1b39ea",
+        "model": "claude-fable-5"
+      },
+      "human_author": "mhenrixon <mikael@mhenrixon.com>"
+    }
+  }
+}
