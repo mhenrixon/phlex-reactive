@@ -313,9 +313,14 @@ module Views
               reactive action by itself (chain `reply.js(js.persist_clear)`).
 
               Never persisted: `hidden`/`file`/`password`/`submit` controls,
-              anything carrying `reactive_persist_skip`, a nested root's
-              controls, and rich-text editors. `autocomplete="off"` is **not** an
-              implicit skip — **honeypots must opt out** or sit outside the root.
+              anything carrying `reactive_persist_skip`, and a nested root's
+              controls. Rich editors (#241) — a named `lexxy-editor`,
+              `trix-editor` or bare `[contenteditable]` — are drafted and
+              restored through their **own** value surface (the editor's
+              `value` setter, a contenteditable's `textContent`; never
+              `innerHTML`), and `restore: :blank` asks the editor whether it is
+              empty. `autocomplete="off"` is **not** an implicit skip —
+              **honeypots must opt out** or sit outside the root.
               `fields:` narrows to declared names. `js.persist_state(step: 2)`
               merges a flat state bag into the draft; on restore the root carries
               `data-reactive-persist-state` and dispatches

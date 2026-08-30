@@ -34,7 +34,12 @@
           "compute_seed_reducer": "/vendor/compute_seed_reducer.js",
           "otp_reducer": "/vendor/otp_reducer.js",
           "split_code_reducer": "/vendor/split_code_reducer.js",
-          "confirm_predicate_registration": "/vendor/confirm_predicate_registration.js"<% if ENV["TRANSPORT"] == "pgbus" %>,
+          "confirm_predicate_registration": "/vendor/confirm_predicate_registration.js",
+          <%# Issue #241: the REAL rich editors (Trix 2.1.19 from action_text-trix,
+              Lexxy 0.9.31 — both MIT). Pinned only; the persist_editors demo
+              imports them itself so no other page pays for the ~1.5 MB. %>
+          "trix": "/vendor/trix.js",
+          "lexxy": "/vendor/lexxy.js"<% if ENV["TRANSPORT"] == "pgbus" %>,
           <%# Issue #187: pgbus's turbo_stream_from injects `import
               "pgbus/stream_source_element"`; pin it to the vendored engine asset
               (this app has no asset pipeline / importmap-rails auto-pin). %>

@@ -1065,8 +1065,12 @@ function runTransition(el, transition, flip) {
 // persist_clear client ops (which receive only the element) share it. Every
 // storage access is try/catch'd: a private window, a quota error or blocked
 // storage degrades to "no draft", never a thrown bootstrap. Nothing here
-// leaves the browser: no token, no POST, values are replayed via
-// .value/.checked only (never HTML).
+// leaves the browser: no token, no POST, and phlex-reactive never writes
+// markup into the DOM: native controls are replayed via
+// .value/.checked/.selected, a bare [contenteditable] via textContent, and a
+// rich editor (lexxy-editor, trix-editor — issue #241) through its OWN
+// `value` setter, the same sanitizing import path a paste takes. Never
+// innerHTML.
 // ---------------------------------------------------------------------------
 const PERSIST_VERSION = 1
 const PERSIST_PREFIX = "phlex-reactive:persist:"
@@ -1074,10 +1078,29 @@ const PERSIST_PREFIX = "phlex-reactive:persist:"
 // into (hidden, file), secrets (password), and non-value controls.
 const PERSIST_EXCLUDED_TYPES = new Set(["hidden", "file", "password", "submit", "button", "reset", "image"])
 const PERSIST_STATE_ATTR = "data-reactive-persist-state"
+// The editor query #collectFields reads (minus the [name] guard — an editor's
+// name may live on its IDL `name` getter: Trix's `input=`-paired hidden input).
+const PERSIST_EDITOR_SELECTOR =
+  ":is(lexxy-editor, trix-editor, [contenteditable=''], [contenteditable=true], [contenteditable=plaintext-only])"
+const PERSIST_EDITOR_TAGS = new Set(["lexxy-editor", "trix-editor"])
+// An editor's own chrome: Lexxy renders its toolbar (a `lexxy-code-language`
+// select, the link dialog's `href` input) INSIDE <lexxy-editor>, Trix as a
+// sibling <trix-toolbar>. Those are named native controls that are not the
+// user's fields — never drafted, never restored into.
+const PERSIST_EDITOR_CHROME = "lexxy-editor, trix-editor, trix-toolbar"
+// The editors' own bubbling change events — the keystroke signal for the
+// draft write, since neither lets its contenteditable's native `input` bubble.
+const PERSIST_EDITOR_CHANGE_EVENTS = ["lexxy:change", "trix-change"]
+// "Is this editor empty" when it exposes no predicate of its own (Lexxy's
+// `isEmpty`, Trix's `editor.getDocument().isEmpty()`): Lexxy's own empty
+// list plus the Trix / contenteditable empties. Exact strings, no HTML
+// parsing — an attachment-only body stays non-blank.
+const PERSIST_EMPTY_HTML = new Set(["", "<p></p>", "<p><br></p>", "<div><br></div>"])
 // Once-per-root guards: a malformed payload warns once; the storage-failure
-// dev note (debug mode only) prints once.
+// and editor-restore dev notes (debug mode only) print once each.
 const persistPayloadWarned = new WeakSet()
 const persistFailureNoted = new WeakSet()
+const persistEditorNoted = new WeakSet()
 
 // The root's parsed payload, or null (undeclared / malformed → warned once).
 // A control-level "off" (reactive_persist_skip) is never a root payload.
@@ -1175,18 +1198,60 @@ function persistRemove(root, payload) {
 
 // The persistable controls this root OWNS (#15: a nested reactive root's
 // controls are its own), minus the excluded types, the reactive_persist_skip
-// marker, and — when `fields` narrows the set — any undeclared name.
+// marker, and — when `fields` narrows the set — any undeclared name. Each
+// entry is { el, name, kind } with kind "native" (input/select/textarea),
+// "editor" (lexxy-editor / trix-editor) or "contenteditable" (a bare named
+// editable element) — issue #241.
 function persistControls(root, payload) {
   const allow = Array.isArray(payload.fields) ? new Set(payload.fields) : null
   const out = []
+  const owned = (el) =>
+    el.closest('[data-controller~="reactive"]') === root && el.getAttribute("data-reactive-persist") !== "off"
   for (const el of root.querySelectorAll("input[name], select[name], textarea[name]")) {
-    if (el.closest('[data-controller~="reactive"]') !== root) continue
-    if (PERSIST_EXCLUDED_TYPES.has(el.type)) continue
-    if (el.getAttribute("data-reactive-persist") === "off") continue
+    if (!owned(el) || PERSIST_EXCLUDED_TYPES.has(el.type) || el.closest(PERSIST_EDITOR_CHROME)) continue
     if (allow && !allow.has(el.name)) continue
-    out.push(el)
+    out.push({ el, name: el.name, kind: "native" })
+  }
+  for (const el of root.querySelectorAll(PERSIST_EDITOR_SELECTOR)) {
+    if (!owned(el)) continue
+    const name = persistEditorName(el)
+    if (!name || (allow && !allow.has(name))) continue
+    out.push({ el, name, kind: PERSIST_EDITOR_TAGS.has(el.localName) ? "editor" : "contenteditable" })
   }
   return out
+}
+
+// The attribute first (Lexxy, a bare contenteditable — which has no `name`
+// IDL property at all), then the IDL getter (Trix resolves it through its
+// `input=`-paired hidden input, which is itself excluded as type=hidden).
+function persistEditorName(el) {
+  return el.getAttribute("name") || (typeof el.name === "string" && el.name) || null
+}
+
+// An editor is READY once its custom element has upgraded and connected: only
+// then does it expose the string `value` accessor (Lexxy's setter throws
+// before connectedCallback created its editor; Trix's discards the value).
+function persistEditorReady(el) {
+  return typeof el.value === "string"
+}
+
+// Ask the editor whether it is empty (Lexxy `isEmpty`; Trix
+// `editor.getDocument().isEmpty()`), else the exact-string fallback. An
+// attachment-only server body is therefore NON-blank and never overwritten.
+function persistEditorBlank(el) {
+  if (typeof el.isEmpty === "boolean") return el.isEmpty
+  const doc = el.editor?.getDocument?.()
+  if (typeof doc?.isEmpty === "function") return doc.isEmpty()
+  return PERSIST_EMPTY_HTML.has(el.value.trim())
+}
+
+// The editor-restore dev lens: ONLY under data-reactive-debug, once per root.
+function persistNoteEditorFailure(root, name, error) {
+  if (root?.getAttribute?.("data-reactive-debug") !== "true" || persistEditorNoted.has(root)) return
+  persistEditorNoted.add(root)
+  console.info(
+    `[phlex-reactive] reactive_persist: could not restore editor ${JSON.stringify(name)} — ${error?.message ?? error}`,
+  )
 }
 
 function persistSelectMultiple(el) {
@@ -1195,12 +1260,17 @@ function persistSelectMultiple(el) {
 
 // Snapshot the owned controls: radio → the checked value (null when the group
 // has none, so a restore leaves it alone), checkbox → checked, multi-select →
-// the selected values, else .value. Mirrors #collectFields' reads.
+// the selected values, a rich editor → its serialized `value` (omitted while
+// the element hasn't upgraded — never a phantom ""), a bare contenteditable →
+// its textContent, else .value. Mirrors #collectFields' reads.
 function persistSnapshot(root, payload) {
   const fields = {}
-  for (const el of persistControls(root, payload)) {
-    const name = el.name
-    if (el.type === "radio") {
+  for (const { el, name, kind } of persistControls(root, payload)) {
+    if (kind === "editor") {
+      if (persistEditorReady(el)) fields[name] = el.value
+    } else if (kind === "contenteditable") {
+      fields[name] = el.textContent ?? ""
+    } else if (el.type === "radio") {
       if (el.checked) fields[name] = el.value
       else if (!Object.hasOwn(fields, name)) fields[name] = null
     } else if (el.type === "checkbox") {
@@ -1217,16 +1287,22 @@ function persistSnapshot(root, payload) {
 // Replay the draft into the owned controls. Default (restore: blank): a
 // control the server rendered NON-BLANK keeps its value — a 422 re-render's
 // submitted values beat an older draft. restore: "always" lets the draft win.
-// Values land via .value/.checked/.selected only — never HTML.
+// Values land via .value/.checked/.selected, textContent, or the editor's own
+// `value` setter — never HTML written by us.
 function persistApply(root, payload, fields) {
   const always = payload.restore === "always"
   const controls = persistControls(root, payload)
-  for (const el of controls) {
-    if (!Object.hasOwn(fields, el.name)) continue
-    const value = fields[el.name]
+  for (const { el, name, kind } of controls) {
+    if (!Object.hasOwn(fields, name)) continue
+    const value = fields[name]
     if (value === null || value === undefined) continue
-    if (el.type === "radio") {
-      if (!always && controls.some((c) => c.type === "radio" && c.name === el.name && c.checked)) continue
+    if (kind === "editor") {
+      persistApplyEditor(root, el, name, value, always)
+    } else if (kind === "contenteditable") {
+      if (!always && (el.textContent ?? "").trim() !== "") continue
+      el.textContent = String(value)
+    } else if (el.type === "radio") {
+      if (!always && controls.some((c) => c.kind === "native" && c.el.type === "radio" && c.name === name && c.el.checked)) continue
       el.checked = el.value === String(value)
     } else if (el.type === "checkbox") {
       if (!always && el.checked) continue
@@ -1239,6 +1315,46 @@ function persistApply(root, payload, fields) {
       if (!always && el.value !== "") continue
       el.value = String(value)
     }
+  }
+  persistDeferEditors(root, payload, fields)
+}
+
+// A ready editor takes the value through its own setter; the setter is the
+// editor's sanitizing import (Trix HTMLParser, Lexxy $generateNodesFromDOM +
+// sanitizer). A throw (Lexxy before its editor exists) never escapes connect.
+function persistApplyEditor(root, el, name, value, always) {
+  if (!persistEditorReady(el)) return // not upgraded yet — persistDeferEditors re-applies after define
+  if (!always && !persistEditorBlank(el)) return
+  try {
+    el.value = String(value)
+  } catch (error) {
+    persistNoteEditorFailure(root, name, error)
+  }
+}
+
+// An editor whose custom element is not defined yet (Trix defines its elements
+// in a setTimeout after load; a lazily imported Lexxy) cannot take a value now.
+// Re-apply per TAG once it is defined — re-querying the controls (the upgrade
+// may replace the node) and re-checking restore: blank at that moment — unless
+// the root has left the document meanwhile.
+function persistDeferEditors(root, payload, fields) {
+  const registry = globalThis.customElements
+  if (typeof registry?.whenDefined !== "function") return
+  const pending = new Set()
+  for (const el of root.querySelectorAll("lexxy-editor, trix-editor")) {
+    if (!persistEditorReady(el) && !registry.get?.(el.localName)) pending.add(el.localName)
+  }
+  const always = payload.restore === "always"
+  for (const tag of pending) {
+    registry.whenDefined(tag).then(() => {
+      if (!root.isConnected) return
+      for (const { el, name, kind } of persistControls(root, payload)) {
+        if (kind !== "editor" || el.localName !== tag || !Object.hasOwn(fields, name)) continue
+        const value = fields[name]
+        if (value === null || value === undefined) continue
+        persistApplyEditor(root, el, name, value, always)
+      }
+    })
   }
 }
 
@@ -4244,6 +4360,10 @@ export default class extends Controller {
     this.#boundPersistSubmitEnd = (event) => this.#persistSubmitEnd(event)
     this.element.addEventListener?.("input", this.#boundPersistInput)
     this.element.addEventListener?.("change", this.#boundPersistChange)
+    // Rich editors (#241): Lexical and Trix swallow the native `input` of
+    // their contenteditable, so their own bubbling change events are the
+    // keystroke signal — same trailing-edge debounce as `input`.
+    for (const event of PERSIST_EDITOR_CHANGE_EVENTS) this.element.addEventListener?.(event, this.#boundPersistInput)
     document.addEventListener?.("turbo:submit-end", this.#boundPersistSubmitEnd)
   }
 
@@ -4296,6 +4416,7 @@ export default class extends Controller {
     if (this.#persistTimer !== null) this.#persistWriteNow()
     this.element.removeEventListener?.("input", this.#boundPersistInput)
     this.element.removeEventListener?.("change", this.#boundPersistChange)
+    for (const event of PERSIST_EDITOR_CHANGE_EVENTS) this.element.removeEventListener?.(event, this.#boundPersistInput)
     document.removeEventListener?.("turbo:submit-end", this.#boundPersistSubmitEnd)
     this.#boundPersistInput = this.#boundPersistChange = this.#boundPersistSubmitEnd = undefined
     this.#persistConfig = null
