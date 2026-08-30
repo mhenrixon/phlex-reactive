@@ -1,0 +1,23 @@
+package.json
+  s_800de6c5c835a8::t_e05a17cef7145a 4
+CHANGELOG.md
+  s_800de6c5c835a8::t_4917bbe57f1414 489-495
+docs/package.json
+  s_800de6c5c835a8::t_e05a17cef7145a 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "7249699c754bb8d618a319bb8c60beb856f71900",
+  "prompts": {},
+  "sessions": {
+    "s_800de6c5c835a8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fc25fb4b-17e5-4134-8019-9b41a4072dab",
+        "model": "claude-fable-5"
+      },
+      "human_author": "mhenrixon <mikael@mhenrixon.com>"
+    }
+  }
+}
