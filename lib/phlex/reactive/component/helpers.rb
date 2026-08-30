@@ -1103,6 +1103,11 @@ module Phlex
         # anything carrying reactive_persist_skip, a nested reactive root's
         # controls (#15 ownership), and — when `fields:` narrows the set —
         # any name outside it (scope-aware symbols, the reactive_show form).
+        # Rich editors ARE persisted (#241): a named lexxy-editor / trix-editor
+        # (Trix's name may come from its `input=`-paired hidden input) or a
+        # bare named [contenteditable] is drafted and restored through its own
+        # value surface (the editor's `value` setter, textContent) — never
+        # innerHTML; put reactive_persist_skip on the editor element to opt out.
         # `autocomplete="off"` is NOT an implicit skip: honeypots (an
         # invisible_captcha text input looks like any other) must opt out
         # explicitly or sit outside the root.

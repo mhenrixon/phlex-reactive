@@ -478,10 +478,16 @@ module Views
               token is minted, no endpoint is touched. What the threat model
               *does* cover:
 
-              - **Replay is value-only.** A draft is replayed via `.value` /
-                `.checked` / `.selected` — never HTML. A tampered draft can only
-                fill fields the user could type into by hand, and the server
-                still validates the submit exactly as if they had.
+              - **phlex-reactive never writes markup.** A draft is replayed via
+                `.value` / `.checked` / `.selected`; a bare `[contenteditable]`
+                via `textContent`; a rich editor (`lexxy-editor`, `trix-editor` —
+                #241) through its **own** `value` setter, which is the editor's
+                sanitizing import path (Trix `HTMLParser`, Lexxy
+                `$generateNodesFromDOM` + sanitizer) — the same path a paste or
+                the server-rendered value takes. Never `innerHTML`. A tampered
+                draft can only produce what the user could type or paste into
+                that field, and the server still validates the submit exactly as
+                if they had.
               - **PII sits on disk for `ttl`.** Default 7 days; an expired draft
                 is removed on read, a successful submit clears it. On a shared
                 computer `ttl` + the submit-clear are the mitigation — shorten

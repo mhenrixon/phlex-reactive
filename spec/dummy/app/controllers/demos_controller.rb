@@ -360,6 +360,19 @@ class DemosController < ActionController::Base
     redirect_to "/persist_form?submitted=1"
   end
 
+  # Issue #241: reactive_persist over rich editors. ?body= / ?notes= render
+  # server values the draft must not overwrite; ?late=1 defines the editors
+  # after the reactive controller connected (the whenDefined deferral).
+  def persist_editors
+    render_component PersistEditorsFormComponent.new(
+      body: params[:body], notes: params[:notes], late: params[:late].present?
+    )
+  end
+
+  def persist_editors_submit
+    redirect_to "/persist_editors?submitted=1"
+  end
+
   def conditional_fieldset
     component = render_to_string(ConditionalFieldsetComponent.new, layout: false)
     outside = <<~HTML

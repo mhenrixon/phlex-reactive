@@ -430,3 +430,283 @@ test("a missing localStorage global disables persistence quietly", () => {
   expect(() => controller.connect()).not.toThrow()
   expect(() => fire(q('[name="form[name]"]'), "change")).not.toThrow()
 })
+
+// --- rich editors (issue #241) --------------------------------------------
+//
+// Named rich-text editors (lexxy-editor, trix-editor) and bare [contenteditable]
+// are persisted through their OWN value surface: an editor's `value`
+// getter/setter (the same sanitizing import path a paste takes), a bare
+// contenteditable's textContent. Never innerHTML. The stubs below mimic the
+// VERIFIED upstream contracts (lexxy 0.9.31, action_text-trix 2.1.19):
+//   lexxy-editor: name = attribute, form-associated (no hidden input),
+//     `set value` throws before connectedCallback created `this.editor`,
+//     `isEmpty` over ["<p><br></p>", "<p></p>", ""], fires lexxy:change.
+//   trix-editor: name/value delegate to the `input=` hidden input (the Rails
+//     rich_text_area shape) else the element's own name attribute,
+//     `set value` → editor.loadHTML (stashed pre-connect), fires trix-change,
+//     emptiness via editor.getDocument().isEmpty().
+// Both are defined on the per-test happy-dom window's registry; a test that
+// needs the "not yet upgraded" path defines them late.
+
+const EMPTY_HTML = ["<p><br></p>", "<p></p>", ""]
+let innerHTMLWrites, editorSets
+
+// whenDefined resolves through happy-dom's own promise chain — let the real
+// event loop turn (the stubbed global setTimeout is bypassed by Bun.sleep).
+const settle = () => Bun.sleep(0)
+
+function defineLexxy() {
+  window.customElements.define(
+    "lexxy-editor",
+    class extends window.HTMLElement {
+      connectedCallback() {
+        this.editor = { update: () => {} } // upstream: the setter runs inside editor.update
+        this.html ??= this.getAttribute("value") ?? "<p><br></p>"
+      }
+      get name() {
+        return this.getAttribute("name")
+      }
+      get value() {
+        return this.html
+      }
+      set value(html) {
+        this.editor.update() // TypeError before connect, like upstream
+        editorSets++
+        this.html = html
+        this.dispatchEvent(new window.CustomEvent("lexxy:change", { bubbles: true }))
+      }
+      get isEmpty() {
+        return EMPTY_HTML.includes(this.value.trim())
+      }
+      set innerHTML(_html) {
+        innerHTMLWrites++
+      }
+    },
+  )
+}
+
+function defineTrix() {
+  window.customElements.define(
+    "trix-editor",
+    class extends window.HTMLElement {
+      connectedCallback() {
+        this.setAttribute("contenteditable", "") // upstream makeEditable(this)
+        this.editor = {
+          loadHTML: (html) => this.setFormValue(html),
+          getDocument: () => ({ isEmpty: () => this.value === "" }),
+        }
+      }
+      get inputElement() {
+        return this.hasAttribute("input") ? document.getElementById(this.getAttribute("input")) : undefined
+      }
+      get name() {
+        return this.inputElement ? this.inputElement.name : this.getAttribute("name")
+      }
+      get value() {
+        return this.inputElement ? this.inputElement.value : (this.formValue ?? "")
+      }
+      set value(html) {
+        this.defaultValue = html
+        editorSets++
+        this.editor?.loadHTML(html)
+      }
+      setFormValue(html) {
+        if (this.inputElement) this.inputElement.value = html
+        else this.formValue = html
+        this.dispatchEvent(new window.CustomEvent("trix-change", { bubbles: true }))
+      }
+      set innerHTML(_html) {
+        innerHTMLWrites++
+      }
+    },
+  )
+}
+
+function mountEditors(html, opts = {}) {
+  globalThis.customElements = window.customElements
+  innerHTMLWrites = 0
+  editorSets = 0
+  if (!opts.late) {
+    defineLexxy()
+    defineTrix()
+  }
+  return mount(html, opts)
+}
+
+const EDITORS = `
+  <input type="text" name="draft[title]">
+  <lexxy-editor name="draft[body]"></lexxy-editor>
+  <input type="hidden" name="draft[notes]" id="notes_trix_input" value="">
+  <trix-editor input="notes_trix_input"></trix-editor>
+  <trix-editor name="draft[aside]"></trix-editor>
+  <div contenteditable="true" name="draft[summary]"></div>
+  <div contenteditable="true">unnamed inner editable</div>
+  <lexxy-editor name="draft[private]" data-reactive-persist="off"></lexxy-editor>
+  <div data-controller="reactive" id="nested"><lexxy-editor name="inner_body"></lexxy-editor></div>
+`
+
+test("the snapshot includes named editors under their resolved names, never the paired hidden input", () => {
+  const { controller, q } = mountEditors(EDITORS)
+  controller.connect()
+  q("lexxy-editor[name='draft[body]']").value = "<p>Essay</p>"
+  q("trix-editor[input]").value = "<div>Notes</div>"
+  q("trix-editor[name='draft[aside]']").value = "<div>Aside</div>"
+  q("[name='draft[summary]']").textContent = "Plain summary"
+  q("[name='draft[private]']").value = "<p>secret</p>"
+  fire(q("[name='draft[title]']"), "change")
+  expect(storage.json(KEY).fields).toEqual({
+    "draft[title]": "",
+    "draft[body]": "<p>Essay</p>",
+    "draft[notes]": "<div>Notes</div>",
+    "draft[aside]": "<div>Aside</div>",
+    "draft[summary]": "Plain summary",
+  })
+})
+
+test("an editor's own chrome (toolbar selects/inputs inside lexxy-editor, a trix-toolbar) is never a control", () => {
+  const html = EDITORS.replace(
+    '<lexxy-editor name="draft[body]"></lexxy-editor>',
+    `<lexxy-editor name="draft[body]">
+       <div class="lexxy-editor__content" contenteditable="true"><p>typed</p></div>
+       <lexxy-toolbar><select name="lexxy-code-language"><option value="plain" selected>plain</option></select>
+         <input type="url" name="href" value=""></lexxy-toolbar>
+     </lexxy-editor>`,
+  ).replace("<trix-editor", '<trix-toolbar><input type="url" name="href" value=""></trix-toolbar><trix-editor')
+  seedDraft({ "lexxy-code-language": "ruby", href: "https://evil.example", "draft[body]": "<p>Draft</p>" })
+  const { controller, q } = mountEditors(html)
+  controller.connect()
+  expect(q('[name="lexxy-code-language"]').value).toBe("plain")
+  for (const input of el_all(q, '[name="href"]')) expect(input.value).toBe("")
+  fire(q("[name='draft[title]']"), "change")
+  const fields = storage.json(KEY).fields
+  expect(fields).not.toHaveProperty("lexxy-code-language")
+  expect(fields).not.toHaveProperty("href")
+  expect(fields["draft[body]"]).toBe("<p>Draft</p>")
+})
+
+const el_all = (q, sel) => [...q(sel).ownerDocument.querySelectorAll(sel)]
+
+test("restore replays through the editors' own value setters / textContent — never innerHTML", () => {
+  seedDraft({
+    "draft[body]": "<p>Essay</p>",
+    "draft[notes]": "<div>Notes</div>",
+    "draft[aside]": "<div>Aside</div>",
+    "draft[summary]": "Plain <b>summary</b>",
+  })
+  const { controller, q } = mountEditors(EDITORS)
+  controller.connect()
+  expect(q("lexxy-editor[name='draft[body]']").value).toBe("<p>Essay</p>")
+  expect(q("trix-editor[input]").value).toBe("<div>Notes</div>")
+  expect(q("#notes_trix_input").value).toBe("<div>Notes</div>") // via loadHTML → the hidden input
+  expect(q("trix-editor[name='draft[aside]']").value).toBe("<div>Aside</div>")
+  expect(q("[name='draft[summary]']").textContent).toBe("Plain <b>summary</b>") // text, not markup
+  expect(q("[name='draft[summary]']").querySelector("b")).toBeNull()
+  expect(innerHTMLWrites).toBe(0)
+  expect(storage.calls.set).toBe(0) // the editors' own change events are not `input`/`change`
+})
+
+test("restore: blank asks the editor — an empty-looking Lexxy value restores, a non-empty server body wins", () => {
+  seedDraft({ "draft[body]": "<p>Draft</p>", "draft[notes]": "<div>Draft notes</div>", "draft[summary]": "Draft summary" })
+  const html = EDITORS.replace(
+    'id="notes_trix_input" value=""',
+    'id="notes_trix_input" value="<div>Server notes</div>"',
+  ).replace('name="draft[summary]">', 'name="draft[summary]">Server summary')
+  const { controller, q } = mountEditors(html)
+  // Lexxy's initial value is "<p><br></p>" — non-empty as a string, empty per isEmpty
+  controller.connect()
+  expect(q("lexxy-editor[name='draft[body]']").value).toBe("<p>Draft</p>")
+  expect(q("trix-editor[input]").value).toBe("<div>Server notes</div>")
+  expect(q("[name='draft[summary]']").textContent).toBe("Server summary")
+})
+
+test("restore: always lets the draft overwrite a server-rendered editor value", () => {
+  seedDraft({ "draft[body]": "<p>Draft</p>", "draft[notes]": "<div>Draft notes</div>", "draft[summary]": "Draft summary" })
+  const html = EDITORS.replace('name="draft[body]">', 'name="draft[body]" value="<p>Server</p>">')
+    .replace('id="notes_trix_input" value=""', 'id="notes_trix_input" value="<div>Server notes</div>"')
+    .replace('name="draft[summary]">', 'name="draft[summary]">Server summary')
+  const { controller, q } = mountEditors(html, { payload: { ...PAYLOAD, restore: "always" } })
+  controller.connect()
+  expect(q("lexxy-editor[name='draft[body]']").value).toBe("<p>Draft</p>")
+  expect(q("trix-editor[input]").value).toBe("<div>Draft notes</div>")
+  expect(q("[name='draft[summary]']").textContent).toBe("Draft summary")
+})
+
+test("fields:, reactive_persist_skip and nested-root ownership apply to editors", () => {
+  seedDraft({ "draft[body]": "<p>Draft</p>", "draft[private]": "<p>leak</p>", inner_body: "<p>leak</p>", "draft[summary]": "x" })
+  const { controller, q } = mountEditors(EDITORS, { payload: { ...PAYLOAD, fields: ["draft[body]", "draft[private]"] } })
+  controller.connect()
+  expect(q("lexxy-editor[name='draft[body]']").value).toBe("<p>Draft</p>")
+  expect(q("[name='draft[private]']").value).toBe("<p><br></p>")
+  expect(q("[name='inner_body']").value).toBe("<p><br></p>")
+  expect(q("[name='draft[summary]']").textContent).toBe("")
+  q("[name='draft[summary]']").textContent = "typed"
+  fire(q("[name='draft[title]']"), "change")
+  expect(storage.json(KEY).fields).toEqual({ "draft[body]": "<p>Draft</p>" })
+})
+
+test("an editor that has not upgraded yet is omitted from the snapshot and restored once it is defined", async () => {
+  seedDraft({ "draft[body]": "<p>Draft</p>", "draft[notes]": "<div>Draft notes</div>", "draft[title]": "T" })
+  const { controller, q } = mountEditors(EDITORS, { late: true })
+  controller.connect()
+  expect(q("[name='draft[title]']").value).toBe("T")
+  fire(q("[name='draft[title]']"), "change")
+  expect(storage.json(KEY).fields).not.toHaveProperty("draft[body]")
+  expect(storage.json(KEY).fields).not.toHaveProperty("draft[notes]")
+  defineLexxy()
+  defineTrix()
+  await settle()
+  expect(q("lexxy-editor[name='draft[body]']").value).toBe("<p>Draft</p>")
+  expect(q("trix-editor[input]").value).toBe("<div>Draft notes</div>")
+})
+
+test("a deferred restore still honours restore: blank and skips a root that left the document", async () => {
+  seedDraft({ "draft[body]": "<p>Draft</p>", "draft[extra]": "<p>Draft extra</p>", "draft[aside]": "<div>Draft aside</div>" })
+  const html = EDITORS.replace('name="draft[body]">', 'name="draft[body]" value="<p>Server</p>">').replace(
+    "<trix-editor",
+    '<lexxy-editor name="draft[extra]"></lexxy-editor><trix-editor',
+  )
+  const { controller, q, el } = mountEditors(html, { late: true })
+  controller.connect()
+  defineLexxy()
+  await settle()
+  expect(q("lexxy-editor[name='draft[body]']").value).toBe("<p>Server</p>") // blank re-checked at apply time
+  expect(q("lexxy-editor[name='draft[extra]']").value).toBe("<p>Draft extra</p>")
+  expect(editorSets).toBe(1)
+  el.remove()
+  defineTrix()
+  await settle()
+  expect(editorSets).toBe(1) // the root left the document: no Trix apply
+})
+
+test("an editor's own change event schedules the draft write (Lexical and Trix don't bubble a native input)", () => {
+  const { controller, q } = mountEditors(EDITORS)
+  controller.connect()
+  q("lexxy-editor[name='draft[body]']").value = "<p>Typed</p>" // the stub dispatches lexxy:change
+  expect(timers.length).toBe(1) // the same trailing-edge debounce as `input`
+  drainTimers()
+  expect(storage.json(KEY).fields["draft[body]"]).toBe("<p>Typed</p>")
+  q("trix-editor[input]").value = "<div>Typed notes</div>" // dispatches trix-change
+  drainTimers()
+  expect(storage.json(KEY).fields["draft[notes]"]).toBe("<div>Typed notes</div>")
+  controller.disconnect()
+  q("lexxy-editor[name='draft[body]']").value = "<p>After</p>"
+  expect(timers.length).toBe(0) // listeners dropped on disconnect
+})
+
+test("a throwing editor setter never throws out of connect and is reported once under debug only", () => {
+  seedDraft({ "draft[body]": "<p>Draft</p>" })
+  const { controller, q } = mountEditors(EDITORS, { rootAttrs: 'data-reactive-debug="true"' })
+  Object.defineProperty(q("lexxy-editor[name='draft[body]']"), "editor", { get: () => undefined })
+  expect(() => controller.connect()).not.toThrow()
+  expect(infos.length).toBe(1)
+  expect(infos[0]).toContain("reactive_persist")
+  expect(infos[0]).toContain("draft[body]")
+})
+
+test("without debug a throwing editor setter is silent", () => {
+  seedDraft({ "draft[body]": "<p>Draft</p>" })
+  const { controller, q } = mountEditors(EDITORS)
+  Object.defineProperty(q("lexxy-editor[name='draft[body]']"), "editor", { get: () => undefined })
+  expect(() => controller.connect()).not.toThrow()
+  expect(infos).toEqual([])
+})

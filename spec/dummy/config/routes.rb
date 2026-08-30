@@ -65,6 +65,10 @@ Rails.application.routes.draw do
   # redirects so a successful turbo:submit-end clears the draft.
   get "persist_form" => "demos#persist_form"
   post "persist_form" => "demos#persist_form_submit"
+  # Issue #241: reactive_persist over rich editors (real Trix + Lexxy + a bare
+  # contenteditable); ?late=1 defers the editor definitions past connect.
+  get "persist_editors" => "demos#persist_editors"
+  post "persist_editors" => "demos#persist_editors_submit"
   get "confirm" => "demos#confirm"
   get "client_op_confirm" => "demos#client_op_confirm"
   get "conditional_confirm" => "demos#conditional_confirm"

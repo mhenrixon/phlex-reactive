@@ -8,6 +8,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`reactive_persist` drafts rich editors (#241).** A named `lexxy-editor`,
+  `trix-editor` or bare `[contenteditable]` inside a `reactive_persist` root is
+  now drafted and restored through its **own** value surface — the editor's
+  `value` getter/setter (its serialized HTML, replayed through the editor's own
+  sanitizing import: Trix `HTMLParser`, Lexxy `$generateNodesFromDOM` +
+  sanitizer), a bare contenteditable's `textContent` — never `innerHTML`. The
+  name resolves from the element's `name` attribute or, for Trix in the Rails
+  `rich_text_area` shape, from the `input=`-paired hidden input (never a
+  separate key). `restore: :blank` asks the editor whether it is empty (Lexxy
+  `isEmpty`, Trix `editor.getDocument().isEmpty()`, an exact-string fallback),
+  so an attachment-only server body is never overwritten. An editor not yet
+  upgraded at connect (Trix defines its elements in a `setTimeout`; a lazily
+  imported Lexxy) is restored once `customElements.whenDefined` resolves; a
+  throwing setter never escapes `connect()` (one `console.info` under
+  `Phlex::Reactive.debug`). The editors' own `lexxy:change` / `trix-change`
+  events drive the debounced write (neither lets its native `input` bubble),
+  and their toolbar chrome (Lexxy's code-language select and link `href`
+  input, Trix's `trix-toolbar`) is never drafted. `fields:`,
+  `reactive_persist_skip` (on the editor element) and nested-root ownership
+  apply unchanged. The dummy vendors the
+  real Trix 2.1.19 and Lexxy 0.9.31 and the browser suite drives both under
+  Puma and Falcon.
+
 - **`reactive_persist` — client-only localStorage drafts (#239).** "Don't make
   me start over": spread `reactive_persist(key:, ttl: 7.days)` on a root and
   the generic controller keeps a `localStorage` draft of every **owned**
@@ -22,8 +45,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `js.persist_state(step: 2)` merges a flat state bag into the draft (restored
   as `data-reactive-persist-state` + the `reactive:persist-restored` event).
   `hidden`/`file`/`password`/`submit` controls, `reactive_persist_skip`
-  markers, nested roots and rich-text editors are never persisted; `fields:`
-  narrows the set. Storage failures are silent (a `console.info` under
+  markers and nested roots are never persisted; `fields:` narrows the set. Storage failures are silent (a `console.info` under
   `Phlex::Reactive.debug`). Works from `ClientBindings` (no token, no POST).
 
 - **Dev-mode warning when a client op resolves zero targets (#237).** A client

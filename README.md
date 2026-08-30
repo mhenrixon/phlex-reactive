@@ -1160,11 +1160,28 @@ wire attr: `data-reactive-persist='{"key":"village-apply","ttl":604800,"debounce
 - **`fields:`** narrows the set to declared names (scope-aware symbols):
   `reactive_persist(key: "k", fields: %i[name bio])`.
 - **Never persisted**: `type=hidden/file/password/submit/button/reset/image`,
-  anything carrying `reactive_persist_skip`, a nested reactive root's controls,
-  and rich-text/`contenteditable` editors (they aren't `input/select/textarea`).
-  `autocomplete="off"` is **not** an implicit skip — a wizard often sets it
-  form-wide. **Honeypots must opt out** (`reactive_persist_skip`) or sit outside
-  the root: an invisible-captcha text input looks like any other field.
+  anything carrying `reactive_persist_skip`, and a nested reactive root's
+  controls. `autocomplete="off"` is **not** an implicit skip — a wizard often
+  sets it form-wide. **Honeypots must opt out** (`reactive_persist_skip`) or sit
+  outside the root: an invisible-captcha text input looks like any other field.
+- **Rich editors** (#241) — a named `lexxy-editor`, `trix-editor` or bare
+  `[contenteditable]` is drafted and restored through its **own** value
+  surface: the editor's `value` getter/setter (its serialized HTML, replayed
+  through the editor's own sanitizing import — Trix's `HTMLParser`, Lexxy's
+  `$generateNodesFromDOM` + sanitizer), a bare contenteditable's `textContent`.
+  The name is the element's `name` attribute, or — Trix in the Rails
+  `rich_text_area` shape — the `input=`-paired hidden input's name (the hidden
+  input itself is never a separate key). `restore: :blank` **asks the editor**
+  whether it is empty (Lexxy `isEmpty`, Trix `editor.getDocument().isEmpty()`),
+  so an attachment-only server body is never overwritten. An editor that hasn't
+  upgraded yet at connect (Trix defines its elements in a `setTimeout`; a lazily
+  imported Lexxy) is restored once `customElements.whenDefined` resolves. The
+  editors' own `lexxy:change` / `trix-change` events are the keystroke signal
+  for the draft write (neither editor lets its native `input` bubble) and also
+  fire on restore (no native `input`/`change` is ever synthesized). Their
+  toolbar chrome (Lexxy's code-language select and link `href` input, Trix's
+  `trix-toolbar`) is never drafted. Put `reactive_persist_skip` on the editor
+  element to opt one out.
 - **State bag** — `js.persist_state(step: 2)` merges a flat hash of scalars
   into the same draft (a wizard's current step). On restore the root carries
   `data-reactive-persist-state='{"step":2}'` and dispatches a bubbling
@@ -1175,8 +1192,11 @@ wire attr: `data-reactive-persist='{"key":"village-apply","ttl":604800,"debounce
   prints one `console.info` naming the failure so a dev sees why nothing came
   back.
 
-Threat model: values are replayed via `.value`/`.checked` only (never HTML) — a
-tampered draft can only fill what the user could type. PII sits in this
+Threat model: phlex-reactive never writes markup into the DOM — native controls
+are replayed via `.value`/`.checked`/`.selected`, a bare contenteditable via
+`textContent`, and a rich editor through its own `value` setter (the same
+sanitizing import a paste takes). A tampered draft can only produce what the
+user could type or paste into that field. PII sits in this
 browser's `localStorage` for `ttl`; the submit-clear and `ttl` are the
 shared-computer mitigation. `persist_state`/`persist_clear` are **actor-only**
 ops (refused by `broadcast_to(js:)`). See the [security page](docs/security.md).
