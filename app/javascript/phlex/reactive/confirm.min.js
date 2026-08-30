@@ -1,4 +1,4 @@
-var k=(b)=>Promise.resolve(typeof window<"u"?window.confirm(b):!0);function p(b){k=b}export{p as setConfirmResolver,k as confirmResolver};
+var o=(e)=>Promise.resolve(typeof window<"u"?window.confirm(e):!0);function r(e){o=e}export{o as confirmResolver,r as setConfirmResolver};
 
-//# debugId=95D50A0903B9B05E64756E2164756E21
+//# debugId=B602C81CFFC471CC64756E2164756E21
 //# sourceMappingURL=confirm.min.js.map
